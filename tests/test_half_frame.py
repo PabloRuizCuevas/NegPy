@@ -145,6 +145,64 @@ def test_expand_half_frames(monkeypatch):
     assert out[0]["split_x"] == out[1]["split_x"] == 0.48
 
 
+def test_expand_half_frames_profile_without_auto_split_ignores_the_file(monkeypatch):
+    """Today's default: a saved profile with auto_split off applies uniformly,
+    the same as before either feature existed."""
+    from negpy.desktop.workers import render as render_mod
+
+    monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_x_for_file", lambda p: 0.1)
+    worker = render_mod.AssetDiscoveryWorker()
+    assets = [{"name": "a.tif", "path": "/p/a.tif", "hash": "ha"}]
+    profile = {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.6, "gutter_thickness": 0.02}
+    out = worker._expand_half_frames(assets, profile=profile)
+    assert out[0]["split_x"] == 0.6
+    assert out[0]["gutter_thickness"] == 0.02
+
+
+def test_expand_half_frames_profile_with_auto_split_detects_per_file(monkeypatch):
+    """Irregular film spacing: with auto_split on, each file's own gutter wins over
+    the roll-wide split_x; crop_rect/gutter_thickness still ride the shared profile."""
+    from negpy.desktop.workers import render as render_mod
+
+    detected = {"/p/a.tif": 0.62, "/p/b.tif": 0.5}
+    monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_x_for_file", lambda p: detected[p])
+    worker = render_mod.AssetDiscoveryWorker()
+    assets = [
+        {"name": "a.tif", "path": "/p/a.tif", "hash": "ha"},
+        {"name": "b.tif", "path": "/p/b.tif", "hash": "hb"},
+    ]
+    profile = {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.55, "gutter_thickness": 0.02, "auto_split": True}
+    out = worker._expand_half_frames(assets, profile=profile)
+    a1, a2, b1, b2 = out
+    assert a1["split_x"] == a2["split_x"] == 0.62, "a.tif's own detected gutter wins"
+    # b.tif's detection came back exactly 0.5 (detect_split_x's own "nothing found"
+    # sentinel), so it falls back to the profile's tuned value, not a blind re-center.
+    assert b1["split_x"] == b2["split_x"] == 0.55
+    assert all(e["gutter_thickness"] == 0.02 for e in out)
+
+
+def test_expand_half_frames_per_file_override_wins_over_everything(monkeypatch):
+    """The odd frame auto-detect still gets wrong: a saved override for its own
+    base hash wins over both auto_split detection and the shared profile."""
+    from negpy.desktop.workers import render as render_mod
+
+    monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_x_for_file", lambda p: 0.9)
+    worker = render_mod.AssetDiscoveryWorker()
+    assets = [
+        {"name": "a.tif", "path": "/p/a.tif", "hash": "ha"},
+        {"name": "b.tif", "path": "/p/b.tif", "hash": "hb"},
+    ]
+    profile = {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0, "auto_split": True}
+    overrides = {"ha": {"crop_rect": [0.05, 0.0, 0.95, 1.0], "split_x": 0.4, "gutter_thickness": 0.03}}
+    out = worker._expand_half_frames(assets, profile=profile, overrides=overrides)
+    a1, a2, b1, b2 = out
+    assert a1["split_x"] == a2["split_x"] == 0.4
+    assert a1["crop_rect"] == a2["crop_rect"] == (0.05, 0.0, 0.95, 1.0)
+    assert a1["gutter_thickness"] == a2["gutter_thickness"] == 0.03
+    # b.tif has no override, so auto_split still applies to it.
+    assert b1["split_x"] == b2["split_x"] == 0.9
+
+
 def test_add_files_keeps_both_halves():
     from negpy.desktop.session import DesktopSessionManager
     from negpy.infrastructure.storage.repository import StorageRepository

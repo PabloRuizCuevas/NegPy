@@ -64,6 +64,92 @@ class TestAppController(unittest.TestCase):
         del self.controller
         gc.collect()
 
+    def test_half_frame_profile_round_trip_includes_auto_split(self):
+        self.controller.session.repo.get_global_setting.return_value = None
+        self.assertIsNone(self.controller.half_frame_profile())
+
+        self.controller.save_half_frame_profile([0.0, 0.0, 1.0, 1.0], 0.6, 0.02, auto_split=True)
+        args, _ = self.controller.session.repo.save_global_setting.call_args
+        self.assertEqual(args[0], "half_frame_profile")
+        self.assertEqual(args[1], {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.6, "gutter_thickness": 0.02, "auto_split": True})
+
+    def test_half_frame_profile_auto_split_defaults_off(self):
+        self.controller.save_half_frame_profile([0.0, 0.0, 1.0, 1.0], 0.5, 0.0)
+        args, _ = self.controller.session.repo.save_global_setting.call_args
+        self.assertFalse(args[1]["auto_split"])
+
+    def test_half_frame_override_round_trip(self):
+        self.controller.session.repo.get_global_setting.return_value = None
+        self.assertEqual(self.controller.half_frame_overrides(), {})
+        self.assertIsNone(self.controller.half_frame_override("h1"))
+
+        self.controller.save_half_frame_override("h1", [0.05, 0.0, 0.95, 1.0], 0.42, 0.01)
+        args, _ = self.controller.session.repo.save_global_setting.call_args
+        self.assertEqual(args[0], "half_frame_overrides")
+        self.assertEqual(args[1], {"h1": {"crop_rect": [0.05, 0.0, 0.95, 1.0], "split_x": 0.42, "gutter_thickness": 0.01}})
+
+    def test_clear_half_frame_override_only_writes_when_present(self):
+        self.controller.session.repo.get_global_setting.return_value = {"h1": {"split_x": 0.4}}
+        self.controller.clear_half_frame_override("h1")
+        self.controller.session.repo.save_global_setting.assert_called_once_with("half_frame_overrides", {})
+
+        self.controller.session.repo.save_global_setting.reset_mock()
+        self.controller.session.repo.get_global_setting.return_value = {}
+        self.controller.clear_half_frame_override("h2")
+        self.controller.session.repo.save_global_setting.assert_not_called()
+
+    def test_open_half_frame_dialog_per_frame_saves_an_override_not_the_profile(self):
+        import numpy as np
+
+        fake_img = np.zeros((4, 4, 3), dtype=np.uint8)
+        with (
+            patch("negpy.services.assets.thumbnails.decode_source_image", return_value=fake_img),
+            patch("negpy.desktop.view.widgets.half_frame_dialog.HalfFrameDialog") as mock_dialog_cls,
+        ):
+            mock_dialog = MagicMock()
+            mock_dialog.exec.return_value = True
+            mock_dialog.crop_rect.return_value = (0.1, 0.0, 0.9, 1.0)
+            mock_dialog.split_x.return_value = 0.42
+            mock_dialog.gutter_thickness.return_value = 0.01
+            mock_dialog_cls.return_value = mock_dialog
+
+            self.controller.session.repo.get_global_setting.return_value = None
+            result = self.controller.open_half_frame_dialog("/p/a.tif", file_hash="ha")
+
+        self.assertEqual(result, {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01})
+        args, _ = self.controller.session.repo.save_global_setting.call_args
+        self.assertEqual(args[0], "half_frame_overrides")
+        self.assertEqual(args[1], {"ha": {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01}})
+        # Meaningless for one fixed frame, so the roll-wide auto-detect option is hidden.
+        _, kwargs = mock_dialog_cls.call_args
+        self.assertIsNone(kwargs["initial_auto_split"])
+
+    def test_open_half_frame_dialog_roll_wide_saves_the_profile_with_auto_split(self):
+        import numpy as np
+
+        fake_img = np.zeros((4, 4, 3), dtype=np.uint8)
+        with (
+            patch("negpy.services.assets.thumbnails.decode_source_image", return_value=fake_img),
+            patch("negpy.desktop.view.widgets.half_frame_dialog.HalfFrameDialog") as mock_dialog_cls,
+        ):
+            mock_dialog = MagicMock()
+            mock_dialog.exec.return_value = True
+            mock_dialog.crop_rect.return_value = (0.0, 0.0, 1.0, 1.0)
+            mock_dialog.split_x.return_value = 0.5
+            mock_dialog.gutter_thickness.return_value = 0.0
+            mock_dialog.auto_split.return_value = True
+            mock_dialog_cls.return_value = mock_dialog
+
+            self.controller.session.repo.get_global_setting.return_value = None
+            result = self.controller.open_half_frame_dialog("/p/a.tif")
+
+        self.assertEqual(result["auto_split"], True)
+        args, _ = self.controller.session.repo.save_global_setting.call_args
+        self.assertEqual(args[0], "half_frame_profile")
+        self.assertTrue(args[1]["auto_split"])
+        _, kwargs = mock_dialog_cls.call_args
+        self.assertEqual(kwargs["initial_auto_split"], False)  # no saved profile yet
+
     def test_busy_toast_is_taken_down_when_the_frame_lands(self):
         """A slow render step holds its toast open; the finished frame clears it, and a
         toast nobody claimed is left alone."""

@@ -241,7 +241,8 @@ class _DiscoveryRequest:
     reselect_path: Optional[str]
     rgb_scan: bool
     half_frame: bool
-    half_frame_profile: Optional[dict] = None  # {crop_rect, split_x, gutter_thickness}
+    half_frame_profile: Optional[dict] = None  # {crop_rect, split_x, gutter_thickness, auto_split}
+    half_frame_overrides: Optional[dict] = None  # {base_hash: {crop_rect, split_x, gutter_thickness}}
     hot_folder: bool = False
 
 
@@ -971,6 +972,7 @@ class AppController(QObject):
             rgb_scan=bool(self.session.repo.get_global_setting("rgbscan_mode", False)),
             half_frame=bool(self.session.repo.get_global_setting("half_frame_mode", False)),
             half_frame_profile=self.half_frame_profile(),
+            half_frame_overrides=self.half_frame_overrides(),
             hot_folder=hot_folder,
         )
         if self._discovery_running:
@@ -1015,6 +1017,7 @@ class AppController(QObject):
             restore_stitches=stitches,
             restore_hdr=merges,
             half_frame_profile=request.half_frame_profile,
+            half_frame_overrides=request.half_frame_overrides,
         )
         self.asset_discovery_requested.emit(task)
 
@@ -1175,27 +1178,58 @@ class AppController(QObject):
     # ── half-frame split & crop profile ─────────────────────────────────
 
     _HALF_FRAME_PROFILE_KEY = "half_frame_profile"
+    _HALF_FRAME_OVERRIDES_KEY = "half_frame_overrides"
 
     def half_frame_profile(self) -> dict | None:
-        """Saved ``(crop_rect, split_x, gutter_thickness)`` profile, shared across
-        every half-frame split. Scanner-independent — the same crop/split applies
-        whether the scans came from a SANE scanner, a camera copy-stand, or a
-        folder import."""
+        """Saved ``(crop_rect, split_x, gutter_thickness, auto_split)`` profile,
+        shared across every half-frame split. Scanner-independent — the same
+        crop/split applies whether the scans came from a SANE scanner, a camera
+        copy-stand, or a folder import. With ``auto_split`` on, ``split_x`` is a
+        per-file fallback rather than a fixed value (see ``half_frame_overrides``
+        for a per-file value the roll-wide setting still gets wrong)."""
         return self.session.repo.get_global_setting(self._HALF_FRAME_PROFILE_KEY, default=None)
 
-    def save_half_frame_profile(self, crop_rect, split_x: float, gutter_thickness: float) -> None:
+    def save_half_frame_profile(self, crop_rect, split_x: float, gutter_thickness: float, auto_split: bool = False) -> None:
         self.session.repo.save_global_setting(
             self._HALF_FRAME_PROFILE_KEY,
             {
                 "crop_rect": list(crop_rect),
                 "split_x": float(split_x),
                 "gutter_thickness": float(gutter_thickness),
+                "auto_split": bool(auto_split),
             },
         )
 
-    def open_half_frame_dialog(self, file_path: str) -> dict | None:
-        """Open the half-frame split & crop editor on one scan; return the profile
-        dict on Apply, None on cancel."""
+    def half_frame_overrides(self) -> dict:
+        """Per-file ``(crop_rect, split_x, gutter_thickness)`` overrides, keyed by
+        base file hash — for the odd frame the roll-wide profile (auto-detected or
+        fixed) still gets wrong."""
+        return dict(self.session.repo.get_global_setting(self._HALF_FRAME_OVERRIDES_KEY, default=None) or {})
+
+    def half_frame_override(self, file_hash: str) -> dict | None:
+        return self.half_frame_overrides().get(file_hash)
+
+    def save_half_frame_override(self, file_hash: str, crop_rect, split_x: float, gutter_thickness: float) -> None:
+        overrides = self.half_frame_overrides()
+        overrides[file_hash] = {"crop_rect": list(crop_rect), "split_x": float(split_x), "gutter_thickness": float(gutter_thickness)}
+        self.session.repo.save_global_setting(self._HALF_FRAME_OVERRIDES_KEY, overrides)
+
+    def clear_half_frame_override(self, file_hash: str) -> None:
+        overrides = self.half_frame_overrides()
+        if file_hash in overrides:
+            del overrides[file_hash]
+            self.session.repo.save_global_setting(self._HALF_FRAME_OVERRIDES_KEY, overrides)
+
+    def open_half_frame_dialog(self, file_path: str, file_hash: str | None = None) -> dict | None:
+        """Open the half-frame split & crop editor on one scan; return the saved
+        dict on Apply, None on cancel.
+
+        ``file_hash`` switches the editor to per-frame mode: it starts from and
+        saves to that file's own override (falling back to the roll-wide profile
+        as a starting point) instead of the shared profile, and hides the
+        roll-wide auto-detect option, which is meaningless for a single fixed
+        frame.
+        """
         import numpy as np
 
         from negpy.desktop.view.widgets.half_frame_dialog import HalfFrameDialog
@@ -1211,8 +1245,9 @@ class AppController(QObject):
             self.set_status(f"Could not load preview: {e}")
             return None
 
-        saved = self.half_frame_profile()
-        initial_rect = tuple(saved["crop_rect"]) if saved else None
+        profile = self.half_frame_profile()
+        saved = self.half_frame_override(file_hash) if file_hash else profile
+        initial_rect = tuple(saved["crop_rect"]) if saved and saved.get("crop_rect") is not None else None
         initial_split = saved["split_x"] if saved else detect_split_x(buf)
         initial_gutter = saved["gutter_thickness"] if saved else 0.0
 
@@ -1221,16 +1256,22 @@ class AppController(QObject):
             initial_rect=initial_rect,
             initial_split=initial_split,
             initial_gutter=initial_gutter,
+            initial_auto_split=bool(profile and profile.get("auto_split")) if file_hash is None else None,
+            title="Half Frame — split & crop (this frame)" if file_hash else "Half Frame — split & crop",
             parent=None,
         )
         if dialog.exec():
-            profile = {
+            result = {
                 "crop_rect": list(dialog.crop_rect()),
                 "split_x": dialog.split_x(),
                 "gutter_thickness": dialog.gutter_thickness(),
             }
-            self.save_half_frame_profile(profile["crop_rect"], profile["split_x"], profile["gutter_thickness"])
-            return profile
+            if file_hash:
+                self.save_half_frame_override(file_hash, result["crop_rect"], result["split_x"], result["gutter_thickness"])
+            else:
+                result["auto_split"] = dialog.auto_split()
+                self.save_half_frame_profile(result["crop_rect"], result["split_x"], result["gutter_thickness"], result["auto_split"])
+            return result
         return None
 
     def _on_discovery_progress(self, current: int, total: int, name: str) -> None:

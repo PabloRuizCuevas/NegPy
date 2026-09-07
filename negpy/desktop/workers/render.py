@@ -169,7 +169,8 @@ class AssetDiscoveryTask:
     half_frame: bool = False  # Expand each file into two half-frame assets (left/right).
     restore_stitches: dict | None = None  # {primary_path: {paths, transforms, canvas, sizes, hash}} (session restore).
     restore_hdr: dict | None = None  # {reference_path: {paths, ratios, align, hash}} (session restore).
-    half_frame_profile: dict | None = None  # {crop_rect, split_x, gutter_thickness} override
+    half_frame_profile: dict | None = None  # {crop_rect, split_x, gutter_thickness, auto_split} override
+    half_frame_overrides: dict | None = None  # {base_hash: {crop_rect, split_x, gutter_thickness}} per-file overrides
 
 
 @dataclass(frozen=True)
@@ -656,28 +657,38 @@ class AssetDiscoveryWorker(QObject):
             valid_assets = self._attach_restored_hdr(valid_assets, task.restore_hdr)
 
         if task.half_frame and valid_assets:
-            valid_assets = self._expand_half_frames(valid_assets, profile=task.half_frame_profile)
+            valid_assets = self._expand_half_frames(valid_assets, profile=task.half_frame_profile, overrides=task.half_frame_overrides)
 
         self.finished.emit(valid_assets)
 
-    def _expand_half_frames(self, assets: list, profile: dict | None = None) -> list:
+    def _expand_half_frames(self, assets: list, profile: dict | None = None, overrides: dict | None = None) -> list:
         """Expand each file into two half-frame assets sharing the path, with
         per-half hash/name identities. Composite assets (triplet, stitch, HDR) stay
         whole — an unsupported combination.
 
-        When ``profile`` is set (a {crop_rect, split_x, gutter_thickness} dict saved
-        from the half-frame rectangle editor), it overrides the auto-detected split
-        and adds the crop rect + gutter to every expanded half.
+        Per-file resolution, highest priority first:
+          1. ``overrides[base_hash]`` — a {crop_rect, split_x, gutter_thickness} dict
+             saved for this one file from the rectangle editor's per-frame mode, for
+             the odd frame the roll-wide setting still gets wrong.
+          2. ``profile`` (a {crop_rect, split_x, gutter_thickness, auto_split} dict
+             saved from the editor) — shared across the roll. With ``auto_split``
+             on, its ``split_x`` is a fallback for a frame whose own gutter can't be
+             found (irregular film spacing means one shared split position misses
+             on some frames); ``crop_rect``/``gutter_thickness`` stay the profile's
+             either way, since those describe the scanner rig, not the film.
+          3. No profile yet — every file auto-detects, as if ``auto_split`` were on.
         """
         import os
 
-        from negpy.services.assets.half_frame import detect_split_x_for_file, half_hash, half_name, is_composite
+        from negpy.services.assets.half_frame import base_hash, detect_split_x_for_file, half_hash, half_name, is_composite
 
         def _splittable(a: dict) -> bool:
             return not is_composite(a)
 
-        if profile is None:
-            paths = [a["path"] for a in assets if _splittable(a)]
+        overrides = overrides or {}
+        auto_split = profile is None or bool(profile.get("auto_split"))
+        if auto_split:
+            paths = [a["path"] for a in assets if _splittable(a) and base_hash(a["hash"]) not in overrides]
             detected = self._map_files(paths, detect_split_x_for_file, lambda p: f"Split {os.path.basename(p)}", _DECODE_WORKERS)
             splits = dict(zip(paths, detected))
         else:
@@ -688,11 +699,21 @@ class AssetDiscoveryWorker(QObject):
             if not _splittable(a):
                 out.append(a)
                 continue
-            if profile is not None:
-                split_x = float(profile.get("split_x") or 0.5)
-            else:
+            override = overrides.get(base_hash(a["hash"]))
+            if override is not None:
+                split_x = float(override.get("split_x") or 0.5)
+            elif auto_split:
                 detected_x = splits.get(a["path"])
-                split_x = 0.5 if detected_x is None else float(detected_x)
+                # 0.5 is detect_split_x's own "nothing found" sentinel: fall back to
+                # the profile's tuned value rather than a blind re-center.
+                if detected_x is not None and abs(detected_x - 0.5) > 1e-9:
+                    split_x = float(detected_x)
+                elif profile is not None:
+                    split_x = float(profile.get("split_x") or 0.5)
+                else:
+                    split_x = 0.5
+            else:
+                split_x = float(profile.get("split_x") or 0.5)
             legacy = a.get("legacy_hash")
             for half in (1, 2):
                 entry = {
@@ -703,11 +724,12 @@ class AssetDiscoveryWorker(QObject):
                     "half": half,
                     "split_x": split_x,
                 }
-                if profile is not None:
-                    cr = profile.get("crop_rect")
+                source = override if override is not None else profile
+                if source is not None:
+                    cr = source.get("crop_rect")
                     if cr is not None:
                         entry["crop_rect"] = tuple(cr)
-                    entry["gutter_thickness"] = float(profile.get("gutter_thickness") or 0.0)
+                    entry["gutter_thickness"] = float(source.get("gutter_thickness") or 0.0)
                 out.append(entry)
         return out
 

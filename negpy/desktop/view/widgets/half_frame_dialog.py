@@ -5,7 +5,8 @@ defines what is kept (everything outside is discarded). A vertical centerline
 inside the rectangle marks the split between the two halves; its thickness
 discards a band centered on it (the physical black separator between exposures).
 
-Read after ``exec()`` via ``crop_rect()``, ``split_x()`` and ``gutter_thickness()``.
+Read after ``exec()`` via ``crop_rect()``, ``split_x()``, ``gutter_thickness()`` and,
+when ``initial_auto_split`` was not None, ``auto_split()``.
 """
 
 from typing import Optional
@@ -15,6 +16,7 @@ import qtawesome as qta
 from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QMouseEvent, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -296,10 +298,12 @@ class HalfFrameDialog(QDialog):
         initial_rect: Optional[tuple[float, float, float, float]] = None,
         initial_split: Optional[float] = None,
         initial_gutter: Optional[float] = None,
+        initial_auto_split: Optional[bool] = False,
+        title: str = "Half Frame — split & crop",
         parent=None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Half Frame — split & crop")
+        self.setWindowTitle(title)
         self.setModal(True)
         self.resize(720, 560)
 
@@ -327,6 +331,17 @@ class HalfFrameDialog(QDialog):
         gutter_row.addWidget(self._gutter_slider, 1)
         gutter_row.addWidget(self._gutter_label)
         layout.addLayout(gutter_row)
+
+        self._auto_split_check: Optional[QCheckBox] = None
+        if initial_auto_split is not None:
+            self._auto_split_check = QCheckBox("Auto-detect split per frame")
+            self._auto_split_check.setToolTip(
+                "Re-find the gutter on every scan instead of using this fixed position for the "
+                "whole roll — for a roll whose frame spacing is a bit irregular. The crop "
+                "rectangle and cut thickness still apply to every scan."
+            )
+            self._auto_split_check.setChecked(bool(initial_auto_split))
+            layout.addWidget(self._auto_split_check)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -401,3 +416,8 @@ class HalfFrameDialog(QDialog):
 
     def gutter_thickness(self) -> float:
         return self._label.gutter_value()
+
+    def auto_split(self) -> bool:
+        """Whether split_x should re-detect per file rather than staying fixed.
+        Always False when the dialog was opened without the option (per-frame mode)."""
+        return bool(self._auto_split_check and self._auto_split_check.isChecked())

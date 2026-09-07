@@ -1020,13 +1020,27 @@ class FileBrowser(QWidget):
             return
         profile = self.controller.open_half_frame_dialog(path)
         if profile is not None:
-            # Re-discover so the new profile takes effect immediately.
-            files = self.session.state.uploaded_files
-            self.controller.request_asset_discovery(
-                [f["path"] for f in files if "path" in f],
-                replace_existing=True,
-                reselect_path=self.session.state.current_file_path,
-            )
+            self._reload_after_half_frame_change()
+
+    def _reload_after_half_frame_change(self) -> None:
+        """Re-discover so a profile/override change takes effect immediately."""
+        files = self.session.state.uploaded_files
+        self.controller.request_asset_discovery(
+            [f["path"] for f in files if "path" in f],
+            replace_existing=True,
+            reselect_path=self.session.state.current_file_path,
+        )
+
+    def _on_adjust_half_frame_split(self, path: str, base_hash: str) -> None:
+        """Open the rectangle editor scoped to one file's own override, for the
+        odd frame the roll-wide split still gets wrong."""
+        result = self.controller.open_half_frame_dialog(path, file_hash=base_hash)
+        if result is not None:
+            self._reload_after_half_frame_change()
+
+    def _on_reset_half_frame_split(self, base_hash: str) -> None:
+        self.controller.clear_half_frame_override(base_hash)
+        self._reload_after_half_frame_change()
 
     def _scan_folder(self) -> None:
         if not self.session.state.uploaded_files:
@@ -1207,6 +1221,15 @@ class FileBrowser(QWidget):
                 menu.addAction("Unmerge exposures").triggered.connect(lambda: self.controller.request_unmerge_hdr())
             if active.get("diptych"):
                 menu.addAction("Unsplit diptych").triggered.connect(self.prompt_undiptych)
+            if active.get("half"):
+                from negpy.services.assets.half_frame import base_hash
+
+                base = base_hash(active.get("hash"))
+                menu.addAction("Adjust split for this frame…").triggered.connect(
+                    lambda: self._on_adjust_half_frame_split(active["path"], base)
+                )
+                if base and self.controller.half_frame_override(base) is not None:
+                    menu.addAction("Reset split to roll default").triggered.connect(lambda: self._on_reset_half_frame_split(base))
         menu.addSeparator()
         unload_label = "Unload Selected" if multi else "Unload"
         menu.addAction(unload_label).triggered.connect(self._on_remove_from_menu)
