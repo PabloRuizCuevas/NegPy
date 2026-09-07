@@ -1511,6 +1511,11 @@ class GPUEngine:
             settings.exposure.cast_removal_strength,
         )
         t_cast_gain, t_cast_off = neutral_axis_affine(t_axis, t_strength)
+        # A positive source is already a finished image, not a raw capture below the
+        # sensor's white level: skip the baseline gain and let the shader skip
+        # display_rendering too (see the zone_taper.y lane below), matching transfer.py.
+        t_positive_source = bool(settings.process.positive_source)
+        t_baseline_gain = 1.0 if t_positive_source else 2.0 ** float(tc["transfer_baseline_ev"])
         tr_data = (
             struct.pack(
                 "ffffffff",
@@ -1521,7 +1526,7 @@ class GPUEngine:
                 float(tc["transfer_contrast_pivot"]),
                 float(tc["transfer_toe_knee"]),
                 float(tc["transfer_shoulder_knee"]),
-                float(2.0 ** float(tc["transfer_baseline_ev"])),
+                float(t_baseline_gain),
             )
             + struct.pack("ffff", t_toe3[0], t_toe3[1], t_toe3[2], 0.0)
             + struct.pack("ffff", t_sh3[0], t_sh3[1], t_sh3[2], 0.0)
@@ -1535,7 +1540,7 @@ class GPUEngine:
                 float(t_sh_c),
                 float(t_hi_c),
             )
-            + struct.pack("ffff", float(ZONE_BLACK_TAPER), 0.0, 0.0, 0.0)
+            + struct.pack("ffff", float(ZONE_BLACK_TAPER), 1.0 if t_positive_source else 0.0, 0.0, 0.0)
             + struct.pack("ffff", t_cast_gain[0], t_cast_gain[1], t_cast_gain[2], 0.0)
             + struct.pack(
                 "ffff",
