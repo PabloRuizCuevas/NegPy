@@ -31,12 +31,17 @@ def effective_linear_raw(process: ProcessConfig, render_intent: Optional[str] = 
     rest. Frames then sit on different scales, and the exposure ratios solved between them
     absorb the difference: that bracket's shortest link solved to 0.75 EV instead of 1.00,
     which prints as contour rings around a blown highlight.
+
+    `positive_source` exempts the forced case: that source is a finished positive, not a
+    raw capture with a camera matrix to fold multipliers back in, so it decodes on its own
+    embedded profile like any other mode instead of being read as literal linear data.
     """
     from negpy.features.exposure.transfer import is_transparency_transfer
 
     if process.linear_raw:
         return True
-    return is_transparency_transfer(process.process_mode, process.e6_normalize, render_intent)
+    transfer = is_transparency_transfer(process.process_mode, process.e6_normalize, render_intent)
+    return transfer and not process.positive_source
 
 
 def linear_raw_token(process: ProcessConfig, render_intent: Optional[str] = None) -> str:
