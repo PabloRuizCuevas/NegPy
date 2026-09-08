@@ -606,6 +606,30 @@ class TestDiptychAsset:
         assert info["crop_rect"] == (0.1, 0.0, 0.9, 1.0)
         assert info["gutter_thickness"] == 0.05
 
+    def test_task_prefers_the_files_own_override_over_the_profile(self):
+        """A diptych's split geometry is whatever the two halves were actually cut
+        with -- an override, when this file has one -- not blindly the roll's shared
+        profile, which may since have been set to something else."""
+        from negpy.desktop.controller import AppController
+
+        cfg = WorkspaceConfig()
+        ctrl = AppController.__new__(AppController)
+        ctrl.session = MagicMock()
+        ctrl.session.repo.load_file_settings_many.side_effect = lambda keys: {"ha#1": cfg, "ha#2": cfg}
+        store = {
+            SPLIT_SCANS_KEY: ["ha"],
+            "half_frame_overrides": {"ha": {"crop_rect": [0.05, 0.0, 0.95, 1.0], "split_x": 0.6, "gutter_thickness": 0.03}},
+            "half_frame_profile": {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0},
+        }
+        ctrl.session.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
+        ctrl._active_diptych_memo = ("", None)
+
+        info, pair = AppController._diptych_task(ctrl, {"path": "/p/a.tif", "hash": "ha", "diptych": True})
+        assert pair == (cfg, cfg)
+        assert info["split_x"] == 0.6
+        assert info["crop_rect"] == (0.05, 0.0, 0.95, 1.0)
+        assert info["gutter_thickness"] == 0.03
+
     def test_a_flagged_negative_skips_the_lookup(self):
         from negpy.desktop.controller import AppController
 

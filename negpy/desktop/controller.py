@@ -1600,20 +1600,15 @@ class AppController(QObject):
         """(asset dict with the split geometry stamped on, half configs) for a diptych.
 
         A whole-frame asset never went through `_expand_half_frames`, so the split comes
-        from the saved profile — the same one the halves were cut with.
+        from this file's own effective geometry — its override if it has one, else the
+        saved profile, else auto-detected — the same resolution the halves were cut with.
         """
         pair = self.diptych_pair(file_info)
         if pair is None:
             return file_info, None
-        profile = self.half_frame_profile() or {}
-        raw_rect = profile.get("crop_rect")
+        geom = self._half_frame_geometry_for(file_info.get("hash") or "", file_info.get("path", ""))
         return (
-            {
-                **file_info,
-                "split_x": float(profile.get("split_x") or 0.5),
-                "crop_rect": tuple(float(v) for v in raw_rect) if raw_rect else None,
-                "gutter_thickness": float(profile.get("gutter_thickness") or 0.0),
-            },
+            {**file_info, "split_x": geom.split_x, "crop_rect": geom.crop_rect, "gutter_thickness": geom.gutter_thickness},
             pair,
         )
 

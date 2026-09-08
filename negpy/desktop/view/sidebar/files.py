@@ -447,6 +447,16 @@ class FileBrowser(QWidget):
         )
         self.half_frame_auto_all_btn.clicked.connect(self._on_half_frame_auto_all)
 
+        # Enabled only for the active frame's diptych state; the only other way in is a
+        # right-click, easy to miss when Half Frame is off and the panel just looks locked.
+        self.unsplit_diptych_btn = QToolButton()
+        self.unsplit_diptych_btn.setIcon(qta.icon("mdi.call-merge", color=THEME.text_primary))
+        self.unsplit_diptych_btn.setToolTip(
+            "Unsplit diptych — the current frame's edits live on its two halves; this merges them back into one plain frame"
+        )
+        self.unsplit_diptych_btn.setEnabled(False)
+        self.unsplit_diptych_btn.clicked.connect(self.prompt_undiptych)
+
         self.apply_btn = QToolButton()
         self.apply_btn.setIcon(qta.icon("fa5s.clone", color=THEME.text_primary))
         self.apply_btn.setToolTip("Apply settings from the current frame to selected frames or the whole roll")
@@ -508,6 +518,7 @@ class FileBrowser(QWidget):
             self.half_frame_btn,
             self.half_frame_adjust_btn,
             self.half_frame_auto_all_btn,
+            self.unsplit_diptych_btn,
             self.apply_btn,
             self.sheet_btn,
             self.sort_btn,
@@ -529,6 +540,7 @@ class FileBrowser(QWidget):
             (self.half_frame_btn, "Half Frame"),
             (self.half_frame_adjust_btn, "Adjust Half Frame"),
             (self.half_frame_auto_all_btn, "Auto-detect all splits"),
+            (self.unsplit_diptych_btn, "Unsplit diptych"),
             (self.apply_btn, "Apply settings"),
             (None, None),
             (self.sheet_btn, "Sheet filter"),
@@ -787,11 +799,17 @@ class FileBrowser(QWidget):
         else:
             self.unload_btn.setToolTip("Clear all")
 
+    def _update_unsplit_diptych_button(self) -> None:
+        state = self.session.state
+        active = state.uploaded_files[state.selected_file_idx] if 0 <= state.selected_file_idx < len(state.uploaded_files) else {}
+        self.unsplit_diptych_btn.setEnabled(bool(active.get("diptych")))
+
     def sync_ui(self) -> None:
         """Updates list selection to match session state."""
         model = self.session.asset_model
         selection_model = self.list_view.selectionModel()
         self._update_unload_button()
+        self._update_unsplit_diptych_button()
         self._update_tally()
         self._update_empty_state()
 
