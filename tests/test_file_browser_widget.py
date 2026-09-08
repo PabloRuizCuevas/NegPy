@@ -170,7 +170,7 @@ def test_adjust_half_frame_split_reloads_only_on_apply(browser, session):
 
     browser.controller.open_half_frame_dialog.return_value = {"split_x": 0.4}
     browser._on_adjust_half_frame_split("/tmp/scan.tif", "h1")
-    browser.controller.open_half_frame_dialog.assert_called_with("/tmp/scan.tif", file_hash="h1")
+    browser.controller.open_half_frame_dialog.assert_called_with("/tmp/scan.tif", "h1", scope="current")
     browser.controller.request_asset_discovery.assert_called_once()
 
 

@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 from negpy.domain.models import ExportConfig, WorkspaceConfig
 from negpy.services.assets.half_frame import (
+    HalfGeometry,
     base_hash,
     detect_split_x,
     SPLIT_SCANS_KEY,
@@ -17,10 +18,14 @@ from negpy.services.assets.half_frame import (
     half_hash,
     half_name,
     join_halves,
+    remap_point,
+    remap_workspace_config,
     remember_split_scans,
     slice_for_asset,
     slice_half,
 )
+from negpy.features.local.models import LocalAdjustmentsConfig, LocalMask
+from negpy.features.retouch.models import RetouchConfig
 from negpy.services.assets.sidecar import load_or_promote, sidecar_path_for
 from negpy.services.export.templating import render_export_filename
 
@@ -145,9 +150,9 @@ def test_expand_half_frames(monkeypatch):
     assert out[0]["split_x"] == out[1]["split_x"] == 0.48
 
 
-def test_expand_half_frames_profile_without_auto_split_ignores_the_file(monkeypatch):
-    """Today's default: a saved profile with auto_split off applies uniformly,
-    the same as before either feature existed."""
+def test_expand_half_frames_with_profile_applies_it_uniformly(monkeypatch):
+    """A saved profile applies to every file without its own override — a file's own
+    gutter (0.1, per the monkeypatch) is ignored once a roll-wide value is set."""
     from negpy.desktop.workers import render as render_mod
 
     monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_x_for_file", lambda p: 0.1)
@@ -159,31 +164,9 @@ def test_expand_half_frames_profile_without_auto_split_ignores_the_file(monkeypa
     assert out[0]["gutter_thickness"] == 0.02
 
 
-def test_expand_half_frames_profile_with_auto_split_detects_per_file(monkeypatch):
-    """Irregular film spacing: with auto_split on, each file's own gutter wins over
-    the roll-wide split_x; crop_rect/gutter_thickness still ride the shared profile."""
-    from negpy.desktop.workers import render as render_mod
-
-    detected = {"/p/a.tif": 0.62, "/p/b.tif": 0.5}
-    monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_x_for_file", lambda p: detected[p])
-    worker = render_mod.AssetDiscoveryWorker()
-    assets = [
-        {"name": "a.tif", "path": "/p/a.tif", "hash": "ha"},
-        {"name": "b.tif", "path": "/p/b.tif", "hash": "hb"},
-    ]
-    profile = {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.55, "gutter_thickness": 0.02, "auto_split": True}
-    out = worker._expand_half_frames(assets, profile=profile)
-    a1, a2, b1, b2 = out
-    assert a1["split_x"] == a2["split_x"] == 0.62, "a.tif's own detected gutter wins"
-    # b.tif's detection came back exactly 0.5 (detect_split_x's own "nothing found"
-    # sentinel), so it falls back to the profile's tuned value, not a blind re-center.
-    assert b1["split_x"] == b2["split_x"] == 0.55
-    assert all(e["gutter_thickness"] == 0.02 for e in out)
-
-
-def test_expand_half_frames_per_file_override_wins_over_everything(monkeypatch):
-    """The odd frame auto-detect still gets wrong: a saved override for its own
-    base hash wins over both auto_split detection and the shared profile."""
+def test_expand_half_frames_per_file_override_wins_over_the_profile(monkeypatch):
+    """The odd frame the roll-wide profile still gets wrong: a saved override for its
+    own base hash wins over it."""
     from negpy.desktop.workers import render as render_mod
 
     monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_x_for_file", lambda p: 0.9)
@@ -192,15 +175,15 @@ def test_expand_half_frames_per_file_override_wins_over_everything(monkeypatch):
         {"name": "a.tif", "path": "/p/a.tif", "hash": "ha"},
         {"name": "b.tif", "path": "/p/b.tif", "hash": "hb"},
     ]
-    profile = {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0, "auto_split": True}
+    profile = {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0}
     overrides = {"ha": {"crop_rect": [0.05, 0.0, 0.95, 1.0], "split_x": 0.4, "gutter_thickness": 0.03}}
     out = worker._expand_half_frames(assets, profile=profile, overrides=overrides)
     a1, a2, b1, b2 = out
     assert a1["split_x"] == a2["split_x"] == 0.4
     assert a1["crop_rect"] == a2["crop_rect"] == (0.05, 0.0, 0.95, 1.0)
     assert a1["gutter_thickness"] == a2["gutter_thickness"] == 0.03
-    # b.tif has no override, so auto_split still applies to it.
-    assert b1["split_x"] == b2["split_x"] == 0.9
+    # b.tif has no override, so it takes the profile's fixed split, not its own gutter.
+    assert b1["split_x"] == b2["split_x"] == 0.5
 
 
 def test_add_files_keeps_both_halves():
@@ -284,6 +267,94 @@ class TestSliceHalfCropGutter:
         }
         out = slice_for_asset(buf, info)
         np.testing.assert_array_equal(out, buf[:, :40])
+
+
+class TestRemapPoint:
+    """A point stays on the same physical film location across a split/crop change:
+    remap into full-scan space under the old geometry, back out under the new one."""
+
+    def test_identity_geometry_is_a_no_op(self):
+        geom = HalfGeometry()
+        assert remap_point(0.3, 0.7, 1, geom, geom) == pytest.approx((0.3, 0.7))
+        assert remap_point(0.3, 0.7, 2, geom, geom) == pytest.approx((0.3, 0.7))
+
+    def test_split_shift_moves_a_left_half_point_off_center(self):
+        old = HalfGeometry(split_x=0.5)
+        new = HalfGeometry(split_x=0.6)
+        # Half-local x=1.0 sits right at the old gutter edge (full-scan x=0.5);
+        # the wider new left half places that same film position further along.
+        x, y = remap_point(1.0, 0.4, 1, old, new)
+        assert x == pytest.approx(0.5 / 0.6)
+        assert y == pytest.approx(0.4)
+
+    def test_split_shift_leaves_the_untouched_half_alone(self):
+        """Only the crop, not the split, ever moves y or the other half's x scale
+        when that half's own boundary hasn't moved."""
+        old = HalfGeometry(split_x=0.5)
+        new = HalfGeometry(split_x=0.5, gutter_thickness=0.1)
+        x, _ = remap_point(0.5, 0.2, 1, old, new)
+        assert x == pytest.approx(0.5 * 0.5 / 0.45)
+
+    def test_crop_change_round_trips_through_full_scan_space(self):
+        old = HalfGeometry(crop_rect=(0.0, 0.0, 1.0, 1.0), split_x=0.5)
+        new = HalfGeometry(crop_rect=(0.1, 0.1, 0.9, 0.9), split_x=0.5)
+        x, y = remap_point(0.5, 0.5, 1, old, new)
+        back_x, back_y = remap_point(x, y, 1, new, old)
+        assert (back_x, back_y) == pytest.approx((0.5, 0.5))
+
+    def test_whole_frame_half_zero_ignores_split(self):
+        old = HalfGeometry(split_x=0.5)
+        new = HalfGeometry(split_x=0.9)
+        assert remap_point(0.3, 0.3, 0, old, new) == pytest.approx((0.3, 0.3))
+
+
+class TestRemapWorkspaceConfig:
+    def test_same_geometry_is_a_no_op_and_keeps_identity(self):
+        geom = HalfGeometry(split_x=0.5)
+        config = WorkspaceConfig(retouch=RetouchConfig(manual_heal_strokes=[([[0.5, 0.5]], 10.0, 0.0, 0.0)]))
+        assert remap_workspace_config(config, 1, geom, geom) is config
+
+    def test_remaps_heal_stroke_points_and_preserves_the_clone_offset(self):
+        old, new = HalfGeometry(split_x=0.5), HalfGeometry(split_x=0.6)
+        config = WorkspaceConfig(retouch=RetouchConfig(manual_heal_strokes=[([[0.4, 0.4], [0.42, 0.4]], 10.0, -0.02, 0.0)]))
+        updated = remap_workspace_config(config, 1, old, new)
+        points, size, dx, dy = updated.retouch.manual_heal_strokes[0]
+        assert points != [[0.4, 0.4], [0.42, 0.4]]
+        assert size == 10.0
+        # The clone source stays the same film distance from the destination.
+        old_src = remap_point(0.4 - 0.02, 0.4, 1, old, old)
+        new_dest = remap_point(0.4, 0.4, 1, old, new)
+        new_src_expected = remap_point(*old_src, 1, old, new)
+        assert (points[0][0] + dx, points[0][1] + dy) == pytest.approx(new_src_expected)
+        assert points[0] == pytest.approx(list(new_dest))
+
+    def test_remaps_dust_spots_and_scratch_lines(self):
+        old, new = HalfGeometry(split_x=0.5), HalfGeometry(split_x=0.6)
+        config = WorkspaceConfig(retouch=RetouchConfig(manual_dust_spots=[(0.3, 0.3, 6)], scratch_lines=[(0.1, 0.1, 0.2, 0.2, 2.0)]))
+        updated = remap_workspace_config(config, 1, old, new)
+        assert updated.retouch.manual_dust_spots[0][:2] == pytest.approx(remap_point(0.3, 0.3, 1, old, new))
+        assert updated.retouch.manual_dust_spots[0][2] == 6
+        line = updated.retouch.scratch_lines[0]
+        assert line[:2] == pytest.approx(remap_point(0.1, 0.1, 1, old, new))
+        assert line[2:4] == pytest.approx(remap_point(0.2, 0.2, 1, old, new))
+        assert line[4] == 2.0
+
+    def test_remaps_local_mask_vertices(self):
+        old, new = HalfGeometry(split_x=0.5), HalfGeometry(split_x=0.6)
+        mask = LocalMask(vertices=((0.2, 0.2), (0.3, 0.2), (0.3, 0.3)), stops=0.5)
+        config = WorkspaceConfig(local=LocalAdjustmentsConfig(masks=(mask,)))
+        updated = remap_workspace_config(config, 1, old, new)
+        assert updated.local.masks[0].vertices[0] == pytest.approx(remap_point(0.2, 0.2, 1, old, new))
+        assert updated.local.masks[0].stops == 0.5
+
+    def test_leaves_geometry_crop_rect_alone(self):
+        """crop_rect lives in post-rotation transformed-image space, not raw space."""
+        old, new = HalfGeometry(split_x=0.5), HalfGeometry(split_x=0.6)
+        from negpy.features.geometry.models import GeometryConfig
+
+        config = WorkspaceConfig(geometry=GeometryConfig(crop_rect=(0.1, 0.1, 0.9, 0.9)))
+        updated = remap_workspace_config(config, 1, old, new)
+        assert updated.geometry.crop_rect == (0.1, 0.1, 0.9, 0.9)
 
 
 class TestDiptych:

@@ -169,7 +169,7 @@ class AssetDiscoveryTask:
     half_frame: bool = False  # Expand each file into two half-frame assets (left/right).
     restore_stitches: dict | None = None  # {primary_path: {paths, transforms, canvas, sizes, hash}} (session restore).
     restore_hdr: dict | None = None  # {reference_path: {paths, ratios, align, hash}} (session restore).
-    half_frame_profile: dict | None = None  # {crop_rect, split_x, gutter_thickness, auto_split} override
+    half_frame_profile: dict | None = None  # {crop_rect, split_x, gutter_thickness} override
     half_frame_overrides: dict | None = None  # {base_hash: {crop_rect, split_x, gutter_thickness}} per-file overrides
 
 
@@ -670,13 +670,11 @@ class AssetDiscoveryWorker(QObject):
           1. ``overrides[base_hash]`` — a {crop_rect, split_x, gutter_thickness} dict
              saved for this one file from the rectangle editor's per-frame mode, for
              the odd frame the roll-wide setting still gets wrong.
-          2. ``profile`` (a {crop_rect, split_x, gutter_thickness, auto_split} dict
-             saved from the editor) — shared across the roll. With ``auto_split``
-             on, its ``split_x`` is a fallback for a frame whose own gutter can't be
-             found (irregular film spacing means one shared split position misses
-             on some frames); ``crop_rect``/``gutter_thickness`` stay the profile's
-             either way, since those describe the scanner rig, not the film.
-          3. No profile yet — every file auto-detects, as if ``auto_split`` were on.
+          2. ``profile`` (a {crop_rect, split_x, gutter_thickness} dict saved from
+             the editor) — shared across the roll, for every file without its own
+             override.
+          3. No profile yet — every file auto-detects, so a first-time roll starts
+             from a real split rather than a blind center cut.
         """
         import os
 
@@ -686,7 +684,7 @@ class AssetDiscoveryWorker(QObject):
             return not is_composite(a)
 
         overrides = overrides or {}
-        auto_split = profile is None or bool(profile.get("auto_split"))
+        auto_split = profile is None
         if auto_split:
             paths = [a["path"] for a in assets if _splittable(a) and base_hash(a["hash"]) not in overrides]
             detected = self._map_files(paths, detect_split_x_for_file, lambda p: f"Split {os.path.basename(p)}", _DECODE_WORKERS)
@@ -703,15 +701,10 @@ class AssetDiscoveryWorker(QObject):
             if override is not None:
                 split_x = float(override.get("split_x") or 0.5)
             elif auto_split:
+                # 0.5 is detect_split_x's own "nothing found" sentinel; auto_split is
+                # only true with no profile, so there is no tuned value to fall back to.
                 detected_x = splits.get(a["path"])
-                # 0.5 is detect_split_x's own "nothing found" sentinel: fall back to
-                # the profile's tuned value rather than a blind re-center.
-                if detected_x is not None and abs(detected_x - 0.5) > 1e-9:
-                    split_x = float(detected_x)
-                elif profile is not None:
-                    split_x = float(profile.get("split_x") or 0.5)
-                else:
-                    split_x = 0.5
+                split_x = float(detected_x) if detected_x is not None else 0.5
             else:
                 split_x = float(profile.get("split_x") or 0.5)
             legacy = a.get("legacy_hash")

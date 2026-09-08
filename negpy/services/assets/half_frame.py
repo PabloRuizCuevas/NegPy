@@ -7,11 +7,15 @@ thumbnails) is per-frame automatically. Decode caches key on the unsuffixed
 hash so both halves share one decode.
 """
 
-from typing import Any, Dict, Optional
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import numpy as np
 
 from negpy.kernel.system.logging import get_logger
+
+if TYPE_CHECKING:
+    from negpy.domain.models import WorkspaceConfig
 
 logger = get_logger(__name__)
 
@@ -144,6 +148,97 @@ def slice_for_asset(buf: np.ndarray, file_info: Dict[str, Any]) -> np.ndarray:
         float(file_info.get("split_x") or 0.5),
         crop_rect=crop_rect,
         gutter_thickness=float(file_info.get("gutter_thickness") or 0.0),
+    )
+
+
+@dataclass(frozen=True)
+class HalfGeometry:
+    """A half-frame asset's crop/split, as ``slice_half`` reads it. What a manual
+    annotation's normalized coordinates are relative to — two of these (old, new)
+    are enough to re-anchor a point to the same physical film location across a
+    split/crop change."""
+
+    crop_rect: Optional[tuple[float, float, float, float]] = None
+    split_x: float = 0.5
+    gutter_thickness: float = 0.0
+
+
+def _to_scan(x: float, y: float, half: int, geom: HalfGeometry) -> tuple[float, float]:
+    """Half-local normalized point -> full-scan normalized point.
+
+    The continuous counterpart of ``slice_half``'s pixel-rounded crop and split:
+    close enough to re-anchor a stroke, since the rounding is sub-pixel.
+    """
+    x1, y1, x2, y2 = geom.crop_rect if geom.crop_rect is not None else (0.0, 0.0, 1.0, 1.0)
+    cw, ch = max(1e-9, x2 - x1), max(1e-9, y2 - y1)
+    if not half:
+        cx, cy = x, y
+    else:
+        lo = max(0.0, geom.split_x - geom.gutter_thickness / 2.0)
+        hi = min(1.0, geom.split_x + geom.gutter_thickness / 2.0)
+        cx, cy = (x * lo, y) if half == 1 else (hi + x * (1.0 - hi), y)
+    return x1 + cx * cw, y1 + cy * ch
+
+
+def _from_scan(fx: float, fy: float, half: int, geom: HalfGeometry) -> tuple[float, float]:
+    """Full-scan normalized point -> half-local normalized point, the inverse of ``_to_scan``."""
+    x1, y1, x2, y2 = geom.crop_rect if geom.crop_rect is not None else (0.0, 0.0, 1.0, 1.0)
+    cw, ch = max(1e-9, x2 - x1), max(1e-9, y2 - y1)
+    cx, cy = (fx - x1) / cw, (fy - y1) / ch
+    if not half:
+        return cx, cy
+    lo = max(0.0, geom.split_x - geom.gutter_thickness / 2.0)
+    hi = min(1.0, geom.split_x + geom.gutter_thickness / 2.0)
+    x = cx / max(1e-9, lo) if half == 1 else (cx - hi) / max(1e-9, 1.0 - hi)
+    return x, cy
+
+
+def remap_point(x: float, y: float, half: int, old_geom: HalfGeometry, new_geom: HalfGeometry) -> tuple[float, float]:
+    """Re-anchor a half-local normalized point to the same physical film location
+    under a changed crop/split, so a manual edit stays put when the frame is later
+    recropped or resplit."""
+    return _from_scan(*_to_scan(x, y, half, old_geom), half, new_geom)
+
+
+def remap_workspace_config(config: "WorkspaceConfig", half: int, old_geom: HalfGeometry, new_geom: HalfGeometry) -> "WorkspaceConfig":
+    """Re-anchor every position-based manual edit in a half's saved config, so a
+    heal stroke, dust spot, scratch line or dodge/burn mask stays on the same
+    physical film location after that half's crop/split changes.
+
+    Excludes ``geometry.crop_rect``: unlike these, it lives in transformed-image
+    space (after rotation/flip/keystone/distortion), not raw space, so the same
+    point-remap does not apply to it.
+    """
+    if old_geom == new_geom:
+        return config
+
+    def pt(p: tuple[float, float]) -> list[float]:
+        return list(remap_point(p[0], p[1], half, old_geom, new_geom))
+
+    def stroke(points, size, src_dx, src_dy):
+        new_points = [pt(p) for p in points]
+        if not points:
+            return (new_points, size, src_dx, src_dy)
+        ox, oy = points[0]
+        sx, sy = remap_point(ox + src_dx, oy + src_dy, half, old_geom, new_geom)
+        nx, ny = new_points[0]
+        return (new_points, size, sx - nx, sy - ny)
+
+    retouch = config.retouch
+    heal_strokes = [stroke(*s) for s in retouch.manual_heal_strokes]
+    dust_spots = [(*pt((x, y)), size) for (x, y, size) in retouch.manual_dust_spots]
+    scratch_lines = [(*pt((x0, y0)), *pt((x1, y1)), width) for (x0, y0, x1, y1, width) in retouch.scratch_lines]
+    masks = tuple(replace(m, vertices=tuple(tuple(pt(v)) for v in m.vertices)) for m in config.local.masks)
+
+    return replace(
+        config,
+        retouch=replace(
+            retouch,
+            manual_heal_strokes=heal_strokes,
+            manual_dust_spots=dust_spots,
+            scratch_lines=scratch_lines,
+        ),
+        local=replace(config.local, masks=masks),
     )
 
 

@@ -41,6 +41,7 @@ def test_toolbar_keeps_every_action(panel):
         browser.rgb_scan_btn,
         browser.half_frame_btn,
         browser.half_frame_adjust_btn,
+        browser.half_frame_auto_all_btn,
         browser.apply_btn,
         browser.sheet_btn,
         browser.sort_btn,

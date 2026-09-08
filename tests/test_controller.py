@@ -64,19 +64,14 @@ class TestAppController(unittest.TestCase):
         del self.controller
         gc.collect()
 
-    def test_half_frame_profile_round_trip_includes_auto_split(self):
+    def test_half_frame_profile_round_trip(self):
         self.controller.session.repo.get_global_setting.return_value = None
         self.assertIsNone(self.controller.half_frame_profile())
 
-        self.controller.save_half_frame_profile([0.0, 0.0, 1.0, 1.0], 0.6, 0.02, auto_split=True)
+        self.controller.save_half_frame_profile([0.0, 0.0, 1.0, 1.0], 0.6, 0.02)
         args, _ = self.controller.session.repo.save_global_setting.call_args
         self.assertEqual(args[0], "half_frame_profile")
-        self.assertEqual(args[1], {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.6, "gutter_thickness": 0.02, "auto_split": True})
-
-    def test_half_frame_profile_auto_split_defaults_off(self):
-        self.controller.save_half_frame_profile([0.0, 0.0, 1.0, 1.0], 0.5, 0.0)
-        args, _ = self.controller.session.repo.save_global_setting.call_args
-        self.assertFalse(args[1]["auto_split"])
+        self.assertEqual(args[1], {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.6, "gutter_thickness": 0.02})
 
     def test_half_frame_override_round_trip(self):
         self.controller.session.repo.get_global_setting.return_value = None
@@ -98,57 +93,84 @@ class TestAppController(unittest.TestCase):
         self.controller.clear_half_frame_override("h2")
         self.controller.session.repo.save_global_setting.assert_not_called()
 
-    def test_open_half_frame_dialog_per_frame_saves_an_override_not_the_profile(self):
+    def _patch_dialog(self, crop_rect=(0.1, 0.0, 0.9, 1.0), split_x=0.42, gutter=0.01):
         import numpy as np
 
         fake_img = np.zeros((4, 4, 3), dtype=np.uint8)
-        with (
-            patch("negpy.services.assets.thumbnails.decode_source_image", return_value=fake_img),
-            patch("negpy.desktop.view.widgets.half_frame_dialog.HalfFrameDialog") as mock_dialog_cls,
-        ):
-            mock_dialog = MagicMock()
-            mock_dialog.exec.return_value = True
-            mock_dialog.crop_rect.return_value = (0.1, 0.0, 0.9, 1.0)
-            mock_dialog.split_x.return_value = 0.42
-            mock_dialog.gutter_thickness.return_value = 0.01
-            mock_dialog_cls.return_value = mock_dialog
+        decode_patch = patch("negpy.services.assets.thumbnails.decode_source_image", return_value=fake_img)
+        decode_patch.start()
+        self.addCleanup(decode_patch.stop)
+        dialog_cls_patch = patch("negpy.desktop.view.widgets.half_frame_dialog.HalfFrameDialog")
+        mock_dialog_cls = dialog_cls_patch.start()
+        self.addCleanup(dialog_cls_patch.stop)
+        mock_dialog = MagicMock()
+        mock_dialog.exec.return_value = True
+        mock_dialog.crop_rect.return_value = crop_rect
+        mock_dialog.split_x.return_value = split_x
+        mock_dialog.gutter_thickness.return_value = gutter
+        mock_dialog_cls.return_value = mock_dialog
+        return mock_dialog_cls
 
-            self.controller.session.repo.get_global_setting.return_value = None
-            result = self.controller.open_half_frame_dialog("/p/a.tif", file_hash="ha")
+    def test_open_half_frame_dialog_current_scope_saves_an_override_not_the_profile(self):
+        self._patch_dialog()
+        self.controller.session.repo.get_global_setting.return_value = None
+        self.controller.session.repo.load_file_settings.return_value = None
+        result = self.controller.open_half_frame_dialog("/p/a.tif", "ha", scope="current")
 
         self.assertEqual(result, {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01})
         args, _ = self.controller.session.repo.save_global_setting.call_args
         self.assertEqual(args[0], "half_frame_overrides")
         self.assertEqual(args[1], {"ha": {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01}})
-        # Meaningless for one fixed frame, so the roll-wide auto-detect option is hidden.
-        _, kwargs = mock_dialog_cls.call_args
-        self.assertIsNone(kwargs["initial_auto_split"])
 
-    def test_open_half_frame_dialog_roll_wide_saves_the_profile_with_auto_split(self):
-        import numpy as np
+    def test_open_half_frame_dialog_all_scope_saves_the_profile(self):
+        self._patch_dialog(crop_rect=(0.0, 0.0, 1.0, 1.0), split_x=0.5, gutter=0.0)
+        self.controller.session.repo.get_global_setting.return_value = None
+        self.controller.session.repo.load_file_settings.return_value = None
+        result = self.controller.open_half_frame_dialog("/p/a.tif", "ha", scope="all")
 
-        fake_img = np.zeros((4, 4, 3), dtype=np.uint8)
-        with (
-            patch("negpy.services.assets.thumbnails.decode_source_image", return_value=fake_img),
-            patch("negpy.desktop.view.widgets.half_frame_dialog.HalfFrameDialog") as mock_dialog_cls,
-        ):
-            mock_dialog = MagicMock()
-            mock_dialog.exec.return_value = True
-            mock_dialog.crop_rect.return_value = (0.0, 0.0, 1.0, 1.0)
-            mock_dialog.split_x.return_value = 0.5
-            mock_dialog.gutter_thickness.return_value = 0.0
-            mock_dialog.auto_split.return_value = True
-            mock_dialog_cls.return_value = mock_dialog
-
-            self.controller.session.repo.get_global_setting.return_value = None
-            result = self.controller.open_half_frame_dialog("/p/a.tif")
-
-        self.assertEqual(result["auto_split"], True)
+        self.assertEqual(result, {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0})
         args, _ = self.controller.session.repo.save_global_setting.call_args
         self.assertEqual(args[0], "half_frame_profile")
-        self.assertTrue(args[1]["auto_split"])
-        _, kwargs = mock_dialog_cls.call_args
-        self.assertEqual(kwargs["initial_auto_split"], False)  # no saved profile yet
+        self.assertEqual(args[1], {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0})
+
+    def test_open_half_frame_dialog_selected_scope_saves_an_override_on_each_hash(self):
+        """Each save reads the settings store before writing, so a real repo (unlike
+        a bare Mock) sees the prior hash's override still there for the next one."""
+        self._patch_dialog()
+        store: dict = {}
+        self.controller.session.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
+        self.controller.session.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
+        self.controller.session.repo.load_file_settings.return_value = None
+        self.controller.open_half_frame_dialog("/p/a.tif", "ha", scope="selected", selected_hashes=["ha", "hb"])
+
+        overrides = store["half_frame_overrides"]
+        self.assertEqual(set(overrides), {"ha", "hb"})
+        for entry in overrides.values():
+            self.assertEqual(entry, {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01})
+
+    def test_open_half_frame_dialog_remaps_existing_manual_edits(self):
+        """A frame with heal strokes already saved: moving the split re-anchors them
+        instead of leaving them pointing at the old, now-wrong, position."""
+        from negpy.domain.models import WorkspaceConfig
+        from negpy.features.retouch.models import RetouchConfig
+
+        self._patch_dialog(crop_rect=(0.0, 0.0, 1.0, 1.0), split_x=0.6, gutter=0.0)
+        old_profile = {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0}
+        self.controller.session.repo.get_global_setting.side_effect = (
+            lambda key, default=None: old_profile if key == "half_frame_profile" else None
+        )
+
+        half1 = WorkspaceConfig(retouch=RetouchConfig(manual_heal_strokes=[([[0.5, 0.5]], 10.0, 0.0, 0.0)]))
+        self.controller.session.repo.load_file_settings.side_effect = lambda h: half1 if h == "ha#1" else None
+
+        self.controller.open_half_frame_dialog("/p/a.tif", "ha", scope="current")
+
+        save_call = next(c for c in self.controller.session.repo.save_file_settings.call_args_list if c.args[0] == "ha#1")
+        updated = save_call.args[1]
+        # Old split 0.5, new split 0.6: half=1 local x=0.5 sat at the old gutter edge,
+        # which the wider left half now places further along its own width.
+        self.assertNotEqual(updated.retouch.manual_heal_strokes[0][0][0][0], 0.5)
+        self.controller.session.push_external_history.assert_called_with("ha#1", half1, updated)
 
     def test_busy_toast_is_taken_down_when_the_frame_lands(self):
         """A slow render step holds its toast open; the finished frame clears it, and a

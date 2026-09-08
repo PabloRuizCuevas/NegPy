@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 import qtawesome as qta
 from PyQt6.QtCore import (
@@ -434,8 +435,22 @@ class FileBrowser(QWidget):
 
         self.half_frame_adjust_btn = QToolButton()
         self.half_frame_adjust_btn.setIcon(qta.icon("mdi.tune-variant", color=THEME.text_primary))
-        self.half_frame_adjust_btn.setToolTip("Adjust Half Frame split — reposition the crop rectangle and split line for the current scan")
-        self.half_frame_adjust_btn.clicked.connect(self._on_half_frame_adjust)
+        self.half_frame_adjust_btn.setToolTip(
+            "Adjust Half Frame split — reposition the crop rectangle and split line, then choose what to apply it to"
+        )
+        self.half_frame_adjust_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        adjust_menu = QMenu(self.half_frame_adjust_btn)
+        adjust_menu.addAction("Apply to current frame").triggered.connect(lambda: self._on_half_frame_adjust("current"))
+        adjust_menu.addAction("Apply to selected frames").triggered.connect(lambda: self._on_half_frame_adjust("selected"))
+        adjust_menu.addAction("Apply to all frames").triggered.connect(lambda: self._on_half_frame_adjust("all"))
+        self.half_frame_adjust_btn.setMenu(adjust_menu)
+
+        self.half_frame_auto_all_btn = QToolButton()
+        self.half_frame_auto_all_btn.setIcon(qta.icon("fa5s.magic", color=THEME.text_primary))
+        self.half_frame_auto_all_btn.setToolTip(
+            "Auto-detect split for every frame — re-find the gutter on each scan and save it as that frame's own override"
+        )
+        self.half_frame_auto_all_btn.clicked.connect(self._on_half_frame_auto_all)
 
         self.apply_btn = QToolButton()
         self.apply_btn.setIcon(qta.icon("fa5s.clone", color=THEME.text_primary))
@@ -497,6 +512,7 @@ class FileBrowser(QWidget):
             self.rgb_scan_btn,
             self.half_frame_btn,
             self.half_frame_adjust_btn,
+            self.half_frame_auto_all_btn,
             self.apply_btn,
             self.sheet_btn,
             self.sort_btn,
@@ -517,6 +533,7 @@ class FileBrowser(QWidget):
             (self.rgb_scan_btn, "Trichrome Scan"),
             (self.half_frame_btn, "Half Frame"),
             (self.half_frame_adjust_btn, "Adjust Half Frame"),
+            (self.half_frame_auto_all_btn, "Auto-detect all splits"),
             (self.apply_btn, "Apply settings"),
             (None, None),
             (self.sheet_btn, "Sheet filter"),
@@ -979,22 +996,39 @@ class FileBrowser(QWidget):
         icon_color = "white" if checked else THEME.text_primary
         self.half_frame_btn.setIcon(qta.icon("mdi.view-split-vertical", color=icon_color))
 
+    def _current_file(self) -> tuple[Optional[str], Optional[str]]:
+        """The current frame's (path, hash), falling back to the first loaded file."""
+        current = self.session.state.current_file_path
+        for f in self.session.state.uploaded_files:
+            if f.get("path") == current:
+                return f.get("path"), f.get("hash")
+        if self.session.state.uploaded_files:
+            f = self.session.state.uploaded_files[0]
+            return f.get("path"), f.get("hash")
+        return None, None
+
+    def _selected_base_hashes(self) -> list[str]:
+        """Base hashes of the filmstrip selection, deduped (a half-frame asset's two
+        halves can both be selected) and composites excluded."""
+        from negpy.services.assets.half_frame import base_hash, is_composite
+
+        files = self.session.state.uploaded_files
+        seen: dict[str, None] = {}
+        for i in self.session.state.selected_indices:
+            if 0 <= i < len(files) and not is_composite(files[i]):
+                h = base_hash(files[i]["hash"])
+                if h:
+                    seen.setdefault(h, None)
+        return list(seen)
+
     def _on_half_frame_toggled(self, checked: bool) -> None:
         self._update_half_frame_style(checked)
         if checked and self.session.state.uploaded_files:
             # Offer the rectangle editor on the current frame. The saved profile applies to every
             # half-frame split from then on.
-            current = self.session.state.current_file_path
-            path = None
-            if current:
-                for f in self.session.state.uploaded_files:
-                    if f.get("path") == current:
-                        path = current
-                        break
-            if path is None:
-                path = self.session.state.uploaded_files[0].get("path")
-            if path:
-                profile = self.controller.open_half_frame_dialog(path)
+            path, file_hash = self._current_file()
+            if path and file_hash:
+                profile = self.controller.open_half_frame_dialog(path, file_hash, scope="all")
                 if profile is None:
                     # User cancelled or closed the dialog — revert the toggle without
                     # activating half-frame mode so Cancel/X behaves as expected.
@@ -1005,22 +1039,22 @@ class FileBrowser(QWidget):
                     return
         self.controller.set_half_frame_mode(checked)
 
-    def _on_half_frame_adjust(self) -> None:
-        """Re-open the half-frame rectangle editor on the current image."""
-        current = self.session.state.current_file_path
-        path = None
-        if current:
-            for f in self.session.state.uploaded_files:
-                if f.get("path") == current:
-                    path = current
-                    break
-        if path is None and self.session.state.uploaded_files:
-            path = self.session.state.uploaded_files[0].get("path")
-        if not path:
+    def _on_half_frame_adjust(self, scope: str) -> None:
+        """Open the half-frame rectangle editor on the current image; on Apply,
+        save it per `scope` ('current', 'selected' or 'all')."""
+        path, file_hash = self._current_file()
+        if not path or not file_hash:
             return
-        profile = self.controller.open_half_frame_dialog(path)
-        if profile is not None:
+        selected = self._selected_base_hashes() if scope == "selected" else None
+        result = self.controller.open_half_frame_dialog(path, file_hash, scope=scope, selected_hashes=selected)
+        if result is not None:
             self._reload_after_half_frame_change()
+
+    def _on_half_frame_auto_all(self) -> None:
+        count = self.controller.auto_detect_all_half_frame_splits()
+        if count:
+            self._reload_after_half_frame_change()
+            self.controller.set_status(f"Auto-detected the split on {count} frame{'s' if count != 1 else ''}")
 
     def _reload_after_half_frame_change(self) -> None:
         """Re-discover so a profile/override change takes effect immediately."""
@@ -1034,7 +1068,7 @@ class FileBrowser(QWidget):
     def _on_adjust_half_frame_split(self, path: str, base_hash: str) -> None:
         """Open the rectangle editor scoped to one file's own override, for the
         odd frame the roll-wide split still gets wrong."""
-        result = self.controller.open_half_frame_dialog(path, file_hash=base_hash)
+        result = self.controller.open_half_frame_dialog(path, base_hash, scope="current")
         if result is not None:
             self._reload_after_half_frame_change()
 
