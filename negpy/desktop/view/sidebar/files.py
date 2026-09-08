@@ -1051,10 +1051,9 @@ class FileBrowser(QWidget):
             self._reload_after_half_frame_change()
 
     def _on_half_frame_auto_all(self) -> None:
-        count = self.controller.auto_detect_all_half_frame_splits()
-        if count:
-            self._reload_after_half_frame_change()
-            self.controller.set_status(f"Auto-detected the split on {count} frame{'s' if count != 1 else ''}")
+        """Detection runs off the GUI thread; the controller saves the results and
+        reloads once it reports back, tracked by the status bar's progress readout."""
+        self.controller.auto_detect_all_half_frame_splits()
 
     def _reload_after_half_frame_change(self) -> None:
         """Re-discover so a profile/override change takes effect immediately."""

@@ -27,6 +27,7 @@ from negpy.desktop.workers.export import ExportTask, ExportWorker, LinearOutputT
 from negpy.desktop.workers.render import (
     AssetDiscoveryTask,
     AssetDiscoveryWorker,
+    AutoDetectAllSplitsTask,
     rgb_grouping_notice,
     rgb_nothing_matched_message,
     BatchAutoCropInput,
@@ -315,6 +316,7 @@ class AppController(QObject):
     rgb_scan_mode_changed = pyqtSignal(bool)  # the mode changed from somewhere other than its button
     zone_arm_changed = pyqtSignal(object)  # armed zone, or None
     asset_discovery_requested = pyqtSignal(AssetDiscoveryTask)
+    auto_detect_all_splits_requested = pyqtSignal(AutoDetectAllSplitsTask)
     library_search_requested = pyqtSignal(LibrarySearchTask)
     library_search_finished = pyqtSignal(int)  # frames found (0 = nothing matched)
     library_cleared = pyqtSignal()  # roots forgotten elsewhere — the panel must re-read them
@@ -695,6 +697,8 @@ class AppController(QObject):
         self.discovery_worker.error.connect(self._on_render_error)
         self.discovery_worker.error.connect(self._on_discovery_batch_error)
         self.discovery_worker.rgb_grouped.connect(self._on_rgb_grouped)
+        self.auto_detect_all_splits_requested.connect(self.discovery_worker.process_auto_detect_all_splits)
+        self.discovery_worker.splits_detected.connect(self._on_splits_detected)
         self.library_search_requested.connect(self.library_worker.search)
         self.library_worker.progress.connect(self._on_library_walk_progress)
         self.library_worker.finished.connect(self._on_library_search_finished)
@@ -1318,25 +1322,48 @@ class AppController(QObject):
                 self.save_half_frame_override(h, result["crop_rect"], result["split_x"], result["gutter_thickness"])
         return result
 
-    def auto_detect_all_half_frame_splits(self) -> int:
-        """Re-find the gutter on every loaded scan and save it as that file's own
-        override — a one-shot batch instead of adjusting each odd frame by hand.
-        Returns the number of files updated."""
-        from negpy.services.assets.half_frame import detect_split_x_for_file
-
+    def auto_detect_all_half_frame_splits(self) -> None:
+        """Re-find the gutter on every loaded scan, off the GUI thread — a one-shot
+        batch instead of adjusting each odd frame by hand. ``_on_splits_detected``
+        saves the results once detection finishes."""
         targets: dict[str, str] = {}
         for a in self.session.state.uploaded_files:
             h = None if is_composite(a) else base_hash(a["hash"])
             if h:
                 targets[h] = a["path"]
-        for file_hash, path in targets.items():
-            old_geom = self._half_frame_geometry_for(file_hash, path)
-            new_geom = replace(old_geom, split_x=detect_split_x_for_file(path))
+        paths = list(targets.values())
+        if not paths:
+            return
+        self.set_status(f"Auto-detecting the split on {len(paths)} frame{'s' if len(paths) != 1 else ''}…")
+        self.status_progress_requested.emit(0, len(paths))
+        self.auto_detect_all_splits_requested.emit(AutoDetectAllSplitsTask(paths=paths))
+
+    def _on_splits_detected(self, detected: dict[str, float]) -> None:
+        """AutoDetectAllSplitsTask finished: save each file's own detected split as
+        its override, re-anchoring its manual edits from whatever geometry it used
+        before."""
+        self.status_progress_requested.emit(0, 0)
+        seen: set[str] = set()
+        for a in self.session.state.uploaded_files:
+            if is_composite(a) or a.get("path") not in detected:
+                continue
+            file_hash = base_hash(a["hash"])
+            if not file_hash or file_hash in seen:
+                continue
+            seen.add(file_hash)
+            old_geom = self._half_frame_geometry_for(file_hash, a["path"])
+            new_geom = replace(old_geom, split_x=detected[a["path"]])
             self._remap_half_frame_edits(file_hash, old_geom, new_geom)
             self.save_half_frame_override(
                 file_hash, new_geom.crop_rect or (0.0, 0.0, 1.0, 1.0), new_geom.split_x, new_geom.gutter_thickness
             )
-        return len(targets)
+        if not seen:
+            return
+        self.set_status(f"Auto-detected the split on {len(seen)} frame{'s' if len(seen) != 1 else ''}")
+        files = self.session.state.uploaded_files
+        self.request_asset_discovery(
+            [f["path"] for f in files if "path" in f], replace_existing=True, reselect_path=self.state.current_file_path
+        )
 
     def _on_discovery_progress(self, current: int, total: int, name: str) -> None:
         self.set_status(f"HASHING {current}/{total}: {name}")

@@ -174,6 +174,13 @@ class AssetDiscoveryTask:
 
 
 @dataclass(frozen=True)
+class AutoDetectAllSplitsTask:
+    """Request to re-find the gutter on every given scan, off the GUI thread."""
+
+    paths: list[str]
+
+
+@dataclass(frozen=True)
 class PreviewLoadTask:
     """Request to decode a RAW file into a linear preview buffer."""
 
@@ -566,6 +573,7 @@ class AssetDiscoveryWorker(QObject):
     finished = pyqtSignal(list)
     error = pyqtSignal(str)
     rgb_grouped = pyqtSignal(dict)  # RGB-scan grouping outcome; the controller decides how loudly to say it
+    splits_detected = pyqtSignal(dict)  # {path: detected split_x}, for AutoDetectAllSplitsTask
 
     def _map_files(
         self,
@@ -595,6 +603,15 @@ class AssetDiscoveryWorker(QObject):
                 results[i] = fut.result()
                 self.progress.emit(done, total, label(paths[i]))
         return results
+
+    @pyqtSlot(AutoDetectAllSplitsTask)
+    def process_auto_detect_all_splits(self, task: AutoDetectAllSplitsTask) -> None:
+        import os
+
+        from negpy.services.assets.half_frame import detect_split_x_for_file
+
+        detected = self._map_files(task.paths, detect_split_x_for_file, lambda p: f"Split {os.path.basename(p)}", _DECODE_WORKERS)
+        self.splits_detected.emit(dict(zip(task.paths, detected)))
 
     @pyqtSlot(AssetDiscoveryTask)
     def process(self, task: AssetDiscoveryTask) -> None:

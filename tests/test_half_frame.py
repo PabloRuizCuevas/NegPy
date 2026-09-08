@@ -186,6 +186,21 @@ def test_expand_half_frames_per_file_override_wins_over_the_profile(monkeypatch)
     assert b1["split_x"] == b2["split_x"] == 0.5
 
 
+def test_auto_detect_all_splits_worker_emits_per_file_results(monkeypatch):
+    """process_auto_detect_all_splits reports one detected split per path, so a big
+    roll's detection can run off the GUI thread and still land as one dict."""
+    from negpy.desktop.workers import render as render_mod
+    from negpy.desktop.workers.render import AutoDetectAllSplitsTask
+
+    detected = {"/p/a.tif": 0.4, "/p/b.tif": 0.6}
+    monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_x_for_file", lambda p: detected[p])
+    worker = render_mod.AssetDiscoveryWorker()
+    results = []
+    worker.splits_detected.connect(results.append)
+    worker.process_auto_detect_all_splits(AutoDetectAllSplitsTask(paths=list(detected)))
+    assert results == [detected]
+
+
 def test_add_files_keeps_both_halves():
     from negpy.desktop.session import DesktopSessionManager
     from negpy.infrastructure.storage.repository import StorageRepository

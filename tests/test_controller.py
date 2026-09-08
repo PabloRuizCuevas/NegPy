@@ -172,6 +172,56 @@ class TestAppController(unittest.TestCase):
         self.assertNotEqual(updated.retouch.manual_heal_strokes[0][0][0][0], 0.5)
         self.controller.session.push_external_history.assert_called_with("ha#1", half1, updated)
 
+    def test_auto_detect_all_half_frame_splits_requests_one_path_per_file(self):
+        """Off the GUI thread and deduped: a half-frame roll lists each file twice
+        (one entry per half), a composite never wants its own split at all."""
+        self.controller.session.state.uploaded_files = [
+            {"path": "/p/a.tif", "hash": "ha#1"},
+            {"path": "/p/a.tif", "hash": "ha#2"},
+            {"path": "/p/b.tif", "hash": "hb"},
+            {"path": "/p/c.tif", "hash": "hc", "green_path": "/p/g.tif", "blue_path": "/p/bl.tif"},
+        ]
+        requests = []
+        self.controller.auto_detect_all_splits_requested.connect(lambda t: requests.append(t))
+        self.controller.auto_detect_all_half_frame_splits()
+
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(set(requests[0].paths), {"/p/a.tif", "/p/b.tif"})
+
+    def test_auto_detect_all_half_frame_splits_no_op_with_nothing_loaded(self):
+        self.controller.session.state.uploaded_files = []
+        requests = []
+        self.controller.auto_detect_all_splits_requested.connect(lambda t: requests.append(t))
+        self.controller.auto_detect_all_half_frame_splits()
+        self.assertEqual(requests, [])
+
+    def test_on_splits_detected_saves_an_override_per_file_and_reloads(self):
+        self.controller.session.state.uploaded_files = [
+            {"path": "/p/a.tif", "hash": "ha#1"},
+            {"path": "/p/a.tif", "hash": "ha#2"},
+            {"path": "/p/b.tif", "hash": "hb#1"},
+            {"path": "/p/b.tif", "hash": "hb#2"},
+        ]
+        store: dict = {}
+        self.controller.session.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
+        self.controller.session.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
+        self.controller.session.repo.load_file_settings.return_value = None
+        self.controller.request_asset_discovery = MagicMock()
+
+        self.controller._on_splits_detected({"/p/a.tif": 0.4, "/p/b.tif": 0.6})
+
+        overrides = store["half_frame_overrides"]
+        self.assertEqual(overrides["ha"]["split_x"], 0.4)
+        self.assertEqual(overrides["hb"]["split_x"], 0.6)
+        self.controller.request_asset_discovery.assert_called_once()
+
+    def test_on_splits_detected_no_op_when_nothing_matches(self):
+        self.controller.session.state.uploaded_files = [{"path": "/p/a.tif", "hash": "ha#1"}]
+        self.controller.request_asset_discovery = MagicMock()
+        self.controller._on_splits_detected({"/p/other.tif": 0.4})
+        self.controller.session.repo.save_global_setting.assert_not_called()
+        self.controller.request_asset_discovery.assert_not_called()
+
     def test_busy_toast_is_taken_down_when_the_frame_lands(self):
         """A slow render step holds its toast open; the finished frame clears it, and a
         toast nobody claimed is left alone."""
