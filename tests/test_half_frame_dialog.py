@@ -1,6 +1,6 @@
-"""HalfFrameDialog: a plain rectangle + split-line editor. What the result gets
-applied to (this frame, the selection, or the whole roll) is the caller's own
-dropdown, not this dialog's concern."""
+"""HalfFrameDialog: a rectangle + split-line editor whose own Apply split-button
+picks what the result gets applied to (this frame, the selection, or the whole
+roll) -- the same current/selected/all scopes as the Export button."""
 
 import sys
 
@@ -30,6 +30,26 @@ class TestInitialValues:
         assert d.crop_rect() == (0.05, 0.0, 0.95, 1.0)
         assert d.split_x() == 0.42
         assert d.gutter_thickness() == 0.01
+
+
+class TestApplyScope:
+    def test_defaults_to_current(self):
+        d = _dialog()
+        assert d.scope() == "current"
+
+    def test_seeds_from_initial_scope(self):
+        d = _dialog(initial_scope="all")
+        assert d.scope() == "all"
+
+    def test_an_unknown_initial_scope_falls_back_to_current(self):
+        d = _dialog(initial_scope="bogus")
+        assert d.scope() == "current"
+
+    def test_choosing_a_scope_from_the_menu_updates_it(self):
+        d = _dialog()
+        d._scope_actions["selected"].trigger()
+        assert d.scope() == "selected"
+        assert "Selected" in d._ok_btn.text()
 
 
 class TestTitle:

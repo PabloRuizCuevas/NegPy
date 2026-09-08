@@ -93,7 +93,7 @@ class TestAppController(unittest.TestCase):
         self.controller.clear_half_frame_override("h2")
         self.controller.session.repo.save_global_setting.assert_not_called()
 
-    def _patch_dialog(self, crop_rect=(0.1, 0.0, 0.9, 1.0), split_x=0.42, gutter=0.01):
+    def _patch_dialog(self, crop_rect=(0.1, 0.0, 0.9, 1.0), split_x=0.42, gutter=0.01, scope="current"):
         import numpy as np
 
         fake_img = np.zeros((4, 4, 3), dtype=np.uint8)
@@ -108,45 +108,68 @@ class TestAppController(unittest.TestCase):
         mock_dialog.crop_rect.return_value = crop_rect
         mock_dialog.split_x.return_value = split_x
         mock_dialog.gutter_thickness.return_value = gutter
+        mock_dialog.scope.return_value = scope
         mock_dialog_cls.return_value = mock_dialog
         return mock_dialog_cls
 
     def test_open_half_frame_dialog_current_scope_saves_an_override_not_the_profile(self):
-        self._patch_dialog()
+        self._patch_dialog(scope="current")
         self.controller.session.repo.get_global_setting.return_value = None
         self.controller.session.repo.load_file_settings.return_value = None
-        result = self.controller.open_half_frame_dialog("/p/a.tif", "ha", scope="current")
+        result = self.controller.open_half_frame_dialog("/p/a.tif", "ha")
 
         self.assertEqual(result, {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01})
-        args, _ = self.controller.session.repo.save_global_setting.call_args
-        self.assertEqual(args[0], "half_frame_overrides")
-        self.assertEqual(args[1], {"ha": {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01}})
+        saved = {c.args[0]: c.args[1] for c in self.controller.session.repo.save_global_setting.call_args_list}
+        self.assertEqual(
+            saved["half_frame_overrides"], {"ha": {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01}}
+        )
+        # The chosen scope is remembered as next time's default.
+        self.assertEqual(saved["half_frame_apply_scope"], "current")
 
     def test_open_half_frame_dialog_all_scope_saves_the_profile(self):
-        self._patch_dialog(crop_rect=(0.0, 0.0, 1.0, 1.0), split_x=0.5, gutter=0.0)
+        self._patch_dialog(crop_rect=(0.0, 0.0, 1.0, 1.0), split_x=0.5, gutter=0.0, scope="all")
         self.controller.session.repo.get_global_setting.return_value = None
         self.controller.session.repo.load_file_settings.return_value = None
-        result = self.controller.open_half_frame_dialog("/p/a.tif", "ha", scope="all")
+        result = self.controller.open_half_frame_dialog("/p/a.tif", "ha")
 
         self.assertEqual(result, {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0})
-        args, _ = self.controller.session.repo.save_global_setting.call_args
-        self.assertEqual(args[0], "half_frame_profile")
-        self.assertEqual(args[1], {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0})
+        saved = {c.args[0]: c.args[1] for c in self.controller.session.repo.save_global_setting.call_args_list}
+        self.assertEqual(saved["half_frame_profile"], {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0})
 
     def test_open_half_frame_dialog_selected_scope_saves_an_override_on_each_hash(self):
         """Each save reads the settings store before writing, so a real repo (unlike
         a bare Mock) sees the prior hash's override still there for the next one."""
-        self._patch_dialog()
+        self._patch_dialog(scope="selected")
         store: dict = {}
         self.controller.session.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
         self.controller.session.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
         self.controller.session.repo.load_file_settings.return_value = None
-        self.controller.open_half_frame_dialog("/p/a.tif", "ha", scope="selected", selected_hashes=["ha", "hb"])
+        self.controller.open_half_frame_dialog("/p/a.tif", "ha", selected_hashes=["ha", "hb"])
 
         overrides = store["half_frame_overrides"]
         self.assertEqual(set(overrides), {"ha", "hb"})
         for entry in overrides.values():
             self.assertEqual(entry, {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01})
+
+    def test_open_half_frame_dialog_seeds_the_editor_from_the_remembered_scope(self):
+        """No explicit initial_scope: the editor opens on whatever scope Apply last used."""
+        mock_dialog_cls = self._patch_dialog()
+        self.controller.session.repo.get_global_setting.side_effect = (
+            lambda key, default=None: "all" if key == "half_frame_apply_scope" else None
+        )
+        self.controller.session.repo.load_file_settings.return_value = None
+        self.controller.open_half_frame_dialog("/p/a.tif", "ha")
+        self.assertEqual(mock_dialog_cls.call_args.kwargs["initial_scope"], "all")
+
+    def test_open_half_frame_dialog_initial_scope_overrides_the_remembered_one(self):
+        """The per-frame context menu always starts at 'current', whatever was last used."""
+        mock_dialog_cls = self._patch_dialog()
+        self.controller.session.repo.get_global_setting.side_effect = (
+            lambda key, default=None: "all" if key == "half_frame_apply_scope" else None
+        )
+        self.controller.session.repo.load_file_settings.return_value = None
+        self.controller.open_half_frame_dialog("/p/a.tif", "ha", initial_scope="current")
+        self.assertEqual(mock_dialog_cls.call_args.kwargs["initial_scope"], "current")
 
     def test_open_half_frame_dialog_remaps_existing_manual_edits(self):
         """A frame with heal strokes already saved: moving the split re-anchors them
@@ -154,7 +177,7 @@ class TestAppController(unittest.TestCase):
         from negpy.domain.models import WorkspaceConfig
         from negpy.features.retouch.models import RetouchConfig
 
-        self._patch_dialog(crop_rect=(0.0, 0.0, 1.0, 1.0), split_x=0.6, gutter=0.0)
+        self._patch_dialog(crop_rect=(0.0, 0.0, 1.0, 1.0), split_x=0.6, gutter=0.0, scope="current")
         old_profile = {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0}
         self.controller.session.repo.get_global_setting.side_effect = (
             lambda key, default=None: old_profile if key == "half_frame_profile" else None
@@ -163,7 +186,7 @@ class TestAppController(unittest.TestCase):
         half1 = WorkspaceConfig(retouch=RetouchConfig(manual_heal_strokes=[([[0.5, 0.5]], 10.0, 0.0, 0.0)]))
         self.controller.session.repo.load_file_settings.side_effect = lambda h: half1 if h == "ha#1" else None
 
-        self.controller.open_half_frame_dialog("/p/a.tif", "ha", scope="current")
+        self.controller.open_half_frame_dialog("/p/a.tif", "ha")
 
         save_call = next(c for c in self.controller.session.repo.save_file_settings.call_args_list if c.args[0] == "ha#1")
         updated = save_call.args[1]

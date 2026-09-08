@@ -436,14 +436,9 @@ class FileBrowser(QWidget):
         self.half_frame_adjust_btn = QToolButton()
         self.half_frame_adjust_btn.setIcon(qta.icon("mdi.tune-variant", color=THEME.text_primary))
         self.half_frame_adjust_btn.setToolTip(
-            "Adjust Half Frame split — reposition the crop rectangle and split line, then choose what to apply it to"
+            "Adjust Half Frame split — reposition the crop rectangle and split line; its own Apply ▾ picks what to apply it to"
         )
-        self.half_frame_adjust_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        adjust_menu = QMenu(self.half_frame_adjust_btn)
-        adjust_menu.addAction("Apply to current frame").triggered.connect(lambda: self._on_half_frame_adjust("current"))
-        adjust_menu.addAction("Apply to selected frames").triggered.connect(lambda: self._on_half_frame_adjust("selected"))
-        adjust_menu.addAction("Apply to all frames").triggered.connect(lambda: self._on_half_frame_adjust("all"))
-        self.half_frame_adjust_btn.setMenu(adjust_menu)
+        self.half_frame_adjust_btn.clicked.connect(self._on_half_frame_adjust)
 
         self.half_frame_auto_all_btn = QToolButton()
         self.half_frame_auto_all_btn.setIcon(qta.icon("fa5s.magic", color=THEME.text_primary))
@@ -1028,7 +1023,7 @@ class FileBrowser(QWidget):
             # half-frame split from then on.
             path, file_hash = self._current_file()
             if path and file_hash:
-                profile = self.controller.open_half_frame_dialog(path, file_hash, scope="all")
+                profile = self.controller.open_half_frame_dialog(path, file_hash, initial_scope="all")
                 if profile is None:
                     # User cancelled or closed the dialog — revert the toggle without
                     # activating half-frame mode so Cancel/X behaves as expected.
@@ -1039,14 +1034,13 @@ class FileBrowser(QWidget):
                     return
         self.controller.set_half_frame_mode(checked)
 
-    def _on_half_frame_adjust(self, scope: str) -> None:
-        """Open the half-frame rectangle editor on the current image; on Apply,
-        save it per `scope` ('current', 'selected' or 'all')."""
+    def _on_half_frame_adjust(self) -> None:
+        """Open the half-frame rectangle editor on the current image; its own
+        Apply ▾ picks what the result gets saved to."""
         path, file_hash = self._current_file()
         if not path or not file_hash:
             return
-        selected = self._selected_base_hashes() if scope == "selected" else None
-        result = self.controller.open_half_frame_dialog(path, file_hash, scope=scope, selected_hashes=selected)
+        result = self.controller.open_half_frame_dialog(path, file_hash, selected_hashes=self._selected_base_hashes())
         if result is not None:
             self._reload_after_half_frame_change()
 
@@ -1065,9 +1059,9 @@ class FileBrowser(QWidget):
         )
 
     def _on_adjust_half_frame_split(self, path: str, base_hash: str) -> None:
-        """Open the rectangle editor scoped to one file's own override, for the
-        odd frame the roll-wide split still gets wrong."""
-        result = self.controller.open_half_frame_dialog(path, base_hash, scope="current")
+        """Open the rectangle editor for one file, defaulting Apply to just that
+        frame — for the odd frame the roll-wide split still gets wrong."""
+        result = self.controller.open_half_frame_dialog(path, base_hash, initial_scope="current")
         if result is not None:
             self._reload_after_half_frame_change()
 

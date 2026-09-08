@@ -1258,19 +1258,28 @@ class AppController(QObject):
             self.session.push_external_history(h, saved, updated)
             self.session.repo.save_file_settings(h, updated, file_path=path)
 
+    _HALF_FRAME_APPLY_SCOPE_KEY = "half_frame_apply_scope"
+
     def open_half_frame_dialog(
-        self, file_path: str, file_hash: str, scope: str = "current", selected_hashes: Optional[List[str]] = None
+        self,
+        file_path: str,
+        file_hash: str,
+        selected_hashes: Optional[List[str]] = None,
+        initial_scope: Optional[str] = None,
     ) -> dict | None:
         """Open the half-frame split & crop editor on one scan, seeded from
         ``file_hash``'s own effective geometry; on Apply, save the result and
         return it, or None on cancel.
 
-        ``scope`` picks what Apply writes: ``"current"`` saves ``file_hash``'s own
-        override; ``"selected"`` saves the same override on every hash in
-        ``selected_hashes``; ``"all"`` saves the roll-wide profile, which every
-        file without its own override inherits. Either way, each affected file's
-        manual edits are re-anchored from its old effective geometry to the new
-        one first, so they stay put across the change.
+        The dialog's own Apply split-button picks what gets written: its current
+        choice — ``"current"`` (``file_hash``'s own override), ``"selected"`` (the
+        same override on every hash in ``selected_hashes``) or ``"all"`` (the
+        roll-wide profile, which every file without its own override inherits) —
+        is read back after Apply and remembered as the next default, unless
+        ``initial_scope`` pins one (the per-frame context menu always starts at
+        ``"current"``, regardless of what was last used elsewhere). Either way,
+        each affected file's manual edits are re-anchored from its old effective
+        geometry to the new one first, so they stay put across the change.
         """
         import numpy as np
 
@@ -1287,16 +1296,20 @@ class AppController(QObject):
             return None
 
         old_geom = self._half_frame_geometry_for(file_hash, file_path)
+        saved_scope = initial_scope or self.session.repo.get_global_setting(self._HALF_FRAME_APPLY_SCOPE_KEY, "current")
         dialog = HalfFrameDialog(
             buf,
             initial_rect=old_geom.crop_rect,
             initial_split=old_geom.split_x,
             initial_gutter=old_geom.gutter_thickness,
+            initial_scope=saved_scope,
             parent=None,
         )
         if not dialog.exec():
             return None
 
+        scope = dialog.scope()
+        self.session.repo.save_global_setting(self._HALF_FRAME_APPLY_SCOPE_KEY, scope)
         cx1, cy1, cx2, cy2 = dialog.crop_rect()
         result = {
             "crop_rect": [cx1, cy1, cx2, cy2],
