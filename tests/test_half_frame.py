@@ -362,14 +362,28 @@ class TestRemapWorkspaceConfig:
         assert updated.local.masks[0].vertices[0] == pytest.approx(remap_point(0.2, 0.2, 1, old, new))
         assert updated.local.masks[0].stops == 0.5
 
-    def test_leaves_geometry_crop_rect_alone(self):
-        """crop_rect lives in post-rotation transformed-image space, not raw space."""
+    def test_clears_a_stale_geometry_crop_rect(self):
+        """crop_rect lives in post-rotation transformed-image space, not raw space, so it
+        can't be remapped like the others -- a rect drawn against the old frame boundary
+        has no correct position in the new one, so it's dropped rather than left wrong."""
         old, new = HalfGeometry(split_x=0.5), HalfGeometry(split_x=0.6)
         from negpy.features.geometry.models import GeometryConfig
 
-        config = WorkspaceConfig(geometry=GeometryConfig(crop_rect=(0.1, 0.1, 0.9, 0.9)))
+        config = WorkspaceConfig(geometry=GeometryConfig(crop_rect=(0.1, 0.1, 0.9, 0.9), crop_from_auto=True, crop_detect_key="k"))
         updated = remap_workspace_config(config, 1, old, new)
-        assert updated.geometry.crop_rect == (0.1, 0.1, 0.9, 0.9)
+        assert updated.geometry.crop_rect is None
+        # Left alone: crop_from_auto=True + crop_rect=None is "armed", so an auto crop
+        # re-detects against the new boundary on the next render rather than vanishing.
+        assert updated.geometry.crop_from_auto is True
+        assert updated.geometry.crop_detect_key == "k"
+
+    def test_a_config_with_no_crop_is_untouched(self):
+        old, new = HalfGeometry(split_x=0.5), HalfGeometry(split_x=0.6)
+        from negpy.features.geometry.models import GeometryConfig
+
+        config = WorkspaceConfig(geometry=GeometryConfig())
+        updated = remap_workspace_config(config, 1, old, new)
+        assert updated.geometry is config.geometry
 
 
 class TestDiptych:

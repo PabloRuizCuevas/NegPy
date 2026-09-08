@@ -205,9 +205,13 @@ def remap_workspace_config(config: "WorkspaceConfig", half: int, old_geom: HalfG
     heal stroke, dust spot, scratch line or dodge/burn mask stays on the same
     physical film location after that half's crop/split changes.
 
-    Excludes ``geometry.crop_rect``: unlike these, it lives in transformed-image
-    space (after rotation/flip/keystone/distortion), not raw space, so the same
-    point-remap does not apply to it.
+    ``geometry.crop_rect`` is cleared instead: unlike these, it lives in
+    transformed-image space (after rotation/flip/keystone/distortion), not raw
+    space, so the same point-remap does not apply to it, and a rect drawn
+    against the old half's frame boundary has no correct position in the new
+    one. Clearing (not remapping) leaves an auto-detected crop armed to
+    re-detect against the new boundary, and drops a manual one back to none —
+    either beats silently keeping a crop that no longer lines up with the frame.
     """
     if old_geom == new_geom:
         return config
@@ -230,6 +234,7 @@ def remap_workspace_config(config: "WorkspaceConfig", half: int, old_geom: HalfG
     scratch_lines = [(*pt((x0, y0)), *pt((x1, y1)), width) for (x0, y0, x1, y1, width) in retouch.scratch_lines]
     masks = tuple(replace(m, vertices=tuple(tuple(pt(v)) for v in m.vertices)) for m in config.local.masks)
 
+    geometry = config.geometry
     return replace(
         config,
         retouch=replace(
@@ -239,6 +244,7 @@ def remap_workspace_config(config: "WorkspaceConfig", half: int, old_geom: HalfG
             scratch_lines=scratch_lines,
         ),
         local=replace(config.local, masks=masks),
+        geometry=replace(geometry, crop_rect=None) if geometry.crop_rect is not None else geometry,
     )
 
 
