@@ -175,6 +175,19 @@ def test_context_menu_offers_reset_only_with_a_saved_override(browser, session):
     assert "Reset split to roll default" in _action_labels(browser._build_context_menu())
 
 
+def test_current_file_returns_the_base_hash_for_a_split_asset(browser, session):
+    """Both halves share one path, so matching by path alone would always return
+    whichever comes first in the list -- never necessarily the active one -- and its
+    own #1/#2 hash, which save_half_frame_override does not key by."""
+    session.state.uploaded_files = [
+        {"path": "/tmp/scan.tif", "hash": "h1#1", "half": 1},
+        {"path": "/tmp/scan.tif", "hash": "h1#2", "half": 2},
+    ]
+    session.state.current_file_path = "/tmp/scan.tif"
+    session.state.current_file_hash = "h1#2"  # the active half, listed second
+    assert browser._current_file() == ("/tmp/scan.tif", "h1")
+
+
 def test_adjust_half_frame_split_reloads_only_on_apply(browser, session):
     browser.controller.open_half_frame_dialog.return_value = None
     browser._on_adjust_half_frame_split("/tmp/scan.tif", "h1")

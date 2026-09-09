@@ -1010,14 +1010,22 @@ class FileBrowser(QWidget):
         self.half_frame_btn.setIcon(qta.icon("mdi.view-split-vertical", color=icon_color))
 
     def _current_file(self) -> tuple[Optional[str], Optional[str]]:
-        """The current frame's (path, hash), falling back to the first loaded file."""
+        """The current frame's (path, base hash), falling back to the first loaded file.
+
+        Both halves of a half-frame asset share one path, so matching by path alone
+        would always return whichever half comes first in the list — never the one
+        actually active — and its own suffixed hash, which save_half_frame_override
+        does not key by. base_hash() makes either mistake harmless.
+        """
+        from negpy.services.assets.half_frame import base_hash
+
         current = self.session.state.current_file_path
         for f in self.session.state.uploaded_files:
             if f.get("path") == current:
-                return f.get("path"), f.get("hash")
+                return f.get("path"), base_hash(f.get("hash"))
         if self.session.state.uploaded_files:
             f = self.session.state.uploaded_files[0]
-            return f.get("path"), f.get("hash")
+            return f.get("path"), base_hash(f.get("hash"))
         return None, None
 
     def _selected_base_hashes(self) -> list[str]:
