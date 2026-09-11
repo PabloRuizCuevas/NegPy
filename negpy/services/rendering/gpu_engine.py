@@ -342,6 +342,7 @@ class GPUEngine:
         # No config field carries render_size_ref, so a size-only change would
         # otherwise resume past the layout pass.
         self._last_render_size_ref: Optional[float] = None
+        self._last_full_frame: bool = False
         # (radius, scale_factor) of the sharpen taps currently in sharpen_k.
         self._sharpen_kernel_key: Optional[tuple] = None
 
@@ -365,7 +366,9 @@ class GPUEngine:
         # Identity of the plane currently sitting in the contrast_mask texture.
         self._mask_tex_key: Optional[Tuple] = None
 
-    def _detect_invalidated_stage(self, settings: WorkspaceConfig, scale_factor: float, render_size_ref: Optional[float] = None) -> int:
+    def _detect_invalidated_stage(
+        self, settings: WorkspaceConfig, scale_factor: float, render_size_ref: Optional[float] = None, full_frame: bool = False
+    ) -> int:
         """
         Determines the earliest pipeline stage that needs re-running.
         Returns stage index (5 unused — dodge/burn lives in the exposure pass):
@@ -383,6 +386,10 @@ class GPUEngine:
             or self._last_scale_factor != scale_factor
             or self._last_render_size_ref != render_size_ref
             or self._last_settings.process.process_mode != settings.process.process_mode
+            # Toggling the crop tool changes only the late-stage dispatch extent (see
+            # full_frame in process_to_texture), but that resizes every texture from
+            # toning on, so cached ones at the other extent cannot be reused.
+            or self._last_full_frame != full_frame
         ):
             return 0
 
@@ -547,9 +554,16 @@ class GPUEngine:
         cam_xyz: Optional[list] = None,
         camera_wb: Optional[list] = None,
         contrast_mask_override: Optional[Tuple[np.ndarray, float, Tuple[int, int, int, int]]] = None,
+        full_frame: bool = False,
     ) -> Tuple[Any, Dict[str, Any]]:
         """
         Executes the full pipeline, returning a GPU texture and associated metrics.
+
+        ``full_frame``: the crop tool's own preview, which shows the whole rotated
+        frame outside the crop rectangle too. Widens only the late-stage dispatch
+        extent (toning/finish/layout); the meter, the contrast mask and the
+        reported ``active_roi`` stay on the real crop, so the crop tool's overlay
+        still tracks it and the print exposure the CPU engine would compute.
 
         ``local_maps`` is the pre-rasterised (h, w, 2) dodge/burn EV + local grade
         map already in the post-geometry frame; tiled export passes a per-tile slice.
@@ -581,7 +595,7 @@ class GPUEngine:
         elif tiling_mode:
             start_stage = 0
         else:
-            start_stage = self._detect_invalidated_stage(settings, scale_factor, render_size_ref)
+            start_stage = self._detect_invalidated_stage(settings, scale_factor, render_size_ref, full_frame)
 
         # ROI calculation
         if tiling_mode and full_dims:
@@ -612,8 +626,12 @@ class GPUEngine:
                 roi = apply_margin_to_roi((0, h_rot, 0, w_rot), h_rot, w_rot, margin)
             else:
                 roi = (0, h_rot, 0, w_rot)
-            y1, y2, x1, x2 = roi
-            crop_w, crop_h = max(1, x2 - x1), max(1, y2 - y1)
+        # roi stays the real crop throughout, for the meter, the contrast mask and the
+        # reported overlay -- all of which the crop tool's full_frame preview must still
+        # match the CPU engine on. Only the render's own dispatch extent (the late,
+        # crop-fused stages) widens to the whole rotated frame while it is on.
+        y1, y2, x1, x2 = (0, h_rot, 0, w_rot) if full_frame and not tiling_mode else roi
+        crop_w, crop_h = max(1, x2 - x1), max(1, y2 - y1)
 
         # Reuse the per-source meter across creative-slider previews: fill any missing
         # override from the cache so the needs_* gates below skip the analysis entirely.
@@ -1389,6 +1407,7 @@ class GPUEngine:
                     k1_eff,
                     settings.geometry.converge_v,
                     settings.geometry.converge_h,
+                    full_frame,
                 )
                 if self._uv_grid_cache is not None and self._uv_grid_cache[0] == uv_key:
                     metrics["uv_grid"] = self._uv_grid_cache[1]
@@ -1401,7 +1420,9 @@ class GPUEngine:
                         flip_h=settings.geometry.flip_horizontal,
                         flip_v=settings.geometry.flip_vertical,
                         autocrop=True,
-                        autocrop_params={"roi": roi} if roi else None,
+                        # Matches the CPU engine: the crop tool's full-frame preview must not
+                        # slice the grid down to the crop it isn't rendering right now.
+                        autocrop_params={"roi": roi} if roi and not full_frame else None,
                         distortion_k1=k1_eff,
                         converge_v=settings.geometry.converge_v,
                         converge_h=settings.geometry.converge_h,
@@ -1415,6 +1436,7 @@ class GPUEngine:
         self._last_targets_rev = exposure_models.TARGETS_REVISION
         self._last_scale_factor = scale_factor
         self._last_render_size_ref = render_size_ref
+        self._last_full_frame = full_frame
         return tex_final, metrics
 
     def _upload_unified_uniforms(

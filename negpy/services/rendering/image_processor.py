@@ -659,10 +659,7 @@ class ImageProcessor:
             hair_masks,
         )
 
-        if self._is_flat(settings) or crop_preview_full:
-            # The crop tool's "show full uncropped frame" preview needs one CPU render per
-            # settings change, since dragging only moves an overlay rect. Sidestep the GPU
-            # engine's ROI-fused compute dispatch here.
+        if self._is_flat(settings):
             prefer_gpu = False
 
         if prefer_gpu and self.engine_gpu:
@@ -677,6 +674,7 @@ class ImageProcessor:
                     analysis_source_hash=source_hash,
                     cam_xyz=cam_xyz,
                     camera_wb=camera_wb,
+                    full_frame=crop_preview_full,
                 )
                 context.metrics.update(gpu_metrics)
                 return processed, context.metrics
