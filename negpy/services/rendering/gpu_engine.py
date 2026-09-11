@@ -179,9 +179,18 @@ def _keystone_inverse_bytes(converge_v: float, converge_h: float) -> bytes:
 def _analysis_cache_key(settings: WorkspaceConfig, analysis_source_hash: str) -> tuple:
     """Identity of the auto-exposure analysis: only the fields the meter reads.
     White/black point offsets and trims apply downstream as uniforms and must
-    not invalidate it."""
+    not invalidate it.
+
+    Of geometry, only what selects the analyzed region: rotation and flips change
+    the buffer's own shape, crop_rect/autocrop_offset the ROI within it. Fine
+    rotation, keystone and distortion reshuffle pixels within that same region
+    (_build_analysis_source applies them to the meter's own buffer) without
+    changing what region it is, so dragging one of those sliders must not blow
+    this cache the way a creative slider does not.
+    """
     e = settings.exposure
     p = settings.process
+    g = settings.geometry
     return (
         analysis_source_hash,
         p.process_mode,
@@ -199,7 +208,11 @@ def _analysis_cache_key(settings: WorkspaceConfig, analysis_source_hash: str) ->
         p.crosstalk_strength,
         p.crosstalk_matrix,
         p.crosstalk_process,
-        settings.geometry,
+        g.rotation,
+        g.flip_horizontal,
+        g.flip_vertical,
+        g.crop_rect,
+        g.autocrop_offset,
         e.cast_removal_strength > 0.0,
         e.auto_exposure,
         e.auto_normalize_contrast,
@@ -667,7 +680,12 @@ class GPUEngine:
             prefilter_key = (
                 (
                     analysis_source_hash,
-                    settings.geometry,
+                    # roi already reflects rotation/crop_rect/autocrop_offset; flips are the
+                    # one region-selecting field it doesn't carry. Fine rotation, keystone and
+                    # distortion reshuffle pixels within the region without changing it, so
+                    # they must not blow this cache the way a creative slider does not.
+                    settings.geometry.flip_horizontal,
+                    settings.geometry.flip_vertical,
                     roi,
                     p.analysis_buffer,
                     p.analysis_rect,

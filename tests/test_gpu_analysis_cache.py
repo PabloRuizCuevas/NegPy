@@ -31,6 +31,20 @@ class TestAnalysisCacheKey(unittest.TestCase):
         ):
             self.assertEqual(k0, _analysis_cache_key(cfg, "src"))
 
+    def test_within_region_geometry_warps_keep_key(self):
+        """Fine rotation, keystone and distortion reshuffle pixels within the same
+        analyzed region (_build_analysis_source applies them to the meter's own
+        buffer) without changing what region it is, so dragging one of those
+        sliders must reuse the analysis like a creative slider does."""
+        k0 = _analysis_cache_key(self.cfg, "src")
+        for cfg in (
+            replace(self.cfg, geometry=replace(self.cfg.geometry, fine_rotation=2.0)),
+            replace(self.cfg, geometry=replace(self.cfg.geometry, converge_v=5.0)),
+            replace(self.cfg, geometry=replace(self.cfg.geometry, converge_h=5.0)),
+            replace(self.cfg, geometry=replace(self.cfg.geometry, distortion_k1=0.1)),
+        ):
+            self.assertEqual(k0, _analysis_cache_key(cfg, "src"))
+
     def test_downstream_process_fields_keep_key(self):
         """White/black point offsets, per-channel trims and hue trim are applied as
         uniform offsets after the meter, so their drags must reuse the analysis."""
@@ -58,6 +72,10 @@ class TestAnalysisCacheKey(unittest.TestCase):
             replace(self.cfg, process=replace(self.cfg.process, locked_floors=(0.1, 0.1, 0.1))),
             replace(self.cfg, process=replace(self.cfg.process, local_floors=(0.1, 0.1, 0.1))),
             replace(self.cfg, geometry=replace(self.cfg.geometry, rotation=1)),
+            replace(self.cfg, geometry=replace(self.cfg.geometry, flip_horizontal=True)),
+            replace(self.cfg, geometry=replace(self.cfg.geometry, flip_vertical=True)),
+            replace(self.cfg, geometry=replace(self.cfg.geometry, crop_rect=(0.1, 0.1, 0.9, 0.9))),
+            replace(self.cfg, geometry=replace(self.cfg.geometry, autocrop_offset=5)),
             replace(self.cfg, exposure=replace(self.cfg.exposure, cast_removal_strength=0.0)),
             replace(self.cfg, exposure=replace(self.cfg.exposure, auto_exposure=not self.cfg.exposure.auto_exposure)),
         ]
