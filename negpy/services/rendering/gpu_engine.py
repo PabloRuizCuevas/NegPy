@@ -44,6 +44,7 @@ from negpy.features.geometry.logic import (
     compute_distortion_scale,
     get_manual_rect_coords,
 )
+from negpy.features.geometry.models import GeometryConfig
 from negpy.features.lab.logic import gaussian_kernel_1d, rl_iterations
 from negpy.features.lab.models import SharpenMethod
 from negpy.features.altprocess.models import AltProcess
@@ -113,6 +114,49 @@ def _downsample_for_analysis(img: np.ndarray, max_size: int) -> np.ndarray:
     if scale >= 1.0:
         return img
     return cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+
+def _build_analysis_source(
+    img: np.ndarray,
+    geometry: GeometryConfig,
+    roi: Optional[Tuple[int, int, int, int]],
+    analysis_buffer: float,
+    analysis_rect: Optional[tuple],
+    tiling_mode: bool,
+    max_size: int,
+) -> Tuple[np.ndarray, float]:
+    """The shared meter grid's own buffer: sliced, oriented and downsampled once for
+    every meter reading it.
+
+    Downsampled before fine rotation and keystone, not after: both are full-frame
+    resamples whose cost scales with pixel count, and only a meter reads the result,
+    so warping the full-res crop just to shrink it away spends the expensive part on
+    pixels the analysis never sees.
+    """
+    analysis_source = img
+    if geometry.rotation != 0:
+        analysis_source = np.rot90(analysis_source, k=geometry.rotation)
+    if geometry.flip_horizontal:
+        analysis_source = np.fliplr(analysis_source)
+    if geometry.flip_vertical:
+        analysis_source = np.flipud(analysis_source)
+    # A freehand analysis_rect overrides the crop ROI and centered buffer, like the
+    # CPU path. Tiled export uses explicit overrides, so it stays on the ROI.
+    base_roi = roi if not tiling_mode else None
+    analysis_roi, an_buffer = resolve_analysis_region(
+        analysis_source.shape, base_roi, analysis_buffer, analysis_rect if not tiling_mode else None
+    )
+    if analysis_roi is not None:
+        ay1, ay2, ax1, ax2 = analysis_roi
+        analysis_source = np.ascontiguousarray(analysis_source[ay1:ay2, ax1:ax2])
+    analysis_source = _downsample_for_analysis(analysis_source, max_size)
+    if geometry.fine_rotation != 0.0:
+        analysis_source = apply_fine_rotation(analysis_source, geometry.fine_rotation)
+    # The meters must read the frame the print stage gets. The CPU engine normalizes
+    # the keystoned buffer, so this replay has to carry it too or the two engines
+    # measure different bounds.
+    analysis_source = apply_keystone(analysis_source, geometry.converge_v, geometry.converge_h)
+    return analysis_source, an_buffer
 
 
 def _binding_identity(idx: int, res: Any) -> tuple:
@@ -642,33 +686,15 @@ class GPUEngine:
                 cam_prefiltered = self._prefilter_cache[4]
             else:
                 # Use views to avoid copying the full-res image; crop to ROI first.
-                analysis_source = img
-                if settings.geometry.rotation != 0:
-                    analysis_source = np.rot90(analysis_source, k=settings.geometry.rotation)
-                if settings.geometry.flip_horizontal:
-                    analysis_source = np.fliplr(analysis_source)
-                if settings.geometry.flip_vertical:
-                    analysis_source = np.flipud(analysis_source)
-                # A freehand analysis_rect overrides the crop ROI and centered buffer, like the
-                # CPU path. Tiled export uses explicit overrides, so it stays on the ROI.
-                base_roi = roi if not tiling_mode else None
-                analysis_roi, an_buffer = resolve_analysis_region(
-                    analysis_source.shape,
-                    base_roi,
+                analysis_source, an_buffer = _build_analysis_source(
+                    img,
+                    settings.geometry,
+                    roi,
                     settings.process.analysis_buffer,
-                    settings.process.analysis_rect if not tiling_mode else None,
+                    settings.process.analysis_rect,
+                    tiling_mode,
+                    APP_CONFIG.preview_render_size,
                 )
-                if analysis_roi is not None:
-                    ay1, ay2, ax1, ax2 = analysis_roi
-                    analysis_source = np.ascontiguousarray(analysis_source[ay1:ay2, ax1:ax2])
-                if settings.geometry.fine_rotation != 0.0:
-                    analysis_source = apply_fine_rotation(analysis_source, settings.geometry.fine_rotation)
-                # The meters must read the frame the print stage gets. The CPU engine
-                # normalizes the keystoned buffer, so this replay has to carry it too or the
-                # two engines measure different bounds.
-                analysis_source = apply_keystone(analysis_source, settings.geometry.converge_v, settings.geometry.converge_h)
-
-                analysis_source = _downsample_for_analysis(analysis_source, APP_CONFIG.preview_render_size)
                 # Shared prefilter, once for all five meters (ROI already applied).
                 # Unmixed like the CPU path so every meter reads the unmixed film.
                 prefiltered = unmix_log_image(prefilter_log_grid(analysis_source, None, an_buffer), unmix_m)
