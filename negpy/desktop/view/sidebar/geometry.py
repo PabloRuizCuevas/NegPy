@@ -144,19 +144,21 @@ class GeometrySidebar(BaseSidebar):
         # Internally geometry.fine_rotation keeps the cv2/warp convention, where positive is
         # counter-clockwise and flip-independent because flips apply before fine rotation, so
         # saved edits keep their meaning: display = -stored at this boundary.
-        self.fine_rot_slider = CompactSlider("Fine Rotation", -FINE_ROTATION_LIMIT, FINE_ROTATION_LIMIT, -conf.fine_rotation, unit="°")
+        self.fine_rot_slider = CompactSlider(
+            "Fine Rotation", -FINE_ROTATION_LIMIT, FINE_ROTATION_LIMIT, -conf.fine_rotation, step=0.1, unit="°"
+        )
         align_row.addWidget(self.fine_rot_slider, 1)
         align_row.addWidget(self.straighten_btn, 0)
         self.layout.addLayout(align_row)
 
-        self.converge_v_slider = CompactSlider("Tilt", -15.0, 15.0, conf.converge_v, unit="%")
+        self.converge_v_slider = CompactSlider("Tilt", -15.0, 15.0, conf.converge_v, step=0.1, unit="%")
         self.converge_v_slider.setToolTip(
             "Easel Tilt: tip the easel about a horizontal axis to straighten converging verticals, "
             "the building that leans back because the camera pointed up. Positive stretches the top "
             "edge. Per-cent of the frame, what you would measure on the easel, not a tilt angle: "
             "the same tilt keystones differently at every enlargement."
         )
-        self.converge_h_slider = CompactSlider("Swing", -15.0, 15.0, conf.converge_h, unit="%")
+        self.converge_h_slider = CompactSlider("Swing", -15.0, 15.0, conf.converge_h, step=0.1, unit="%")
         self.converge_h_slider.setToolTip(
             "Easel Swing: the same movement about a vertical axis, for converging horizontals. A "
             "wall shot from one side, or a copy stand not square to the film. Positive stretches "

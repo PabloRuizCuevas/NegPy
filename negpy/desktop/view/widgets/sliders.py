@@ -313,10 +313,13 @@ class CompactSlider(BaseSlider):
         self._edited_dot = EditedDot()
 
         self.spin.setSingleStep(step)
+        # The slider's own arrow-key step lives in its internal precision-scaled int
+        # space; without the scaling, a fractional step (most of them) never reaches
+        # it and every slider falls back to Qt's raw 1-unit default (1/precision).
+        self.slider.setSingleStep(max(1, round(step * precision)))
         if step >= 1.0:
             self.spin.setDecimals(0)
             self.slider.setTickInterval(int(step))
-            self.slider.setSingleStep(int(step))
 
         if unit:
             self.spin.setSuffix(unit)

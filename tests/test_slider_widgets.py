@@ -36,6 +36,25 @@ def test_adjust_by_clamps_to_range(qapp):
     assert slider.value() == 0.0
 
 
+def test_slider_keyboard_step_matches_the_declared_step(qapp):
+    """The slider's own arrow-key step lives in its internal precision-scaled int
+    space. Passing step=0.1 at precision=100 must move the handle by 0.1, not by
+    Qt's raw 1-unit default (1/precision = 0.01), which read as no movement at all."""
+    slider = CompactSlider("Fine Rotation", -45.0, 45.0, 0.0, step=0.1)
+    assert slider.slider.singleStep() == 10  # 0.1 * precision(100)
+
+
+def test_slider_keyboard_step_scales_with_a_nondefault_precision(qapp):
+    slider = CompactSlider("Hue Trim", -30.0, 30.0, 0.0, step=0.5, precision=10)
+    assert slider.slider.singleStep() == 5  # 0.5 * precision(10)
+
+
+def test_integer_slider_keyboard_step_is_unaffected(qapp):
+    """precision=1 sliders (ISO, grade points) already worked; the fix must not move them."""
+    slider = CompactSlider("Grade", -40.0, 40.0, 0.0, step=5.0, precision=1)
+    assert slider.slider.singleStep() == 5
+
+
 def test_label_scrub_debounces_value_changes(qapp):
     """The handle must never wait on a render.
 
