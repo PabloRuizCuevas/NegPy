@@ -141,16 +141,18 @@ def test_context_menu_offers_unsplit_only_for_a_diptych(browser, session):
     assert "Unsplit diptych" in _action_labels(browser._build_context_menu())
 
 
-def test_unsplit_diptych_button_only_enabled_for_a_diptych(browser, session):
-    """A right-click context menu was the only way in, easy to miss when the panel
-    just looks locked with no clue why."""
+def test_unsplit_diptych_menu_action_only_enabled_for_a_diptych(browser, session):
+    """A right-click context menu was the only other way in, easy to miss when the
+    panel just looks locked with no clue why. Synced on the Half Frame menu's own
+    aboutToShow rather than the general sync_ui, so it reflects whichever frame is
+    active at the moment the menu actually opens."""
     session.state.selected_file_idx = 0
-    browser.sync_ui()
-    assert not browser.unsplit_diptych_btn.isEnabled()
+    browser._sync_half_frame_menu()
+    assert not browser._unsplit_diptych_action.isEnabled()
 
     session.state.uploaded_files[0]["diptych"] = True
-    browser.sync_ui()
-    assert browser.unsplit_diptych_btn.isEnabled()
+    browser._sync_half_frame_menu()
+    assert browser._unsplit_diptych_action.isEnabled()
 
 
 def test_context_menu_offers_per_frame_split_only_for_a_half(browser, session):

@@ -433,29 +433,20 @@ class FileBrowser(QWidget):
         self.half_frame_btn.setChecked(bool(self.session.repo.get_global_setting("half_frame_mode", False)))
         self._update_half_frame_style(self.half_frame_btn.isChecked())
 
-        self.half_frame_adjust_btn = QToolButton()
-        self.half_frame_adjust_btn.setIcon(qta.icon("mdi.tune-variant", color=THEME.text_primary))
-        self.half_frame_adjust_btn.setToolTip(
-            "Adjust Half Frame split — reposition the crop rectangle and split line; its own Apply ▾ picks what to apply it to"
-        )
-        self.half_frame_adjust_btn.clicked.connect(self._on_half_frame_adjust)
-
-        self.half_frame_auto_all_btn = QToolButton()
-        self.half_frame_auto_all_btn.setIcon(qta.icon("fa5s.magic", color=THEME.text_primary))
-        self.half_frame_auto_all_btn.setToolTip(
-            "Auto-detect split for every frame — re-find the gutter on each scan and save it as that frame's own override"
-        )
-        self.half_frame_auto_all_btn.clicked.connect(self._on_half_frame_auto_all)
-
-        # Enabled only for the active frame's diptych state; the only other way in is a
-        # right-click, easy to miss when Half Frame is off and the panel just looks locked.
-        self.unsplit_diptych_btn = QToolButton()
-        self.unsplit_diptych_btn.setIcon(qta.icon("mdi.call-merge", color=THEME.text_primary))
-        self.unsplit_diptych_btn.setToolTip(
-            "Unsplit diptych — the current frame's edits live on its two halves; this merges them back into one plain frame"
-        )
-        self.unsplit_diptych_btn.setEnabled(False)
-        self.unsplit_diptych_btn.clicked.connect(self.prompt_undiptych)
+        # One button for every half-frame action, rather than one icon apiece: the menu
+        # is rebuilt on each open, so "Unsplit diptych" only enables for the active frame's
+        # diptych state without a separate sync path.
+        self.half_frame_menu_btn = QToolButton()
+        self.half_frame_menu_btn.setIcon(qta.icon("mdi.tune-variant", color=THEME.text_primary))
+        self.half_frame_menu_btn.setToolTip("Half Frame actions — adjust a split, auto-detect every frame, or unsplit a diptych")
+        self.half_frame_menu_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        half_frame_menu = QMenu(self.half_frame_menu_btn)
+        half_frame_menu.addAction("Adjust split…").triggered.connect(self._on_half_frame_adjust)
+        half_frame_menu.addAction("Auto-detect all splits").triggered.connect(self._on_half_frame_auto_all)
+        self._unsplit_diptych_action = half_frame_menu.addAction("Unsplit diptych")
+        self._unsplit_diptych_action.triggered.connect(self.prompt_undiptych)
+        half_frame_menu.aboutToShow.connect(self._sync_half_frame_menu)
+        self.half_frame_menu_btn.setMenu(half_frame_menu)
 
         self.apply_btn = QToolButton()
         self.apply_btn.setIcon(qta.icon("fa5s.clone", color=THEME.text_primary))
@@ -516,9 +507,7 @@ class FileBrowser(QWidget):
             self.hot_folder_btn,
             self.rgb_scan_btn,
             self.half_frame_btn,
-            self.half_frame_adjust_btn,
-            self.half_frame_auto_all_btn,
-            self.unsplit_diptych_btn,
+            self.half_frame_menu_btn,
             self.apply_btn,
             self.sheet_btn,
             self.sort_btn,
@@ -538,9 +527,7 @@ class FileBrowser(QWidget):
             (self.hot_folder_btn, "Hot Folder"),
             (self.rgb_scan_btn, "Trichrome Scan"),
             (self.half_frame_btn, "Half Frame"),
-            (self.half_frame_adjust_btn, "Adjust Half Frame"),
-            (self.half_frame_auto_all_btn, "Auto-detect all splits"),
-            (self.unsplit_diptych_btn, "Unsplit diptych"),
+            (self.half_frame_menu_btn, "Half Frame actions"),
             (self.apply_btn, "Apply settings"),
             (None, None),
             (self.sheet_btn, "Sheet filter"),
@@ -799,17 +786,16 @@ class FileBrowser(QWidget):
         else:
             self.unload_btn.setToolTip("Clear all")
 
-    def _update_unsplit_diptych_button(self) -> None:
+    def _sync_half_frame_menu(self) -> None:
         state = self.session.state
         active = state.uploaded_files[state.selected_file_idx] if 0 <= state.selected_file_idx < len(state.uploaded_files) else {}
-        self.unsplit_diptych_btn.setEnabled(bool(active.get("diptych")))
+        self._unsplit_diptych_action.setEnabled(bool(active.get("diptych")))
 
     def sync_ui(self) -> None:
         """Updates list selection to match session state."""
         model = self.session.asset_model
         selection_model = self.list_view.selectionModel()
         self._update_unload_button()
-        self._update_unsplit_diptych_button()
         self._update_tally()
         self._update_empty_state()
 
