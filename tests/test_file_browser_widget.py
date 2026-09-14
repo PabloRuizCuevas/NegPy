@@ -232,17 +232,17 @@ def test_context_menu_multi_selection_adds_apply_and_remove_selected(browser, se
 
 def test_apply_dialog_shows_header_scope_and_counts(qapp):
     dlg = GranularSettingsDialog(None, _edited_cfg(), "IMG_0001.cr2", show_scope=True, sel_count=2, roll_count=3)
-    assert dlg.sel_radio.text() == "Selected frames (2)"
-    assert dlg.sel_radio.isEnabled()
-    assert dlg.sel_radio.isChecked()  # selection preferred when it has targets
-    assert dlg.roll_radio.text() == "Whole roll (3)"
-    assert dlg.roll_radio.isEnabled()
+    assert dlg._scope_radios.sel.text() == "Selected frames (2)"
+    assert dlg._scope_radios.sel.isEnabled()
+    assert dlg._scope_radios.sel.isChecked()  # selection preferred when it has targets
+    assert dlg._scope_radios.roll.text() == "Whole roll (3)"
+    assert dlg._scope_radios.roll.isEnabled()
 
 
 def test_apply_dialog_defaults_to_roll_when_selection_empty(qapp):
     dlg = GranularSettingsDialog(None, _edited_cfg(), "IMG_0001.cr2", show_scope=True, sel_count=0, roll_count=3)
-    assert not dlg.sel_radio.isEnabled()
-    assert dlg.roll_radio.isChecked()
+    assert not dlg._scope_radios.sel.isEnabled()
+    assert dlg._scope_radios.roll.isChecked()
 
 
 def test_apply_dialog_check_all_and_none(qapp):
@@ -259,7 +259,7 @@ def test_apply_dialog_check_all_and_none(qapp):
 
 def test_apply_dialog_apply_collects_checked_rows_and_scope(qapp):
     dlg = GranularSettingsDialog(None, _edited_cfg(), "IMG_0001.cr2", show_scope=True, sel_count=1, roll_count=3)
-    dlg.roll_radio.setChecked(True)
+    dlg._scope_radios.roll.setChecked(True)
     dlg._on_apply()
     labels = {r.label for r in dlg.selected()}
     assert "Print Density" in labels  # the edited exposure setting
@@ -301,6 +301,46 @@ def test_open_apply_dialog_noop_without_active_file(browser, session):
         browser._open_apply_dialog()
     ctor.assert_not_called()
     session.sync_selected_settings.assert_not_called()
+
+
+def test_open_roll_settings_dialog_routes_rows_and_scope_to_session(browser, session):
+    session.state.selected_indices = [0, 1]
+    session.state.selected_file_idx = 0
+    session.apply_preset_fields = MagicMock(return_value=2)
+
+    rows = [object()]
+    mock_dlg = MagicMock()
+    mock_dlg.exec.return_value = QDialog.DialogCode.Accepted
+    mock_dlg.selected_rows.return_value = rows
+    mock_dlg.selected_config.return_value = _edited_cfg()
+    mock_dlg.scope.return_value = "selection"
+    with patch("negpy.desktop.view.sidebar.files.RollSettingsDialog", return_value=mock_dlg) as ctor:
+        browser._open_roll_settings_dialog()
+
+    assert ctor.call_args.kwargs["sel_count"] == 1  # 1 other selected
+    assert ctor.call_args.kwargs["roll_count"] == 3  # 3 other on roll
+    session.apply_preset_fields.assert_called_once_with(mock_dlg.selected_config.return_value, rows, "selection")
+    browser.controller.request_render.assert_called_once()
+
+
+def test_open_roll_settings_dialog_noop_without_active_file(browser, session):
+    session.state.selected_file_idx = -1
+    session.apply_preset_fields = MagicMock()
+    with patch("negpy.desktop.view.sidebar.files.RollSettingsDialog") as ctor:
+        browser._open_roll_settings_dialog()
+    ctor.assert_not_called()
+    session.apply_preset_fields.assert_not_called()
+
+
+def test_open_roll_settings_dialog_noop_when_nothing_is_ticked(browser, session):
+    session.state.selected_file_idx = 0
+    session.apply_preset_fields = MagicMock()
+    mock_dlg = MagicMock()
+    mock_dlg.exec.return_value = QDialog.DialogCode.Accepted
+    mock_dlg.selected_rows.return_value = []
+    with patch("negpy.desktop.view.sidebar.files.RollSettingsDialog", return_value=mock_dlg):
+        browser._open_roll_settings_dialog()
+    session.apply_preset_fields.assert_not_called()
 
 
 def test_context_menu_paste_disabled_without_clipboard(browser, session):

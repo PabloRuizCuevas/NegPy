@@ -49,6 +49,8 @@ from negpy.desktop.view.shortcut_registry import label_with_shortcut
 from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, labeled_action, tool_toggle
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog, open_paste_dialog
+from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
+from negpy.services.assets.gear import GearProfiles
 from negpy.infrastructure.filesystem.watcher import FolderWatchService
 from negpy.infrastructure.loaders.helpers import get_supported_raw_wildcards
 from negpy.desktop.view.sidebar.library_tree import LibraryTree
@@ -472,6 +474,13 @@ class FileBrowser(QWidget):
         self.apply_btn.setToolTip("Apply settings from the current frame to selected frames or the whole roll")
         self.apply_btn.clicked.connect(self._open_apply_dialog)
 
+        self.roll_settings_btn = QToolButton()
+        self.roll_settings_btn.setIcon(qta.icon("fa5s.tags", color=THEME.text_primary))
+        self.roll_settings_btn.setToolTip(
+            "Roll Settings — tag gear, capture and process metadata across the current frame, a selection or the whole roll"
+        )
+        self.roll_settings_btn.clicked.connect(self._open_roll_settings_dialog)
+
         # Sheet filter dropdown
         self.sheet_btn = QToolButton()
         self.sheet_btn.setToolTip("Sheet — filter the contact sheet by triage mark")
@@ -528,6 +537,7 @@ class FileBrowser(QWidget):
             self.half_frame_btn,
             self.half_frame_menu_btn,
             self.apply_btn,
+            self.roll_settings_btn,
             self.sheet_btn,
             self.sort_btn,
         ):
@@ -548,6 +558,7 @@ class FileBrowser(QWidget):
             (self.half_frame_btn, "Half Frame"),
             (self.half_frame_menu_btn, "Half Frame actions"),
             (self.apply_btn, "Apply settings"),
+            (self.roll_settings_btn, "Roll Settings"),
             (None, None),
             (self.sheet_btn, "Sheet filter"),
             (self.sort_btn, "Sort"),
@@ -1212,6 +1223,24 @@ class FileBrowser(QWidget):
         )
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.session.sync_selected_settings(dlg.selected(), dlg.bounds_flags(), dlg.scope())
+
+    def _open_roll_settings_dialog(self) -> None:
+        state = self.session.state
+        src = state.selected_file_idx
+        if src == -1:
+            return
+        visible = self.session.asset_model.visible_actual_indices()
+        sel_targets = len([i for i in set(state.selected_indices) if i != src and i in visible])
+        roll_targets = len([i for i in visible if i != src])
+
+        dlg = RollSettingsDialog(self, state.config, GearProfiles.load_library(), sel_count=sel_targets, roll_count=roll_targets)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        rows = dlg.selected_rows()
+        if not rows:
+            return
+        if self.controller.session.apply_preset_fields(dlg.selected_config(), rows, dlg.scope()):
+            self.controller.request_render()
 
     def _build_session_menu(self) -> QMenu:
         """Mirrors the panel toolbar's add/clear tools, for a right click on empty space."""
