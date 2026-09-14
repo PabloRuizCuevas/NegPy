@@ -189,6 +189,16 @@ class RollSettingsDialog(QDialog):
 
         return self._group("Gear", body)
 
+    def apply_detected_gear(self, **gear_ids: str) -> None:
+        """Pre-fill Gear from a folder-name match, ticked like any other edit -- Cancel
+        discards it, Apply writes it, same as filling the fields by hand."""
+        gear_ids = {k: v for k, v in gear_ids.items() if v}
+        if not gear_ids:
+            return
+        self._meta = metadata_from_gear(self._meta, self._library, **gear_ids)
+        self._checks["Gear"].setChecked(True)
+        self._reload_widgets()
+
     def _on_gear_changed(self, field: str, combo: SearchableGearCombo) -> None:
         self._meta = metadata_from_gear(self._meta, self._library, **{field: combo.selected_id()})
         self.format_combo.setCurrentText(format_label(self._meta.format))
