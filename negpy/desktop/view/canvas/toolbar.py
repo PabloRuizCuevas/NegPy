@@ -143,6 +143,11 @@ class ActionToolbar(QWidget):
         self.btn_toggle_right.setChecked(True)
         self.btn_toggle_right.setIcon(qta.icon("fa5s.sliders-h", color=icon_color))
         self._tip(self.btn_toggle_right, "Toggle Controls Panel", "toggle_right_panel")
+        self.btn_toggle_roll = QToolButton()
+        self.btn_toggle_roll.setCheckable(True)
+        self.btn_toggle_roll.setChecked(True)
+        self.btn_toggle_roll.setIcon(qta.icon("fa5s.tags", color=icon_color))
+        self._tip(self.btn_toggle_roll, "Toggle Roll Panel", "toggle_roll_panel")
 
         # 1. Navigation
         self.btn_prev = QToolButton()
@@ -370,6 +375,7 @@ class ActionToolbar(QWidget):
         standard_buttons = [
             self.btn_toggle_left,
             self.btn_toggle_right,
+            self.btn_toggle_roll,
             self.btn_prev,
             self.btn_next,
             self.btn_flip_h,
@@ -717,6 +723,7 @@ class ActionToolbar(QWidget):
             self._row_sequence.append((widget, False))
         layout.addWidget(self.btn_overflow)
         layout.addWidget(self.btn_toggle_right)
+        layout.addWidget(self.btn_toggle_roll)
         self._sync_separators()
 
     def _sync_separators(self) -> None:

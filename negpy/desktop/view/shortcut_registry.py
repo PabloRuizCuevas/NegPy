@@ -199,6 +199,7 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "toggle_invert_zoom_scroll": ShortcutEntry("", "Reverse scroll-to-zoom direction (scroll up zooms out)", "View"),
     "toggle_left_panel": ShortcutEntry("Ctrl+[", "Toggle session panel (re-docks when floating)", "View"),
     "toggle_right_panel": ShortcutEntry("Ctrl+]", "Toggle controls panel (re-docks when floating)", "View"),
+    "toggle_roll_panel": ShortcutEntry("", "Toggle roll panel (re-docks when floating)", "View"),
     "reset_panel_layout": ShortcutEntry("Ctrl+Shift+L", "Dock session and controls panels", "View"),
     "edit_toolbar": ShortcutEntry("", "Edit the canvas toolbar (which controls it shows, in what order)", "View"),
     "tab_setup": ShortcutEntry("Ctrl+1", "Setup tab", "Tabs"),

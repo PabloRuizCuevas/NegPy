@@ -2,7 +2,7 @@ from typing import Any, Dict
 
 import numpy as np
 import qtawesome as qta
-from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
@@ -15,10 +15,8 @@ from PyQt6.QtWidgets import (
 from negpy.desktop.controller import AppController
 from negpy.desktop.view.shortcut_registry import tooltip_with_shortcut
 from negpy.desktop.view.sidebar.controls_panel import ControlsPanel
-from negpy.desktop.view.sidebar.export import ExportSidebar
 from negpy.desktop.view.sidebar.favourites import FavouritesSidebar
 from negpy.desktop.view.sidebar.history import HistoryPanel
-from negpy.desktop.view.sidebar.metadata import MetadataSidebar
 from negpy.desktop.view.styles.templates import EditedDot
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.charts import PhotometricCurveWidget, StepWedgeWidget, ZoneStripWidget
@@ -29,9 +27,11 @@ from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 
 class RightPanel(QWidget):
     """
-    Right sidebar panel: a sticky (collapsible) Analysis section pinned at the top,
-    above an icon-only tab switcher hosting the workflow control groups
-    (Setup / Tone / Color / Finish) plus Export / Metadata / Scan.
+    Right sidebar panel ("Controls" dock): a sticky (collapsible) Analysis section
+    pinned at the top, above an icon-only tab switcher hosting the workflow control
+    groups (Setup / Geometry / Tone / Color / Finish), Favorites and History -- every
+    tab that changes what the canvas shows. Export, Metadata and Scan are roll
+    bookkeeping instead, and live in their own dock (RollPanel, roll_panel.py).
     """
 
     def __init__(self, controller: AppController):
@@ -87,23 +87,9 @@ class RightPanel(QWidget):
         # Tab content widgets
         self.controls_panel = ControlsPanel(self.controller)
         self.favourites_sidebar = FavouritesSidebar(self.controller, self.controls_panel)
-        self.export_sidebar = ExportSidebar(self.controller)
-        self.metadata_sidebar = MetadataSidebar(self.controller)
         self.history_panel = HistoryPanel(self.controller)
 
-        from negpy.desktop.view.sidebar.scan import ScanSidebar
-
-        self.scan_sidebar = ScanSidebar(self.controller)
-
-        from negpy.desktop.view.sidebar.scanlight import ScanlightSidebar
-
-        self.scanlight_sidebar = ScanlightSidebar(self.controller)
-
-        # One "Scan" tab hosting both the SANE scanner and the RGB-Scan capture as collapsible
-        # sections, like the "Color: Lab, Toning" tab.
-        self.scan_page = self._build_scan_page()
-
-        # Tab descriptors: the workflow control-group pages first, then Export, Metadata and Scan.
+        # Tab descriptors: the workflow control-group pages, then Favorites and History.
         # (key, icon_name, tooltip, content_widget, [section_attrs])
         tab_specs = [
             (page["key"], page["icon_name"], page["tooltip"], page["widget"], page["sections"]) for page in self.controls_panel.pages
@@ -111,9 +97,6 @@ class RightPanel(QWidget):
         tab_specs += [
             ("favourites", "fa5s.star", "Favorites", self.favourites_sidebar, []),
             ("history", "fa5s.history", "History", self.history_panel, []),
-            ("export", "fa5s.file-export", "Export", self.export_sidebar, []),
-            ("metadata", "fa5s.tags", "Metadata", self.metadata_sidebar, []),
-            ("scan", "fa5s.camera-retro", "Scan", self.scan_page, []),
         ]
 
         # Icon-only tab switcher; spills into a » menu when the panel is narrowed
@@ -130,7 +113,6 @@ class RightPanel(QWidget):
         self._tab_sections: dict[int, list[str]] = {}
         self._tab_edited: list[bool] = []
         self._active_index = 0
-        self._scan_index = -1
 
         for i, (key, icon_name, tooltip, content, section_attrs) in enumerate(tab_specs):
             btn = QPushButton()
@@ -154,8 +136,6 @@ class RightPanel(QWidget):
                 self._tab_sections[i] = section_attrs
             for attr in section_attrs:
                 self._section_tab_index[attr] = i
-            if key == "scan":
-                self._scan_index = i
 
         # Tabs (switcher + stack) live in the bottom splitter pane
         tabs_container = QWidget()
@@ -214,28 +194,10 @@ class RightPanel(QWidget):
             top = max(1, self.analysis_section.sizeHint().height())
         self.splitter.setSizes([top, max(0, total - top)])
 
-    def _build_scan_page(self) -> QWidget:
-        """The 'Scan' tab hosts two collapsible sections (like Color's Lab / Toning): the
-        SANE flatbed/film scanner on top, the RGB-Scan trichromatic capture below."""
-        repo = self.controller.session.repo
-        self.scan_sane_section = make_section(repo, "Film Scanner", "scan_sane", self.scan_sidebar, "fa5s.camera-retro", False)
-        self.scan_rgb_section = make_section(repo, "Camera Scanning", "scan_rgb", self.scanlight_sidebar, "fa5s.camera", True)
-
-        page = QWidget()
-        page_layout = QVBoxLayout(page)
-        page_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        page_layout.setContentsMargins(0, 0, 0, 0)
-        page_layout.setSpacing(8)
-        page_layout.addWidget(self.scan_sane_section)
-        page_layout.addWidget(self.scan_rgb_section)
-        return page
-
     def apply_shortcut_tooltips(self) -> None:
-        """Append the current keyboard shortcut (action id `tab_<key>`) to each tab tooltip,
-        and pass the call on to the panels that own bound controls of their own."""
+        """Append the current keyboard shortcut (action id `tab_<key>`) to each tab tooltip."""
         for btn, key, base in zip(self._tab_buttons, self._tab_keys, self._tab_tooltips):
             btn.setToolTip(tooltip_with_shortcut(base, f"tab_{key}"))
-        self.metadata_sidebar.apply_shortcut_tooltips()
 
     def _connect_signals(self) -> None:
         self.controller.image_updated.connect(self._update_analysis)
@@ -248,13 +210,6 @@ class RightPanel(QWidget):
         self.zone_placement.apply_clicked.connect(self.controller.apply_zone_placement)
         self.zone_placement.remove_clicked.connect(self.controller.remove_zone_pin)
         self.controller.tone_drag_changed.connect(self.curve_widget.set_active_param)
-        # These two sync_ui calls scan gear/template files; never per drag tick.
-        self._sync_debounce = QTimer()
-        self._sync_debounce.setSingleShot(True)
-        self._sync_debounce.setInterval(150)
-        self._sync_debounce.timeout.connect(self.export_sidebar.sync_ui)
-        self._sync_debounce.timeout.connect(self.metadata_sidebar.sync_ui)
-        self.controller.config_updated.connect(self._sync_debounce.start)
         self.controls_panel.modified_synced.connect(self._sync_tab_edited)
 
     def _sync_tab_edited(self) -> None:
@@ -295,14 +250,6 @@ class RightPanel(QWidget):
             if self._suspended_retouch_tool is not None and state.active_tool == ToolMode.NONE:
                 self.controller.set_active_tool(self._suspended_retouch_tool)
             self._suspended_retouch_tool = None
-
-        # Trigger device detection and a gating refresh when the Scan tab is selected. It hosts
-        # both the SANE scanner and the RGB-Scan capture as collapsible sections.
-        if index == self._scan_index:
-            if hasattr(self.scan_sidebar, "on_activated"):
-                self.scan_sidebar.on_activated()
-            if hasattr(self.scanlight_sidebar, "on_activated"):
-                self.scanlight_sidebar.on_activated()
 
     def reveal_section(self, section_attr: str) -> None:
         """Switch to the tab containing the given ControlsPanel section."""

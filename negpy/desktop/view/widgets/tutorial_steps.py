@@ -44,7 +44,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
         return w.controls_panel.retouch_sidebar
 
     def _export(w: "MainWindow") -> Optional[QWidget]:
-        return w.right_panel.export_sidebar
+        return w.roll_panel.export_sidebar
 
     def _rgbscan(w: "MainWindow") -> Optional[QWidget]:
         return w.session_panel.file_browser.rgb_scan_btn
@@ -74,7 +74,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
         return w.right_panel.history_panel.list
 
     def _flat_master(w: "MainWindow") -> Optional[QWidget]:
-        return w.right_panel.export_sidebar.intent_flat_btn
+        return w.roll_panel.export_sidebar.intent_flat_btn
 
     def _analysis_buffer(w: "MainWindow") -> Optional[QWidget]:
         return w.controls_panel.process_sidebar.analysis_buffer_slider
@@ -101,7 +101,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
         return w.controls_panel.tone_sidebar.shadow_density_slider
 
     def _gear_manage(w: "MainWindow") -> Optional[QWidget]:
-        return w.right_panel.metadata_sidebar.manage_btn
+        return w.roll_panel.metadata_sidebar.manage_btn
 
     def _narrowband(w: "MainWindow") -> Optional[QWidget]:
         return w.controls_panel.sensor_sidebar.narrowband_scan_btn
@@ -728,12 +728,12 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "instead of NegPy rewriting it."
             ),
             target=_gear_manage,
-            pre_hook=lambda w: w.right_panel.show_tab_by_key("metadata"),
+            pre_hook=lambda w: w.roll_panel.show_tab_by_key("metadata"),
         ),
         TutorialStep(
             title="Export",
             body=(
-                "The <b>Export</b> tab (right panel, now active) is where you save your "
+                "The <b>Export</b> tab (Roll panel, now active) is where you save your "
                 "results.<br><br>"
                 "Choose a format (<b>JPEG</b>, high-bit-depth <b>TIFF</b>, PNG, WebP, JPEG XL), "
                 "pick a color space, and set resolution or print size. The <b>ICC</b> section adds "
@@ -745,7 +745,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "Export always runs at full RAW resolution."
             ),
             target=_export,
-            pre_hook=lambda w: w.right_panel.show_tab_by_key("export"),
+            pre_hook=lambda w: w.roll_panel.show_tab_by_key("export"),
         ),
         TutorialStep(
             title="Export: Flat Master",
@@ -762,7 +762,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "<b>Print</b> output is unaffected."
             ),
             target=_flat_master,
-            pre_hook=lambda w: w.right_panel.show_tab_by_key("export"),
+            pre_hook=lambda w: w.roll_panel.show_tab_by_key("export"),
         ),
         TutorialStep(
             title="You're all set!",
