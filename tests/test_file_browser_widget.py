@@ -678,6 +678,35 @@ def test_unload_button_tooltip_reflects_the_selection(browser, session):
     assert browser.unload_btn.toolTip() == "Unload Selected…"
 
 
+def test_save_roll_prompts_for_a_name_and_refreshes_the_tree(browser):
+    browser.controller.create_roll_from_session.return_value = "roll-1"
+    browser.library_tree = MagicMock()
+    with patch("negpy.desktop.view.sidebar.files.QInputDialog.getText", return_value=("Portra", True)):
+        browser._on_save_roll_clicked()
+
+    browser.controller.create_roll_from_session.assert_called_once_with("Portra")
+    browser.library_tree.reload.assert_called_once()
+
+
+def test_save_roll_cancelled_does_nothing(browser):
+    browser.controller.create_roll_from_session = MagicMock()
+    with patch("negpy.desktop.view.sidebar.files.QInputDialog.getText", return_value=("Portra", False)):
+        browser._on_save_roll_clicked()
+
+    browser.controller.create_roll_from_session.assert_not_called()
+
+
+def test_save_roll_rejects_an_invalid_name(browser):
+    browser.controller.create_roll_from_session = MagicMock()
+    with (
+        patch("negpy.desktop.view.sidebar.files.QInputDialog.getText", return_value=("bad/name", True)),
+        patch("negpy.desktop.view.sidebar.files.QMessageBox.warning"),
+    ):
+        browser._on_save_roll_clicked()
+
+    browser.controller.create_roll_from_session.assert_not_called()
+
+
 # --- Composite badges -----------------------------------------------------
 
 

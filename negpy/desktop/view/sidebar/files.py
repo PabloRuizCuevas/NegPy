@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListView,
@@ -52,6 +53,7 @@ from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog, open_paste_dialog
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
 from negpy.services.assets.gear import GearProfiles
+from negpy.services.assets.presets import is_valid_preset_name
 from negpy.infrastructure.filesystem.watcher import FolderWatchService
 from negpy.infrastructure.loaders.helpers import get_supported_raw_wildcards
 from negpy.desktop.view.sidebar.library_tree import LibraryTree
@@ -489,6 +491,11 @@ class FileBrowser(QWidget):
         )
         self.roll_settings_btn.clicked.connect(self._open_roll_settings_dialog)
 
+        self.save_roll_btn = QToolButton()
+        self.save_roll_btn.setIcon(qta.icon("fa5s.folder", color=THEME.channel_blue))
+        self.save_roll_btn.setToolTip("Save these frames as a roll — a named, reopenable group, not tied to a folder")
+        self.save_roll_btn.clicked.connect(self._on_save_roll_clicked)
+
         # Sheet filter dropdown
         self.sheet_btn = QToolButton()
         self.sheet_btn.setToolTip("Sheet — filter the contact sheet by triage mark")
@@ -544,6 +551,7 @@ class FileBrowser(QWidget):
             self.half_frame_menu_btn,
             self.apply_btn,
             self.roll_settings_btn,
+            self.save_roll_btn,
             self.sheet_btn,
         ):
             btn.setIconSize(icon_size)
@@ -566,6 +574,7 @@ class FileBrowser(QWidget):
             (self.half_frame_menu_btn, "Half Frame actions"),
             (self.apply_btn, "Apply settings"),
             (self.roll_settings_btn, "Roll Settings"),
+            (self.save_roll_btn, "Save as Roll…"),
             (None, None),
             (self.unload_btn, "Unload…"),
             (self.sheet_btn, "Sheet filter"),
@@ -824,6 +833,7 @@ class FileBrowser(QWidget):
         if not self._confirm_load(images, _folder_label(path)):
             return
         self.controller.open_library_folder(path, add_to_session=add_to_session)
+        self.library_tree.reload()  # recognize_folder ran synchronously above; repaint it green
 
     def load_folders(self, paths, add_to_session: bool = False) -> None:
         """Load one folder, or a whole selection of them at once."""
@@ -843,6 +853,7 @@ class FileBrowser(QWidget):
         if not self._confirm_load(total, f"{len(loadable)} folders"):
             return
         self.controller.open_library_folders(loadable, add_to_session=add_to_session)
+        self.library_tree.reload()  # recognize_folder ran synchronously above; repaint them green
 
     def _confirm_load(self, image_count: int, label: str) -> bool:
         if self.session.repo.get_global_setting("library_autoload_folders", False):
@@ -895,6 +906,19 @@ class FileBrowser(QWidget):
         """Drop every loaded frame, from the empty-space context menu."""
         if confirm_unload(self, clear_all=True):
             self.session.clear_files()
+
+    def _on_save_roll_clicked(self) -> None:
+        """Save whatever the Film Strip currently holds as a named, reopenable roll --
+        a library search's results, a hand-picked selection, or a folder roll's extras."""
+        name, ok = QInputDialog.getText(self, "Save as Roll", "Name:")
+        name = name.strip()
+        if not ok or not name:
+            return
+        if not is_valid_preset_name(name):
+            QMessageBox.warning(self, "Roll Name", 'A roll name cannot contain / \\ : * ? " < > | or start or end with a dot.')
+            return
+        if self.controller.create_roll_from_session(name):
+            self.library_tree.reload()
 
     def _update_unload_button(self) -> None:
         multi = len(self.session.state.selected_indices) > 1

@@ -77,6 +77,7 @@ from negpy.domain.models import (
     resolve_preset_export,
 )
 from negpy.services.assets.composites import forget_composite, restore_maps
+from negpy.services.assets import rolls
 from negpy.services.assets.half_frame import (
     HalfGeometry,
     base_hash,
@@ -1048,12 +1049,49 @@ class AppController(QObject):
         if not present:
             self.set_status("Folder is no longer on disk", 3000)
             return
+        if not add_to_session:
+            # Recognizing every opened folder (green in the tree) is independent of which
+            # one, if any, becomes the active roll -- that only makes sense for a single one.
+            recognized = [rolls.recognize_folder(self.session.repo, f) for f in present]
+            self.state.active_roll_id = recognized[0] if len(recognized) == 1 else None
         self.request_asset_discovery(
             present,
             auto_open=True,
             replace_existing=not add_to_session,
             reselect_path=self.state.current_file_path if add_to_session else None,
         )
+
+    def open_roll(self, roll_id: str) -> None:
+        """Open a roll (folder or virtual) by id. A folder roll's own contents are
+        (re)walked as usual, the same as opening it from the tree; its extra_paths --
+        files added by hand that are not physically in the folder -- ride along in the
+        same discovery pass, since request_asset_discovery already accepts a mix of
+        folder and file paths."""
+        entry = rolls.roll_for_id(self.session.repo, roll_id)
+        if entry is None:
+            self.set_status("That roll no longer exists", 3000)
+            return
+        if entry["kind"] == "folder":
+            paths = [entry["folder_path"], *entry.get("extra_paths", [])]
+        else:
+            paths = list(entry.get("member_paths", []))
+        if not paths:
+            self.set_status("This roll has no frames", 3000)
+            return
+        self.state.active_roll_id = roll_id
+        self.request_asset_discovery(paths, auto_open=True, replace_existing=True)
+
+    def create_roll_from_session(self, name: str) -> Optional[str]:
+        """Save the frames currently in the Film Strip as a new virtual roll: a roll
+        that is not a folder, e.g. a library search's results, kept and named."""
+        paths = [f["path"] for f in self.state.uploaded_files if f.get("path")]
+        if not paths:
+            self.set_status("Nothing loaded to save as a roll", 3000)
+            return None
+        roll_id = rolls.create_virtual_roll(self.session.repo, name, paths)
+        self.state.active_roll_id = roll_id
+        self.set_status(f'Saved as roll "{name}"', 3000)
+        return roll_id
 
     def invalidate_library_walk(self) -> None:
         """Drop the cached traversal so the next search re-reads the folders."""
@@ -1093,6 +1131,9 @@ class AppController(QObject):
             self.set_status("No frames in the library match that search", 4000)
             return
         self.set_status(f"{len(paths)} frame{'s' if len(paths) != 1 else ''} found", 3000)
+        # An ad hoc result, not (yet) any roll -- Save as Roll in the Film Strip turns it
+        # into one.
+        self.state.active_roll_id = None
         self.request_asset_discovery(paths, auto_open=True, replace_existing=True)
 
     def set_rgb_scan_mode(self, enabled: bool) -> None:
@@ -1463,6 +1504,13 @@ class AppController(QObject):
         self._reselect_after_discovery = None
         active_discovery_keys = self._active_discovery_keys
         self._active_discovery_keys = frozenset()
+
+        # Files appended (not replaced) while a roll is active join its membership, so
+        # reopening that roll later still shows what was added by hand.
+        if not replace_existing and self.state.active_roll_id:
+            for asset in valid_assets:
+                if asset.get("path"):
+                    rolls.add_extra_member(self.session.repo, self.state.active_roll_id, asset["path"])
         pending_scan = getattr(self, "_pending_scanned_file", None)
 
         if replace_existing and valid_assets:

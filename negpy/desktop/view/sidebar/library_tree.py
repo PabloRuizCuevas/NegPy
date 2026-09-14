@@ -8,7 +8,11 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
+    QListWidget,
+    QListWidgetItem,
     QMenu,
+    QMessageBox,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -16,9 +20,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from negpy.desktop.view.styles.templates import hint_label
+from negpy.desktop.view.confirm import confirm_delete_named
+from negpy.desktop.view.styles.templates import hint_label, section_subheader
 from negpy.desktop.view.styles.theme import THEME
+from negpy.services.assets import rolls
 from negpy.services.assets.library import folder_counts, summarize_counts
+from negpy.services.assets.presets import is_valid_preset_name
+
+_ROLL_ID_ROLE = Qt.ItemDataRole.UserRole
 
 _PATH_ROLE = Qt.ItemDataRole.UserRole
 _IS_ROOT_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -97,6 +106,20 @@ class LibraryTree(QWidget):
         header.addWidget(self.add_root_btn)
         header.addWidget(self.refresh_btn)
         layout.addLayout(header)
+
+        # Virtual rolls: not a folder on disk, so they live above the tree rather than in
+        # it. Created from the Film Strip's Save as Roll, not here -- this list only opens,
+        # renames and deletes.
+        self.rolls_label = section_subheader("ROLLS")
+        layout.addWidget(self.rolls_label)
+        self.rolls_list = QListWidget()
+        self.rolls_list.setObjectName("rolls_list")
+        self.rolls_list.setMaximumHeight(100)
+        self.rolls_list.setToolTip("Rolls built from a search or a hand-picked set of frames, not a folder")
+        self.rolls_list.itemDoubleClicked.connect(self._on_roll_double_clicked)
+        self.rolls_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.rolls_list.customContextMenuRequested.connect(self._show_roll_context_menu)
+        layout.addWidget(self.rolls_list)
 
         self.tree = QTreeWidget()
         self.tree.setColumnCount(2)
@@ -184,6 +207,51 @@ class LibraryTree(QWidget):
         for root in roots:
             self.tree.addTopLevelItem(self._make_item(root, os.path.basename(root.rstrip(os.sep)) or root, is_root=True))
         self._restore(expanded, selected)
+        self._populate_rolls()
+
+    # --- rolls ---------------------------------------------------------------
+
+    def _populate_rolls(self) -> None:
+        entries = rolls.virtual_rolls(self.repo)
+        self.rolls_label.setVisible(bool(entries))
+        self.rolls_list.setVisible(bool(entries))
+        self.rolls_list.clear()
+        for roll_id, entry in entries:
+            count = len(entry.get("member_paths") or ())
+            item = QListWidgetItem(qta.icon("fa5s.folder", color=THEME.channel_blue), entry.get("name", ""))
+            item.setData(_ROLL_ID_ROLE, roll_id)
+            item.setToolTip(f"{count} frame{'s' if count != 1 else ''}")
+            self.rolls_list.addItem(item)
+
+    def _on_roll_double_clicked(self, item: QListWidgetItem) -> None:
+        self.controller.open_roll(item.data(_ROLL_ID_ROLE))
+
+    def _show_roll_context_menu(self, pos) -> None:
+        item = self.rolls_list.itemAt(pos)
+        if item is None:
+            return
+        roll_id = item.data(_ROLL_ID_ROLE)
+        menu = QMenu(self)
+        menu.addAction("Open").triggered.connect(lambda: self.controller.open_roll(roll_id))
+        menu.addAction("Rename…").triggered.connect(lambda: self._rename_roll(roll_id, item.text()))
+        menu.addAction("Delete…").triggered.connect(lambda: self._delete_roll(roll_id, item.text()))
+        menu.exec(self.rolls_list.viewport().mapToGlobal(pos))
+
+    def _rename_roll(self, roll_id: str, current_name: str) -> None:
+        name, ok = QInputDialog.getText(self, "Rename Roll", "Name:", text=current_name)
+        name = name.strip()
+        if not ok or not name or name == current_name:
+            return
+        if not is_valid_preset_name(name):
+            QMessageBox.warning(self, "Roll Name", 'A roll name cannot contain / \\ : * ? " < > | or start or end with a dot.')
+            return
+        rolls.rename_roll(self.repo, roll_id, name)
+        self._populate_rolls()
+
+    def _delete_roll(self, roll_id: str, name: str) -> None:
+        if confirm_delete_named(self, "Roll", name):
+            rolls.delete_roll(self.repo, roll_id)
+            self._populate_rolls()
 
     def _make_item(self, path: str, label: str, is_root: bool = False, mtime: float = 0.0) -> QTreeWidgetItem:
         images, subfolders = folder_counts(path)
@@ -191,9 +259,10 @@ class LibraryTree(QWidget):
         item.setData(0, _PATH_ROLE, path)
         item.setData(0, _IS_ROOT_ROLE, is_root)
         item.setData(0, _MTIME_ROLE, mtime)
-        item.setIcon(0, qta.icon("fa5s.folder", color=THEME.text_secondary))
+        recognized = rolls.folder_roll_id_for_path(self.repo, path) is not None
+        item.setIcon(0, qta.icon("fa5s.folder", color=THEME.channel_green if recognized else THEME.warn_amber))
         item.setForeground(1, QColor(THEME.text_muted))
-        item.setToolTip(0, path)
+        item.setToolTip(0, path if recognized else f"{path}\nNot yet opened as a roll")
         if subfolders:
             item.addChild(QTreeWidgetItem([_PLACEHOLDER, ""]))
         return item

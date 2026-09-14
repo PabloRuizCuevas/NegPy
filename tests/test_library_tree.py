@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock
 
 import pytest
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QInputDialog, QMessageBox
 
 from negpy.desktop.view.sidebar.library_tree import LibraryTree
 from negpy.desktop.view.styles.theme import THEME
@@ -60,6 +62,37 @@ def test_each_folder_reports_what_is_inside(widget):
     root.setExpanded(True)
 
     assert _counts(root) == ["1 folder", "2 photos", "1 photo · 1 folder"]
+
+
+def test_unrecognized_folders_are_amber(widget, tree_dirs, monkeypatch):
+    colors = []
+    monkeypatch.setattr(
+        "negpy.desktop.view.sidebar.library_tree.qta.icon",
+        lambda name, color=None: colors.append(color) or QIcon(),
+    )
+    widget.reload()
+
+    assert colors and all(c == THEME.warn_amber for c in colors)
+
+
+def test_a_recognized_folder_turns_green(widget, tree_dirs, monkeypatch):
+    """recognize_folder marks one path; only that path's icon call gets the green color,
+    the rest (its parent root, its siblings) stay amber."""
+    from negpy.services.assets.rolls import recognize_folder
+
+    recognize_folder(widget.repo, str(tree_dirs / "roll_a"))
+
+    colors = []
+    monkeypatch.setattr(
+        "negpy.desktop.view.sidebar.library_tree.qta.icon",
+        lambda name, color=None: colors.append(color) or QIcon(),
+    )
+    widget.reload()
+    widget.tree.topLevelItem(0).setExpanded(True)
+
+    assert colors[0] == THEME.warn_amber  # "scans" itself, never opened
+    assert THEME.channel_green in colors  # roll_a, now recognized
+    assert colors.count(THEME.channel_green) == 1  # roll_b, empty_box stay amber
 
 
 def test_a_leaf_folder_has_no_expander(widget):
@@ -250,3 +283,69 @@ def test_enter_with_nothing_selected_opens_nothing(widget):
     widget.open_selection()
 
     assert opened == []
+
+
+# --- virtual rolls --------------------------------------------------------------
+
+
+def test_rolls_list_hidden_with_no_saved_rolls(widget):
+    assert not widget.rolls_list.isVisibleTo(widget)
+    assert not widget.rolls_label.isVisibleTo(widget)
+
+
+def test_rolls_list_shows_saved_virtual_rolls(widget):
+    from negpy.services.assets.rolls import create_virtual_roll
+
+    create_virtual_roll(widget.repo, "Portra", ["/a.nef", "/b.nef"])
+    widget.reload()
+
+    assert widget.rolls_list.isVisibleTo(widget)
+    assert widget.rolls_list.count() == 1
+    assert widget.rolls_list.item(0).text() == "Portra"
+
+
+def test_double_clicking_a_roll_opens_it(widget):
+    from negpy.services.assets.rolls import create_virtual_roll
+
+    roll_id = create_virtual_roll(widget.repo, "Portra", ["/a.nef"])
+    widget.reload()
+
+    widget._on_roll_double_clicked(widget.rolls_list.item(0))
+
+    widget.controller.open_roll.assert_called_once_with(roll_id)
+
+
+def test_renaming_a_roll(widget, monkeypatch):
+    from negpy.services.assets.rolls import create_virtual_roll, roll_for_id
+
+    roll_id = create_virtual_roll(widget.repo, "Portra", [])
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("Portra 400", True)))
+
+    widget._rename_roll(roll_id, "Portra")
+
+    assert roll_for_id(widget.repo, roll_id)["name"] == "Portra 400"
+    assert widget.rolls_list.item(0).text() == "Portra 400"
+
+
+def test_renaming_to_an_invalid_name_is_rejected(widget, monkeypatch):
+    from negpy.services.assets.rolls import create_virtual_roll, roll_for_id
+
+    roll_id = create_virtual_roll(widget.repo, "Portra", [])
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("bad/name", True)))
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+
+    widget._rename_roll(roll_id, "Portra")
+
+    assert roll_for_id(widget.repo, roll_id)["name"] == "Portra"
+
+
+def test_deleting_a_roll(widget, monkeypatch):
+    from negpy.services.assets.rolls import create_virtual_roll, roll_for_id
+
+    roll_id = create_virtual_roll(widget.repo, "Portra", [])
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.confirm_delete_named", lambda *a, **k: True)
+
+    widget._delete_roll(roll_id, "Portra")
+
+    assert roll_for_id(widget.repo, roll_id) is None
+    assert widget.rolls_list.count() == 0

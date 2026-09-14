@@ -119,6 +119,12 @@ Loading a roll replaces what is in the film strip; right-click → **Add to Sess
 
 NegPy reads the tree straight from disk and never creates, renames, moves or deletes anything in it. Reorganize in Finder or Explorer and the tree shows the new arrangement at the next refresh. Every edit is stored against the image's content, so moving a file between folders keeps its edit, its history and its keep/reject mark.
 
+#### Rolls: folders you have opened, and rolls that are not folders
+
+A folder's icon marks whether NegPy has recognized it as a roll: **amber** means not yet opened, **green** means it has been — opening it once is enough, and stays green even after you unload the frames. Files added to the session by hand (Add, drag-drop) while a green folder's frames are the ones loaded join that roll too, so reopening it later still shows them, on top of what is physically in the folder.
+
+A roll does not have to be a folder. Search the library (the filter box's magnifier-over-folder button) or otherwise assemble a set of frames, then **Save as Roll…** in the Film Strip's row names and keeps it — a **blue** entry in its own **Rolls** list above the folder tree. Double-click to reopen it; right-click for **Rename…** and **Delete…**. It is a fixed set of frames, not a live search: adding to it later means reopening it and using Save as Roll again, or adding to the session while it is the one loaded. Edits are unaffected either way — a frame's edit is its own, the same wherever it is opened from.
+
 ### Importing and managing files
 
 **A note on Nikon High Efficiency raw.** The Z 8 and Z 9 can record NEFs in **High Efficiency (HE)** or **HE\***, which use a licensed codec NegPy cannot decode. Such a file is still called `.NEF` and still carries the same TIFF compression tag as an ordinary lossless NEF, so nothing looks unusual until it fails to open. NegPy names the reason rather than reporting a generic unsupported-file error. Re-shoot in **Lossless Compressed** NEF, or convert with Adobe DNG Converter. Lossless NEFs from the same cameras open normally.
@@ -139,6 +145,7 @@ The Film Strip section has its own row of buttons above the frames, for actions 
     Half Frame does not apply to a frame assembled from more than one file: a Trichrome triplet, a stitch, or an HDR merge. Those are never split, and they never come back as a diptych, even when the file they are built around was worked on as two halves earlier.
 *   **Apply (clone)**: copy the current frame's settings to selected frames or the whole roll. You choose which aspects in a dialog; crop and rotation are always per-image.
 *   **Roll Settings** (tag icon): tag gear, capture, place, process and scanning metadata for the current frame, a selection or the whole roll in one dialog. Fields start filled from the active frame; type or pick new values directly, or **Load** a metadata preset to fill and tick its fields, then tick which groups to write. Defaults to the whole roll when one is loaded.
+*   **Save as Roll…** (blue folder icon): name and keep the frames currently loaded as a roll, whether or not they came from a folder. See [Rolls](#rolls-folders-you-have-opened-and-rolls-that-are-not-folders).
 *   **Unload…**: drop the active frame, or the whole selection when more than one is selected. Never the rest of the roll — for that, see *Clear All…* below.
 *   **Sheet filter** (funnel): show *All Frames*, *Keepers Only*, or *Hide Rejected*. The choice is remembered between sessions and applies to every roll you open.
 
