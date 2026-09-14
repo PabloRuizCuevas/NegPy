@@ -90,7 +90,7 @@ from negpy.services.assets.half_frame import (
     remember_split_scans,
     split_scans,
 )
-from negpy.services.export.templating import render_export_filename
+from negpy.services.export.templating import path_safe, render_export_filename
 from negpy.services.assets.sidecar import load_or_promote, write_sidecar
 from negpy.features.exposure.analysis import (
     RING_GRID,
@@ -129,7 +129,7 @@ from negpy.features.process.models import (
     scan_setup_values,
 )
 from negpy.services.assets.thumbnails import asset_thumbnail_key
-from negpy.kernel.system.paths import get_resource_path
+from negpy.kernel.system.paths import get_default_user_dir, get_resource_path
 from negpy.features.retouch.logic import downsample_ir, trace_scratch
 from negpy.features.retouch.models import RetouchConfig
 from negpy.features.toning.models import ToningConfig
@@ -2162,9 +2162,12 @@ class AppController(QObject):
         export_path = self._ensure_valid_export_path()
         if export_path is None or not self.state.current_file_path:
             return None
+        export_conf = replace(self.state.config.export, export_path=export_path)
+        roll_root = self._roll_export_root(export_conf.output_mode, export_conf.output_subfolder)
         export_path = resolve_output_dir(
             self.state.current_file_path,
-            preset_from_export_config(replace(self.state.config.export, export_path=export_path)),
+            preset_from_export_config(export_conf),
+            roll_root,
         )
         stem = os.path.splitext(os.path.basename(self.state.current_file_path))[0]
         os.makedirs(export_path, exist_ok=True)
@@ -4698,6 +4701,26 @@ class AppController(QObject):
             return None
         return export_path
 
+    def _roll_export_root(self, output_mode: ExportPresetOutputMode, subfolder: str) -> Optional[str]:
+        """Base folder for Subfolder of Source, redirected from the active roll's own
+        (non-existent) folder to the data folder when it is a virtual roll — files
+        gathered from a library search or picked by hand share no folder to build a
+        subfolder under. None for a folder roll, no active roll, or any other mode,
+        which already resolve correctly per file.
+
+        Warns once, since the redirect departs from what the DESTINATION picker shows.
+        """
+        if output_mode != ExportPresetOutputMode.SUBFOLDER_OF_SOURCE or not self.state.active_roll_id:
+            return None
+        entry = rolls.roll_for_id(self.session.repo, self.state.active_roll_id)
+        if entry is None or entry.get("kind") != "virtual":
+            return None
+        name = path_safe(entry.get("name", "")) or "Untitled Roll"
+        root = os.path.join(get_default_user_dir(), name)
+        destination = os.path.join(root, subfolder) if subfolder else root
+        self.set_status(f'"{name}" has no single folder — exporting to {destination}', 6000, kind="warning")
+        return root
+
     def history_steps(self) -> List[Dict[str, Any]]:
         """Rows for the History panel: one dict {index, label, is_current} per edit step."""
         file_hash = self.state.current_file_hash
@@ -4803,6 +4826,7 @@ class AppController(QObject):
             preset_from_export_config(replace(self.state.config.export, export_path=export_path)),
             export_fmt=ExportFormat.JXL if linear_fmt == "jxl" else ExportFormat.TIFF,
         )
+        roll_root = self._roll_export_root(delivery.output_mode, delivery.output_subfolder)
         sync_metadata = self.state.config.metadata.sync_to_batch
         taken: set[str] = set()
         tasks = []
@@ -4810,7 +4834,7 @@ class AppController(QObject):
             params = self._batch_params_for(f)
             stitch = params.stitch if params.stitch.stitch_enabled else None
             frames = hdr_frame_paths(f)
-            out_dir = resolve_output_dir(f["path"], delivery)
+            out_dir = resolve_output_dir(f["path"], delivery, roll_root)
             # Same naming rule as a normal export: the bracket's first frame, suffixed so
             # the merge does not write over that frame's own linear output. No border and no
             # half: a linear dump is the whole decoded source, whatever the print crop says.
@@ -4879,6 +4903,7 @@ class AppController(QObject):
         )
         if self.state.flat_output:
             export_conf = flat_export_config(export_conf)
+        roll_root = self._roll_export_root(export_conf.output_mode, export_conf.output_subfolder)
         source_exif = self.state.source_exif.get(self.state.current_file_hash or "")
 
         # Reuse the asset dict from uploaded_files so the half-frame fields reach the
@@ -4914,6 +4939,7 @@ class AppController(QObject):
                     metadata_config=self.state.config.metadata,
                     working_color_space=self.state.workspace_color_space,
                     diptych=diptych,
+                    roll_export_root=roll_root,
                 )
             ]
         )
@@ -4933,6 +4959,7 @@ class AppController(QObject):
             return
 
         current_export = replace(self.state.config.export, export_path=export_path)
+        roll_root = self._roll_export_root(current_export.output_mode, current_export.output_subfolder)
         icc_output = self.state.icc_output_path
         sync_metadata = self.state.config.metadata.sync_to_batch
 
@@ -4991,6 +5018,7 @@ class AppController(QObject):
                     metadata_config=metadata_config,
                     working_color_space=self.state.workspace_color_space,
                     diptych=diptych,
+                    roll_export_root=roll_root,
                 )
             )
 
@@ -5129,11 +5157,10 @@ class AppController(QObject):
         export_path = self._ensure_valid_export_path()
         if export_path is None:
             return None
+        export_conf = replace(self.state.config.export, export_path=export_path)
+        roll_root = self._roll_export_root(export_conf.output_mode, export_conf.output_subfolder)
         # The sheet covers the whole roll, so the source-relative modes follow the first frame.
-        return resolve_output_dir(
-            visible_files[0]["path"],
-            preset_from_export_config(replace(self.state.config.export, export_path=export_path)),
-        )
+        return resolve_output_dir(visible_files[0]["path"], preset_from_export_config(export_conf), roll_root)
 
     def request_contact_sheet(self) -> None:
         """Renders all visible files small and writes darkroom contact sheet(s)."""
