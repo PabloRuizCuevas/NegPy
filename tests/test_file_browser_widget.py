@@ -47,6 +47,7 @@ def session(qapp):
 def browser(session):
     controller = MagicMock()
     controller.session = session
+    controller.half_frame_mode_for_roll.return_value = False
     return FileBrowser(controller)
 
 
@@ -188,6 +189,43 @@ def test_current_file_returns_the_base_hash_for_a_split_asset(browser, session):
     session.state.current_file_path = "/tmp/scan.tif"
     session.state.current_file_hash = "h1#2"  # the active half, listed second
     assert browser._current_file() == ("/tmp/scan.tif", "h1")
+
+
+def test_half_frame_toggle_on_auto_detects_without_opening_a_dialog(browser, session):
+    """A plain toggle: turning it on runs the same batch detection Auto-detect All
+    Splits does, never the rectangle editor."""
+    browser._on_half_frame_toggled(True)
+
+    browser.controller.open_half_frame_dialog.assert_not_called()
+    browser.controller.set_half_frame_mode.assert_called_once_with(True)
+    browser.controller.auto_detect_all_half_frame_splits.assert_called_once_with()
+
+
+def test_half_frame_toggle_off_does_not_auto_detect(browser, session):
+    browser._on_half_frame_toggled(False)
+
+    browser.controller.set_half_frame_mode.assert_called_once_with(False)
+    browser.controller.auto_detect_all_half_frame_splits.assert_not_called()
+
+
+def test_half_frame_toggle_on_skips_auto_detect_with_nothing_loaded(browser, session):
+    session.state.uploaded_files = []
+    browser._on_half_frame_toggled(True)
+
+    browser.controller.set_half_frame_mode.assert_called_once_with(True)
+    browser.controller.auto_detect_all_half_frame_splits.assert_not_called()
+
+
+def test_sync_half_frame_button_follows_the_active_rolls_state_without_retoggling(browser, session):
+    """Mirrors _sync_rgb_scan_button: a roll switch drives the button, not a click, so
+    it must not run set_half_frame_mode a second time."""
+    browser.half_frame_btn.setChecked(False)
+    browser.controller.set_half_frame_mode.reset_mock()
+
+    browser._sync_half_frame_button(True)
+
+    assert browser.half_frame_btn.isChecked() is True
+    browser.controller.set_half_frame_mode.assert_not_called()
 
 
 def test_adjust_half_frame_split_reloads_only_on_apply(browser, session):
