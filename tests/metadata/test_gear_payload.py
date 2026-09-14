@@ -2,12 +2,14 @@
 
 import json
 import os
+from unittest.mock import MagicMock, patch
 
 
 import piexif
 
 import pytest
 
+from PyQt6.QtWidgets import QDialog
 
 from negpy.features.metadata.gear_models import Camera, FilmStock, GearLibrary, Lens
 
@@ -90,6 +92,10 @@ def test_duplicate_bundled_item_is_editable_and_persistable(gear_dir):
     library = GearLibrary(cameras=[Camera(id="cam-bundled", make="Leica", model="M6", is_bundled=True)])
     dlg = GearLibraryPanel(library)
 
+    # No personal cameras yet, so the default (personal-only) list is empty; the
+    # bundled item is reached through the catalog toggle, the behavior under test.
+    dlg.show_catalog_btn.setChecked(True)
+
     assert dlg.display_name_edit.isEnabled() is False
     assert dlg.del_btn.isEnabled() is False
 
@@ -102,6 +108,89 @@ def test_duplicate_bundled_item_is_editable_and_persistable(gear_dir):
 
     on_disk = GearProfiles._read_list(os.path.join(gear_dir, "cameras.json"), Camera)
     assert [c.id for c in on_disk] == [dup.id]
+
+
+def test_default_list_shows_personal_gear_only(gear_dir):
+    from negpy.desktop.view.widgets.gear_library_panel import GearLibraryPanel
+
+    library = GearLibrary(
+        cameras=[
+            Camera(id="cam-bundled", make="Leica", model="M6", is_bundled=True),
+            Camera(id="cam-mine", make="Pentax", model="K1000"),
+        ]
+    )
+    dlg = GearLibraryPanel(library)
+
+    labels = [dlg.item_list.item(i).text() for i in range(dlg.item_list.count())]
+    assert labels == ["Pentax K1000"]
+
+    dlg.show_catalog_btn.setChecked(True)
+    labels = {dlg.item_list.item(i).text() for i in range(dlg.item_list.count())}
+    assert labels == {"Pentax K1000", "Leica M6"}
+
+
+def test_empty_personal_list_shows_a_hint_not_a_blank_box(gear_dir):
+    from negpy.desktop.view.widgets.gear_library_panel import GearLibraryPanel
+
+    library = GearLibrary(cameras=[Camera(id="cam-bundled", make="Leica", model="M6", is_bundled=True)])
+    dlg = GearLibraryPanel(library)
+
+    assert dlg.empty_hint.isVisibleTo(dlg) is True
+    assert "cameras" in dlg.empty_hint.text()
+    assert dlg.item_list.isVisibleTo(dlg) is False
+
+    dlg.show_catalog_btn.setChecked(True)
+    assert dlg.empty_hint.isVisibleTo(dlg) is False
+    assert dlg.item_list.isVisibleTo(dlg) is True
+
+
+def test_add_item_opens_the_catalog_and_clones_the_pick(gear_dir):
+    from negpy.desktop.view.widgets.gear_library_panel import GearLibraryPanel
+
+    library = GearLibrary(cameras=[Camera(id="cam-bundled", make="Leica", model="M6", is_bundled=True)])
+    dlg = GearLibraryPanel(library)
+
+    fake_dlg = MagicMock()
+    fake_dlg.exec.return_value = QDialog.DialogCode.Accepted
+    fake_dlg.wants_custom.return_value = False
+    fake_dlg.selected_id.return_value = "cam-bundled"
+    with patch("negpy.desktop.view.widgets.gear_library_panel.GearCatalogDialog", return_value=fake_dlg):
+        dlg._add_item()
+
+    assert len(dlg.library().cameras) == 2
+    added = dlg.library().cameras[-1]
+    assert added.is_bundled is False
+    assert added.make == "Leica"
+    assert added.id != "cam-bundled"
+
+
+def test_add_item_custom_fallback_creates_a_blank_record(gear_dir):
+    from negpy.desktop.view.widgets.gear_library_panel import GearLibraryPanel
+
+    library = GearLibrary(cameras=[Camera(id="cam-bundled", make="Leica", model="M6", is_bundled=True)])
+    dlg = GearLibraryPanel(library)
+
+    fake_dlg = MagicMock()
+    fake_dlg.exec.return_value = QDialog.DialogCode.Accepted
+    fake_dlg.wants_custom.return_value = True
+    with patch("negpy.desktop.view.widgets.gear_library_panel.GearCatalogDialog", return_value=fake_dlg):
+        dlg._add_item()
+
+    added = dlg.library().cameras[-1]
+    assert added.is_bundled is False
+    assert added.make == "New"
+
+
+def test_delete_item_does_not_act_on_a_bundled_selection(gear_dir):
+    from negpy.desktop.view.widgets.gear_library_panel import GearLibraryPanel
+
+    library = GearLibrary(cameras=[Camera(id="cam-bundled", make="Leica", model="M6", is_bundled=True)])
+    dlg = GearLibraryPanel(library)
+    dlg.show_catalog_btn.setChecked(True)
+
+    dlg._delete_item()
+
+    assert [c.id for c in dlg.library().cameras] == ["cam-bundled"]
 
 
 def test_load_and_save_library(gear_dir):
