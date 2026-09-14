@@ -556,8 +556,6 @@ class FileBrowser(QWidget):
             (self.add_files_btn, "Add files"),
             (self.add_folder_btn, "Add folder"),
             (None, None),
-            (self.hot_folder_btn, "Hot Folder"),
-            (None, None),
             (self.sort_btn, "Sort"),
         ):
             if widget is None:
@@ -567,6 +565,8 @@ class FileBrowser(QWidget):
         layout.addWidget(self.session_toolbar)
 
         for widget, label in (
+            (self.hot_folder_btn, "Hot Folder"),
+            (None, None),
             (self.rgb_scan_btn, "Trichrome Scan"),
             (self.half_frame_btn, "Half Frame"),
             (self.half_frame_menu_btn, "Half Frame actions"),
@@ -690,7 +690,11 @@ class FileBrowser(QWidget):
             section.expanded_changed.connect(lambda expanded, i=index: self._on_section_toggled(i, expanded))
             self._on_section_toggled(index, section.toggle_button.isChecked())
 
+        # Absorbs the surplus when both sections are collapsed, or Qt spreads it above the
+        # splitter instead of below it (the splitter's own stretch factor, set to 0 in that
+        # case by _on_section_toggled, leaves this the only claimant on the leftover space).
         layout.addWidget(self.sections_splitter, 1)
+        layout.addStretch(0)
 
         # Applied after list_view exists: the filter prunes the selection against the view.
         saved_sheet = self.session.repo.get_global_setting("sheet_filter") or "all"
@@ -734,11 +738,20 @@ class FileBrowser(QWidget):
         if not expanded:
             self._section_sizes[index] = sizes[index]
         self._apply_section_constraints(index, expanded)
+
+        # A QVBoxLayout stretch factor sizes the *widget*, not its content: a splitter both
+        # of whose panes are pinned small still gets stretched into the layout's full
+        # leftover space. Capping the splitter's own maximum height, mirroring the
+        # per-pane constraint above, is what actually keeps the leftover space out of it.
+        other_header = sections[other].toggle_button.height()
+        if expanded or sections[other].toggle_button.isChecked():
+            self.sections_splitter.setMaximumHeight(_UNBOUNDED_HEIGHT)
+        else:
+            self.sections_splitter.setMaximumHeight(header + self.sections_splitter.handleWidth() + other_header)
         if total <= 0:
             return
 
         want = min(max(self._section_sizes[index], header), max(header, total - header)) if expanded else header
-        other_header = sections[other].toggle_button.height()
         other_want = max(other_header, total - want) if sections[other].toggle_button.isChecked() else other_header
         new_sizes = [0, 0]
         new_sizes[index] = want
