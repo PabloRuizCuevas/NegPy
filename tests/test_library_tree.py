@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
@@ -183,6 +184,54 @@ def test_deleting_a_roll(widget, monkeypatch):
     widget._delete_roll(roll_id, "Portra")
 
     assert roll_for_id(widget.repo, roll_id) is None
+    assert widget.tree.topLevelItemCount() == 0
+
+
+def test_right_clicking_a_multi_selection_offers_a_bulk_delete(widget, monkeypatch):
+    create_virtual_roll(widget.repo, "apple", [])
+    create_virtual_roll(widget.repo, "banana", [])
+    widget.reload()
+    item = widget.tree.topLevelItem(0)
+    widget.tree.topLevelItem(0).setSelected(True)
+    widget.tree.topLevelItem(1).setSelected(True)
+    monkeypatch.setattr(widget.tree, "itemAt", lambda pos: item)
+    menu = MagicMock()
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.QMenu", lambda *a, **k: menu)
+
+    widget._show_context_menu(QPoint(0, 0))
+
+    labels = [call.args[0] for call in menu.addAction.call_args_list]
+    assert any("Delete 2 Rolls" in label for label in labels)
+    assert "Open" not in labels
+    assert "Rename…" not in labels
+
+
+def test_right_clicking_outside_a_multi_selection_still_targets_just_that_row(widget, monkeypatch):
+    create_virtual_roll(widget.repo, "apple", [])
+    create_virtual_roll(widget.repo, "banana", [])
+    widget.reload()
+    widget.tree.topLevelItem(0).setSelected(True)
+    other = widget.tree.topLevelItem(1)
+    monkeypatch.setattr(widget.tree, "itemAt", lambda pos: other)
+    menu = MagicMock()
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.QMenu", lambda *a, **k: menu)
+
+    widget._show_context_menu(QPoint(0, 0))
+
+    labels = [call.args[0] for call in menu.addAction.call_args_list]
+    assert "Open" in labels
+    assert "Delete…" in labels
+
+
+def test_deleting_a_multi_selection_removes_every_selected_roll(widget, monkeypatch):
+    id_a = create_virtual_roll(widget.repo, "apple", [])
+    id_b = create_virtual_roll(widget.repo, "banana", [])
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.confirm_delete_several", lambda *a, **k: True)
+
+    widget._delete_rolls([(id_a, "apple"), (id_b, "banana")])
+
+    assert roll_for_id(widget.repo, id_a) is None
+    assert roll_for_id(widget.repo, id_b) is None
     assert widget.tree.topLevelItemCount() == 0
 
 

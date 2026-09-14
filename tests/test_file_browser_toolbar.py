@@ -32,6 +32,7 @@ def test_library_and_sort_join_the_library_tree_corner_row(panel):
 def test_film_strip_toolbar_holds_roll_scoped_actions(panel):
     browser = panel.file_browser
     expected = [
+        browser.new_roll_btn,
         browser.add_btn,
         browser.hot_folder_btn,
         browser.rgb_scan_btn,

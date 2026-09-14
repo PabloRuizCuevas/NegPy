@@ -72,6 +72,19 @@ def confirm_delete_named(parent, kind: str, name: str, *, informative: str = "")
     return box.exec() == QMessageBox.StandardButton.Yes
 
 
+def confirm_delete_several(parent, kind: str, names: list, *, informative: str = "") -> bool:
+    """Ask before deleting several named items at once, selected together. Enter
+    confirms; Esc cancels."""
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle(f"Delete {len(names)} {kind}s")
+    box.setText(f"Delete these {len(names)} {kind.lower()}s?")
+    box.setInformativeText(informative or "\n".join(names))
+    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+    box.setDefaultButton(QMessageBox.StandardButton.Yes)
+    return box.exec() == QMessageBox.StandardButton.Yes
+
+
 def confirm_delete_mask(parent) -> bool:
     """Ask before deleting a single dodge/burn mask. Enter confirms; Esc cancels."""
     box = QMessageBox(parent)

@@ -52,6 +52,7 @@ from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, labeled_actio
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog, open_paste_dialog
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
+from negpy.services.assets import rolls
 from negpy.services.assets.gear import GearProfiles
 from negpy.services.assets.presets import is_valid_preset_name
 from negpy.infrastructure.filesystem.watcher import FolderWatchService
@@ -423,6 +424,14 @@ class FileBrowser(QWidget):
         self.library_btn.setIcon(qta.icon("fa5s.book-open", color=THEME.text_primary))
         self.library_btn.setToolTip("Library — your imported rolls")
 
+        # Clearing the strip is how you start a roll you will build entirely by drag-drop --
+        # folder-plus rather than the destructive times-circle Unload uses, since the point
+        # here is the empty roll you get, not the frames you are dropping.
+        self.new_roll_btn = QToolButton()
+        self.new_roll_btn.setIcon(qta.icon("fa5s.folder-plus", color=THEME.text_primary))
+        self.new_roll_btn.setToolTip("New Roll — clear the film strip so you can drag in a fresh batch of frames")
+        self.new_roll_btn.clicked.connect(self._on_clear_all)
+
         # One button for both: Add Files and Add Folder are two pickers for the same job
         # (put pictures in this session), not two different actions worth their own icons.
         self.add_btn = QToolButton()
@@ -538,6 +547,7 @@ class FileBrowser(QWidget):
         self.sort_btn.setMenu(sort_menu)
 
         for btn in (
+            self.new_roll_btn,
             self.add_btn,
             self.unload_btn,
             self.hot_folder_btn,
@@ -560,6 +570,8 @@ class FileBrowser(QWidget):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
         for widget, label in (
+            (self.new_roll_btn, "New Roll…"),
+            (None, None),
             (self.add_btn, "Add"),
             (None, None),
             (self.hot_folder_btn, "Hot Folder"),
@@ -858,6 +870,7 @@ class FileBrowser(QWidget):
             return
         if self.controller.create_roll_from_session(name):
             self.library_tree.reload()
+            self._update_tally()
 
     def _update_unload_button(self) -> None:
         multi = len(self.session.state.selected_indices) > 1
@@ -1016,8 +1029,20 @@ class FileBrowser(QWidget):
             text += f" · {keepers} keeper{'s' if keepers != 1 else ''}"
         if rejected:
             text += f" · {rejected} rejected"
+        roll_name = self._active_roll_name()
+        if roll_name:
+            text = f"{roll_name} — {text}"
         self.tally_label.setText(text)
         self.tally_label.setVisible(True)
+
+    def _active_roll_name(self) -> str:
+        """The roll the Film Strip's frames came from, if any -- shown ahead of the
+        tally so it stays visible without opening Library to check."""
+        roll_id = self.session.state.active_roll_id
+        if not roll_id:
+            return ""
+        entry = rolls.roll_for_id(self.session.repo, roll_id)
+        return entry.get("name", "") if entry else ""
 
     def _update_empty_state(self) -> None:
         """Swap the strip for a message when a filter leaves it with nothing to show."""

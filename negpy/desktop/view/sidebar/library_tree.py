@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from negpy.desktop.view.confirm import confirm_delete_named, confirm_load_roll
+from negpy.desktop.view.confirm import confirm_delete_named, confirm_delete_several, confirm_load_roll
 from negpy.desktop.view.styles.templates import hint_label
 from negpy.desktop.view.styles.theme import THEME
 from negpy.services.assets import rolls
@@ -224,15 +224,22 @@ class LibraryTree(QWidget):
         if item is not None:
             self.controller.open_roll(item.data(0, _ROLL_ID_ROLE))
 
+    def _selected_roll_items(self) -> list[tuple]:
+        return [(item.data(0, _ROLL_ID_ROLE), item.text(0)) for item in self.tree.selectedItems()]
+
     def _show_context_menu(self, pos) -> None:
         item = self.tree.itemAt(pos)
         menu = QMenu(self)
         if item is not None:
             roll_id = item.data(0, _ROLL_ID_ROLE)
-            name = item.text(0)
-            menu.addAction("Open").triggered.connect(lambda: self.controller.open_roll(roll_id))
-            menu.addAction("Rename…").triggered.connect(lambda: self._rename_roll(roll_id, name))
-            menu.addAction("Delete…").triggered.connect(lambda: self._delete_roll(roll_id, name))
+            selection = self._selected_roll_items()
+            if len(selection) > 1 and roll_id in dict(selection):
+                menu.addAction(f"Delete {len(selection)} Rolls…").triggered.connect(lambda: self._delete_rolls(selection))
+            else:
+                name = item.text(0)
+                menu.addAction("Open").triggered.connect(lambda: self.controller.open_roll(roll_id))
+                menu.addAction("Rename…").triggered.connect(lambda: self._rename_roll(roll_id, name))
+                menu.addAction("Delete…").triggered.connect(lambda: self._delete_roll(roll_id, name))
             menu.addSeparator()
         menu.addAction("Import Folder as a Roll…").triggered.connect(self.prompt_import_folder)
         menu.addAction("Import Subfolders as Rolls…").triggered.connect(self.prompt_import_subfolders)
@@ -253,5 +260,13 @@ class LibraryTree(QWidget):
     def _delete_roll(self, roll_id: str, name: str) -> None:
         if confirm_delete_named(self, "Roll", name, informative="This only forgets the roll — nothing on disk is touched."):
             rolls.delete_roll(self.repo, roll_id)
+            self.reload()
+            self.rolls_changed.emit()
+
+    def _delete_rolls(self, selection: list[tuple]) -> None:
+        names = [name for _roll_id, name in selection]
+        if confirm_delete_several(self, "Roll", names, informative="This only forgets the roll records — nothing on disk is touched."):
+            for roll_id, _name in selection:
+                rolls.delete_roll(self.repo, roll_id)
             self.reload()
             self.rolls_changed.emit()
