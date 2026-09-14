@@ -231,10 +231,11 @@ class TestAppController(unittest.TestCase):
         self.controller.session.repo.load_file_settings.return_value = None
         self.controller.request_asset_discovery = MagicMock()
 
-        self.controller._on_splits_detected({"/p/a.tif": (0.4, (0.05, 0.05, 0.95, 0.95)), "/p/b.tif": (0.6, None)})
+        self.controller._on_splits_detected({"/p/a.tif": (0.4, 0.02, (0.05, 0.05, 0.95, 0.95)), "/p/b.tif": (0.6, 0.0, None)})
 
         overrides = store["half_frame_overrides"]
         self.assertEqual(overrides["ha"]["split_x"], 0.4)
+        self.assertEqual(overrides["ha"]["gutter_thickness"], 0.02)
         self.assertEqual(overrides["ha"]["crop_rect"], [0.05, 0.05, 0.95, 0.95])
         self.assertEqual(overrides["hb"]["split_x"], 0.6)
         # No crop detected for this file: falls back to the full frame, same as before.
@@ -249,15 +250,16 @@ class TestAppController(unittest.TestCase):
         self.controller.session.repo.load_file_settings.return_value = None
         self.controller.request_asset_discovery = MagicMock()
 
-        self.controller._on_splits_detected({"/p/a.tif": (0.4, None)})
+        self.controller._on_splits_detected({"/p/a.tif": (0.4, 0.03, None)})
 
         self.assertEqual(store["half_frame_overrides"]["ha"]["crop_rect"], [0.1, 0.1, 0.9, 0.9])
         self.assertEqual(store["half_frame_overrides"]["ha"]["split_x"], 0.4)
+        self.assertEqual(store["half_frame_overrides"]["ha"]["gutter_thickness"], 0.03)
 
     def test_on_splits_detected_no_op_when_nothing_matches(self):
         self.controller.session.state.uploaded_files = [{"path": "/p/a.tif", "hash": "ha#1"}]
         self.controller.request_asset_discovery = MagicMock()
-        self.controller._on_splits_detected({"/p/other.tif": (0.4, None)})
+        self.controller._on_splits_detected({"/p/other.tif": (0.4, 0.0, None)})
         self.controller.session.repo.save_global_setting.assert_not_called()
         self.controller.request_asset_discovery.assert_not_called()
 

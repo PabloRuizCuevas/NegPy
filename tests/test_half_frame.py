@@ -279,12 +279,13 @@ def test_expand_half_frames_per_file_override_wins_over_the_profile(monkeypatch)
 
 
 def test_auto_detect_all_splits_worker_emits_per_file_results(monkeypatch):
-    """process_auto_detect_all_splits reports one (split, crop) pair per path, so a
-    big roll's detection can run off the GUI thread and still land as one dict."""
+    """process_auto_detect_all_splits reports one (split, thickness, crop) triple
+    per path, so a big roll's detection can run off the GUI thread and still land
+    as one dict."""
     from negpy.desktop.workers import render as render_mod
     from negpy.desktop.workers.render import AutoDetectAllSplitsTask
 
-    detected = {"/p/a.tif": (0.4, (0.05, 0.05, 0.95, 0.95)), "/p/b.tif": (0.6, None)}
+    detected = {"/p/a.tif": (0.4, 0.02, (0.05, 0.05, 0.95, 0.95)), "/p/b.tif": (0.6, 0.0, None)}
     monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_and_crop_for_file", lambda p: detected[p])
     worker = render_mod.AssetDiscoveryWorker()
     results = []
