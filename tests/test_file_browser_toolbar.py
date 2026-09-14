@@ -30,9 +30,7 @@ def test_session_toolbar_holds_folder_actions_and_filters(panel):
         browser.library_btn,
         browser.add_files_btn,
         browser.add_folder_btn,
-        browser.unload_btn,
         browser.hot_folder_btn,
-        browser.sheet_btn,
         browser.sort_btn,
     ]
     assert browser.session_toolbar.buttons == expected
@@ -46,6 +44,8 @@ def test_film_strip_toolbar_holds_roll_scoped_actions(panel):
         browser.half_frame_menu_btn,
         browser.apply_btn,
         browser.roll_settings_btn,
+        browser.unload_btn,
+        browser.sheet_btn,
     ]
     assert browser.film_strip_toolbar.buttons == expected
 
@@ -53,7 +53,7 @@ def test_film_strip_toolbar_holds_roll_scoped_actions(panel):
 def test_narrowing_the_panel_raises_a_populated_overflow_menu(panel, qapp):
     """QToolBar's native extension menu was tried first and came up empty: widgets added with
     addWidget() become QWidgetActions its popup cannot host."""
-    toolbar = panel.file_browser.session_toolbar
+    toolbar = panel.file_browser.film_strip_toolbar
     panel.resize(420, 700)
     qapp.processEvents()
     assert not toolbar.overflow_btn.isVisible()
@@ -64,7 +64,7 @@ def test_narrowing_the_panel_raises_a_populated_overflow_menu(panel, qapp):
 
     labels = [action.text() for action in toolbar.build_overflow_menu().actions()]
     assert labels, "overflow button with an empty menu"
-    assert "Sort" in labels
+    assert "Sheet filter" in labels
 
 
 def test_film_strip_toolbar_minimum_is_not_the_sum_of_its_buttons(panel):

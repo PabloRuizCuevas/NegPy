@@ -555,11 +555,9 @@ class FileBrowser(QWidget):
             (self.library_btn, "Library"),
             (self.add_files_btn, "Add files"),
             (self.add_folder_btn, "Add folder"),
-            (self.unload_btn, "Clear All…"),
             (None, None),
             (self.hot_folder_btn, "Hot Folder"),
             (None, None),
-            (self.sheet_btn, "Sheet filter"),
             (self.sort_btn, "Sort"),
         ):
             if widget is None:
@@ -574,8 +572,14 @@ class FileBrowser(QWidget):
             (self.half_frame_menu_btn, "Half Frame actions"),
             (self.apply_btn, "Apply settings"),
             (self.roll_settings_btn, "Roll Settings"),
+            (None, None),
+            (self.unload_btn, "Clear All…"),
+            (self.sheet_btn, "Sheet filter"),
         ):
-            self.film_strip_toolbar.add_button(widget, label)
+            if widget is None:
+                self.film_strip_toolbar.add_separator(self._create_separator())
+            else:
+                self.film_strip_toolbar.add_button(widget, label)
 
         saved_sort = self.session.repo.get_global_setting("file_sort_order") or "name"
         saved_desc = self.session.repo.get_global_setting("file_sort_descending") or False

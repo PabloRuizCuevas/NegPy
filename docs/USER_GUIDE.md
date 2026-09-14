@@ -127,10 +127,8 @@ NegPy reads the tree straight from disk and never creates, renames, moves or del
 Toolbar buttons, left to right — folder actions and filters, so they apply whether or not a roll is loaded:
 
 *   **Add Files** / **Add Folder**: load individual images or every image in a folder. Pick a folder that holds only *other* folders and NegPy reveals it in the Library section instead of reporting that it found nothing. Dropping a folder on the window does the same.
-*   **Clear All…**: unload everything, or just the selected frames.
 *   **Hot Folder**: watches the current folder and auto-loads new files as they appear, which is handy when a scanner or tethering app drops files into a directory. While it is on, the "Working…" import popup stays hidden so each new frame does not raise a window; the status line over the canvas still reports the import.
-*   **Sheet filter** (funnel): show *All Frames*, *Keepers Only*, or *Hide Rejected*. The choice is remembered between sessions and applies to every roll you open.
-*   **Sort**: by Name or Date, ascending or descending.
+*   **Sort**: by Name or Date, ascending or descending. Orders the Library tree and the Film Strip alike.
 
 The Film Strip section has its own row of buttons above the frames, for actions that read or rewrite the loaded roll:
 
@@ -146,6 +144,8 @@ The Film Strip section has its own row of buttons above the frames, for actions 
     Half Frame does not apply to a frame assembled from more than one file: a Trichrome triplet, a stitch, or an HDR merge. Those are never split, and they never come back as a diptych, even when the file they are built around was worked on as two halves earlier.
 *   **Apply (clone)**: copy the current frame's settings to selected frames or the whole roll. You choose which aspects in a dialog; crop and rotation are always per-image.
 *   **Roll Settings** (tag icon): tag gear, capture, place, process and scanning metadata for the current frame, a selection or the whole roll in one dialog. Fields start filled from the active frame; type or pick new values directly, or **Load** a metadata preset to fill and tick its fields, then tick which groups to write. Defaults to the whole roll when one is loaded.
+*   **Clear All…**: unload everything, or just the selected frames.
+*   **Sheet filter** (funnel): show *All Frames*, *Keepers Only*, or *Hide Rejected*. The choice is remembered between sessions and applies to every roll you open.
 
 Above both sections sit a **filter box**, a **`.*`** regex toggle and a **search-library** button. Inside the Film Strip section is a **tally**, for example "36 frames · 12 keepers · 3 rejected". While a filter hides frames the tally counts both sets and names the filter, for example "3 of 36 frames · Keepers filter". When a filter hides every frame, the strip carries a message with a **Show all frames** link that clears the filter box and the funnel together.
 
