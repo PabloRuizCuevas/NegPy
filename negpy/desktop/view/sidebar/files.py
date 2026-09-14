@@ -465,7 +465,7 @@ class FileBrowser(QWidget):
         self.half_frame_btn.setCheckable(True)
         self.half_frame_btn.setIcon(qta.icon("mdi.view-split-vertical", color=THEME.text_primary))
         self.half_frame_btn.setToolTip("Half Frame — split each scan into two frames, edited and measured separately")
-        self.half_frame_btn.setChecked(bool(self.session.repo.get_global_setting("half_frame_mode", False)))
+        self.half_frame_btn.setChecked(self.controller.half_frame_mode_for_roll(self.session.state.active_roll_id))
         self._update_half_frame_style(self.half_frame_btn.isChecked())
 
         # One button for every half-frame action, rather than one icon apiece: the menu
@@ -807,6 +807,7 @@ class FileBrowser(QWidget):
         self.rgb_scan_btn.toggled.connect(self._on_rgb_scan_toggled)
         self.controller.rgb_scan_mode_changed.connect(self._sync_rgb_scan_button)
         self.half_frame_btn.toggled.connect(self._on_half_frame_toggled)
+        self.controller.half_frame_mode_changed.connect(self._sync_half_frame_button)
         self.session.state_changed.connect(self.sync_ui)
         self.session.files_changed.connect(self._on_files_changed)
         # Unloading the last frame leaves nothing to show, so fall back to the library rather
@@ -1097,6 +1098,15 @@ class FileBrowser(QWidget):
         icon_color = "white" if checked else THEME.text_primary
         self.half_frame_btn.setIcon(qta.icon("mdi.view-split-vertical", color=icon_color))
 
+    def _sync_half_frame_button(self, enabled: bool) -> None:
+        """Follow the active roll's own toggle state. Signals are blocked because
+        request_asset_discovery already applied it for this roll; letting toggled
+        through would ask for it a second time and re-run discovery."""
+        self.half_frame_btn.blockSignals(True)
+        self.half_frame_btn.setChecked(enabled)
+        self.half_frame_btn.blockSignals(False)
+        self._update_half_frame_style(enabled)
+
     def _current_file(self) -> tuple[Optional[str], Optional[str]]:
         """The current frame's (path, base hash), falling back to the first loaded file.
 
@@ -1131,22 +1141,13 @@ class FileBrowser(QWidget):
         return list(seen)
 
     def _on_half_frame_toggled(self, checked: bool) -> None:
+        """A plain toggle: no editor pops up. Turning it on splits every loaded scan at
+        its auto-detected gutter directly; the odd frame it gets wrong is fixed
+        afterward from the Half Frame actions menu (Adjust Split…)."""
         self._update_half_frame_style(checked)
-        if checked and self.session.state.uploaded_files:
-            # Offer the rectangle editor on the current frame. The saved profile applies to every
-            # half-frame split from then on.
-            path, file_hash = self._current_file()
-            if path and file_hash:
-                profile = self.controller.open_half_frame_dialog(path, file_hash, initial_scope="all")
-                if profile is None:
-                    # User cancelled or closed the dialog — revert the toggle without
-                    # activating half-frame mode so Cancel/X behaves as expected.
-                    self.half_frame_btn.blockSignals(True)
-                    self.half_frame_btn.setChecked(False)
-                    self.half_frame_btn.blockSignals(False)
-                    self._update_half_frame_style(False)
-                    return
         self.controller.set_half_frame_mode(checked)
+        if checked and self.session.state.uploaded_files:
+            self.controller.auto_detect_all_half_frame_splits()
 
     def _on_half_frame_adjust(self) -> None:
         """Open the half-frame rectangle editor on the current image; its own
