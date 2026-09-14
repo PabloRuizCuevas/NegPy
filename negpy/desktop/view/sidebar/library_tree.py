@@ -58,12 +58,13 @@ class LibraryTree(QWidget):
     folders_appended = pyqtSignal(list)  # "Add to Session": load without replacing
     roots_changed = pyqtSignal()
 
-    def __init__(self, controller):
+    def __init__(self, controller, leading_widgets: tuple[QWidget, ...] = ()):
         super().__init__()
         self.controller = controller
         self.repo = controller.session.repo
         self._sort_order = "name"
         self._sort_descending = False
+        self._leading_widgets = leading_widgets
         self._init_ui()
         self.reload()
 
@@ -76,6 +77,10 @@ class LibraryTree(QWidget):
         header = QHBoxLayout()
         header.setSpacing(4)
         header.addStretch(1)
+
+        # Sized by the caller to match this row's own mini-button convention.
+        for widget in self._leading_widgets:
+            header.addWidget(widget)
 
         self.add_root_btn = QToolButton()
         self.add_root_btn.setIcon(qta.icon("fa5s.plus", color=THEME.text_primary))

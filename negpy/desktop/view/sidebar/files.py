@@ -418,9 +418,8 @@ class FileBrowser(QWidget):
         icon_size = QSize(16, 16)
         btn_height = 28
 
-        # Top: folder actions and filters. Roll-scoped actions (Trichrome, Half Frame, Apply,
-        # Roll Settings) live in film_strip_toolbar instead, next to the frames they act on.
-        self.session_toolbar = OverflowBar(height=btn_height, spacing=4)
+        # No top-level toolbar: every action lives in the row of the section it acts on --
+        # Library's own +/refresh corner, or film_strip_toolbar next to the loaded frames.
         self.film_strip_toolbar = OverflowBar(height=btn_height, spacing=4)
 
         self.library_btn = QToolButton()
@@ -537,7 +536,6 @@ class FileBrowser(QWidget):
         self.sort_btn.setMenu(sort_menu)
 
         for btn in (
-            self.library_btn,
             self.add_btn,
             self.unload_btn,
             self.hot_folder_btn,
@@ -547,20 +545,16 @@ class FileBrowser(QWidget):
             self.apply_btn,
             self.roll_settings_btn,
             self.sheet_btn,
-            self.sort_btn,
         ):
             btn.setIconSize(icon_size)
             btn.setFixedHeight(btn_height)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # OverflowBar rather than a QHBoxLayout: a plain row made the whole session panel
-        # unshrinkable below every button laid end to end, so each new tool widened it for good.
-        for widget, label in (
-            (self.library_btn, "Library"),
-            (self.sort_btn, "Sort"),
-        ):
-            self.session_toolbar.add_button(widget, label)
-        layout.addWidget(self.session_toolbar)
+        # Library and Sort join LibraryTree's own +/refresh corner row instead of a
+        # top-level toolbar: mini-button sized (20x20), matching that row's own convention.
+        for btn in (self.library_btn, self.sort_btn):
+            btn.setFixedSize(20, 20)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
         for widget, label in (
             (self.add_btn, "Add"),
@@ -654,7 +648,7 @@ class FileBrowser(QWidget):
         self.empty_label.setVisible(False)
         self.empty_label.linkActivated.connect(lambda _: self._clear_frame_filters())
 
-        self.library_tree = LibraryTree(self.controller)
+        self.library_tree = LibraryTree(self.controller, leading_widgets=(self.library_btn, self.sort_btn))
         self.library_section = self._make_section("Library", "library", "fa5s.folder-open", self.library_tree)
 
         frames = QWidget()

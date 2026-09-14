@@ -17,13 +17,16 @@ def panel(qapp):
     return panel
 
 
-def test_session_toolbar_holds_folder_actions_and_filters(panel):
+def test_library_and_sort_join_the_library_tree_corner_row(panel):
+    """No top-level toolbar: Library and Sort sit with LibraryTree's own +/refresh, sized
+    to match (20x20), not the taller film-strip-toolbar convention."""
     browser = panel.file_browser
-    expected = [
-        browser.library_btn,
-        browser.sort_btn,
-    ]
-    assert browser.session_toolbar.buttons == expected
+    tree = panel.library_tree
+
+    assert tree.isAncestorOf(browser.library_btn)
+    assert tree.isAncestorOf(browser.sort_btn)
+    assert (browser.library_btn.width(), browser.library_btn.height()) == (20, 20)
+    assert (browser.sort_btn.width(), browser.sort_btn.height()) == (20, 20)
 
 
 def test_film_strip_toolbar_holds_roll_scoped_actions(panel):

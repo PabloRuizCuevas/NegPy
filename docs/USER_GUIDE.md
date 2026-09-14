@@ -95,13 +95,13 @@ Below the header: the toolbar, the search box, and two collapsible sections. **L
 <!-- panel:library -->
 ### Your library
 
-The **Library** section is a folder tree of the places your scans live. Press **+** to add a folder, and point it at the one big `Scans` directory you keep everything under, subfolders and all. **↻** re-reads it from disk. Each row shows what is inside it ("36 photos", "2 folders"), and subfolders are read when you expand them.
+The **Library** section is a folder tree of the places your scans live. Its own corner row holds four controls: the **Library** button (book icon, or **Ctrl+L**) opens the folder your scans live in; **Sort** orders the tree by Name or Date, ascending or descending, and the Film Strip follows the same order; **+** adds a folder; **↻** re-reads it from disk. Each row shows what is inside it ("36 photos", "2 folders"), and subfolders are read when you expand them.
 
 **Browsing costs nothing.** NegPy opens, decodes and hashes nothing when you add a folder or click through the tree. It only lists what is there.
 
 #### The Library button
 
-The **Library** button (book icon, first in the toolbar, or **Ctrl+L**) opens the folder your scans live in. The first time you press it, NegPy asks you to pick that folder and remembers it. The panel also goes there on its own: on launch when you do not restore a session, and whenever you unload the last frame. Your rolls are a more useful resting state than an empty sheet.
+The first time you press **Library**, NegPy asks you to pick that folder and remembers it. The panel also goes there on its own: on launch when you do not restore a session, and whenever you unload the last frame. Your rolls are a more useful resting state than an empty sheet.
 
 To point it somewhere else, add another folder with **+**. To forget them all, use **Clear Library** in *Manage Database*. That clears the list of folders only, leaving your images, folders and edits untouched.
 
@@ -110,7 +110,6 @@ To point it somewhere else, add another folder with **+**. To forget them all, u
 *   **Click** a folder to select it, **double-click** (or **Enter**) to open it.
 *   **Ctrl+click** several folders and open them together to load more than one roll at once. NegPy asks once, for the total.
 *   **Alt+Up** moves the selection to the folder above.
-*   The tree sorts the way the sheet does. Change **Sort** to Date or Descending and the folders follow.
 
 When you open a folder that contains images, NegPy asks whether to **load the roll**. Only then does it hash and thumbnail them, which is the part that takes a moment on a big roll. Say no and your open frames stay as they were. Tick **Always load without asking** in that prompt if you would rather it just get on with it.
 
@@ -123,10 +122,6 @@ NegPy reads the tree straight from disk and never creates, renames, moves or del
 ### Importing and managing files
 
 **A note on Nikon High Efficiency raw.** The Z 8 and Z 9 can record NEFs in **High Efficiency (HE)** or **HE\***, which use a licensed codec NegPy cannot decode. Such a file is still called `.NEF` and still carries the same TIFF compression tag as an ordinary lossless NEF, so nothing looks unusual until it fails to open. NegPy names the reason rather than reporting a generic unsupported-file error. Re-shoot in **Lossless Compressed** NEF, or convert with Adobe DNG Converter. Lossless NEFs from the same cameras open normally.
-
-Toolbar buttons, left to right — folder actions and filters, so they apply whether or not a roll is loaded:
-
-*   **Sort**: by Name or Date, ascending or descending. Orders the Library tree and the Film Strip alike.
 
 The Film Strip section has its own row of buttons above the frames, for actions that read or rewrite the loaded roll:
 
