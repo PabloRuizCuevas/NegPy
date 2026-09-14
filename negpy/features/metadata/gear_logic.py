@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+import uuid
 from dataclasses import replace
 from typing import Optional, Union
 
@@ -9,6 +11,40 @@ from negpy.features.metadata.gear_models import Camera, DevelopmentProcess, Film
 from negpy.features.metadata.models import PUSH_PULL_LABELS, MetadataConfig
 
 GearItem = Union[Camera, Lens, FilmStock, DevelopmentProcess, ScanSetup]
+
+CATEGORY_SINGULAR: dict[str, str] = {
+    "cameras": "Camera",
+    "lenses": "Lens",
+    "film_stocks": "Film Stock",
+    "processes": "Process",
+    "scan_setups": "Scan Setup",
+}
+
+
+def blank_gear_item(category: str) -> GearItem:
+    """A personal item with no reference match. Real fields (make, model, ...) start
+    empty -- they ride into EXIF verbatim, so a placeholder there would misdescribe
+    the photo. display_name is UI-only, so it carries the placeholder instead, ready
+    to be replaced by the name the user actually types."""
+    placeholder = f"New {CATEGORY_SINGULAR[category]}"
+    if category == "cameras":
+        return Camera(display_name=placeholder)
+    if category == "lenses":
+        return Lens(display_name=placeholder)
+    if category == "processes":
+        return DevelopmentProcess(display_name=placeholder)
+    if category == "scan_setups":
+        return ScanSetup(display_name=placeholder)
+    return FilmStock(display_name=placeholder)
+
+
+def clone_into_personal(source: GearItem) -> GearItem:
+    """A bundled item made editable: a new id and is_bundled cleared, so it saves to
+    the user's own file instead of the read-only shipped one."""
+    dup = copy.deepcopy(source)
+    dup.id = uuid.uuid4().hex
+    dup.is_bundled = False
+    return dup
 
 
 def gear_search_text(item: GearItem) -> str:

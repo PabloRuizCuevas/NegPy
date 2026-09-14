@@ -4,7 +4,6 @@ or Metadata, not something opened, changed once and dismissed."""
 
 from __future__ import annotations
 
-import copy
 from dataclasses import replace
 from typing import Callable, Optional
 
@@ -41,6 +40,9 @@ from negpy.desktop.view.widgets.gear_catalog_dialog import GearCatalogDialog
 from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog
 from negpy.domain.models import WorkspaceConfig
 from negpy.features.metadata.gear_logic import (
+    CATEGORY_SINGULAR,
+    blank_gear_item,
+    clone_into_personal,
     matches_gear_filter,
     metadata_from_gear,
     metadata_from_process,
@@ -56,7 +58,6 @@ from negpy.features.metadata.gear_models import (
     GearLibrary,
     Lens,
     ScanSetup,
-    _new_id,
 )
 from negpy.features.metadata.models import FORMAT_OPTIONS, PUSH_PULL_LABELS, PUSH_PULL_VALUES, format_label, format_value
 from negpy.desktop.view.widgets.searchable_gear_combo import SearchableGearCombo
@@ -108,13 +109,7 @@ _CATEGORY_SEARCH_PLACEHOLDER = {
 # shipped counterpart, so they carry none of the bundled/personal distinction below.
 _BUNDLED_CATEGORIES = frozenset({"cameras", "lenses", "film_stocks", "processes", "scan_setups"})
 
-_CATEGORY_SINGULAR = {
-    "cameras": "Camera",
-    "lenses": "Lens",
-    "film_stocks": "Film Stock",
-    "processes": "Process",
-    "scan_setups": "Scan Setup",
-}
+_CATEGORY_SINGULAR = CATEGORY_SINGULAR
 
 _CATEGORY_PLURAL_NOUN = {
     "cameras": "cameras",
@@ -186,6 +181,9 @@ class GearLibraryPanel(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(THEME.space_xl, 0, THEME.space_xl, 5)
         root.setSpacing(THEME.space_lg)
+
+        root.addWidget(section_subheader("My Gear"))
+        root.addWidget(hint_label("Cameras, lenses, film stocks and processes you own. Catalog shows the full shipped list."))
 
         # Category, search and the item list: one vertical column, like every other
         # sidebar tab. The detail form follows below rather than beside it.
@@ -983,29 +981,18 @@ class GearLibraryPanel(QWidget):
     def _add_custom_item(self) -> None:
         """Blank-record escape hatch, offered by the catalog dialog when the user's own
         gear isn't in the shipped list."""
-        if self._category == "cameras":
-            item = Camera(make="New", model="Camera")
-        elif self._category == "lenses":
-            item = Lens(lens_model="New lens")
-        elif self._category == "processes":
-            item = DevelopmentProcess(display_name="New process")
-        elif self._category == "scan_setups":
-            item = ScanSetup(display_name="New scan setup")
-        else:
-            item = FilmStock(stock_name="New stock")
+        item = blank_gear_item(self._category)
         items = list(self._current_items())
         items.append(item)
         self._set_current_items(items)
         GearProfiles.save_library(self._library)
         self._rebuild_item_list(select_id=item.id)
         self.library_changed.emit()
+        self.display_name_edit.setFocus()
+        self.display_name_edit.selectAll()
 
     def _clone_into_personal(self, source) -> None:
-        """A bundled item made editable: a new id and is_bundled cleared, so it saves to
-        the user's own file instead of the read-only shipped one."""
-        dup = copy.deepcopy(source)
-        dup.id = _new_id()
-        dup.is_bundled = False
+        dup = clone_into_personal(source)
         items = list(self._current_items())
         items.append(dup)
         self._set_current_items(items)

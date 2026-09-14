@@ -178,7 +178,12 @@ def test_add_item_custom_fallback_creates_a_blank_record(gear_dir):
 
     added = dlg.library().cameras[-1]
     assert added.is_bundled is False
-    assert added.make == "New"
+    # Real fields (make, model, ...) ride into EXIF verbatim, so they stay blank; only the
+    # UI-only display_name carries a placeholder, pre-selected for the name the user types.
+    assert added.make == ""
+    assert added.model == ""
+    assert added.display_name == "New Camera"
+    assert dlg.display_name_edit.text() == "New Camera"
 
 
 def test_delete_item_does_not_act_on_a_bundled_selection(gear_dir):
