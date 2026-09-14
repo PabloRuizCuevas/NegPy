@@ -38,6 +38,15 @@ def test_library_sits_above_the_film_strip(panel):
     assert browser.frames_section.content_area.isAncestorOf(browser.list_view)
 
 
+def test_thumbnail_size_slider_lives_in_the_film_strip_tally_row(panel):
+    """Only the thumbnail grid reads it, so it belongs with the frames it resizes, not
+    the search row shared with Library."""
+    browser = panel.file_browser
+
+    assert browser.frames_section.content_area.isAncestorOf(browser.thumb_size_slider)
+    assert not browser.library_section.content_area.isAncestorOf(browser.thumb_size_slider)
+
+
 def test_the_search_row_sits_above_both_sections(panel):
     browser = panel.file_browser
     layout = browser.layout()

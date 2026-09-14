@@ -647,6 +647,37 @@ def test_session_menu_clear_all_clears_every_frame(browser, session):
     session.clear_files.assert_called_once()
 
 
+def test_unload_button_always_targets_the_selection_never_the_whole_roll(browser, session):
+    """The toolbar button never falls back to Clear All: opening a different roll already
+    replaces the film strip, so a stray click with nothing multi-selected must remove only
+    the active frame, not wipe everything."""
+    session.remove_current_file = MagicMock()
+    session.remove_selected_files = MagicMock()
+    session.clear_files = MagicMock()
+
+    with patch("negpy.desktop.view.sidebar.files.confirm_unload", return_value=True):
+        session.state.selected_indices = [1]
+        browser._on_unload_clicked()
+        session.remove_current_file.assert_called_once()
+        session.remove_selected_files.assert_not_called()
+
+        session.state.selected_indices = [0, 1]
+        browser._on_unload_clicked()
+        session.remove_selected_files.assert_called_once()
+
+    session.clear_files.assert_not_called()
+
+
+def test_unload_button_tooltip_reflects_the_selection(browser, session):
+    session.state.selected_indices = [0]
+    browser._update_unload_button()
+    assert browser.unload_btn.toolTip() == "Unload…"
+
+    session.state.selected_indices = [0, 1]
+    browser._update_unload_button()
+    assert browser.unload_btn.toolTip() == "Unload Selected…"
+
+
 # --- Composite badges -----------------------------------------------------
 
 

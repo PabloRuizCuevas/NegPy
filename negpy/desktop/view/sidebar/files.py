@@ -434,7 +434,7 @@ class FileBrowser(QWidget):
         self.add_folder_btn.setToolTip("Add folder")
         self.unload_btn = QToolButton()
         self.unload_btn.setIcon(qta.icon("fa5s.times-circle", color=THEME.text_primary))
-        self.unload_btn.setToolTip("Clear All…")
+        self.unload_btn.setToolTip("Unload…")
 
         self.hot_folder_btn = QToolButton()
         self.hot_folder_btn.setCheckable(True)
@@ -573,7 +573,7 @@ class FileBrowser(QWidget):
             (self.apply_btn, "Apply settings"),
             (self.roll_settings_btn, "Roll Settings"),
             (None, None),
-            (self.unload_btn, "Clear All…"),
+            (self.unload_btn, "Unload…"),
             (self.sheet_btn, "Sheet filter"),
         ):
             if widget is None:
@@ -618,15 +618,14 @@ class FileBrowser(QWidget):
         search_row.addWidget(self.regex_btn)
         search_row.addWidget(self.library_search_btn)
 
-        # Thumbnail size lives here rather than the toolbar row above, to keep that row's overflow
-        # menu to file actions.
+        # Built here (Film Strip's thumbnail grid needs a starting value below) but added to
+        # the Film Strip section's own tally row, since it only ever affects that grid.
         saved_cell = self.session.repo.get_global_setting("thumbnail_cell_size") or THUMB_CELL_DEFAULT
         self.thumb_size_slider = QSlider(Qt.Orientation.Horizontal)
         self.thumb_size_slider.setRange(THUMB_CELL_MIN, THUMB_CELL_MAX)
         self.thumb_size_slider.setValue(ThumbnailGridView._clamp_target(int(saved_cell)))
         self.thumb_size_slider.setFixedWidth(72)
         self.thumb_size_slider.setToolTip("Thumbnail size — smaller fits more columns in the panel")
-        search_row.addWidget(self.thumb_size_slider)
         # Above both sections: one box that filters the frames and searches the library, so it
         # belongs to neither and stays reachable when either is folded away.
         layout.addLayout(search_row)
@@ -663,7 +662,10 @@ class FileBrowser(QWidget):
         frames_layout.setContentsMargins(0, 0, 0, 0)
         frames_layout.setSpacing(4)
         frames_layout.addWidget(self.film_strip_toolbar)
-        frames_layout.addWidget(self.tally_label)
+        tally_row = QHBoxLayout()
+        tally_row.addWidget(self.tally_label, 1)
+        tally_row.addWidget(self.thumb_size_slider)
+        frames_layout.addLayout(tally_row)
         frames_layout.addWidget(self.list_view, 1)
         frames_layout.addWidget(self.empty_label, 1)
         self.frames_section = self._make_section("Film Strip", "frames", "fa5s.film", frames)
@@ -877,24 +879,21 @@ class FileBrowser(QWidget):
         self.sync_ui()
 
     def _on_unload_clicked(self) -> None:
-        count = len(self.session.state.selected_indices)
-        if count > 1:
-            if confirm_unload(self, count=count):
-                self.session.remove_selected_files()
-        else:
-            self._on_clear_all()
+        """Same as the context menu's Unload…: always targets the selection -- at least
+        the active frame, ordinarily -- never the whole roll. Opening a different roll
+        already replaces the film strip, so wiping everything is not something this
+        button needs to reach for; Clear All for the rare "go back to empty" case lives
+        in the empty-space context menu instead."""
+        self._on_remove_from_menu()
 
     def _on_clear_all(self) -> None:
-        """Drop every loaded frame. The empty-space menu always means *all*, unlike
-        the toolbar button, which clears the selection when one is active."""
+        """Drop every loaded frame, from the empty-space context menu."""
         if confirm_unload(self, clear_all=True):
             self.session.clear_files()
 
     def _update_unload_button(self) -> None:
-        if len(self.session.state.selected_indices) > 1:
-            self.unload_btn.setToolTip("Clear selected")
-        else:
-            self.unload_btn.setToolTip("Clear All…")
+        multi = len(self.session.state.selected_indices) > 1
+        self.unload_btn.setToolTip("Unload Selected…" if multi else "Unload…")
 
     def _sync_half_frame_menu(self) -> None:
         state = self.session.state
