@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -321,9 +322,12 @@ class MainWindow(QMainWindow):
         self.roll_panel = RollPanel(self.controller)
         self.roll_dock.setWidget(self.roll_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.roll_dock)
-        # Below Controls by default, not tabbed or side by side -- export/metadata/scan are
-        # reached far less often, so they take the smaller, secondary share of the edge.
-        self.splitDockWidget(self.drawer, self.roll_dock, Qt.Orientation.Vertical)
+        # Tabbed with Controls, not split: two panels sharing the edge left each too short to
+        # be useful. The tab strip reads at the top of the column, by the header, rather than
+        # Qt's default south edge -- buried below a full scroll of controls.
+        self.tabifyDockWidget(self.drawer, self.roll_dock)
+        self.setTabPosition(Qt.DockWidgetArea.RightDockWidgetArea, QTabWidget.TabPosition.North)
+        self.drawer.raise_()
 
         self.session_dock = PinnableDockWidget(
             "Session",

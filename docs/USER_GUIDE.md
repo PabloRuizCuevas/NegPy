@@ -16,8 +16,7 @@ If Windows blocks writes to NegPy's default data folder, NegPy suggests `%LOCALA
 
 *   **Left, the film strip**: your loaded frames as a contact sheet, plus import, sorting, and triage tools.
 *   **Center, the canvas**: the live preview of the current frame. Most tools (crop, white-balance picker, heal brush, dodge/burn masks) are used by clicking directly on it. Scroll/pinch to zoom and drag to pan; a floating toolbar along the bottom holds Fit/1:1 zoom (**1:1** is one scan pixel per screen pixel, and lights up while you are at it; below **HQ** the preview is scaled up to reach it, which a **preview res · HQ off** pill on the canvas says) plus undo/redo, rotate/flip and more, moving overflow items into an **⋯** menu when the window narrows. What does not fit collapses from the right, and the **⋯** menu keeps every action whatever the row shows. **Preferences…** in that menu holds every app-wide setting (§14): the interface options, the performance budgets, **Edit Toolbar…** for which controls sit on the row and in what order, and **Persistent Settings…** for what carries onto the next file you open. Right-click the image for **Reset View** and **Sticky Zoom** (keeps the current zoom level when you switch to another frame, instead of resetting to fit), alongside the picker tools, copy/paste settings, and **Unload** (removes the frame from the session; its saved edit is kept). With nothing loaded it shows **Load some scans to get started**; click it for **Add Files** / **Add Folder**.
-*   **Right, the controls**: a pinned **Analysis** readout at the top, and below it an icon tab bar. Each icon opens a *workflow page* holding one or more collapsible panels — everything here changes what the canvas shows.
-*   **Also right, the roll panel**: Export, Metadata and Scan, docked below Controls by default. None of these change how the picture renders — they're roll identity and output settings — so they get their own smaller panel rather than sharing Controls' tab bar.
+*   **Right, Controls and Roll**: two panels sharing the same edge as **Controls** / **Roll** tabs at the top of the column. **Controls** — a pinned **Analysis** readout, then an icon tab bar — is everything that changes what the canvas shows. **Roll** holds Export, Metadata and Scan: roll identity and output settings, none of which touch the render, so they stay off Controls' own tab bar.
 
 Every side panel — the film strip (left), Controls and Roll (right) — can be dragged loose by its title bar into its own floating window; a pin button there sends it back to its docked spot. NegPy remembers the window size and whether it was maximized, each panel's floating/docked state, edge and width, which sections were open, and which tab was active on each. **Reset Panel Layout** in the **⋯** menu puts all three panels back at their home edges, widths and visibility.
 
@@ -51,7 +50,7 @@ The Controls panel's tabs follow the order you work in, which mirrors the proces
 | **Favorites** | star | Your chosen sliders | Quick access to the controls you use most |
 | **History** | clock | Work prints · Edit history | Keep named versions, step back through every change |
 
-The Roll panel, docked below Controls, holds the tabs that never change the render:
+The Roll panel, its own tab beside Controls, holds the tabs that never change the render:
 
 | Tab | Icon | Panels | What it is for |
 |-----|------|--------|---------------|
