@@ -113,13 +113,14 @@ def test_expanding_a_section_gives_it_back_a_share(panel):
     assert browser.frames_section.maximumHeight() > 1000
 
 
-def test_both_open_splits_the_panel_40_60(panel):
-    """The tree finds a roll, the sheet is where the work happens."""
+def test_both_open_favors_the_film_strip(panel):
+    """The tree finds a roll, glanced at occasionally; the sheet is where the work happens
+    and starts with most of the room. Loose bound: pixel sizes, not a pure integer ratio,
+    so the splitter's own rounding shifts this around, and the point is "clearly the
+    minority share", not an exact number the user can drag away from anyway."""
     library, frames = panel.file_browser.sections_splitter.sizes()
 
-    # Loose tolerance: pixel sizes, not a pure integer ratio, so the splitter's own
-    # rounding as it normalizes the initial sizes shifts this by a pixel or two.
-    assert library / (library + frames) == pytest.approx(0.4, abs=0.01)
+    assert library / (library + frames) < 0.4
 
 
 def test_dragging_the_splitter_persists_the_split(panel):

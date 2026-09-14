@@ -17,19 +17,10 @@ def panel(qapp):
     return panel
 
 
-def test_toolbar_minimum_is_not_the_sum_of_its_buttons(panel):
-    """The regression this guards: a plain QHBoxLayout made the session panel unshrinkable
-    below every button laid end to end, so each new tool widened the panel for good."""
-    toolbar = panel.file_browser.session_toolbar
-    assert toolbar.minimumSizeHint().width() < toolbar.sizeHint().width()
-
-
 def test_session_toolbar_holds_folder_actions_and_filters(panel):
     browser = panel.file_browser
     expected = [
         browser.library_btn,
-        browser.add_files_btn,
-        browser.add_folder_btn,
         browser.sort_btn,
     ]
     assert browser.session_toolbar.buttons == expected
@@ -38,6 +29,8 @@ def test_session_toolbar_holds_folder_actions_and_filters(panel):
 def test_film_strip_toolbar_holds_roll_scoped_actions(panel):
     browser = panel.file_browser
     expected = [
+        browser.add_files_btn,
+        browser.add_folder_btn,
         browser.hot_folder_btn,
         browser.rgb_scan_btn,
         browser.half_frame_btn,

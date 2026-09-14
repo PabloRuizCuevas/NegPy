@@ -61,9 +61,10 @@ from negpy.services.assets.library import folder_counts
 
 
 _UNBOUNDED_HEIGHT = 16777215  # QWIDGETSIZE_MAX — Qt's "no maximum"
-# With both sections open the panel splits 40/60: the tree is for finding a roll and the
-# sheet is where the work happens, so the frames get the larger half.
-_LIBRARY_SHARE, _FRAMES_SHARE = 2, 3
+# With both sections open the panel starts 20/80: the tree is for finding a roll, glanced
+# at occasionally, while the sheet is where the work happens and wants the room. The
+# splitter's handle can move this default any time.
+_LIBRARY_SHARE, _FRAMES_SHARE = 1, 4
 
 
 def _folder_label(path: str) -> str:
@@ -428,10 +429,10 @@ class FileBrowser(QWidget):
 
         self.add_files_btn = QToolButton()
         self.add_files_btn.setIcon(qta.icon("fa5s.file-import", color=THEME.text_primary))
-        self.add_files_btn.setToolTip("Add files")
+        self.add_files_btn.setToolTip("Add pictures to this session")
         self.add_folder_btn = QToolButton()
         self.add_folder_btn.setIcon(qta.icon("fa5s.folder-plus", color=THEME.text_primary))
-        self.add_folder_btn.setToolTip("Add folder")
+        self.add_folder_btn.setToolTip("Load every image in a folder into this session")
         self.unload_btn = QToolButton()
         self.unload_btn.setIcon(qta.icon("fa5s.times-circle", color=THEME.text_primary))
         self.unload_btn.setToolTip("Unload…")
@@ -553,18 +554,15 @@ class FileBrowser(QWidget):
         # unshrinkable below every button laid end to end, so each new tool widened it for good.
         for widget, label in (
             (self.library_btn, "Library"),
-            (self.add_files_btn, "Add files"),
-            (self.add_folder_btn, "Add folder"),
-            (None, None),
             (self.sort_btn, "Sort"),
         ):
-            if widget is None:
-                self.session_toolbar.add_separator(self._create_separator())
-            else:
-                self.session_toolbar.add_button(widget, label)
+            self.session_toolbar.add_button(widget, label)
         layout.addWidget(self.session_toolbar)
 
         for widget, label in (
+            (self.add_files_btn, "Add files"),
+            (self.add_folder_btn, "Add folder"),
+            (None, None),
             (self.hot_folder_btn, "Hot Folder"),
             (None, None),
             (self.rgb_scan_btn, "Trichrome Scan"),
@@ -682,7 +680,7 @@ class FileBrowser(QWidget):
         if isinstance(saved_sizes, list) and len(saved_sizes) == 2:
             self.sections_splitter.setSizes([int(s) for s in saved_sizes])
         else:
-            self.sections_splitter.setSizes([240, 360])
+            self.sections_splitter.setSizes([120, 480])
         self.sections_splitter.splitterMoved.connect(self._on_sections_splitter_moved)
         self._section_sizes = self.sections_splitter.sizes()
 
