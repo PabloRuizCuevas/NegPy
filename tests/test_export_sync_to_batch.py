@@ -1,6 +1,6 @@
-"""Export tab's Sync To Batch checkbox: an export-time behavior over the Metadata
-tab's per-frame fields, so it lives beside the Export button rather than on the
-Metadata tab, and disables alongside that tab's Protect Original Metadata."""
+"""Export tab's Protect Original Metadata and Sync To Batch checkboxes: export-time
+behaviors over the Metadata tab's per-frame fields, not metadata content themselves,
+so they live beside the Export button rather than on that tab."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from dataclasses import replace
 
 from conftest import FakeController
 from negpy.desktop.view.sidebar.export import ExportSidebar
-from negpy.desktop.view.sidebar.metadata import MetadataSidebar
 
 
 def _sidebar() -> ExportSidebar:
@@ -20,6 +19,7 @@ def _sidebar() -> ExportSidebar:
 def test_off_by_default() -> None:
     sidebar = _sidebar()
     assert sidebar.sync_check.isChecked() is False
+    assert sidebar.protect_check.isChecked() is False
 
 
 def test_toggle_persists_to_the_metadata_config() -> None:
@@ -28,24 +28,23 @@ def test_toggle_persists_to_the_metadata_config() -> None:
     assert sidebar.state.config.metadata.sync_to_batch is True
 
 
-def test_metadata_tabs_protect_toggle_disables_it() -> None:
+def test_protect_toggle_persists_and_disables_sync_to_batch() -> None:
     sidebar = _sidebar()
-    metadata_sidebar = MetadataSidebar(sidebar.controller)
-    metadata_sidebar.protect_toggled.connect(sidebar._on_metadata_protect_changed)
 
-    metadata_sidebar._on_protect_toggled(True)
+    sidebar.protect_check.setChecked(True)
+    assert sidebar.state.config.metadata.protect_original_metadata is True
     assert sidebar.sync_check.isEnabled() is False
 
-    metadata_sidebar._on_protect_toggled(False)
+    sidebar.protect_check.setChecked(False)
+    assert sidebar.state.config.metadata.protect_original_metadata is False
     assert sidebar.sync_check.isEnabled() is True
 
 
-def test_sync_ui_reflects_protect_state_without_the_signal() -> None:
-    """sync_ui() also picks up protect state directly, for a sidebar built after
-    the fact or resynced from an unrelated config change."""
+def test_sync_ui_reflects_protect_state_from_an_unrelated_config_change() -> None:
     sidebar = _sidebar()
     sidebar.state.config = replace(sidebar.state.config, metadata=replace(sidebar.state.config.metadata, protect_original_metadata=True))
 
     sidebar.sync_ui()
 
+    assert sidebar.protect_check.isChecked() is True
     assert sidebar.sync_check.isEnabled() is False

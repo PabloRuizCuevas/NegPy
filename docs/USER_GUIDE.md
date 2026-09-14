@@ -405,8 +405,23 @@ Bayer and X-Trans RAW only: a scanner TIFF, a Pakon scan or a linear DNG arrives
 
 *   **Preview** / **Export** (default **Auto** for both): *Auto* keeps NegPy's own choice, a fast half-size decode on screen and AHD for export. For the preview, Auto and Linear are the fastest; the others decode at full size. **AHD** is LibRaw's balanced default, **VNG** the smooth one, **PPG** fast with clean edges, **DCB** and **DHT** chase fine detail, and **AAHD** softens edges to suppress artifacts.
 
+<!-- panel:roll -->
+### 4.3 Roll Analysis: a consistent look across the roll
+
+Meter the whole roll once and share the baseline, so frames from the same film match.
+
+*   **Batch Analysis**: scans every loaded file and computes a roll-average density and color balance, discarding outliers. Run it once after importing. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)*
+*   **Use Luma Average**: this frame takes the roll-wide tonal range; color still re-derives per frame.
+*   **Use Color Average**: this frame takes the roll-wide color balance; tonal range still re-derives per frame. Enable both for a fully consistent roll; leave both off for per-image auto-exposure.
+
+**ROLL**, to reuse a baseline across sessions:
+
+*   **Roll dropdown** + **Load**: apply a saved roll's bounds and balance.
+*   **Save**: store the current Batch Analysis as a named roll, useful when you shoot the same stock repeatedly.
+*   **Delete**: remove the selected roll (it asks first). The frames keep their current look; only the saved baseline goes.
+
 <!-- panel:process -->
-### 4.3 Normalization: negative → positive
+### 4.4 Normalization: negative → positive
 
 How the negative is measured and normalized into a positive. The film mode that decides *which* conversion runs sits above the panels (§4), and how the scan is decoded lives in **Calibration** (§4.1).
 
@@ -452,21 +467,6 @@ How the negative is measured and normalized into a positive. The film mode that 
     **Narrowband** and **Single-Shot Narrowband Calibration** are grayed out for *any* transparency, Normalize or not; see [Narrowband and slides](#narrowband-and-slides). Reproducing a slide's appearance is a colorimetric problem, and narrowband illumination samples the spectrum at three isolated wavelengths, so the inter-band overlap the eye integrates is never measured, which is the same reason narrowband scans render oversaturated and hue-rotated. No input profile recovers what was never sampled, and the bundled one describes negative dyes besides.
 
 **Positive** (default off) sits next to Normalize, slide-only in the same way, and live only with Normalize off. As captured, NegPy reads the source as literal linear data and renders it like a raw capture, with a fixed exposure lift and a filmic highlight roll-off. Turn Positive on when the source is already a finished image, such as a scanned print or an export from other software: NegPy decodes its embedded profile instead (an untagged file falls back to sRGB) and skips the lift and the roll-off, so the Print sliders shape the image directly. With Normalize on it grays out, that render decoding on the source's own profile anyway.
-
-<!-- panel:roll -->
-### 4.4 Roll Analysis: a consistent look across the roll
-
-Meter the whole roll once and share the baseline, so frames from the same film match.
-
-*   **Batch Analysis**: scans every loaded file and computes a roll-average density and color balance, discarding outliers. Run it once after importing. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)*
-*   **Use Luma Average**: this frame takes the roll-wide tonal range; color still re-derives per frame.
-*   **Use Color Average**: this frame takes the roll-wide color balance; tonal range still re-derives per frame. Enable both for a fully consistent roll; leave both off for per-image auto-exposure.
-
-**ROLL**, to reuse a baseline across sessions:
-
-*   **Roll dropdown** + **Load**: apply a saved roll's bounds and balance.
-*   **Save**: store the current Batch Analysis as a named roll, useful when you shoot the same stock repeatedly.
-*   **Delete**: remove the selected roll (it asks first). The frames keep their current look; only the saved baseline goes.
 
 <!-- panel:presets -->
 ### 4.5 Presets
@@ -841,6 +841,9 @@ A scrollable list of every edit step, the last 100 kept, newest on top. The curr
 
 The primary **Export** action. Its chevron menu picks the scope: current frame (Ctrl+E), selected frames, or all visible frames. Every scope uses the settings below. To deliver the same frames in more than one format or size in a single run, use Export Presets.
 
+*   **Protect original metadata**: copy the source file's EXIF/XMP to exports unchanged, adding nothing. When it is on, the Metadata tab's fields (§12) are ignored and the source's resolution is copied exactly: the same numbers, axes and unit, whether the source states it in EXIF or in its own header, even where the export was resized. A source that declares no resolution stays that way in every format that can leave it out. TIFF cannot, so it states the export's own resolution rather than the unit-less value readers report as 1 DPI.
+*   **Sync custom metadata to all files in batch export**: batch and preset exports write this frame's capture, gear and process values to every file, instead of each file's own. Disabled alongside Protect original metadata, which ignores those values entirely.
+
 ### Format / Size / Color Management / Destination
 
 *   **Format**: `JPEG`, `TIFF`, `PNG`, `JPEG XL`, or `WebP`, with quality or effort options per format. **JPEG XL supports only `sRGB`, `P3 D65`, `Rec 2020` or `Grayscale`** for Export profile: it tags color with compact enumerated values rather than an embedded ICC profile, and NegPy's JXL encoder cannot carry an arbitrary one, so `Adobe RGB`, `ProPhoto RGB` and a custom Output ICC are rejected with an error. Pick a supported space or a different format.
@@ -905,10 +908,7 @@ A soft proof shows what the picture becomes when a given printer puts it on a gi
 
 Archival metadata for the **original analog capture** (camera, lens, film, process), written into exported files as EXIF and embedded XMP, so DAMs like Lightroom show your film gear rather than the scanner.
 
-Every export format carries it: JPEG, TIFF, PNG, JPEG XL and WebP. A TIFF holds the capture position in XMP only, and EXIF text is 7-bit, so typographic punctuation is transliterated (`4×5` is written `4x5`).
-
-*   **Protect original metadata**: copy the source file's EXIF/XMP to exports unchanged, adding nothing. When it is on, the fields below are ignored and the source's resolution is copied exactly: the same numbers, axes and unit, whether the source states it in EXIF or in its own header, even where the export was resized. A source that declares no resolution stays that way in every format that can leave it out. TIFF cannot, so it states the export's own resolution rather than the unit-less value readers report as 1 DPI.
-*   **Sync custom metadata to all files in batch export**: batch and preset exports write this frame's capture, gear and process values to every file, instead of each file's own.
+Every export format carries it: JPEG, TIFF, PNG, JPEG XL and WebP. A TIFF holds the capture position in XMP only, and EXIF text is 7-bit, so typographic punctuation is transliterated (`4×5` is written `4x5`). **Protect original metadata**, on the Export tab (§11), copies the source file's own EXIF/XMP instead of writing these fields.
 
 <!-- panel:metadata_presets -->
 ### Metadata Presets
@@ -1054,7 +1054,7 @@ Settings for the whole application, not for one photo. Open them from the canvas
 ### Performance
 
 *   **GPU acceleration**: render the pipeline on the GPU. The active backend is named below the row. Off falls back to the CPU pipeline, which is slower but produces the same image. If the GPU viewport itself fails to start, a warning toast says so at launch and an amber line here repeats it; the display then runs on the CPU.
-*   **Multi-core CPU rendering**: see §4.3. It takes effect at once, with no restart.
+*   **Multi-core CPU rendering**: see §4.4. It takes effect at once, with no restart.
 *   **Preview size** (512 to 8192 px): long edge of the interactive canvas. Higher is sharper at 100% zoom, and costs proportionally more VRAM and CPU per frame, so lower the cache limit and the rendered-frame count to match. RAW files decode at half sensor size for the preview, so there is nothing to gain past half the long edge of your scan.
 *   **Preview cache** and **Preview cache limit**: how many recently-viewed photos stay decoded in memory, and the memory ceiling for them. Lower both on a machine with little RAM.
 *   **HQ buffers**: full-resolution HQ preview buffers kept in memory. Each is large (a 60 MP scan is about 700 MB), and keeping the previous frame makes going back instant.

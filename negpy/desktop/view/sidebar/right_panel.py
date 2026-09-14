@@ -62,7 +62,6 @@ class RightPanel(QWidget):
 
         self.export_sidebar = ExportSidebar(self.controller)
         self.metadata_sidebar = MetadataSidebar(self.controller)
-        self.metadata_sidebar.protect_toggled.connect(self.export_sidebar._on_metadata_protect_changed)
         self.gear_panel = GearLibraryPanel(current_config_fn=lambda: self.controller.state.config)
         self.gear_panel.library_changed.connect(self.metadata_sidebar._on_library_changed)
         self.gear_panel.presets_changed.connect(self.metadata_sidebar._refresh_metadata_presets)

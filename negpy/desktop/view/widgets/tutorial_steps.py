@@ -724,9 +724,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
             body=(
                 "The <b>Metadata</b> tab writes film and scan info, meaning stock, format, "
                 "developer, push/pull and scanner, into the EXIF/XMP of exported files. Gear "
-                "picked for a frame rides into the exported XMP.<br><br>"
-                "<b>Protect original metadata</b> keeps the source file's EXIF/XMP untouched "
-                "instead of NegPy rewriting it."
+                "picked for a frame rides into the exported XMP."
             ),
             target=_metadata,
             pre_hook=lambda w: w.right_panel.show_tab_by_key("metadata"),
@@ -752,7 +750,9 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "menu arrow picks what it exports (current frame, selected frames, or all visible "
                 "frames) and remembers the choice. Presets run every enabled preset per frame. "
                 "<b>Contact Sheet</b> renders all frames into one sheet. "
-                "Export always runs at full RAW resolution."
+                "Export always runs at full RAW resolution.<br><br>"
+                "<b>Protect original metadata</b> keeps the source file's EXIF/XMP untouched "
+                "instead of NegPy rewriting it."
             ),
             target=_export,
             pre_hook=lambda w: w.right_panel.show_tab_by_key("export"),

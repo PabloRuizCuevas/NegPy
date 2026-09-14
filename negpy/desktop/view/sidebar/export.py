@@ -112,6 +112,7 @@ class ExportSidebar(BaseSidebar):
         self.manage_presets_btn.clicked.connect(self._open_presets_dialog)
         self.export_presets_btn.clicked.connect(self._on_export_presets_clicked)
         self.export_main_btn.clicked.connect(self._on_export_clicked)
+        self.protect_check.toggled.connect(self._on_protect_toggled)
         self.sync_check.toggled.connect(self._on_sync_to_batch_toggled)
 
         self.intent_btn_group.idToggled.connect(self._on_flat_output_toggled)
@@ -1292,9 +1293,18 @@ class ExportSidebar(BaseSidebar):
         saved = self._RETIRED_EXPORT_SCOPES.get(saved, saved)
         self._set_export_scope(saved if saved in self._EXPORT_SCOPES else "current", persist=False)
 
-        # Only matters for the Selected/All scopes above; stored on the Metadata config,
-        # so it also disables under that panel's Protect Original Metadata.
+        # Export-time behaviors over the Metadata tab's per-frame fields, not metadata
+        # content themselves, so they live beside the Export button rather than on
+        # that tab. Both are stored on the Metadata config.
         meta = self.state.config.metadata
+        self.protect_check = QCheckBox("Protect original metadata")
+        self.protect_check.setChecked(meta.protect_original_metadata)
+        self.protect_check.setToolTip(
+            "When enabled, NegPy copies EXIF and XMP from the source file onto exports "
+            "without adding or changing metadata. Gear and process fields are ignored."
+        )
+        self.layout.addWidget(self.protect_check)
+
         self.sync_check = QCheckBox("Sync custom metadata to all files in batch export")
         self.sync_check.setChecked(meta.sync_to_batch)
         self.sync_check.setEnabled(not meta.protect_original_metadata)
@@ -1315,10 +1325,12 @@ class ExportSidebar(BaseSidebar):
     def _on_sync_to_batch_toggled(self, checked: bool) -> None:
         self.update_config_section("metadata", persist=True, render=False, readback_metrics=False, sync_to_batch=checked)
 
-    def _on_metadata_protect_changed(self, protected: bool) -> None:
-        """Protect Original Metadata (Metadata tab) ignores gear/process fields, so
-        syncing them to a batch would mean nothing."""
-        self.sync_check.setEnabled(not protected)
+    def _on_protect_toggled(self, checked: bool) -> None:
+        """Protect ignores gear/process fields, so syncing them to a batch would mean
+        nothing; the Metadata tab's own fields disable through its sync_ui() picking
+        up this same config change."""
+        self.sync_check.setEnabled(not checked)
+        self.update_config_section("metadata", persist=True, render=False, readback_metrics=False, protect_original_metadata=checked)
 
     def _flush_export_settings(self) -> None:
         """Stop the debounce timer and write the form into state immediately."""
@@ -1567,6 +1579,7 @@ class ExportSidebar(BaseSidebar):
                 self.cs_output_path_edit.setText(conf.contact_sheet_output_path)
             self.sidecars_enabled_btn.setChecked(conf.export_sidecars_enabled)
             meta = self.state.config.metadata
+            self.protect_check.setChecked(meta.protect_original_metadata)
             self.sync_check.setChecked(meta.sync_to_batch)
             self.sync_check.setEnabled(not meta.protect_original_metadata)
             self.printing_notes_preview_btn.setChecked(self.state.printing_notes)
@@ -1617,6 +1630,7 @@ class ExportSidebar(BaseSidebar):
             self.cs_output_path_edit,
             self.cs_template_combo,
             self.sidecars_enabled_btn,
+            self.protect_check,
             self.sync_check,
             self.flat_peek_btn,
             self.printing_notes_preview_btn,
