@@ -124,11 +124,16 @@ NegPy reads the tree straight from disk and never creates, renames, moves or del
 
 **A note on Nikon High Efficiency raw.** The Z 8 and Z 9 can record NEFs in **High Efficiency (HE)** or **HE\***, which use a licensed codec NegPy cannot decode. Such a file is still called `.NEF` and still carries the same TIFF compression tag as an ordinary lossless NEF, so nothing looks unusual until it fails to open. NegPy names the reason rather than reporting a generic unsupported-file error. Re-shoot in **Lossless Compressed** NEF, or convert with Adobe DNG Converter. Lossless NEFs from the same cameras open normally.
 
-Toolbar buttons, left to right:
+Toolbar buttons, left to right — folder actions and filters, so they apply whether or not a roll is loaded:
 
 *   **Add Files** / **Add Folder**: load individual images or every image in a folder. Pick a folder that holds only *other* folders and NegPy reveals it in the Library section instead of reporting that it found nothing. Dropping a folder on the window does the same.
 *   **Clear All…**: unload everything, or just the selected frames.
 *   **Hot Folder**: watches the current folder and auto-loads new files as they appear, which is handy when a scanner or tethering app drops files into a directory. While it is on, the "Working…" import popup stays hidden so each new frame does not raise a window; the status line over the canvas still reports the import.
+*   **Sheet filter** (funnel): show *All Frames*, *Keepers Only*, or *Hide Rejected*. The choice is remembered between sessions and applies to every roll you open.
+*   **Sort**: by Name or Date, ascending or descending.
+
+The Film Strip section has its own row of buttons above the frames, for actions that read or rewrite the loaded roll:
+
 *   **Trichrome Scan** (three-exposure narrowband capture, also called trichromatic capture): treats the folder as red/green/blue exposure triplets and assembles each frame from three shots. Shots are grouped in the order they were taken, read from the files themselves, so filenames need follow no convention. Capture each frame's three exposures back to back, before moving on to the next frame. Where a file states no capture time, the folder falls back to filename order, and the names then have to sort into capture order. Right-click a frame → **Edit RGB Triplet…** to assign the three files by hand. Three shots are only assembled when they are one of each color *and* show the same frame; where they do not, they are left as separate frames to pair by hand, rather than assembled wrong. An assembled frame carries the three-dot badge described under [Triage](#triage-culling-the-roll).
 *   **Half Frame**: splits each scan into two frames, for half-frame cameras. Each half is edited and metered separately and badged with which half it is. Enabling it opens a rectangle editor on the current scan: drag the green box to crop (everything outside is discarded), drag the orange line to set the split, and use **Cut thickness** to discard a band centered on the split, which is the physical black separator between the two exposures. **Auto-detect**, in the editor, re-finds the gutter on the current scan.
 
@@ -140,9 +145,7 @@ Toolbar buttons, left to right:
 
     Half Frame does not apply to a frame assembled from more than one file: a Trichrome triplet, a stitch, or an HDR merge. Those are never split, and they never come back as a diptych, even when the file they are built around was worked on as two halves earlier.
 *   **Apply (clone)**: copy the current frame's settings to selected frames or the whole roll. You choose which aspects in a dialog; crop and rotation are always per-image.
-*   **Roll Settings** (tag icon): tag gear, capture, place, process and scanning metadata for the current frame, a selection or the whole roll in one dialog. Fields start filled from the active frame; type or pick new values directly, or **Load** a metadata preset to fill and tick its fields, then tick which groups to write and pick a scope.
-*   **Sheet filter** (funnel): show *All Frames*, *Keepers Only*, or *Hide Rejected*. The choice is remembered between sessions and applies to every roll you open.
-*   **Sort**: by Name or Date, ascending or descending.
+*   **Roll Settings** (tag icon): tag gear, capture, place, process and scanning metadata for the current frame, a selection or the whole roll in one dialog. Fields start filled from the active frame; type or pick new values directly, or **Load** a metadata preset to fill and tick its fields, then tick which groups to write. Defaults to the whole roll when one is loaded.
 
 Above both sections sit a **filter box**, a **`.*`** regex toggle and a **search-library** button. Inside the Film Strip section is a **tally**, for example "36 frames · 12 keepers · 3 rejected". While a filter hides frames the tally counts both sets and names the filter, for example "3 of 36 frames · Keepers filter". When a filter hides every frame, the strip carries a message with a **Show all frames** link that clears the filter box and the funnel together.
 

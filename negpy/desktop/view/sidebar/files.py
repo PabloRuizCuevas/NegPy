@@ -416,7 +416,10 @@ class FileBrowser(QWidget):
         icon_size = QSize(16, 16)
         btn_height = 28
 
-        toolbar_row = OverflowBar(height=btn_height, spacing=4)
+        # Top: folder actions and filters. Roll-scoped actions (Trichrome, Half Frame, Apply,
+        # Roll Settings) live in film_strip_toolbar instead, next to the frames they act on.
+        self.session_toolbar = OverflowBar(height=btn_height, spacing=4)
+        self.film_strip_toolbar = OverflowBar(height=btn_height, spacing=4)
 
         self.library_btn = QToolButton()
         self.library_btn.setIcon(qta.icon("fa5s.book-open", color=THEME.text_primary))
@@ -554,20 +557,24 @@ class FileBrowser(QWidget):
             (self.unload_btn, "Clear All…"),
             (None, None),
             (self.hot_folder_btn, "Hot Folder"),
-            (self.rgb_scan_btn, "Trichrome Scan"),
-            (self.half_frame_btn, "Half Frame"),
-            (self.half_frame_menu_btn, "Half Frame actions"),
-            (self.apply_btn, "Apply settings"),
-            (self.roll_settings_btn, "Roll Settings"),
             (None, None),
             (self.sheet_btn, "Sheet filter"),
             (self.sort_btn, "Sort"),
         ):
             if widget is None:
-                toolbar_row.add_separator(self._create_separator())
+                self.session_toolbar.add_separator(self._create_separator())
             else:
-                toolbar_row.add_button(widget, label)
-        layout.addWidget(toolbar_row)
+                self.session_toolbar.add_button(widget, label)
+        layout.addWidget(self.session_toolbar)
+
+        for widget, label in (
+            (self.rgb_scan_btn, "Trichrome Scan"),
+            (self.half_frame_btn, "Half Frame"),
+            (self.half_frame_menu_btn, "Half Frame actions"),
+            (self.apply_btn, "Apply settings"),
+            (self.roll_settings_btn, "Roll Settings"),
+        ):
+            self.film_strip_toolbar.add_button(widget, label)
 
         saved_sort = self.session.repo.get_global_setting("file_sort_order") or "name"
         saved_desc = self.session.repo.get_global_setting("file_sort_descending") or False
@@ -650,6 +657,7 @@ class FileBrowser(QWidget):
         frames_layout = QVBoxLayout(frames)
         frames_layout.setContentsMargins(0, 0, 0, 0)
         frames_layout.setSpacing(4)
+        frames_layout.addWidget(self.film_strip_toolbar)
         frames_layout.addWidget(self.tally_label)
         frames_layout.addWidget(self.list_view, 1)
         frames_layout.addWidget(self.empty_label, 1)

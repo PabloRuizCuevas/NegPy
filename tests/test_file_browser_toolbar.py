@@ -1,5 +1,4 @@
 import pytest
-from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 
 from negpy.desktop.session import AssetListModel
 from negpy.desktop.view.sidebar.session_panel import SessionPanel
@@ -18,41 +17,43 @@ def panel(qapp):
     return panel
 
 
-def _toolbar(panel) -> OverflowBar:
-    return panel.file_browser.findChild(OverflowBar)
-
-
 def test_toolbar_minimum_is_not_the_sum_of_its_buttons(panel):
     """The regression this guards: a plain QHBoxLayout made the session panel unshrinkable
     below every button laid end to end, so each new tool widened the panel for good."""
-    toolbar = _toolbar(panel)
+    toolbar = panel.file_browser.session_toolbar
     assert toolbar.minimumSizeHint().width() < toolbar.sizeHint().width() / 2
 
 
-def test_toolbar_keeps_every_action(panel):
+def test_session_toolbar_holds_folder_actions_and_filters(panel):
     browser = panel.file_browser
-    toolbar = _toolbar(panel)
     expected = [
         browser.library_btn,
         browser.add_files_btn,
         browser.add_folder_btn,
         browser.unload_btn,
         browser.hot_folder_btn,
+        browser.sheet_btn,
+        browser.sort_btn,
+    ]
+    assert browser.session_toolbar.buttons == expected
+
+
+def test_film_strip_toolbar_holds_roll_scoped_actions(panel):
+    browser = panel.file_browser
+    expected = [
         browser.rgb_scan_btn,
         browser.half_frame_btn,
         browser.half_frame_menu_btn,
         browser.apply_btn,
         browser.roll_settings_btn,
-        browser.sheet_btn,
-        browser.sort_btn,
     ]
-    assert toolbar.buttons == expected
+    assert browser.film_strip_toolbar.buttons == expected
 
 
 def test_narrowing_the_panel_raises_a_populated_overflow_menu(panel, qapp):
     """QToolBar's native extension menu was tried first and came up empty: widgets added with
     addWidget() become QWidgetActions its popup cannot host."""
-    toolbar = _toolbar(panel)
+    toolbar = panel.file_browser.session_toolbar
     panel.resize(420, 700)
     qapp.processEvents()
     assert not toolbar.overflow_btn.isVisible()
@@ -64,6 +65,11 @@ def test_narrowing_the_panel_raises_a_populated_overflow_menu(panel, qapp):
     labels = [action.text() for action in toolbar.build_overflow_menu().actions()]
     assert labels, "overflow button with an empty menu"
     assert "Sort" in labels
+
+
+def test_film_strip_toolbar_minimum_is_not_the_sum_of_its_buttons(panel):
+    toolbar = panel.file_browser.film_strip_toolbar
+    assert toolbar.minimumSizeHint().width() < toolbar.sizeHint().width()
 
 
 def test_session_panel_shrinks_below_the_old_button_row_floor(panel):

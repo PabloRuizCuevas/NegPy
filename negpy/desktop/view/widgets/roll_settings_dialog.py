@@ -105,6 +105,10 @@ class RollSettingsDialog(QDialog):
         root.addWidget(scroll, 1)
 
         scope_row, self._scope_radios = build_scope_row(self, sel_count, roll_count, show_current=True)
+        # A roll-wide tag is the common case; current-frame-only is the exception a
+        # user reaches for by hand, not the other way around.
+        if roll_count > 0:
+            self._scope_radios.roll.setChecked(True)
         root.addLayout(scope_row)
         root.addLayout(self._build_footer())
 
