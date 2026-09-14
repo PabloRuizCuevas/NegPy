@@ -85,10 +85,10 @@ def test_save_library_excludes_bundled_items(gear_dir):
 
 
 def test_duplicate_bundled_item_is_editable_and_persistable(gear_dir):
-    from negpy.desktop.view.widgets.gear_library_dialog import GearLibraryDialog
+    from negpy.desktop.view.widgets.gear_library_panel import GearLibraryPanel
 
     library = GearLibrary(cameras=[Camera(id="cam-bundled", make="Leica", model="M6", is_bundled=True)])
-    dlg = GearLibraryDialog(library)
+    dlg = GearLibraryPanel(library)
 
     assert dlg.display_name_edit.isEnabled() is False
     assert dlg.del_btn.isEnabled() is False
@@ -218,7 +218,7 @@ def test_searchable_gear_combo_replace_selection_after_search():
 
 
 def test_gear_library_dialog_item_search_hides_non_matching_selection():
-    from negpy.desktop.view.widgets.gear_library_dialog import GearLibraryDialog
+    from negpy.desktop.view.widgets.gear_library_panel import GearLibraryPanel
 
     library = GearLibrary(
         lenses=[
@@ -226,7 +226,7 @@ def test_gear_library_dialog_item_search_hides_non_matching_selection():
             Lens(id="l-nikon", lens_model="Nikkor 50mm f/1.8 AI-S", make="Nikkor"),
         ]
     )
-    dlg = GearLibraryDialog(library)
+    dlg = GearLibraryPanel(library)
     dlg._select_category("lenses")
     dlg.item_list.setCurrentRow(0)  # Canon selected
 

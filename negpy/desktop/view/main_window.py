@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -26,7 +25,6 @@ from negpy.desktop.view.keyboard_shortcuts import setup_keyboard_shortcuts
 from negpy.desktop.view.mac_menu_bar import install_mac_menus
 from negpy.desktop.view.shortcut_registry import tooltip_with_shortcut
 from negpy.desktop.view.sidebar.right_panel import RightPanel
-from negpy.desktop.view.sidebar.roll_panel import RollPanel
 from negpy.desktop.view.sidebar.session_panel import SessionPanel
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.loading_overlay import LoadingOverlay
@@ -295,7 +293,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.central_widget)
 
         self.drawer = PinnableDockWidget(
-            "Controls",
+            "Edit",
             self,
             pin_tooltip=tooltip_with_shortcut("Dock controls panel to right", "toggle_right_panel"),
             on_pin=self.dock_controls_panel,
@@ -310,24 +308,6 @@ class MainWindow(QMainWindow):
         self.drawer.setObjectName("controls_dock")
         self.drawer.setWidget(self.right_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.drawer)
-
-        self.roll_dock = PinnableDockWidget(
-            "Roll",
-            self,
-            pin_tooltip=tooltip_with_shortcut("Dock roll panel to right", "toggle_roll_panel"),
-            on_pin=self.dock_roll_panel,
-        )
-        self.roll_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
-        self.roll_dock.setObjectName("roll_dock")
-        self.roll_panel = RollPanel(self.controller)
-        self.roll_dock.setWidget(self.roll_panel)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.roll_dock)
-        # Tabbed with Controls, not split: two panels sharing the edge left each too short to
-        # be useful. The tab strip reads at the top of the column, by the header, rather than
-        # Qt's default south edge -- buried below a full scroll of controls.
-        self.tabifyDockWidget(self.drawer, self.roll_dock)
-        self.setTabPosition(Qt.DockWidgetArea.RightDockWidgetArea, QTabWidget.TabPosition.North)
-        self.drawer.raise_()
 
         self.session_dock = PinnableDockWidget(
             "Session",
@@ -353,7 +333,6 @@ class MainWindow(QMainWindow):
         # The visibility keys are what the toggles write, so they win over the dock snapshot.
         self.session_dock.setVisible(repo.get_global_setting("panel_left_visible", True))
         self.drawer.setVisible(repo.get_global_setting("panel_right_visible", True))
-        self.roll_dock.setVisible(repo.get_global_setting("panel_roll_visible", True))
 
     TOOL_LABELS: dict[ToolMode, str] = {
         ToolMode.WB_PICK: "WB Picker",
@@ -406,36 +385,22 @@ class MainWindow(QMainWindow):
 
     def dock_session_panel(self) -> None:
         # Restore the pristine layout, which returns this panel to its original edge and width,
-        # but preserve the other panels' current visibility so pinning one never forces the
-        # others to reappear.
+        # but preserve the other panel's current visibility so pinning one never forces the
+        # other to reappear.
         right_visible = self.drawer.isVisible()
-        roll_visible = self.roll_dock.isVisible()
         self._restore_default_dock_state()
         self.drawer.setVisible(right_visible)
-        self.roll_dock.setVisible(roll_visible)
         self.session_dock.setVisible(True)
         self.toolbar.btn_toggle_left.setChecked(True)
         self.controller.session.repo.save_global_setting("panel_left_visible", True)
 
     def dock_controls_panel(self) -> None:
         left_visible = self.session_dock.isVisible()
-        roll_visible = self.roll_dock.isVisible()
         self._restore_default_dock_state()
         self.session_dock.setVisible(left_visible)
-        self.roll_dock.setVisible(roll_visible)
         self.drawer.setVisible(True)
         self.toolbar.btn_toggle_right.setChecked(True)
         self.controller.session.repo.save_global_setting("panel_right_visible", True)
-
-    def dock_roll_panel(self) -> None:
-        left_visible = self.session_dock.isVisible()
-        right_visible = self.drawer.isVisible()
-        self._restore_default_dock_state()
-        self.session_dock.setVisible(left_visible)
-        self.drawer.setVisible(right_visible)
-        self.roll_dock.setVisible(True)
-        self.toolbar.btn_toggle_roll.setChecked(True)
-        self.controller.session.repo.save_global_setting("panel_roll_visible", True)
 
     def toggle_session_dock(self) -> None:
         if self.session_dock.isFloating():
@@ -453,26 +418,15 @@ class MainWindow(QMainWindow):
         self.drawer.setVisible(visible)
         self.controller.session.repo.save_global_setting("panel_right_visible", visible)
 
-    def toggle_roll_dock(self) -> None:
-        if self.roll_dock.isFloating():
-            self.dock_roll_panel()
-            return
-        visible = not self.roll_dock.isVisible()
-        self.roll_dock.setVisible(visible)
-        self.controller.session.repo.save_global_setting("panel_roll_visible", visible)
-
     def reset_panel_layout(self) -> None:
-        """Restore all three side panels to their original edges, widths and visibility."""
+        """Restore both side panels to their original edges, widths and visibility."""
         self._restore_default_dock_state()
         self.session_dock.setVisible(True)
         self.drawer.setVisible(True)
-        self.roll_dock.setVisible(True)
         self.toolbar.btn_toggle_left.setChecked(True)
         self.toolbar.btn_toggle_right.setChecked(True)
-        self.toolbar.btn_toggle_roll.setChecked(True)
         self.controller.session.repo.save_global_setting("panel_left_visible", True)
         self.controller.session.repo.save_global_setting("panel_right_visible", True)
-        self.controller.session.repo.save_global_setting("panel_roll_visible", True)
         self.canvas.hud.showMessage("Panel layout reset", timeout=1500)
 
     def _connect_signals(self) -> None:
@@ -484,13 +438,10 @@ class MainWindow(QMainWindow):
         # persist in the toggle methods instead and the saved state survives exit.
         self.toolbar.btn_toggle_left.clicked.connect(self.toggle_session_dock)
         self.toolbar.btn_toggle_right.clicked.connect(self.toggle_controls_dock)
-        self.toolbar.btn_toggle_roll.clicked.connect(self.toggle_roll_dock)
         self.session_dock.visibilityChanged.connect(self.toolbar.btn_toggle_left.setChecked)
         self.drawer.visibilityChanged.connect(self.toolbar.btn_toggle_right.setChecked)
-        self.roll_dock.visibilityChanged.connect(self.toolbar.btn_toggle_roll.setChecked)
         self.toolbar.btn_toggle_left.setChecked(self.session_dock.isVisible())
         self.toolbar.btn_toggle_right.setChecked(self.drawer.isVisible())
-        self.toolbar.btn_toggle_roll.setChecked(self.roll_dock.isVisible())
         self.controller.image_updated.connect(self._on_image_updated)
         self.controller.preview_loaded.connect(self._refresh_image_info)
         self.controller.loading_started.connect(self._on_loading_started)

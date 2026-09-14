@@ -1,8 +1,11 @@
-"""Modal dialog for managing the analog gear library."""
+"""Panel for managing the analog gear library -- a persistent tab, not a dialog: the
+library is reference data you build up over time, reached exactly as often as Export
+or Metadata, not something opened, changed once and dismissed."""
 
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Callable, Optional
 
 import qtawesome as qta
 from PyQt6.QtCore import pyqtSignal
@@ -32,9 +35,10 @@ from negpy.desktop.settings_catalog import (
     selected_flat_dict,
 )
 from negpy.desktop.view.confirm import confirm_delete_named
-from negpy.desktop.view.styles.templates import dialog_pane_qss, field_label, hint_label, pane_header_qss, pin_dialog_default
+from negpy.desktop.view.styles.templates import dialog_pane_qss, field_label, hint_label, pane_header_qss
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog
+from negpy.domain.models import WorkspaceConfig
 from negpy.features.metadata.gear_logic import (
     matches_gear_filter,
     metadata_from_gear,
@@ -102,24 +106,33 @@ def _push_pull_index(value: int) -> int:
     return PUSH_PULL_VALUES.index(value) if value in PUSH_PULL_VALUES else PUSH_PULL_VALUES.index(0)
 
 
-class GearLibraryDialog(QDialog):
+class GearLibraryPanel(QWidget):
+    """Cameras, lenses, film stocks, processes, scan setups and metadata presets: one
+    searchable, user-extendable library, shared by Roll Settings, Metadata and every
+    other picker in the app that offers gear."""
+
     library_changed = pyqtSignal()
     presets_changed = pyqtSignal()
 
-    def __init__(self, library: GearLibrary | None = None, parent=None, current_config=None):
+    def __init__(
+        self,
+        library: GearLibrary | None = None,
+        parent=None,
+        current_config_fn: Optional[Callable[[], Optional[WorkspaceConfig]]] = None,
+    ):
         super().__init__(parent)
         self._library = library or GearProfiles.load_library()
-        self._current_config = current_config
+        # A getter, not a snapshot: this panel is built once and stays live for the
+        # whole session, so "save preset from the current frame" needs whichever frame
+        # is current *when Add is clicked*, not whichever was current at construction.
+        self._current_config_fn = current_config_fn or (lambda: None)
         self._category = "cameras"
         self._selected_idx = -1
         self._list_items: list = []
         self._updating = False
 
-        self.setWindowTitle("Library")
-        self.resize(820, 560)
         self._init_ui()
         self._select_category("cameras")
-        pin_dialog_default(self._close_btn, scope=self)
 
     def library(self) -> GearLibrary:
         return self._library
@@ -308,13 +321,6 @@ class GearLibraryDialog(QDialog):
         right_layout.addWidget(self.preset_panel)
         right_layout.addStretch()
 
-        close_row = QHBoxLayout()
-        close_row.addStretch()
-        self._close_btn = QPushButton("Close")
-        self._close_btn.clicked.connect(self.accept)
-        close_row.addWidget(self._close_btn)
-        right_layout.addLayout(close_row)
-
         root.addWidget(right)
 
     def _build_preset_form(self) -> None:
@@ -455,7 +461,7 @@ class GearLibraryDialog(QDialog):
         self.form_panel.setVisible(not is_presets)
         self.preset_panel.setVisible(is_presets)
         self.edit_btn.setVisible(is_presets)
-        self.add_btn.setEnabled(not is_presets or self._current_config is not None)
+        self.add_btn.setEnabled(not is_presets or self._current_config_fn() is not None)
         self.add_btn.setToolTip("Store the current frame's metadata as a preset" if is_presets else "Add item")
 
     def _on_item_search_changed(self, _text: str) -> None:
@@ -836,9 +842,10 @@ class GearLibraryDialog(QDialog):
 
     def _new_preset_from_frame(self) -> None:
         """A preset is the current frame's metadata, minus the fields left unticked."""
-        if self._current_config is None:
+        current_config = self._current_config_fn()
+        if current_config is None:
             return
-        dlg = GranularSettingsDialog(self, self._current_config, "current metadata", ask_name=True, exclude_sections=NON_METADATA_SECTIONS)
+        dlg = GranularSettingsDialog(self, current_config, "current metadata", ask_name=True, exclude_sections=NON_METADATA_SECTIONS)
         dlg.setWindowTitle("New Metadata Preset")
         # As when editing: which fields to store is the choice, so every row is on offer.
         dlg.show_unchanged_settings()
@@ -847,7 +854,7 @@ class GearLibraryDialog(QDialog):
         name = dlg.name().strip()
         if not self._name_is_usable(name):
             return
-        MetadataPresets.save_preset(name, selected_flat_dict(self._current_config, dlg.selected()))
+        MetadataPresets.save_preset(name, selected_flat_dict(current_config, dlg.selected()))
         self._rebuild_item_list(select_id=name)
         self.presets_changed.emit()
 

@@ -26,7 +26,6 @@ from negpy.desktop.view.styles.fonts import mono_font_family
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
 from negpy.desktop.view.widgets.description_fields_dialog import DescriptionFieldsDialog
-from negpy.desktop.view.widgets.gear_library_dialog import GearLibraryDialog
 from negpy.desktop.view.widgets.location_picker_dialog import LocationPickerDialog
 from negpy.desktop.view.widgets.searchable_gear_combo import SearchableGearCombo
 from negpy.features.metadata.capture import (
@@ -124,10 +123,6 @@ class MetadataSidebar(BaseSidebar):
         load_row.addWidget(self.metadata_preset_load_btn)
         presets.addLayout(load_row)
 
-        self.manage_btn = self._labeled_action(
-            "fa5s.cog", " Manage…", "Save, edit and delete metadata presets, cameras, lenses and film stocks"
-        )
-        presets.addWidget(self.manage_btn)
         self._refresh_metadata_presets()
         controls.addWidget(self._card("Metadata Presets", "presets", preset_body, "fa5s.magic"))
 
@@ -404,7 +399,6 @@ class MetadataSidebar(BaseSidebar):
         self.camera_combo.selection_changed.connect(self._on_gear_changed)
         self.lens_combo.selection_changed.connect(self._on_gear_changed)
         self.film_stock_combo.selection_changed.connect(self._on_gear_changed)
-        self.manage_btn.clicked.connect(self._open_gear_library)
 
         self.metadata_preset_combo.selection_changed.connect(self._update_metadata_preset_tooltip)
         self.metadata_preset_load_btn.clicked.connect(self._on_metadata_preset_load)
@@ -665,18 +659,6 @@ class MetadataSidebar(BaseSidebar):
         rows = rows_for_keys(data, "metadata")
         merged = apply_selected_fields(preset_config(data), self.state.config, rows)
         self._apply_metadata_config(merged.metadata)
-
-    def _open_gear_library(self) -> None:
-        # The dialog holds the config it was given, so the debounce has to land first or a
-        # preset saved from "the current frame" misses the edit that is still pending.
-        self.update_timer.stop()
-        self._persist_all_metadata_settings()
-        dlg = GearLibraryDialog(self._gear_library, parent=self, current_config=self.state.config)
-        dlg.library_changed.connect(self._on_library_changed)
-        dlg.presets_changed.connect(self._refresh_metadata_presets)
-        if dlg.exec():
-            self._on_library_changed()
-        self._refresh_metadata_presets()
 
     def _on_library_changed(self) -> None:
         self._gear_library = GearProfiles.load_library()

@@ -135,7 +135,6 @@ class ShortcutManager:
         toolbar = self.window.toolbar
         controls = self.window.controls_panel
         right = self.window.right_panel
-        roll = self.window.roll_panel
 
         actions: dict[str, Callable[[], None]] = {
             "prev_file": controller.session.prev_file,
@@ -197,7 +196,6 @@ class ShortcutManager:
             "toggle_invert_zoom_scroll": lambda: controller.session.set_invert_zoom_scroll(not controller.session.state.invert_zoom_scroll),
             "toggle_left_panel": self.window.toggle_session_dock,
             "toggle_right_panel": self.window.toggle_controls_dock,
-            "toggle_roll_panel": self.window.toggle_roll_dock,
             "reset_panel_layout": self.window.reset_panel_layout,
             "edit_toolbar": toolbar.open_toolbar_editor,
             "tab_favourites": lambda: right.show_tab_by_key("favourites"),
@@ -206,10 +204,11 @@ class ShortcutManager:
             "tab_tone": lambda: right.show_tab_by_key("tone"),
             "tab_color": lambda: right.show_tab_by_key("color"),
             "tab_finish": lambda: right.show_tab_by_key("finish"),
-            "tab_export": lambda: roll.show_tab_by_key("export"),
-            "tab_metadata": lambda: roll.show_tab_by_key("metadata"),
+            "tab_export": lambda: right.show_tab_by_key("export"),
+            "tab_metadata": lambda: right.show_tab_by_key("metadata"),
             "tab_history": lambda: right.show_tab_by_key("history"),
-            "tab_scan": lambda: roll.show_tab_by_key("scan"),
+            "tab_gear": lambda: right.show_tab_by_key("gear"),
+            "tab_scan": lambda: right.show_tab_by_key("scan"),
             "fit_view": self.window.canvas.fit_to_window,
             "zoom_100": self.window.canvas.zoom_to_original,
             "zoom_200": lambda: self.window.canvas.zoom_to_percent(200.0),
@@ -267,7 +266,6 @@ class ShortcutManager:
 
         self.window.controls_panel.apply_shortcut_tooltips()
         self.window.right_panel.apply_shortcut_tooltips()
-        self.window.roll_panel.apply_shortcut_tooltips()
         self.window.toolbar.apply_shortcut_tooltips()
         # The macOS menu bar carries key equivalents of its own; a rebind has to reach them
         # or the retired key keeps working from the menu.
