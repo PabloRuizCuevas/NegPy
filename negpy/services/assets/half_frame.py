@@ -438,8 +438,12 @@ def detect_split_and_crop_for_file(
             return 0.5, 0.0, None
         img.thumbnail((1024, 1024))
         buf = np.asarray(img)
-        split_x, thickness = detect_gutter(buf)
-        return split_x, thickness, detect_film_crop(buf)
+        crop_rect = detect_film_crop(buf)
+        # split_x is relative to the cropped width (slice_half's own convention), so the
+        # gutter search has to run inside the new crop, not the full, uncropped scan.
+        detect_buf = slice_half(buf, 0, 0.5, crop_rect=crop_rect) if crop_rect is not None else buf
+        split_x, thickness = detect_gutter(detect_buf)
+        return split_x, thickness, crop_rect
     except Exception as e:
         logger.warning("Half-frame split/crop detection failed for %s: %s", file_path, e)
         return 0.5, 0.0, None
