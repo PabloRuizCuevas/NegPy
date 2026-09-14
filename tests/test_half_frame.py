@@ -83,31 +83,74 @@ class TestDetectSplitX:
 
 
 def _diptych_scan_with_rebate() -> np.ndarray:
-    """Light bed (1.0) >> film base/rebate (0.78) > exposed frames (0.25). The two
-    frames' own boundary within the rebate is irrelevant to film-extent detection --
-    same proportions as test_geometry_logic.py's _three_tier_negative, which already
-    proves get_autocrop_coords(mode="film") on this exact fixture."""
+    """Light bed (1.0) >> film base/rebate (0.78) > exposed frames (0.25), a wide margin
+    on every side (as a scanner bed around a whole film strip would be), too wide for the
+    edge search's own bounded margin -- it is real content the detector cannot tell from
+    a bed this size, so it is left alone rather than trimmed on a guess."""
     img = np.full((480, 720, 3), 1.0, dtype=np.float32)
     img[80:400, 100:620] = 0.78  # film strip incl. rebate
     img[105:375, 135:585] = 0.25  # both exposed frames plus the gutter between them
     return img
 
 
+def _diptych_scan_with_edge_rebate(margin_w: int = 40, w: int = 600, h: int = 300, rebate: float = 0.95, seed: int = 0) -> np.ndarray:
+    """A tight diptych with a real, narrow rebate band on the left edge only, within a
+    plausible sprocket margin -- the shape the edge search is built to find."""
+    rng = np.random.default_rng(seed)
+    img = (0.3 + 0.3 * rng.random((h, w, 3))).astype(np.float32)
+    img[:, :margin_w] = rebate
+    return img
+
+
+def _diptych_scan_with_rebate_on_two_sides(seed: int = 1) -> np.ndarray:
+    """The same rebate tone on the left and top edges, meeting at a consistent corner --
+    each side is detected independently."""
+    rng = np.random.default_rng(seed)
+    h, w = 300, 600
+    img = (0.3 + 0.3 * rng.random((h, w, 3))).astype(np.float32)
+    img[:, :30] = 0.95
+    img[:20, :] = 0.95
+    return img
+
+
+def _scene_with_a_flat_midtone_band() -> np.ndarray:
+    """A locally uniform strip near one edge that sits well inside the frame's own
+    tonal range rather than near its darkest or brightest tone -- real content (a calm
+    sea, an overcast sky), not unexposed film, even though it is flat and contrasts
+    with its immediate neighbor."""
+    rng = np.random.default_rng(3)
+    img = (0.15 + 0.3 * rng.random((300, 600, 3))).astype(np.float32)
+    img[:, :50] = 0.55
+    img[:, 400:410] = 1.0  # establishes the frame's real peak, off the flat band
+    return img
+
+
 class TestDetectFilmCrop:
-    def test_trims_the_bed_keeps_the_rebate(self):
-        """The outer crop must reach past the exposed frames into the rebate -- a
-        diptych's outer crop is one rectangle around both frames, not the per-frame
-        crop mode="image" would give one of them alone."""
-        roi = detect_film_crop(_diptych_scan_with_rebate())
+    def test_narrow_rebate_on_one_side_is_trimmed(self):
+        roi = detect_film_crop(_diptych_scan_with_edge_rebate())
         assert roi is not None
         x1, y1, x2, y2 = roi
-        h, w = 480, 720
-        # Same pixel bounds test_geometry_logic.py's test_autocrop_film_mode_keeps_rebate
-        # asserts for get_autocrop_coords(mode="film") on this fixture, normalized here.
-        assert 65 / h <= y1 <= 100 / h
-        assert 380 / h <= y2 <= 420 / h
-        assert 95 / w <= x1 <= 130 / w
-        assert 590 / w <= x2 <= 630 / w
+        assert abs(x1 - 40 / 600) < 0.01
+        assert (y1, x2, y2) == (0.0, 1.0, 1.0)
+
+    def test_each_side_is_detected_independently(self):
+        roi = detect_film_crop(_diptych_scan_with_rebate_on_two_sides())
+        assert roi is not None
+        x1, y1, x2, y2 = roi
+        assert abs(x1 - 30 / 600) < 0.01
+        assert abs(y1 - 20 / 300) < 0.01
+        assert (x2, y2) == (1.0, 1.0)
+
+    def test_a_scanner_bed_margin_is_too_wide_to_trust(self):
+        """A margin far wider than any plausible rebate is real content the edge
+        search cannot rule out, so every side is left uncropped."""
+        assert detect_film_crop(_diptych_scan_with_rebate()) is None
+
+    def test_a_flat_band_that_is_not_extremal_is_rejected(self):
+        assert detect_film_crop(_scene_with_a_flat_midtone_band()) is None
+
+    def test_no_rebate_on_any_side_returns_none(self):
+        assert detect_film_crop(_two_frame_scan(0.02)) is None
 
     def test_tiny_image_returns_none(self):
         assert detect_film_crop(np.zeros((4, 20, 3), np.float32)) is None
