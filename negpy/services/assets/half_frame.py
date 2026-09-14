@@ -424,19 +424,22 @@ def detect_film_crop(buf: np.ndarray) -> Optional[tuple[float, float, float, flo
     return (x1 / w, y1 / h, x2 / w, y2 / h)
 
 
-def detect_split_and_crop_for_file(file_path: str) -> tuple[float, Optional[tuple[float, float, float, float]]]:
-    """Gutter position and outer film crop from one decode of the file -- the pair
-    Auto-detect All Splits saves as a roll's half-frame profile. (0.5, None) on any
-    failure, matching detect_split_x_for_file's split-only fallback."""
+def detect_split_and_crop_for_file(
+    file_path: str,
+) -> tuple[float, float, Optional[tuple[float, float, float, float]]]:
+    """Gutter position, gutter thickness and outer film crop from one decode of the
+    file -- the triple Auto-detect All Splits saves as a roll's half-frame profile.
+    (0.5, 0.0, None) on any failure, matching detect_split_x_for_file's fallback."""
     try:
         from negpy.services.assets.thumbnails import decode_source_image
 
         img = decode_source_image(file_path)
         if img is None:
-            return 0.5, None
+            return 0.5, 0.0, None
         img.thumbnail((1024, 1024))
         buf = np.asarray(img)
-        return detect_split_x(buf), detect_film_crop(buf)
+        split_x, thickness = detect_gutter(buf)
+        return split_x, thickness, detect_film_crop(buf)
     except Exception as e:
         logger.warning("Half-frame split/crop detection failed for %s: %s", file_path, e)
-        return 0.5, None
+        return 0.5, 0.0, None
