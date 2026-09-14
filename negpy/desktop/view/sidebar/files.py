@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QSlider,
+    QSplitter,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
@@ -663,33 +664,108 @@ class FileBrowser(QWidget):
         frames_layout.addWidget(self.empty_label, 1)
         self.frames_section = self._make_section("Film Strip", "frames", "fa5s.film", frames)
 
-        layout.addWidget(self.library_section)
-        layout.addWidget(self.frames_section)
-        # Absorbs the surplus when every section is collapsed, or Qt spreads it into the gaps
-        # between the rows above. Stretch 0 leaves an open section its share.
-        layout.addStretch(0)
-        self._rebalance_sections()
+        # A splitter, like the right panel's Analysis/Tabs one, so the boundary can be
+        # dragged; expanded sections still share it by _LIBRARY_SHARE/_FRAMES_SHARE.
+        self.sections_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.sections_splitter.addWidget(self.library_section)
+        self.sections_splitter.addWidget(self.frames_section)
+        self.sections_splitter.setCollapsible(0, False)
+        self.sections_splitter.setCollapsible(1, False)
+
+        saved_sizes = self.session.repo.get_global_setting("session_sections_splitter_sizes")
+        if isinstance(saved_sizes, list) and len(saved_sizes) == 2:
+            self.sections_splitter.setSizes([int(s) for s in saved_sizes])
+        else:
+            self.sections_splitter.setSizes([240, 360])
+        self.sections_splitter.splitterMoved.connect(self._on_sections_splitter_moved)
+        self._section_sizes = self.sections_splitter.sizes()
+
+        for index, section in enumerate((self.library_section, self.frames_section)):
+            section.expanded_changed.connect(lambda expanded, i=index: self._on_section_toggled(i, expanded))
+            self._on_section_toggled(index, section.toggle_button.isChecked())
+
+        layout.addWidget(self.sections_splitter, 1)
 
         # Applied after list_view exists: the filter prunes the selection against the view.
         saved_sheet = self.session.repo.get_global_setting("sheet_filter") or "all"
         self._apply_sheet_filter(str(saved_sheet), save=False)
 
     def _make_section(self, title: str, key: str, icon: str, content: QWidget) -> CollapsibleSection:
-        section = make_section(self.session.repo, title, key, content, icon, default_expanded=True)
-        section.expanded_changed.connect(lambda _on: self._rebalance_sections())
-        return section
+        return make_section(self.session.repo, title, key, content, icon, default_expanded=True)
 
-    def _rebalance_sections(self) -> None:
-        """Expanded sections share the panel; a collapsed one keeps only its header.
+    def _on_sections_splitter_moved(self, *_args) -> None:
+        self._section_sizes = self.sections_splitter.sizes()
+        self.session.repo.save_global_setting("session_sections_splitter_sizes", self._section_sizes)
 
-        Stretch alone is not enough — a collapsed section would still be handed leftover
-        space — so its height is pinned to the header until it opens again.
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "sections_splitter"):
+            self._rebalance_splitter_sizes()
+
+    def _apply_section_constraints(self, index: int, expanded: bool) -> None:
+        """A collapsed pane is fixed to exactly its header height, so nothing -- a drag,
+        a resize -- can hand it more or less than that; an expanded pane is freed back to
+        its natural range."""
+        section = (self.library_section, self.frames_section)[index]
+        share = (_LIBRARY_SHARE, _FRAMES_SHARE)[index]
+        if expanded:
+            section.setMinimumHeight(0)
+            section.setMaximumHeight(_UNBOUNDED_HEIGHT)
+        else:
+            section.setFixedHeight(section.toggle_button.height())
+        self.sections_splitter.setStretchFactor(index, share if expanded else 0)
+
+    def _on_section_toggled(self, index: int, expanded: bool) -> None:
+        """Pin a collapsed section's pane to its header and hand its space to the other
+        pane, restoring the last size when it reopens — same pattern as the right panel's
+        Analysis/Tabs splitter, generalized to two panes that can each collapse."""
+        sections = (self.library_section, self.frames_section)
+        other = 1 - index
+        header = sections[index].toggle_button.height()
+        sizes = self.sections_splitter.sizes()
+        total = sum(sizes) or self.sections_splitter.height()
+
+        if not expanded:
+            self._section_sizes[index] = sizes[index]
+        self._apply_section_constraints(index, expanded)
+        if total <= 0:
+            return
+
+        want = min(max(self._section_sizes[index], header), max(header, total - header)) if expanded else header
+        other_header = sections[other].toggle_button.height()
+        other_want = max(other_header, total - want) if sections[other].toggle_button.isChecked() else other_header
+        new_sizes = [0, 0]
+        new_sizes[index] = want
+        new_sizes[other] = other_want
+        self.sections_splitter.setSizes(new_sizes)
+        self._section_sizes = self.sections_splitter.sizes()
+
+    def _rebalance_splitter_sizes(self) -> None:
+        """Reassert the split on a window resize: a collapsed pane stays pinned to its
+        header; expanded panes keep their current size ratio, scaled to the new total.
+        Needed because a QSplitter's own resize handling redistributes new space by
+        stretch factor, and with two independently-collapsible panes that factor is 0
+        for both whenever both happen to be collapsed.
         """
-        layout = self.layout()
-        for section, share in ((self.library_section, _LIBRARY_SHARE), (self.frames_section, _FRAMES_SHARE)):
-            expanded = section.toggle_button.isChecked()
-            layout.setStretchFactor(section, share if expanded else 0)
-            section.setMaximumHeight(_UNBOUNDED_HEIGHT if expanded else section.toggle_button.height())
+        sections = (self.library_section, self.frames_section)
+        total = self.sections_splitter.height() or sum(self.sections_splitter.sizes())
+        if total <= 0:
+            return
+        current = self.sections_splitter.sizes()
+        headers = [s.toggle_button.height() for s in sections]
+        expanded = [s.toggle_button.isChecked() for s in sections]
+        collapsed_total = sum(h for h, e in zip(headers, expanded) if not e)
+        remaining = max(0, total - collapsed_total)
+        expanded_weight_total = sum(w for w, e in zip(current, expanded) if e)
+        sizes = []
+        for h, e, w in zip(headers, expanded, current):
+            if e and expanded_weight_total:
+                sizes.append(round(remaining * w / expanded_weight_total))
+            elif e:
+                sizes.append(remaining)
+            else:
+                sizes.append(h)
+        self.sections_splitter.setSizes(sizes)
 
     def _connect_signals(self) -> None:
         self.library_btn.clicked.connect(lambda: self.library_requested.emit(True))

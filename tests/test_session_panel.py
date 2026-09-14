@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -31,9 +31,9 @@ def panel(qapp, tmp_path, monkeypatch):
 
 def test_library_sits_above_the_film_strip(panel):
     browser = panel.file_browser
-    order = [browser.layout().itemAt(i).widget() for i in range(browser.layout().count())]
+    splitter = browser.sections_splitter
 
-    assert order.index(browser.library_section) < order.index(browser.frames_section)
+    assert splitter.indexOf(browser.library_section) < splitter.indexOf(browser.frames_section)
     assert browser.library_section.content_area.isAncestorOf(panel.library_tree)
     assert browser.frames_section.content_area.isAncestorOf(browser.list_view)
 
@@ -43,9 +43,9 @@ def test_the_search_row_sits_above_both_sections(panel):
     layout = browser.layout()
     rows = [layout.itemAt(i) for i in range(layout.count())]
     search_at = next(i for i, item in enumerate(rows) if item.layout() and item.layout().indexOf(browser.search_input) >= 0)
-    library_at = next(i for i, item in enumerate(rows) if item.widget() is browser.library_section)
+    splitter_at = next(i for i, item in enumerate(rows) if item.widget() is browser.sections_splitter)
 
-    assert search_at < library_at
+    assert search_at < splitter_at
 
 
 def test_tree_is_shown_when_the_library_has_roots(panel):
@@ -67,44 +67,79 @@ def test_a_collapsed_section_keeps_only_its_header(panel):
     browser.library_section.toggle_button.setChecked(False)
 
     assert browser.library_section.maximumHeight() == header
-    assert browser.layout().stretch(browser.layout().indexOf(browser.library_section)) == 0
-    # The film strip is still expanded, so it keeps its share.
-    assert browser.layout().stretch(browser.layout().indexOf(browser.frames_section)) > 0
+    library, frames = browser.sections_splitter.sizes()
+    assert library == header
+    # The film strip is still expanded, so it keeps the rest.
+    assert frames > header
 
 
 def test_collapsing_both_sections_keeps_the_panel_top_aligned(panel, qapp):
-    """With nothing expanded the leftover height must not spread into the gaps (#754)."""
+    """With nothing expanded the leftover height must not spread into the gaps (#754).
+
+    Shows the real top-level ancestor (panel), not just the embedded browser: a
+    QSplitter's live layout needs a genuinely shown/sized top-level window to position
+    its children correctly, unlike a plain QLayout, which computes geometry analytically
+    regardless of show state.
+    """
     browser = panel.file_browser
     browser.library_section.toggle_button.setChecked(False)
     browser.frames_section.toggle_button.setChecked(False)
 
-    browser.resize(300, 900)
-    browser.show()
+    panel.resize(300, 900)
+    panel.show()
     qapp.processEvents()
 
-    assert browser.frames_section.y() < 200  # ~115 stacked, ~707 spread
+    assert browser.frames_section.y() < 200  # ~40 stacked, ~707 spread
 
 
 def test_expanding_a_section_gives_it_back_a_share(panel):
     browser = panel.file_browser
+    header = browser.frames_section.toggle_button.height()
     browser.frames_section.toggle_button.setChecked(False)
-    assert browser.layout().stretch(browser.layout().indexOf(browser.frames_section)) == 0
+    assert browser.sections_splitter.sizes()[1] == header
 
     browser.frames_section.toggle_button.setChecked(True)
 
-    assert browser.layout().stretch(browser.layout().indexOf(browser.frames_section)) > 0
+    assert browser.sections_splitter.sizes()[1] > header
     assert browser.frames_section.maximumHeight() > 1000
 
 
 def test_both_open_splits_the_panel_40_60(panel):
     """The tree finds a roll, the sheet is where the work happens."""
+    library, frames = panel.file_browser.sections_splitter.sizes()
+
+    # Loose tolerance: pixel sizes, not a pure integer ratio, so the splitter's own
+    # rounding as it normalizes the initial sizes shifts this by a pixel or two.
+    assert library / (library + frames) == pytest.approx(0.4, abs=0.01)
+
+
+def test_dragging_the_splitter_persists_the_split(panel):
+    """Drives the persist path the way a real drag does: splitterMoved fires after Qt has
+    already applied the new sizes, so this saves whatever sizes() reports, not the
+    argument setSizes was given (Qt rescales it if the splitter has not been shown)."""
     browser = panel.file_browser
-    layout = browser.layout()
+    browser.sections_splitter.setSizes([300, 300])
+    expected = browser.sections_splitter.sizes()
 
-    library = layout.stretch(layout.indexOf(browser.library_section))
-    frames = layout.stretch(layout.indexOf(browser.frames_section))
+    browser._on_sections_splitter_moved()
 
-    assert library / (library + frames) == pytest.approx(0.4)
+    assert panel.controller.session.repo.get_global_setting("session_sections_splitter_sizes") == expected
+
+
+def test_a_new_panel_restores_the_saved_split(qapp, tmp_path, monkeypatch):
+    """setSizes on an unshown splitter rescales its argument to fit a not-yet-laid-out
+    guess at the total, so this checks the restore path is wired to the saved value,
+    not the pixel sizes an unshown splitter ends up reporting."""
+    monkeypatch.setattr("negpy.desktop.view.widgets.update_dialog.find_update", lambda *a, **k: None)
+    root = tmp_path / "library"
+    root.mkdir()
+    controller = _controller(tmp_path, [str(root)])
+    controller.session.repo.save_global_setting("session_sections_splitter_sizes", [111, 222])
+
+    with patch("negpy.desktop.view.sidebar.files.QSplitter.setSizes") as set_sizes:
+        SessionPanel(controller)
+
+    assert [111, 222] in [list(c.args[0]) for c in set_sizes.call_args_list]
 
 
 def test_opening_an_image_less_folder_from_the_tree_loads_nothing(panel, tmp_path):
