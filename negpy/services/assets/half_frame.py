@@ -372,3 +372,42 @@ def detect_split_x_for_file(file_path: str) -> float:
     except Exception as e:
         logger.warning("Half-frame split detection failed for %s: %s", file_path, e)
         return 0.5
+
+
+def detect_film_crop(buf: np.ndarray) -> Optional[tuple[float, float, float, float]]:
+    """Normalized (x1, y1, x2, y2) outer film extent, trimming the scanner bed/holder
+    around a whole half-frame diptych -- both frames and the gutter between them stay
+    inside it, so this runs once on the whole scan, not per half. None on too small a
+    buffer.
+
+    Reuses the single-frame film detector behind the Geometry tab's Auto Crop
+    (mode=FILM keeps the rebate/sprockets a diptych's outer crop must not cut into;
+    a forced aspect ratio would be wrong for a two-up frame, so ratio stays Free).
+    """
+    from negpy.features.geometry.logic import get_autocrop_coords
+    from negpy.features.geometry.models import AspectRatio, AutocropMode
+
+    a = np.asarray(buf, dtype=np.float32)
+    h, w = a.shape[:2]
+    if w < 64 or h < 8:
+        return None
+    y1, y2, x1, x2 = get_autocrop_coords(a, target_ratio_str=AspectRatio.FREE.value, mode=AutocropMode.FILM)
+    return (x1 / w, y1 / h, x2 / w, y2 / h)
+
+
+def detect_split_and_crop_for_file(file_path: str) -> tuple[float, Optional[tuple[float, float, float, float]]]:
+    """Gutter position and outer film crop from one decode of the file -- the pair
+    Auto-detect All Splits saves as a roll's half-frame profile. (0.5, None) on any
+    failure, matching detect_split_x_for_file's split-only fallback."""
+    try:
+        from negpy.services.assets.thumbnails import decode_source_image
+
+        img = decode_source_image(file_path)
+        if img is None:
+            return 0.5, None
+        img.thumbnail((1024, 1024))
+        buf = np.asarray(img)
+        return detect_split_x(buf), detect_film_crop(buf)
+    except Exception as e:
+        logger.warning("Half-frame split/crop detection failed for %s: %s", file_path, e)
+        return 0.5, None

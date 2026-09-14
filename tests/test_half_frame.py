@@ -10,6 +10,7 @@ from negpy.domain.models import ExportConfig, WorkspaceConfig
 from negpy.services.assets.half_frame import (
     HalfGeometry,
     base_hash,
+    detect_film_crop,
     detect_split_x,
     SPLIT_SCANS_KEY,
     diptych_configs,
@@ -78,6 +79,37 @@ class TestDetectSplitX:
 
     def test_tiny_image_falls_back(self):
         assert detect_split_x(np.zeros((4, 20, 3), np.float32)) == 0.5
+
+
+def _diptych_scan_with_rebate() -> np.ndarray:
+    """Light bed (1.0) >> film base/rebate (0.78) > exposed frames (0.25). The two
+    frames' own boundary within the rebate is irrelevant to film-extent detection --
+    same proportions as test_geometry_logic.py's _three_tier_negative, which already
+    proves get_autocrop_coords(mode="film") on this exact fixture."""
+    img = np.full((480, 720, 3), 1.0, dtype=np.float32)
+    img[80:400, 100:620] = 0.78  # film strip incl. rebate
+    img[105:375, 135:585] = 0.25  # both exposed frames plus the gutter between them
+    return img
+
+
+class TestDetectFilmCrop:
+    def test_trims_the_bed_keeps_the_rebate(self):
+        """The outer crop must reach past the exposed frames into the rebate -- a
+        diptych's outer crop is one rectangle around both frames, not the per-frame
+        crop mode="image" would give one of them alone."""
+        roi = detect_film_crop(_diptych_scan_with_rebate())
+        assert roi is not None
+        x1, y1, x2, y2 = roi
+        h, w = 480, 720
+        # Same pixel bounds test_geometry_logic.py's test_autocrop_film_mode_keeps_rebate
+        # asserts for get_autocrop_coords(mode="film") on this fixture, normalized here.
+        assert 65 / h <= y1 <= 100 / h
+        assert 380 / h <= y2 <= 420 / h
+        assert 95 / w <= x1 <= 130 / w
+        assert 590 / w <= x2 <= 630 / w
+
+    def test_tiny_image_returns_none(self):
+        assert detect_film_crop(np.zeros((4, 20, 3), np.float32)) is None
 
 
 class TestSliceHalf:
@@ -187,13 +219,13 @@ def test_expand_half_frames_per_file_override_wins_over_the_profile(monkeypatch)
 
 
 def test_auto_detect_all_splits_worker_emits_per_file_results(monkeypatch):
-    """process_auto_detect_all_splits reports one detected split per path, so a big
-    roll's detection can run off the GUI thread and still land as one dict."""
+    """process_auto_detect_all_splits reports one (split, crop) pair per path, so a
+    big roll's detection can run off the GUI thread and still land as one dict."""
     from negpy.desktop.workers import render as render_mod
     from negpy.desktop.workers.render import AutoDetectAllSplitsTask
 
-    detected = {"/p/a.tif": 0.4, "/p/b.tif": 0.6}
-    monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_x_for_file", lambda p: detected[p])
+    detected = {"/p/a.tif": (0.4, (0.05, 0.05, 0.95, 0.95)), "/p/b.tif": (0.6, None)}
+    monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_and_crop_for_file", lambda p: detected[p])
     worker = render_mod.AssetDiscoveryWorker()
     results = []
     worker.splits_detected.connect(results.append)

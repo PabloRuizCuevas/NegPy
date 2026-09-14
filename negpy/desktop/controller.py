@@ -1443,10 +1443,11 @@ class AppController(QObject):
         self.status_progress_requested.emit(0, len(paths))
         self.auto_detect_all_splits_requested.emit(AutoDetectAllSplitsTask(paths=paths))
 
-    def _on_splits_detected(self, detected: dict[str, float]) -> None:
-        """AutoDetectAllSplitsTask finished: save each file's own detected split as
-        its override, re-anchoring its manual edits from whatever geometry it used
-        before."""
+    def _on_splits_detected(self, detected: dict[str, tuple[float, Optional[tuple[float, float, float, float]]]]) -> None:
+        """AutoDetectAllSplitsTask finished: save each file's own detected split and
+        outer film crop as its override, re-anchoring its manual edits from whatever
+        geometry it used before. A file whose crop detection failed keeps the crop it
+        already had -- only the split moves for it."""
         self.status_progress_requested.emit(0, 0)
         seen: set[str] = set()
         for a in self.session.state.uploaded_files:
@@ -1457,7 +1458,8 @@ class AppController(QObject):
                 continue
             seen.add(file_hash)
             old_geom = self._half_frame_geometry_for(file_hash, a["path"])
-            new_geom = replace(old_geom, split_x=detected[a["path"]])
+            split_x, crop_rect = detected[a["path"]]
+            new_geom = replace(old_geom, split_x=split_x, crop_rect=old_geom.crop_rect if crop_rect is None else crop_rect)
             self._remap_half_frame_edits(file_hash, old_geom, new_geom)
             self.save_half_frame_override(
                 file_hash, new_geom.crop_rect or (0.0, 0.0, 1.0, 1.0), new_geom.split_x, new_geom.gutter_thickness
