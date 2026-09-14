@@ -970,7 +970,7 @@ When you set capture gear, it is written to standard EXIF, and the digitizing ri
 
 A searchable, user-extendable library of cameras, lenses, film stocks, development processes, scan setups and metadata presets, shared by Metadata (§12), Roll Settings and every other picker in the app that offers gear. Starter data seeds into `~/NegPy/gear/` on first launch.
 
-The left list picks a category: **Cameras**, **Lenses**, **Film Stocks**, **Process**, **Scanning** or **Presets**. A Process entry is a development recipe (developer, dilution, push/pull, time and temperature); a Scanning entry is a digitizing setup.
+**Category** picks what the list below shows: **Cameras**, **Lenses**, **Film Stocks**, **Process**, **Scanning** or **Presets**. A Process entry is a development recipe (developer, dilution, push/pull, time and temperature); a Scanning entry is a digitizing setup.
 
 *   **+ / pen / copy / trash**: add, edit, duplicate and delete the selected item. On the Presets category, **+** stores the current frame's metadata under a name you pick and the pen renames a preset or changes which fields it stores.
 *   The fields of a preset are then editable in place: swap its camera, lens, film stock, saved process or saved setup, or retype a developer, dilution, push, time, temperature, scanning note, roll or exposure. No frame needs to be open. Picking from the library refills everything read from it; typing over a filled value unlinks the pick. A stored capture date, place, description-field set or flag is shown but not editable here, being a per-frame decision. **Notes** is free text.

@@ -13,14 +13,12 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QDoubleSpinBox,
-    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
-    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -35,7 +33,8 @@ from negpy.desktop.settings_catalog import (
     selected_flat_dict,
 )
 from negpy.desktop.view.confirm import confirm_delete_named
-from negpy.desktop.view.styles.templates import dialog_pane_qss, field_label, hint_label, pane_header_qss
+from negpy.desktop.view.sidebar.base import install_wheel_guards
+from negpy.desktop.view.styles.templates import field_label, hint_label, icon_button, section_subheader, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog
 from negpy.domain.models import WorkspaceConfig
@@ -73,6 +72,15 @@ _CATEGORIES = [
 # Metadata presets are files of stored values, not library records: the form pane
 # shows what one holds and the field picker edits it.
 _PRESETS = "metadata_presets"
+
+_CATEGORY_ICONS: dict[str, str] = {
+    "cameras": "fa5s.camera",
+    "lenses": "mdi6.camera-iris",
+    "film_stocks": "fa5s.film",
+    "processes": "fa5s.flask",
+    "scan_setups": "mdi6.scanner",
+    _PRESETS: "fa5s.magic",
+}
 
 _CATEGORY_FIELDS: dict[str, frozenset[str]] = {
     "cameras": frozenset({"display_name", "make", "model", "notes"}),
@@ -138,78 +146,47 @@ class GearLibraryPanel(QWidget):
         return self._library
 
     def _init_ui(self) -> None:
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(THEME.space_xl, 0, THEME.space_xl, 5)
+        root.setSpacing(THEME.space_lg)
 
-        # Category list
-        left = QWidget()
-        left.setFixedWidth(140)
-        left.setStyleSheet(dialog_pane_qss())
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(8, 8, 8, 8)
+        # Category, search and the item list: one vertical column, like every other
+        # sidebar tab. The detail form follows below rather than beside it.
+        root.addWidget(section_subheader("ITEMS"))
 
-        cat_label = QLabel("LIBRARY")
-        cat_label.setStyleSheet(pane_header_qss())
-        left_layout.addWidget(cat_label)
-
-        self.category_list = QListWidget()
+        root.addWidget(field_label("Category"))
+        self.category_list = QComboBox()
         for key, label in _CATEGORIES:
-            self.category_list.addItem(QListWidgetItem(label))
-        self.category_list.setProperty("keys", [k for k, _ in _CATEGORIES])
-        self.category_list.currentRowChanged.connect(self._on_category_changed)
-        left_layout.addWidget(self.category_list)
-        root.addWidget(left)
-
-        # Item list
-        mid = QWidget()
-        mid.setFixedWidth(220)
-        mid.setStyleSheet(dialog_pane_qss())
-        mid_layout = QVBoxLayout(mid)
-        mid_layout.setContentsMargins(8, 8, 8, 8)
-
-        self.items_label = QLabel("ITEMS")
-        self.items_label.setStyleSheet(pane_header_qss())
-        mid_layout.addWidget(self.items_label)
+            self.category_list.addItem(qta.icon(_CATEGORY_ICONS[key], color=THEME.text_primary), label, key)
+        root.addWidget(self.category_list)
 
         self.item_search = QLineEdit()
         self.item_search.setPlaceholderText("Search cameras…")
         self.item_search.textChanged.connect(self._on_item_search_changed)
-        mid_layout.addWidget(self.item_search)
+        root.addWidget(self.item_search)
 
         self.item_list = QListWidget()
+        self.item_list.setMaximumHeight(160)
         self.item_list.currentRowChanged.connect(self._on_item_changed)
-        mid_layout.addWidget(self.item_list)
+        root.addWidget(self.item_list)
 
         btn_row = QHBoxLayout()
-        self.add_btn = QPushButton()
-        self.add_btn.setIcon(qta.icon("fa5s.plus", color=THEME.text_primary))
-        self.add_btn.setToolTip("Add item")
+        btn_row.setSpacing(THEME.space_sm)
+        self.add_btn = icon_button("fa5s.plus", "Add item")
         self.add_btn.clicked.connect(self._add_item)
-        self.dup_btn = QPushButton()
-        self.dup_btn.setIcon(qta.icon("fa5s.copy", color=THEME.text_primary))
-        self.dup_btn.setToolTip("Duplicate")
+        self.dup_btn = icon_button("fa5s.copy", "Duplicate")
         self.dup_btn.clicked.connect(self._duplicate_item)
-        self.edit_btn = QPushButton()
-        self.edit_btn.setIcon(qta.icon("fa5s.pen", color=THEME.text_primary))
-        self.edit_btn.setToolTip("Rename the preset, or change which fields it stores")
+        self.edit_btn = icon_button("fa5s.pen", "Rename the preset, or change which fields it stores")
         self.edit_btn.clicked.connect(self._edit_preset)
-        self.del_btn = QPushButton()
-        self.del_btn.setIcon(qta.icon("fa5s.trash-alt", color=THEME.text_primary))
-        self.del_btn.setToolTip("Delete")
+        self.del_btn = icon_button("fa5s.trash-alt", "Delete")
         self.del_btn.clicked.connect(self._delete_item)
         for b in (self.add_btn, self.dup_btn, self.edit_btn, self.del_btn):
-            b.setFixedWidth(36)
             btn_row.addWidget(b)
         btn_row.addStretch()
-        mid_layout.addLayout(btn_row)
+        root.addLayout(btn_row)
 
-        root.addWidget(mid)
-
-        # Form: a single layout, with rows shown and hidden per category, never removeRow.
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(16, 16, 16, 16)
+        # Form: a single layout, with rows shown and hidden per category, never removed.
+        root.addWidget(section_subheader("DETAILS"))
 
         self.display_name_edit = QLineEdit()
         self.make_edit = QLineEdit()
@@ -267,8 +244,9 @@ class GearLibraryPanel(QWidget):
         self.push_pull_combo.currentIndexChanged.connect(self._on_form_changed)
 
         self.form_panel = QWidget()
-        self.form_layout = QFormLayout(self.form_panel)
-        self.form_layout.setSpacing(8)
+        self.form_layout = QVBoxLayout(self.form_panel)
+        self.form_layout.setContentsMargins(0, 0, 0, 0)
+        self.form_layout.setSpacing(THEME.space_md)
         self._form_rows: dict[str, tuple[QLabel, QWidget]] = {}
         self._register_form_row("display_name", "Display name", self.display_name_edit)
         self._register_form_row("make", "Make", self.make_edit)
@@ -289,39 +267,38 @@ class GearLibraryPanel(QWidget):
         self._register_form_row("scanning", "Scanning", self.scanning_edit)
         self._register_form_row("notes", "Notes", self.notes_edit)
 
-        right_layout.addWidget(self.form_panel)
+        root.addWidget(self.form_panel)
 
         self.preset_panel = QWidget()
         preset_layout = QVBoxLayout(self.preset_panel)
         preset_layout.setContentsMargins(0, 0, 0, 0)
-        preset_layout.setSpacing(8)
+        preset_layout.setSpacing(THEME.space_lg)
         self.preset_name_label = QLabel()
         self.preset_name_label.setStyleSheet(f"color: {THEME.text_primary}; font-weight: bold;")
-        self.preset_form_layout = QFormLayout()
-        self.preset_form_layout.setSpacing(8)
+        self.preset_form_layout = QVBoxLayout()
+        self.preset_form_layout.setSpacing(THEME.space_md)
         self._preset_rows: dict[str, tuple[QLabel, QWidget]] = {}
         self._build_preset_form()
-        self.preset_fields_layout = QFormLayout()
-        self.preset_fields_layout.setSpacing(8)
+        self.preset_fields_layout = QVBoxLayout()
+        self.preset_fields_layout.setSpacing(THEME.space_md)
         self.preset_empty_label = QLabel("This preset stores nothing.")
         self.preset_empty_label.setStyleSheet(f"color: {THEME.text_secondary};")
         preset_layout.addWidget(self.preset_name_label)
         preset_layout.addLayout(self.preset_form_layout)
         preset_layout.addLayout(self.preset_fields_layout)
         preset_layout.addWidget(self.preset_empty_label)
-        notes_row = QFormLayout()
-        notes_row.setSpacing(8)
+        preset_layout.addWidget(field_label("Notes"))
         self.preset_notes_edit = QLineEdit()
         self.preset_notes_edit.setPlaceholderText("Notes for this preset")
         self.preset_notes_edit.textChanged.connect(self._on_preset_notes_changed)
-        notes_row.addRow(field_label("Notes"), self.preset_notes_edit)
-        preset_layout.addLayout(notes_row)
+        preset_layout.addWidget(self.preset_notes_edit)
         preset_layout.addWidget(hint_label("The pen chooses which fields a preset stores; these edit their values."))
         self.preset_panel.setVisible(False)
-        right_layout.addWidget(self.preset_panel)
-        right_layout.addStretch()
+        root.addWidget(self.preset_panel)
+        root.addStretch()
 
-        root.addWidget(right)
+        self.category_list.currentIndexChanged.connect(self._on_category_changed)
+        install_wheel_guards(self)
 
     def _build_preset_form(self) -> None:
         self.preset_camera_combo = SearchableGearCombo(placeholder="Search cameras…")
@@ -368,7 +345,8 @@ class GearLibraryPanel(QWidget):
             ("exposure", "Exposure", self.preset_exposure_edit),
         ):
             row_label = field_label(label)
-            self.preset_form_layout.addRow(row_label, widget)
+            self.preset_form_layout.addWidget(row_label)
+            self.preset_form_layout.addWidget(widget)
             self._preset_rows[key] = (row_label, widget)
 
         # A library pick re-resolves everything read from it; a typed value unlinks the pick,
@@ -397,7 +375,8 @@ class GearLibraryPanel(QWidget):
 
     def _register_form_row(self, key: str, label_text: str, widget: QWidget) -> None:
         label = field_label(label_text)
-        self.form_layout.addRow(label, widget)
+        self.form_layout.addWidget(label)
+        self.form_layout.addWidget(widget)
         self._form_rows[key] = (label, widget)
 
     def _show_form_for_category(self, category: str) -> None:
@@ -442,15 +421,18 @@ class GearLibraryPanel(QWidget):
         return item if isinstance(item, str) else item.id
 
     def _select_category(self, key: str) -> None:
-        for i, (k, _) in enumerate(_CATEGORIES):
-            if k == key:
-                self.category_list.setCurrentRow(i)
-                break
-
-    def _on_category_changed(self, row: int) -> None:
-        if row < 0:
+        idx = self.category_list.findData(key)
+        if idx < 0:
             return
-        self._category = _CATEGORIES[row][0]
+        if self.category_list.currentIndex() == idx:
+            self._on_category_changed(idx)
+        else:
+            self.category_list.setCurrentIndex(idx)
+
+    def _on_category_changed(self, index: int) -> None:
+        if index < 0:
+            return
+        self._category = self.category_list.itemData(index)
         self.item_search.blockSignals(True)
         self.item_search.clear()
         self.item_search.setPlaceholderText(_CATEGORY_SEARCH_PLACEHOLDER.get(self._category, "Search…"))
@@ -462,7 +444,7 @@ class GearLibraryPanel(QWidget):
         self.preset_panel.setVisible(is_presets)
         self.edit_btn.setVisible(is_presets)
         self.add_btn.setEnabled(not is_presets or self._current_config_fn() is not None)
-        self.add_btn.setToolTip("Store the current frame's metadata as a preset" if is_presets else "Add item")
+        self.add_btn.setToolTip(wrap_tooltip("Store the current frame's metadata as a preset" if is_presets else "Add item"))
 
     def _on_item_search_changed(self, _text: str) -> None:
         self._rebuild_item_list()
@@ -618,15 +600,22 @@ class GearLibraryPanel(QWidget):
             self._updating = False
 
         # Rows with no editor: per-frame decisions, shown as they are stored.
-        while self.preset_fields_layout.rowCount():
-            self.preset_fields_layout.removeRow(0)
+        self._clear_preset_fields_layout()
         read_only = [(label, value) for label, value in preset_values(data, "metadata") if not self._is_editable_row(label, stored)]
         for label, value in read_only:
             value_label = QLabel(value)
             value_label.setWordWrap(True)
             value_label.setStyleSheet(f"color: {THEME.text_secondary};")
-            self.preset_fields_layout.addRow(field_label(label), value_label)
+            self.preset_fields_layout.addWidget(field_label(label))
+            self.preset_fields_layout.addWidget(value_label)
         self.preset_empty_label.setVisible(not stored)
+
+    def _clear_preset_fields_layout(self) -> None:
+        while self.preset_fields_layout.count():
+            item = self.preset_fields_layout.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
 
     def _is_editable_row(self, label: str, stored: set[str]) -> bool:
         for row in rows_by_id().values():
@@ -743,8 +732,7 @@ class GearLibraryPanel(QWidget):
             self.preset_notes_edit.clear()
         finally:
             self._updating = False
-        while self.preset_fields_layout.rowCount():
-            self.preset_fields_layout.removeRow(0)
+        self._clear_preset_fields_layout()
         self.preset_empty_label.setVisible(False)
         self._updating = True
         try:
