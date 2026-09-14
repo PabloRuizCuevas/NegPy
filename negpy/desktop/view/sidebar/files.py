@@ -427,12 +427,16 @@ class FileBrowser(QWidget):
         self.library_btn.setIcon(qta.icon("fa5s.book-open", color=THEME.text_primary))
         self.library_btn.setToolTip("Library — browse the folder your scans live in")
 
-        self.add_files_btn = QToolButton()
-        self.add_files_btn.setIcon(qta.icon("fa5s.file-import", color=THEME.text_primary))
-        self.add_files_btn.setToolTip("Add pictures to this session")
-        self.add_folder_btn = QToolButton()
-        self.add_folder_btn.setIcon(qta.icon("fa5s.folder-plus", color=THEME.text_primary))
-        self.add_folder_btn.setToolTip("Load every image in a folder into this session")
+        # One button for both: Add Files and Add Folder are two pickers for the same job
+        # (put pictures in this session), not two different actions worth their own icons.
+        self.add_btn = QToolButton()
+        self.add_btn.setIcon(qta.icon("fa5s.file-import", color=THEME.text_primary))
+        self.add_btn.setToolTip("Add pictures or a folder to this session")
+        self.add_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        add_menu = QMenu(self.add_btn)
+        add_menu.addAction("Add Files…").triggered.connect(self.prompt_add_files)
+        add_menu.addAction("Add Folder…").triggered.connect(self.prompt_add_folder)
+        self.add_btn.setMenu(add_menu)
         self.unload_btn = QToolButton()
         self.unload_btn.setIcon(qta.icon("fa5s.times-circle", color=THEME.text_primary))
         self.unload_btn.setToolTip("Unload…")
@@ -534,8 +538,7 @@ class FileBrowser(QWidget):
 
         for btn in (
             self.library_btn,
-            self.add_files_btn,
-            self.add_folder_btn,
+            self.add_btn,
             self.unload_btn,
             self.hot_folder_btn,
             self.rgb_scan_btn,
@@ -560,8 +563,7 @@ class FileBrowser(QWidget):
         layout.addWidget(self.session_toolbar)
 
         for widget, label in (
-            (self.add_files_btn, "Add files"),
-            (self.add_folder_btn, "Add folder"),
+            (self.add_btn, "Add"),
             (None, None),
             (self.hot_folder_btn, "Hot Folder"),
             (None, None),
@@ -786,8 +788,6 @@ class FileBrowser(QWidget):
 
     def _connect_signals(self) -> None:
         self.library_btn.clicked.connect(lambda: self.library_requested.emit(True))
-        self.add_files_btn.clicked.connect(self.prompt_add_files)
-        self.add_folder_btn.clicked.connect(self.prompt_add_folder)
         self.unload_btn.clicked.connect(self._on_unload_clicked)
         self.list_view.clicked.connect(self._on_item_clicked)
         self.list_view.doubleClicked.connect(self._on_item_double_clicked)

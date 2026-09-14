@@ -29,8 +29,7 @@ def test_session_toolbar_holds_folder_actions_and_filters(panel):
 def test_film_strip_toolbar_holds_roll_scoped_actions(panel):
     browser = panel.file_browser
     expected = [
-        browser.add_files_btn,
-        browser.add_folder_btn,
+        browser.add_btn,
         browser.hot_folder_btn,
         browser.rgb_scan_btn,
         browser.half_frame_btn,
