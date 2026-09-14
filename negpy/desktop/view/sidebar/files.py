@@ -555,11 +555,10 @@ class FileBrowser(QWidget):
             btn.setFixedHeight(btn_height)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Library and Sort join LibraryTree's own +/refresh corner row instead of a
-        # top-level toolbar: mini-button sized (20x20), matching that row's own convention.
-        for btn in (self.library_btn, self.sort_btn):
-            btn.setFixedSize(20, 20)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Sort joins LibraryTree's own +/refresh corner row instead of a top-level toolbar:
+        # mini-button sized (20x20), matching that row's own convention.
+        self.sort_btn.setFixedSize(20, 20)
+        self.sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
         for widget, label in (
             (self.save_roll_btn, "Save as Roll…"),
@@ -655,7 +654,7 @@ class FileBrowser(QWidget):
         self.empty_label.setVisible(False)
         self.empty_label.linkActivated.connect(lambda _: self._clear_frame_filters())
 
-        self.library_tree = LibraryTree(self.controller, leading_widgets=(self.library_btn, self.sort_btn))
+        self.library_tree = LibraryTree(self.controller, leading_widgets=(self.sort_btn,))
         self.library_section = self._make_section("Library", "library", "fa5s.folder-open", self.library_tree)
 
         frames = QWidget()
@@ -795,7 +794,6 @@ class FileBrowser(QWidget):
         self.sections_splitter.setSizes(sizes)
 
     def _connect_signals(self) -> None:
-        self.library_btn.clicked.connect(lambda: self.library_requested.emit(True))
         self.library_tree.folder_roll_created.connect(self._maybe_suggest_gear)
         self.unload_btn.clicked.connect(self._on_unload_clicked)
         self.list_view.clicked.connect(self._on_item_clicked)
@@ -1355,14 +1353,20 @@ class FileBrowser(QWidget):
         return folder_label(os.path.dirname(path)) if path else ""
 
     def _detect_gear_suggestion(self, folder_name: str) -> Optional[GearMatch]:
-        """The gear match for *folder_name*, or None when there is nothing to suggest --
-        either nothing matched, or the current frame already carries a camera or film
-        stock, which a suggestion must never overwrite."""
-        meta = self.session.state.config.metadata
-        if meta.camera_id or meta.film_stock_id or not folder_name:
+        """The gear match for *folder_name*, restricted to whichever of camera/film
+        stock the current frame does not already carry -- checked independently, so an
+        unrelated camera already set (carried from another frame, tagged by hand) does
+        not also block a film-stock match that is otherwise free to suggest. None when
+        there is nothing left to offer."""
+        if not folder_name:
             return None
+        meta = self.session.state.config.metadata
         detected = match_gear_for_folder(folder_name, GearProfiles.load_library())
-        return detected if detected.any() else None
+        result = GearMatch(
+            camera_id="" if meta.camera_id else detected.camera_id,
+            film_stock_id="" if meta.film_stock_id else detected.film_stock_id,
+        )
+        return result if result.any() else None
 
     def _maybe_suggest_gear(self, folder_path: str) -> None:
         """A folder just became a roll for the first time: offer Roll Settings pre-filled
