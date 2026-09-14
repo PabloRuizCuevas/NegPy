@@ -343,6 +343,63 @@ def test_open_roll_settings_dialog_noop_when_nothing_is_ticked(browser, session)
     session.apply_preset_fields.assert_not_called()
 
 
+def test_open_roll_settings_dialog_also_prefills_a_gear_match(browser, session):
+    """The tag-icon button offers the same suggestion the import-time popup does --
+    useful any time you open it, not just the one moment right after import."""
+    session.state.selected_file_idx = 0
+    detected = MagicMock(any=MagicMock(return_value=True), camera_id="cam1", film_stock_id="")
+    mock_dlg = MagicMock()
+    mock_dlg.exec.return_value = QDialog.DialogCode.Rejected
+    with (
+        patch("negpy.desktop.view.sidebar.files.match_gear_for_folder", return_value=detected),
+        patch("negpy.desktop.view.sidebar.files.RollSettingsDialog", return_value=mock_dlg),
+    ):
+        browser._open_roll_settings_dialog()
+
+    mock_dlg.apply_detected_gear.assert_called_once_with(camera_id="cam1", film_stock_id="")
+
+
+def test_open_roll_settings_dialog_does_not_override_gear_already_set(browser, session):
+    session.state.selected_file_idx = 0
+    session.state.config = replace(session.state.config, metadata=replace(session.state.config.metadata, camera_id="existing"))
+    detected = MagicMock(any=MagicMock(return_value=True), camera_id="cam1", film_stock_id="film1")
+    mock_dlg = MagicMock()
+    mock_dlg.exec.return_value = QDialog.DialogCode.Rejected
+    with (
+        patch("negpy.desktop.view.sidebar.files.match_gear_for_folder", return_value=detected),
+        patch("negpy.desktop.view.sidebar.files.RollSettingsDialog", return_value=mock_dlg),
+    ):
+        browser._open_roll_settings_dialog()
+
+    mock_dlg.apply_detected_gear.assert_not_called()
+
+
+def test_folder_name_for_gear_suggestion_prefers_the_active_folder_roll(browser, session, tmp_path):
+    from negpy.services.assets.rolls import recognize_folder
+
+    store: dict = {}
+    session.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
+    session.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
+    roll_id = recognize_folder(session.repo, str(tmp_path / "08_penf_gold_marbella"))
+    session.state.active_roll_id = roll_id
+
+    assert browser._folder_name_for_gear_suggestion() == "08_penf_gold_marbella"
+
+
+def test_folder_name_for_gear_suggestion_falls_back_to_the_current_files_folder(browser, session):
+    session.state.active_roll_id = None
+    session.state.selected_file_idx = 0  # session fixture's first file lives under /tmp
+
+    assert browser._folder_name_for_gear_suggestion() == "tmp"
+
+
+def test_folder_name_for_gear_suggestion_is_empty_without_an_active_file(browser, session):
+    session.state.active_roll_id = None
+    session.state.selected_file_idx = -1
+
+    assert browser._folder_name_for_gear_suggestion() == ""
+
+
 def test_maybe_suggest_gear_opens_the_dialog_prefilled_when_something_matches(browser, session):
     session.state.selected_file_idx = 0
     session.apply_preset_fields = MagicMock(return_value=1)

@@ -54,7 +54,7 @@ from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettings
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
 from negpy.services.assets import rolls
 from negpy.services.assets.gear import GearProfiles
-from negpy.services.assets.gear_match import match_gear_for_folder
+from negpy.services.assets.gear_match import GearMatch, match_gear_for_folder
 from negpy.services.assets.presets import is_valid_preset_name
 from negpy.infrastructure.filesystem.watcher import FolderWatchService
 from negpy.infrastructure.loaders.helpers import get_supported_raw_wildcards
@@ -1311,9 +1311,16 @@ class FileBrowser(QWidget):
             self.session.sync_selected_settings(dlg.selected(), dlg.bounds_flags(), dlg.scope())
 
     def _open_roll_settings_dialog(self) -> None:
+        """The tag-icon button: always opens, and silently pre-fills a gear match too
+        (only when Gear is not already set) -- the automatic suggestion at import time
+        is one moment among several this same guess is useful in."""
+        detected = self._detect_gear_suggestion(self._folder_name_for_gear_suggestion())
         dlg = self._build_roll_settings_dialog()
-        if dlg is not None:
-            self._exec_roll_settings_dialog(dlg)
+        if dlg is None:
+            return
+        if detected is not None:
+            dlg.apply_detected_gear(camera_id=detected.camera_id, film_stock_id=detected.film_stock_id)
+        self._exec_roll_settings_dialog(dlg)
 
     def _build_roll_settings_dialog(self) -> Optional[RollSettingsDialog]:
         state = self.session.state
@@ -1334,13 +1341,39 @@ class FileBrowser(QWidget):
         if self.controller.session.apply_preset_fields(dlg.selected_config(), rows, dlg.scope()):
             self.controller.request_render()
 
+    def _folder_name_for_gear_suggestion(self) -> str:
+        """The folder name to match gear against: the active folder roll's own folder,
+        else the current frame's containing directory -- Roll Settings can be opened
+        with no roll active at all, from a plain Add Files/Add Folder load."""
+        state = self.session.state
+        roll_id = state.active_roll_id
+        if roll_id:
+            entry = rolls.roll_for_id(self.session.repo, roll_id)
+            if entry and entry.get("kind") == "folder":
+                return folder_label(entry.get("folder_path", ""))
+        src = state.selected_file_idx
+        if src == -1 or src >= len(state.uploaded_files):
+            return ""
+        path = state.uploaded_files[src].get("path", "")
+        return folder_label(os.path.dirname(path)) if path else ""
+
+    def _detect_gear_suggestion(self, folder_name: str) -> Optional[GearMatch]:
+        """The gear match for *folder_name*, or None when there is nothing to suggest --
+        either nothing matched, or the current frame already carries a camera or film
+        stock, which a suggestion must never overwrite."""
+        meta = self.session.state.config.metadata
+        if meta.camera_id or meta.film_stock_id or not folder_name:
+            return None
+        detected = match_gear_for_folder(folder_name, GearProfiles.load_library())
+        return detected if detected.any() else None
+
     def _maybe_suggest_gear(self, folder_path: str) -> None:
         """A folder just became a roll for the first time: offer Roll Settings pre-filled
         from a folder-name match against the gear library, ticked but never applied
-        without the user pressing Apply."""
-        library = GearProfiles.load_library()
-        detected = match_gear_for_folder(folder_label(folder_path), library)
-        if not detected.any():
+        without the user pressing Apply. Silent when nothing matches -- checked before
+        building the dialog, so a folder with nothing to suggest never pops one up."""
+        detected = self._detect_gear_suggestion(folder_label(folder_path))
+        if detected is None:
             return
         dlg = self._build_roll_settings_dialog()
         if dlg is None:
