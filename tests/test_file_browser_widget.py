@@ -359,10 +359,14 @@ def test_open_roll_settings_dialog_also_prefills_a_gear_match(browser, session):
     mock_dlg.apply_detected_gear.assert_called_once_with(camera_id="cam1", film_stock_id="")
 
 
-def test_open_roll_settings_dialog_does_not_override_gear_already_set(browser, session):
+def test_open_roll_settings_dialog_does_not_override_gear_already_set_in_full(browser, session):
+    """Both fields already carry something -- there is nothing left to suggest."""
     session.state.selected_file_idx = 0
-    session.state.config = replace(session.state.config, metadata=replace(session.state.config.metadata, camera_id="existing"))
-    detected = MagicMock(any=MagicMock(return_value=True), camera_id="cam1", film_stock_id="film1")
+    session.state.config = replace(
+        session.state.config,
+        metadata=replace(session.state.config.metadata, camera_id="existing", film_stock_id="existing-film"),
+    )
+    detected = MagicMock(camera_id="cam1", film_stock_id="film1")
     mock_dlg = MagicMock()
     mock_dlg.exec.return_value = QDialog.DialogCode.Rejected
     with (
@@ -372,6 +376,25 @@ def test_open_roll_settings_dialog_does_not_override_gear_already_set(browser, s
         browser._open_roll_settings_dialog()
 
     mock_dlg.apply_detected_gear.assert_not_called()
+
+
+def test_open_roll_settings_dialog_suggests_only_the_field_not_already_set(browser, session):
+    """A camera already tagged (carried from elsewhere, set by hand) must not also block
+    a film-stock match that is otherwise free to suggest -- the bug behind a folder like
+    '08_penf_gold_200_marbella' matching Kodak Gold 200 but never offering it because an
+    unrelated camera happened to already be set."""
+    session.state.selected_file_idx = 0
+    session.state.config = replace(session.state.config, metadata=replace(session.state.config.metadata, camera_id="existing"))
+    detected = MagicMock(camera_id="cam1", film_stock_id="film1")
+    mock_dlg = MagicMock()
+    mock_dlg.exec.return_value = QDialog.DialogCode.Rejected
+    with (
+        patch("negpy.desktop.view.sidebar.files.match_gear_for_folder", return_value=detected),
+        patch("negpy.desktop.view.sidebar.files.RollSettingsDialog", return_value=mock_dlg),
+    ):
+        browser._open_roll_settings_dialog()
+
+    mock_dlg.apply_detected_gear.assert_called_once_with(camera_id="", film_stock_id="film1")
 
 
 def test_folder_name_for_gear_suggestion_prefers_the_active_folder_roll(browser, session, tmp_path):
@@ -421,7 +444,7 @@ def test_maybe_suggest_gear_opens_the_dialog_prefilled_when_something_matches(br
 
 def test_maybe_suggest_gear_does_nothing_without_a_match(browser, session):
     session.state.selected_file_idx = 0
-    detected = MagicMock(any=MagicMock(return_value=False))
+    detected = MagicMock(camera_id="", film_stock_id="")
     with (
         patch("negpy.desktop.view.sidebar.files.match_gear_for_folder", return_value=detected),
         patch("negpy.desktop.view.sidebar.files.RollSettingsDialog") as ctor,

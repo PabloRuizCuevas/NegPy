@@ -95,7 +95,7 @@ Below the header: the toolbar, the search box, and two collapsible sections. **L
 <!-- panel:library -->
 ### Your library
 
-The **Library** section lists every **roll** you have imported: a named, openable group of frames, not a live view of a folder. Its own corner row holds four controls: the **Library** button (book icon, or **Ctrl+L**) opens the section, importing a first roll when you have none yet; **Sort** orders the list by Name or Date, ascending or descending, and the Film Strip follows the same order; **+** imports a roll; **↻** re-reads every roll's frame count from disk. Each row shows its name and count ("36 photos").
+The **Library** section lists every **roll** you have imported: a named, openable group of frames, not a live view of a folder. **Ctrl+L** opens the section, importing a first roll when you have none yet. Its own corner row holds three controls: **Sort** orders the list by Name or Date, ascending or descending, and the Film Strip follows the same order; **+** imports a roll; **↻** re-reads every roll's frame count from disk. Each row shows its name and count ("36 photos").
 
 **Listing costs nothing.** NegPy opens, decodes and hashes nothing when you import a folder — importing only recognizes it. Opening a roll is the step that hashes and thumbnails.
 
