@@ -10,6 +10,7 @@ from negpy.domain.models import ExportConfig, WorkspaceConfig
 from negpy.services.assets.half_frame import (
     HalfGeometry,
     base_hash,
+    detect_gutter,
     detect_split_x,
     SPLIT_SCANS_KEY,
     diptych_configs,
@@ -78,6 +79,65 @@ class TestDetectSplitX:
 
     def test_tiny_image_falls_back(self):
         assert detect_split_x(np.zeros((4, 20, 3), np.float32)) == 0.5
+
+
+def _gradient_gutter_scan(
+    true_frac: float = 0.5,
+    w: int = 2000,
+    h: int = 800,
+    gutter_w: int = 30,
+    gutter_value: float = 0.95,
+    decay_span_frac: float = 0.16,
+    dark: bool = False,
+    seed: int = 0,
+) -> tuple:
+    """A thin gutter with a smooth in-scene gradient (an overexposed sky, say)
+    blending into the frame past one of its edges. The gutter's own edges stay
+    sharp; only the scene beyond them fades gradually toward it."""
+    rng = np.random.default_rng(seed)
+    base = 0.6 if dark else 0.4
+    true_center = int(w * true_frac)
+    lo, hi = true_center - gutter_w // 2, true_center - gutter_w // 2 + gutter_w
+    img = np.full((h, w), base, dtype=np.float32)
+    img[:, :lo] = base - 0.05 + 0.1 * rng.random((h, lo)).astype(np.float32)
+    decay_px = max(1, int(w * decay_span_frac))
+    x = np.arange(w - hi, dtype=np.float32)
+    img[:, hi:] = base + (gutter_value - base) * np.exp(-x / decay_px) + 0.02 * rng.random((h, w - hi)).astype(np.float32)
+    img[:, lo:hi] = gutter_value
+    img += 0.015 * rng.standard_normal((h, w)).astype(np.float32)
+    img = np.clip(img, 0, 1)
+    return np.repeat(img[:, :, None], 3, axis=2).astype(np.float32), true_center / w
+
+
+class TestDetectGutter:
+    """A smooth gradient blending into one side of the gutter must not pull the
+    detected center toward it, and the band's own width is also measurable."""
+
+    def test_gradient_blending_into_one_side_stays_centered(self):
+        scan, true_center = _gradient_gutter_scan()
+        sx, thickness = detect_gutter(scan)
+        assert abs(sx - true_center) < 0.015
+        assert 0.005 < thickness < 0.05
+
+    def test_dark_gutter_with_gradient_blending(self):
+        scan, true_center = _gradient_gutter_scan(gutter_value=0.05, dark=True)
+        sx, _ = detect_gutter(scan)
+        assert abs(sx - true_center) < 0.015
+
+    def test_off_center_gutter_with_gradient_blending(self):
+        scan, true_center = _gradient_gutter_scan(true_frac=0.42)
+        sx, _ = detect_gutter(scan)
+        assert abs(sx - true_center) < 0.015
+
+    def test_thickness_matches_the_true_band_width(self):
+        # a 16px gutter in a 400px scan is a 4% band
+        _, thickness = detect_gutter(_two_frame_scan(0.02))
+        assert abs(thickness - 0.04) < 0.01
+
+    def test_rejection_returns_the_tuple_fallback(self):
+        rng = np.random.default_rng(1)
+        flat = (0.4 + 0.2 * rng.random((200, 400, 3))).astype(np.float32)
+        assert detect_gutter(flat) == (0.5, 0.0)
 
 
 class TestSliceHalf:
