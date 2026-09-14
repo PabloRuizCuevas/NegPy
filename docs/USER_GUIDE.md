@@ -95,35 +95,28 @@ Below the header: the toolbar, the search box, and two collapsible sections. **L
 <!-- panel:library -->
 ### Your library
 
-The **Library** section is a folder tree of the places your scans live. Its own corner row holds four controls: the **Library** button (book icon, or **Ctrl+L**) opens the folder your scans live in; **Sort** orders the tree by Name or Date, ascending or descending, and the Film Strip follows the same order; **+** adds a folder; **↻** re-reads it from disk. Each row shows what is inside it ("36 photos", "2 folders"), and subfolders are read when you expand them.
+The **Library** section lists every **roll** you have imported: a named, openable group of frames, not a live view of a folder. Its own corner row holds four controls: the **Library** button (book icon, or **Ctrl+L**) opens the section, importing a first roll when you have none yet; **Sort** orders the list by Name or Date, ascending or descending, and the Film Strip follows the same order; **+** imports a roll; **↻** re-reads every roll's frame count from disk. Each row shows its name and count ("36 photos").
 
-**Browsing costs nothing.** NegPy opens, decodes and hashes nothing when you add a folder or click through the tree. It only lists what is there.
+**Listing costs nothing.** NegPy opens, decodes and hashes nothing when you import a folder — importing only recognizes it. Opening a roll is the step that hashes and thumbnails.
 
-#### The Library button
+#### Importing
 
-The first time you press **Library**, NegPy asks you to pick that folder and remembers it. The panel also goes there on its own: on launch when you do not restore a session, and whenever you unload the last frame. Your rolls are a more useful resting state than an empty sheet.
+**+** (or the list's right-click menu) offers two actions:
 
-To point it somewhere else, add another folder with **+**. To forget them all, use **Clear Library** in *Manage Database*. That clears the list of folders only, leaving your images, folders and edits untouched.
+*   **Import Folder as a Roll…** — pick one folder; it becomes one roll and opens.
+*   **Import Subfolders as Rolls…** — pick a parent folder, for example the one your scanner saves into; every folder directly inside it becomes its own roll in one pass, without opening any of them. One level only: a roll's own subfolders are not walked, so a deeper structure needs a second, more specific import.
 
-#### Walking around
+Either way NegPy reads the folder from disk and never creates, renames, moves or deletes anything in it: reorganize in Finder or Explorer, then re-import (or **↻**) to pick up the new arrangement. Every edit is stored against the image's content, so moving a file between folders keeps its edit, its history and its keep/reject mark.
 
-*   **Click** a folder to select it, **double-click** (or **Enter**) to open it.
-*   **Ctrl+click** several folders and open them together to load more than one roll at once. NegPy asks once, for the total.
-*   **Alt+Up** moves the selection to the folder above.
+#### Opening, renaming, deleting
 
-When you open a folder that contains images, NegPy asks whether to **load the roll**. Only then does it hash and thumbnail them, which is the part that takes a moment on a big roll. Say no and your open frames stay as they were. Tick **Always load without asking** in that prompt if you would rather it just get on with it.
+**Click** a roll to select it, **double-click** (or **Enter**) to open it. Opening asks whether to **load the roll** — only then does NegPy hash and thumbnail its frames, which is the part that takes a moment on a big roll. Say no and your open frames stay as they were. Tick **Always load without asking** in that prompt if you would rather it just get on with it. Opening a roll replaces what is in the Film Strip; nothing is lost either way, because your edits live in NegPy's database, keyed to each image, not to the list of open files.
 
-Loading a roll replaces what is in the film strip; right-click → **Add to Session** appends instead. Nothing is lost either way, because your edits live in NegPy's database, not in the list of open files.
+Right-click a roll for **Rename…** and **Delete…**. Deleting only forgets the roll record — the folder, its images and their edits are untouched, and a folder roll can always be re-imported. To forget every roll at once, use **Clear Library** in *Manage Database*.
 
-#### Folders are your folders
+#### Rolls that are not folders
 
-NegPy reads the tree straight from disk and never creates, renames, moves or deletes anything in it. Reorganize in Finder or Explorer and the tree shows the new arrangement at the next refresh. Every edit is stored against the image's content, so moving a file between folders keeps its edit, its history and its keep/reject mark.
-
-#### Rolls: folders you have opened, and rolls that are not folders
-
-A folder's icon marks whether NegPy has recognized it as a roll: **amber** means not yet opened, **green** means it has been — opening it once is enough, and stays green even after you unload the frames. Files added to the session by hand (Add, drag-drop) while a green folder's frames are the ones loaded join that roll too, so reopening it later still shows them, on top of what is physically in the folder.
-
-A roll does not have to be a folder. Search the library (the filter box's magnifier-over-folder button) or otherwise assemble a set of frames, then **Save as Roll…** in the Film Strip's row names and keeps it — a **blue** entry in its own **Rolls** list above the folder tree. Double-click to reopen it; right-click for **Rename…** and **Delete…**. It is a fixed set of frames, not a live search: adding to it later means reopening it and using Save as Roll again, or adding to the session while it is the one loaded. Edits are unaffected either way — a frame's edit is its own, the same wherever it is opened from.
+A roll does not have to be a folder, and the same photo can belong to more than one roll at once: a folder roll's icon is **green**, one built from a search or a hand-picked set of frames is **blue**. Search the library (the filter box's magnifier-over-folder button) or otherwise assemble a set of frames, then **Save as Roll…** in the Film Strip's row names and keeps it, right alongside your folder rolls. It is a fixed set of frames, not a live search: adding to it later means reopening it and using Save as Roll again, or adding to the session while it is the one loaded. Edits are unaffected either way — a frame's edit is its own, the same wherever it is opened from.
 
 ### Importing and managing files
 
@@ -131,7 +124,7 @@ A roll does not have to be a folder. Search the library (the filter box's magnif
 
 The Film Strip section has its own row of buttons above the frames, for actions that read or rewrite the loaded roll:
 
-*   **Add** (import icon): **Add Files…** or **Add Folder…** — load individual images, or every image in a folder, into this session. Pick a folder that holds only *other* folders and NegPy reveals it in the Library section instead of reporting that it found nothing. Dropping a folder on the window does the same as Add Folder — most of the time that is the faster path anyway.
+*   **Add** (import icon): **Add Files…** or **Add Folder…** — load individual images, or every image in a folder, into this session. Pick a folder that holds only *other* folders and NegPy points you at Library's **Import Subfolders as Rolls…** instead of reporting that it found nothing. Dropping a folder on the window does the same as Add Folder — most of the time that is the faster path anyway.
 *   **Hot Folder**: watches the current folder and auto-loads new files as they appear, which is handy when a scanner or tethering app drops files into a directory. While it is on, the "Working…" import popup stays hidden so each new frame does not raise a window; the status line over the canvas still reports the import.
 *   **Trichrome Scan** (three-exposure narrowband capture, also called trichromatic capture): treats the folder as red/green/blue exposure triplets and assembles each frame from three shots. Shots are grouped in the order they were taken, read from the files themselves, so filenames need follow no convention. Capture each frame's three exposures back to back, before moving on to the next frame. Where a file states no capture time, the folder falls back to filename order, and the names then have to sort into capture order. Right-click a frame → **Edit RGB Triplet…** to assign the three files by hand. Three shots are only assembled when they are one of each color *and* show the same frame; where they do not, they are left as separate frames to pair by hand, rather than assembled wrong. An assembled frame carries the three-dot badge described under [Triage](#triage-culling-the-roll).
 *   **Half Frame**: splits each scan into two frames, for half-frame cameras. Each half is edited and metered separately and badged with which half it is. Enabling it opens a rectangle editor on the current scan: drag the green box to crop (everything outside is discarded), drag the orange line to set the split, and use **Cut thickness** to discard a band centered on the split, which is the physical black separator between the two exposures. **Auto-detect**, in the editor, re-finds the gutter on the current scan.
@@ -145,7 +138,7 @@ The Film Strip section has its own row of buttons above the frames, for actions 
     Half Frame does not apply to a frame assembled from more than one file: a Trichrome triplet, a stitch, or an HDR merge. Those are never split, and they never come back as a diptych, even when the file they are built around was worked on as two halves earlier.
 *   **Apply (clone)**: copy the current frame's settings to selected frames or the whole roll. You choose which aspects in a dialog; crop and rotation are always per-image.
 *   **Roll Settings** (tag icon): tag gear, capture, place, process and scanning metadata for the current frame, a selection or the whole roll in one dialog. Fields start filled from the active frame; type or pick new values directly, or **Load** a metadata preset to fill and tick its fields, then tick which groups to write. Defaults to the whole roll when one is loaded.
-*   **Save as Roll…** (blue folder icon): name and keep the frames currently loaded as a roll, whether or not they came from a folder. See [Rolls](#rolls-folders-you-have-opened-and-rolls-that-are-not-folders).
+*   **Save as Roll…** (blue folder icon): name and keep the frames currently loaded as a roll, whether or not they came from a folder. See [Rolls that are not folders](#rolls-that-are-not-folders).
 *   **Unload…**: drop the active frame, or the whole selection when more than one is selected. Never the rest of the roll — for that, see *Clear All…* below.
 *   **Sheet filter** (funnel): show *All Frames*, *Keepers Only*, or *Hide Rejected*. The choice is remembered between sessions and applies to every roll you open.
 

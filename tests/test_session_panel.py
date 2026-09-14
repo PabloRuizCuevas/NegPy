@@ -6,17 +6,21 @@ from negpy.desktop.session import DesktopSessionManager
 from negpy.desktop.view.sidebar.session_panel import SessionPanel
 from negpy.infrastructure.storage.repository import StorageRepository
 from negpy.kernel.system.updater import UpdateInfo
+from negpy.services.assets import rolls as rolls_service
 
 
 def _controller(tmp_path, roots: list[str]) -> MagicMock:
-    """A mock controller around a real session — the film strip needs a real model."""
+    """A mock controller around a real session — the film strip needs a real model.
+    Each path in *roots* becomes a recognized folder roll."""
     repo = StorageRepository(str(tmp_path / "edits.db"), str(tmp_path / "settings.db"))
     repo.initialize()
-    repo.save_global_setting("library_roots", roots)
+    for path in roots:
+        rolls_service.recognize_folder(repo, path)
 
     controller = MagicMock()
     controller.session = DesktopSessionManager(repo)
     controller.library_roots.return_value = roots
+    controller.has_rolls.return_value = bool(roots)
     return controller
 
 
@@ -57,11 +61,11 @@ def test_the_search_row_sits_above_both_sections(panel):
     assert search_at < splitter_at
 
 
-def test_tree_is_shown_when_the_library_has_roots(panel):
+def test_tree_is_shown_when_the_library_has_rolls(panel):
     assert panel.library_tree.isVisibleTo(panel)
 
 
-def test_tree_hidden_when_no_roots(qapp, tmp_path, monkeypatch):
+def test_tree_hidden_when_no_rolls(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr("negpy.desktop.view.widgets.update_dialog.find_update", lambda *a, **k: None)
 
     panel = SessionPanel(_controller(tmp_path, []))
@@ -152,32 +156,23 @@ def test_a_new_panel_restores_the_saved_split(qapp, tmp_path, monkeypatch):
     assert [111, 222] in [list(c.args[0]) for c in set_sizes.call_args_list]
 
 
-def test_opening_an_image_less_folder_from_the_tree_loads_nothing(panel, tmp_path):
-    """The tree navigates and the strip loads: a folder with no images of its own has
-    nothing to load, so nothing is hashed."""
-    (tmp_path / "library" / "roll_a").mkdir()
+def test_the_library_button_shows_the_section_when_rolls_exist(panel):
+    panel.file_browser.library_section.setVisible(False)
 
-    panel.library_tree.folders_activated.emit([str(tmp_path / "library")])
-
-    panel.controller.open_library_folder.assert_not_called()
-    panel.controller.open_library_folders.assert_not_called()
-
-
-def test_opening_a_roll_from_the_tree_reaches_the_film_strip(panel, tmp_path, monkeypatch):
-    roll = tmp_path / "library" / "roll_a"
-    roll.mkdir()
-    (roll / "a1.NEF").write_bytes(b"1")
-    monkeypatch.setattr(panel.file_browser, "_confirm_load", lambda count, label: True)
-
-    panel.library_tree.folders_activated.emit([str(roll)])
-
-    panel.controller.open_library_folder.assert_called_once_with(str(roll), add_to_session=False)
-
-
-def test_the_library_button_reveals_the_primary_folder(panel, tmp_path):
     panel.file_browser.library_requested.emit(True)
 
-    assert panel.library_tree.tree.currentItem().text(0) == "library"
+    assert panel.file_browser.library_section.isVisibleTo(panel)
+
+
+def test_the_library_button_prompts_an_import_when_the_library_is_empty(qapp, tmp_path, monkeypatch):
+    monkeypatch.setattr("negpy.desktop.view.widgets.update_dialog.find_update", lambda *a, **k: None)
+    panel = SessionPanel(_controller(tmp_path, []))
+    prompted = []
+    monkeypatch.setattr(panel.library_tree, "prompt_import_folder", lambda: prompted.append(1) or False)
+
+    panel.file_browser.library_requested.emit(True)
+
+    assert prompted
 
 
 def test_sorting_the_sheet_sorts_the_tree(panel):
@@ -186,8 +181,8 @@ def test_sorting_the_sheet_sorts_the_tree(panel):
     assert panel.library_tree._sort_descending is True
 
 
-def test_changing_roots_drops_the_cached_walk(panel):
-    panel.library_tree.roots_changed.emit()
+def test_a_roll_change_drops_the_cached_walk(panel):
+    panel.library_tree.rolls_changed.emit()
 
     panel.controller.invalidate_library_walk.assert_called_once_with()
 

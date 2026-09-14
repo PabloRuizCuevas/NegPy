@@ -8,6 +8,7 @@ each frame's own content hash, exactly as if no Roll existed. A Roll only decide
 files show up when you open it.
 """
 
+import os
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -60,6 +61,20 @@ def recognize_folder(repo: Any, path: str, name: str = "") -> str:
     return roll_id
 
 
+def import_subfolders_as_rolls(repo: Any, parent_path: str) -> List[str]:
+    """Recognize every immediate subfolder of *parent_path* as its own folder roll.
+
+    One level only: a subfolder's own children are not walked. Idempotent per
+    subfolder, so re-running over a parent that already has some rolls recognized
+    only creates the missing ones.
+    """
+    try:
+        entries = sorted(e.path for e in os.scandir(parent_path) if e.is_dir() and not e.name.startswith("."))
+    except OSError:
+        return []
+    return [recognize_folder(repo, path) for path in entries]
+
+
 def create_virtual_roll(repo: Any, name: str, member_paths: List[str]) -> str:
     store = _read(repo)
     roll_id = uuid.uuid4().hex
@@ -100,9 +115,11 @@ def delete_roll(repo: Any, roll_id: str) -> None:
         _write(repo, store)
 
 
+def all_rolls_sorted(repo: Any) -> List[tuple]:
+    """(roll_id, entry) pairs for every roll, folder and virtual alike, name-sorted."""
+    return sorted(_read(repo).items(), key=lambda pair: pair[1].get("name", "").casefold())
+
+
 def virtual_rolls(repo: Any) -> List[tuple]:
     """(roll_id, entry) pairs for every virtual roll, name-sorted."""
-    return sorted(
-        ((roll_id, entry) for roll_id, entry in _read(repo).items() if entry.get("kind") == "virtual"),
-        key=lambda pair: pair[1].get("name", "").casefold(),
-    )
+    return [pair for pair in all_rolls_sorted(repo) if pair[1].get("kind") == "virtual"]

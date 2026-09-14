@@ -6,9 +6,11 @@ from unittest.mock import MagicMock
 from negpy.infrastructure.storage.repository import StorageRepository
 from negpy.services.assets.rolls import (
     add_extra_member,
+    all_rolls_sorted,
     create_virtual_roll,
     delete_roll,
     folder_roll_id_for_path,
+    import_subfolders_as_rolls,
     recognize_folder,
     rename_roll,
     roll_for_id,
@@ -107,3 +109,43 @@ def test_virtual_rolls_lists_only_virtual_ones_sorted_by_name():
 
     names = [entry["name"] for _id, entry in virtual_rolls(repo)]
     assert names == ["apple", "Zebra"]
+
+
+def test_all_rolls_sorted_lists_every_kind_by_name():
+    repo = _repo()
+    recognize_folder(repo, "/scans/roll_a", name="Zebra")
+    create_virtual_roll(repo, "apple", [])
+
+    names = [entry["name"] for _id, entry in all_rolls_sorted(repo)]
+    assert names == ["apple", "Zebra"]
+
+
+def test_import_subfolders_as_rolls_recognizes_each_immediate_subfolder(tmp_path):
+    (tmp_path / "roll_a").mkdir()
+    (tmp_path / "roll_b").mkdir()
+    (tmp_path / ".hidden").mkdir()
+    (tmp_path / "roll_a" / "nested").mkdir()
+    repo = _repo()
+
+    roll_ids = import_subfolders_as_rolls(repo, str(tmp_path))
+
+    names = sorted(roll_for_id(repo, rid)["name"] for rid in roll_ids)
+    assert names == ["roll_a", "roll_b"]
+    # One level only: "nested" inside roll_a is not recognized on its own.
+    assert folder_roll_id_for_path(repo, str(tmp_path / "roll_a" / "nested")) is None
+
+
+def test_import_subfolders_as_rolls_is_idempotent_per_subfolder(tmp_path):
+    (tmp_path / "roll_a").mkdir()
+    repo = _repo()
+
+    first = import_subfolders_as_rolls(repo, str(tmp_path))
+    second = import_subfolders_as_rolls(repo, str(tmp_path))
+
+    assert first == second
+    assert len(saved_rolls(repo)) == 1
+
+
+def test_import_subfolders_as_rolls_on_a_missing_parent_returns_nothing():
+    repo = _repo()
+    assert import_subfolders_as_rolls(repo, "/does/not/exist") == []

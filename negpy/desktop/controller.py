@@ -1033,27 +1033,48 @@ class AppController(QObject):
         if self._pending_asset_discoveries and not self._discovery_running and self._active_batch is None:
             self._start_asset_discovery(self._pending_asset_discoveries.pop(0))
 
-    # --- Library (folders on disk) --------------------------------------------
+    # --- Library (a library of Rolls) ------------------------------------------
 
     def library_roots(self) -> List[str]:
+        """Top-level directories a library search walks. Maintained automatically by
+        importing a roll (or a parent full of them) — not a user-visible list."""
         saved = self.session.repo.get_global_setting("library_roots", []) or []
-        return [p for p in saved if isinstance(p, str)]
+        return [p for p in saved if isinstance(p, str)] if isinstance(saved, list) else []
+
+    def _register_library_roots(self, paths: List[str]) -> None:
+        roots = self.library_roots()
+        new = [p for p in paths if p not in roots]
+        if new:
+            self.session.repo.save_global_setting("library_roots", [*roots, *new])
+
+    def has_rolls(self) -> bool:
+        return bool(rolls.saved_rolls(self.session.repo))
+
+    def import_subfolders_as_rolls(self, parent_path: str) -> List[str]:
+        """Recognize every immediate subfolder of *parent_path* as its own roll, and
+        register it as a search root -- nothing is opened or loaded."""
+        roll_ids = rolls.import_subfolders_as_rolls(self.session.repo, parent_path)
+        if roll_ids:
+            self._register_library_roots([parent_path])
+        return roll_ids
 
     def open_library_folder(self, folder: str, add_to_session: bool = False) -> None:
         self.open_library_folders([folder], add_to_session=add_to_session)
 
     def open_library_folders(self, folders: List[str], add_to_session: bool = False) -> None:
-        """Load one or several folders' frames. Replacing the session costs nothing —
-        every edit lives in the database under its own content hash, not in the file list."""
+        """Recognize and load one or several folders as rolls. Replacing the session
+        costs nothing — every edit lives in the database under its own content hash,
+        not in the file list."""
         present = [f for f in folders if os.path.isdir(f)]
         if not present:
             self.set_status("Folder is no longer on disk", 3000)
             return
         if not add_to_session:
-            # Recognizing every opened folder (green in the tree) is independent of which
-            # one, if any, becomes the active roll -- that only makes sense for a single one.
+            # Recognizing every opened folder is independent of which one, if any,
+            # becomes the active roll -- that only makes sense for a single one.
             recognized = [rolls.recognize_folder(self.session.repo, f) for f in present]
             self.state.active_roll_id = recognized[0] if len(recognized) == 1 else None
+            self._register_library_roots(present)
         self.request_asset_discovery(
             present,
             auto_open=True,

@@ -59,7 +59,7 @@ from negpy.infrastructure.loaders.helpers import get_supported_raw_wildcards
 from negpy.desktop.view.sidebar.library_tree import LibraryTree
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
 from negpy.desktop.view.widgets.file_dialogs import last_open_folder, pick_start_dir
-from negpy.services.assets.library import folder_counts
+from negpy.services.assets.library import folder_counts, folder_label
 
 
 _UNBOUNDED_HEIGHT = 16777215  # QWIDGETSIZE_MAX — Qt's "no maximum"
@@ -67,10 +67,6 @@ _UNBOUNDED_HEIGHT = 16777215  # QWIDGETSIZE_MAX — Qt's "no maximum"
 # at occasionally, while the sheet is where the work happens and wants the room. The
 # splitter's handle can move this default any time.
 _LIBRARY_SHARE, _FRAMES_SHARE = 1, 4
-
-
-def _folder_label(path: str) -> str:
-    return os.path.basename(path.rstrip(os.sep)) or path
 
 
 class _ThumbnailDelegate(QStyledItemDelegate):
@@ -378,9 +374,8 @@ class FileBrowser(QWidget):
     """
 
     file_selected = pyqtSignal(str)
-    library_requested = pyqtSignal(bool)  # reveal the library (arg: ask for a folder if unset)
-    browse_requested = pyqtSignal(str)  # reveal this folder in the tree
-    sort_changed = pyqtSignal()  # the folder tree follows the sheet's sort
+    library_requested = pyqtSignal(bool)  # reveal the library (arg: import a first roll if unset)
+    sort_changed = pyqtSignal()  # the roll list follows the sheet's sort
 
     def __init__(self, controller: AppController):
         super().__init__()
@@ -426,7 +421,7 @@ class FileBrowser(QWidget):
 
         self.library_btn = QToolButton()
         self.library_btn.setIcon(qta.icon("fa5s.book-open", color=THEME.text_primary))
-        self.library_btn.setToolTip("Library — browse the folder your scans live in")
+        self.library_btn.setToolTip("Library — your imported rolls")
 
         # One button for both: Add Files and Add Folder are two pickers for the same job
         # (put pictures in this session), not two different actions worth their own icons.
@@ -820,62 +815,6 @@ class FileBrowser(QWidget):
         del_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
         del_shortcut.activated.connect(self._on_delete_key)
 
-    def load_folder(self, path: str, add_to_session: bool = False) -> None:
-        """Load one folder's images, asking first.
-
-        Listing a folder is free and belongs to the library tree; this is the expensive
-        half, and an accepted prompt is the only thing that starts the hashing pass.
-        """
-        images, _ = folder_counts(path)
-        if not images:
-            self.controller.set_status(f"No images directly in “{_folder_label(path)}”", 4000)
-            return
-        if not self._confirm_load(images, _folder_label(path)):
-            return
-        self.controller.open_library_folder(path, add_to_session=add_to_session)
-        self.library_tree.reload()  # recognize_folder ran synchronously above; repaint it green
-
-    def load_folders(self, paths, add_to_session: bool = False) -> None:
-        """Load one folder, or a whole selection of them at once."""
-        paths = [p for p in paths if p]
-        if len(paths) == 1:
-            self.load_folder(paths[0], add_to_session=add_to_session)
-            return
-        if not paths:
-            return
-
-        counted = [(p, folder_counts(p)[0]) for p in paths]
-        loadable = [p for p, n in counted if n]
-        total = sum(n for _, n in counted)
-        if not loadable:
-            self.controller.set_status("Those folders have no images in them", 4000)
-            return
-        if not self._confirm_load(total, f"{len(loadable)} folders"):
-            return
-        self.controller.open_library_folders(loadable, add_to_session=add_to_session)
-        self.library_tree.reload()  # recognize_folder ran synchronously above; repaint them green
-
-    def _confirm_load(self, image_count: int, label: str) -> bool:
-        if self.session.repo.get_global_setting("library_autoload_folders", False):
-            return True
-
-        n = image_count
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle("Load Roll")
-        box.setText(f"Load {n} image{'s' if n != 1 else ''} from “{label}”?")
-        box.setInformativeText("They are hashed and thumbnailed on load, which takes a moment on a large roll.")
-        remember = QCheckBox("Always load without asking")
-        box.setCheckBox(remember)
-        load = box.addButton("Load", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-        box.exec()
-        if box.clickedButton() is not load:
-            return False
-        if remember.isChecked():
-            self.session.repo.save_global_setting("library_autoload_folders", True)
-        return True
-
     def search_library(self) -> None:
         """Run the box's query against the library folders instead of the loaded roll."""
         self.controller.request_library_search(self.search_input.text())
@@ -1254,8 +1193,8 @@ class FileBrowser(QWidget):
             self.open_or_browse(folder)
 
     def open_or_browse(self, folder: str) -> None:
-        """Load a folder's images, or — when it only holds subfolders — reveal it in the
-        library tree so its subfolders are one click away.
+        """Load a folder's images into the session, or point at Library's own import
+        when it only holds subfolders.
 
         Picking the one directory everything lives under used to dead-end on "no
         supported assets found", because the importer looks in that folder and not
@@ -1265,7 +1204,11 @@ class FileBrowser(QWidget):
         if images:
             self.controller.request_asset_discovery([folder], auto_open=True, announce_rgb=True)
         elif subfolders:
-            self.browse_requested.emit(folder)
+            self.controller.set_status(
+                f"No images directly in “{folder_label(folder)}” — use Library's Import Subfolders as Rolls for its "
+                f"{subfolders} subfolder{'s' if subfolders != 1 else ''}",
+                5000,
+            )
             self.controller.set_status(f"No images directly in that folder — showing its {subfolders} subfolders", 5000)
         else:
             self.controller.set_status("That folder has no images in it", 4000)

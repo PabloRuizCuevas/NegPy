@@ -3515,3 +3515,49 @@ class TestLibrarySearch(unittest.TestCase):
             self.controller._on_library_search_finished(["/c.nef"])
 
         self.assertIsNone(self.controller.state.active_roll_id)
+
+    def test_has_rolls_reflects_the_store(self):
+        self._dict_repo()
+        self.assertFalse(self.controller.has_rolls())
+
+        from negpy.services.assets.rolls import create_virtual_roll
+
+        create_virtual_roll(self.controller.session.repo, "Portra", [])
+        self.assertTrue(self.controller.has_rolls())
+
+    def test_opening_a_folder_registers_it_as_a_search_root(self):
+        self._dict_repo()
+        with patch("negpy.desktop.controller.os.path.isdir", return_value=True):
+            with patch.object(self.controller, "request_asset_discovery"):
+                self.controller.open_library_folder("/photos/roll_a")
+
+        self.assertIn("/photos/roll_a", self.controller.library_roots())
+
+    def test_adding_to_session_does_not_register_a_search_root(self):
+        self._dict_repo()
+        with patch("negpy.desktop.controller.os.path.isdir", return_value=True):
+            with patch.object(self.controller, "request_asset_discovery"):
+                self.controller.open_library_folder("/photos/roll_a", add_to_session=True)
+
+        self.assertEqual(self.controller.library_roots(), [])
+
+    def test_import_subfolders_as_rolls_recognizes_each_one_and_registers_the_parent(self):
+        self._dict_repo()
+        # MagicMock's own `name` kwarg sets its repr, not an attribute -- set it after.
+        entry_a = MagicMock(path="/scans/roll_a", is_dir=lambda: True)
+        entry_a.name = "roll_a"
+        entry_b = MagicMock(path="/scans/roll_b", is_dir=lambda: True)
+        entry_b.name = "roll_b"
+        with patch("negpy.services.assets.rolls.os.scandir", return_value=iter([entry_a, entry_b])):
+            roll_ids = self.controller.import_subfolders_as_rolls("/scans")
+
+        self.assertEqual(len(roll_ids), 2)
+        self.assertIn("/scans", self.controller.library_roots())
+
+    def test_import_subfolders_as_rolls_with_none_found_registers_nothing(self):
+        self._dict_repo()
+        with patch("negpy.services.assets.rolls.os.scandir", return_value=iter([])):
+            roll_ids = self.controller.import_subfolders_as_rolls("/scans")
+
+        self.assertEqual(roll_ids, [])
+        self.assertEqual(self.controller.library_roots(), [])
