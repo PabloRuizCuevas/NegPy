@@ -27,6 +27,8 @@ SPLIT_SCANS_KEY = "half_frame_scans"
 # two exposures looks like once rendered; swap for the finish border colour if wanted.
 _GAP_FILL = 0.0
 
+_MAX_GUTTER_THICKNESS = 0.1  # matches the split editor's Cut thickness slider range
+
 
 def is_composite(file_info: Dict[str, Any]) -> bool:
     """Whether an asset is assembled from more than one file (triplet, stitch, HDR).
@@ -306,27 +308,31 @@ def diptych_configs(repo: Any, file_hash: Optional[str]) -> Optional[tuple[Any, 
     return (first or second, second or first)
 
 
-def detect_split_x(buf: np.ndarray) -> float:
-    """Normalized x of the unexposed gutter between the two frames.
+def detect_gutter(buf: np.ndarray) -> tuple[float, float]:
+    """Normalized (split_x, gutter_thickness) of the unexposed band between the two frames.
 
     The gutter is a narrow column extremal against its surroundings in either
     polarity (bright film base on negatives, dark on positives), so pick the
     column whose smoothed luma deviates most from a local running-median
     background — a window much wider than the gutter, so broad brightness
-    differences between the two frames don't register. Returns 0.5 when no
-    clear gutter stands out in the central band.
+    differences between the two frames don't register. Its two edges are then
+    the steepest slope on each side of that peak, in a window sized to the
+    smoothing itself rather than to the deviation band: an in-scene gradient
+    blending into the gutter (an overexposed sky, say) widens the deviation
+    band on one side only, and searching that whole widened band for "the
+    edge" is what pulls the center toward it. Falls back to ``(0.5, 0.0)``
+    when no clear gutter stands out in the central band.
     """
-    # ponytail: 1-D local-deviation heuristic; upgrade to variance+edge profile if it misses
     a = np.asarray(buf)
     if a.ndim == 3:
         a = a.mean(axis=2)
     a = a.astype(np.float32, copy=False)
     h, w = a.shape[:2]
     if w < 64 or h < 8:
-        return 0.5
+        return 0.5, 0.0
     peak_val = float(a.max())
     if peak_val <= 0:
-        return 0.5
+        return 0.5, 0.0
     sub = a[:: max(1, h // 512)] / peak_val
     col = sub.mean(axis=0)
     k = max(3, w // 150)
@@ -337,26 +343,49 @@ def detect_split_x(buf: np.ndarray) -> float:
     dev = np.abs(sm - bg)
     lo, hi = int(w * 0.35), int(w * 0.65)
     peak = lo + int(np.argmax(dev[lo:hi]))
-    # Take the deviating band's center so the ±delta taps below land outside the gutter.
-    thr = 0.5 * dev[peak]
-    i0 = peak
-    while i0 > 0 and dev[i0 - 1] >= thr:
-        i0 -= 1
-    i1 = peak
-    while i1 < w - 1 and dev[i1 + 1] >= thr:
-        i1 += 1
-    center = (i0 + i1) // 2
+
+    rad = max(int(w * 0.05), 6 * k)
+    s0, s1 = max(0, peak - rad), min(w - 1, peak + rad)
+    grad = np.gradient(sm[s0 : s1 + 1])
+    peak_rel = peak - s0
+    bright = sm[peak] >= bg[peak]
+    rising, falling = (True, False) if bright else (False, True)
+    left_edge = _subpixel_extreme(grad[: peak_rel + 1], s0, rising)
+    right_edge = _subpixel_extreme(grad[peak_rel:], peak, falling)
+    if right_edge < left_edge:
+        left_edge, right_edge = right_edge, left_edge
+    center_f = 0.5 * (left_edge + right_edge)
+    center = max(0, min(w - 1, int(round(center_f))))
+
     # A gutter is extremal against BOTH sides. A step edge, up one side and down the other,
     # is in-scene, so reject it.
     delta = max(3, int(w * 0.05))
     d1 = float(sm[center] - sm[max(0, center - delta)])
     d2 = float(sm[center] - sm[min(w - 1, center + delta)])
     if min(abs(d1), abs(d2)) < 0.04 or d1 * d2 <= 0:
-        return 0.5
+        return 0.5, 0.0
     # Unexposed film is uniform top to bottom; a bright/dark in-scene feature isn't.
     if float(sub[:, center].std()) > 0.10:
-        return 0.5
-    return center / w
+        return 0.5, 0.0
+    thickness = min(_MAX_GUTTER_THICKNESS, max(0.0, (right_edge - left_edge) / w))
+    return float(center_f / w), float(thickness)
+
+
+def _subpixel_extreme(seg: np.ndarray, offset: int, want_max: bool) -> float:
+    """Sub-pixel index of ``seg``'s max (or min) via a parabola through its neighbors."""
+    idx = int(np.argmax(seg)) if want_max else int(np.argmin(seg))
+    if 0 < idx < len(seg) - 1:
+        y0, y1, y2 = seg[idx - 1], seg[idx], seg[idx + 1]
+        denom = y0 - 2 * y1 + y2
+        frac = 0.5 * (y0 - y2) / denom if abs(denom) > 1e-9 else 0.0
+    else:
+        frac = 0.0
+    return offset + idx + max(-0.5, min(0.5, frac))
+
+
+def detect_split_x(buf: np.ndarray) -> float:
+    """Normalized x of the unexposed gutter between the two frames; see ``detect_gutter``."""
+    return detect_gutter(buf)[0]
 
 
 def detect_split_x_for_file(file_path: str) -> float:
