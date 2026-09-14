@@ -1,13 +1,14 @@
 import qtawesome as qta
 from dataclasses import asdict, replace
 from typing import Optional
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QScrollArea,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -21,7 +22,7 @@ from negpy.desktop.settings_catalog import (
 )
 from negpy.desktop.view.shortcut_registry import tooltip_with_shortcut
 from negpy.desktop.view.sidebar.base import BaseSidebar
-from negpy.desktop.view.styles.templates import field_label, hint_label, wrap_tooltip
+from negpy.desktop.view.styles.templates import field_label, hint_label, section_subheader, wrap_tooltip
 from negpy.desktop.view.styles.fonts import mono_font_family
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
@@ -73,6 +74,9 @@ class MetadataSidebar(BaseSidebar):
     """Panel for analog gear metadata written to exported files."""
 
     SIDE_MARGIN = THEME.space_xl
+    # Export tab's Sync To Batch checkbox disables alongside protect mode; it lives
+    # there, not here, so it learns of a protect toggle through this signal.
+    protect_toggled = pyqtSignal(bool)
 
     def _init_ui(self) -> None:
         conf = self.state.config.metadata
@@ -92,6 +96,11 @@ class MetadataSidebar(BaseSidebar):
         self._exif_locked = {"exposure": True}
         self._description_fields: tuple[str, ...] = conf.description_fields or DEFAULT_DESCRIPTION_FIELDS
 
+        self.metadata_title_label = section_subheader("Metadata")
+        self.layout.addWidget(self.metadata_title_label)
+        self.metadata_scope_hint = hint_label("Applies to the current frame only.")
+        self.layout.addWidget(self.metadata_scope_hint)
+
         self.protect_check = QCheckBox("Protect original metadata")
         self.protect_check.setChecked(conf.protect_original_metadata)
         self.protect_check.setToolTip(
@@ -99,13 +108,6 @@ class MetadataSidebar(BaseSidebar):
             "without adding or changing metadata. Gear and process fields are ignored."
         )
         self.layout.addWidget(self.protect_check)
-
-        self.sync_check = QCheckBox("Sync custom metadata to all files in batch export")
-        self.sync_check.setChecked(conf.sync_to_batch)
-        self.sync_check.setToolTip(
-            "Batch and preset exports write this frame's capture, gear and process values to every file, instead of each file's own."
-        )
-        self.layout.addWidget(self.sync_check)
 
         self._metadata_controls = QWidget()
         controls = QVBoxLayout(self._metadata_controls)
@@ -299,7 +301,6 @@ class MetadataSidebar(BaseSidebar):
 
         self._refresh_gear_combos()
         controls.addStretch()
-        self.layout.addWidget(self._metadata_controls, 1)
 
         # ── METADATA PREVIEW ─────────────────────────────────────────────
         self.preview_content = QWidget()
@@ -324,7 +325,14 @@ class MetadataSidebar(BaseSidebar):
         preview_layout.addWidget(self.preview_empty)
 
         self.preview_section = self._card("Metadata Preview", "preview", self.preview_content, "fa5s.eye")
+
+        # Preview pinned above the per-frame cards, which scroll in their own area below it --
+        # same pattern as Edit's Analysis section pinned above its tabs.
         self.layout.addWidget(self.preview_section)
+        self._metadata_scroll_area = QScrollArea()
+        self._metadata_scroll_area.setWidgetResizable(True)
+        self._metadata_scroll_area.setWidget(self._metadata_controls)
+        self.layout.addWidget(self._metadata_scroll_area, 1)
 
         # After every card: the tooltips it fills in span all of them.
         self.apply_shortcut_tooltips()
@@ -364,7 +372,6 @@ class MetadataSidebar(BaseSidebar):
     def _set_metadata_controls_enabled(self, enabled: bool) -> None:
         self._metadata_controls.setEnabled(enabled)
         self.description_fields_btn.setEnabled(enabled)
-        self.sync_check.setEnabled(enabled)
 
     def _apply_lock_style(self, edit: QLineEdit, locked: bool) -> None:
         if locked:
@@ -420,13 +427,13 @@ class MetadataSidebar(BaseSidebar):
         self.scanning_edit.textChanged.connect(self._on_scanning_edited)
         self.capture_roll_edit.textChanged.connect(self._mark_dirty)
         self.capture_frame_edit.textChanged.connect(self._mark_dirty)
-        self.sync_check.toggled.connect(self._mark_dirty)
         self.exposure_edit.textChanged.connect(self._mark_dirty)
 
         self.controller.session.file_selected.connect(self._on_file_selected)
 
     def _on_protect_toggled(self, checked: bool) -> None:
         self._set_metadata_controls_enabled(not checked)
+        self.protect_toggled.emit(checked)
         self.update_config_section(
             "metadata",
             persist=True,
@@ -801,7 +808,6 @@ class MetadataSidebar(BaseSidebar):
             scanning=self.scanning_edit.text().strip(),
             capture_roll=self.capture_roll_edit.text().strip(),
             capture_frame=capture_frame,
-            sync_to_batch=self.sync_check.isChecked(),
             exposure_override=exposure_override,
         )
 
@@ -834,7 +840,6 @@ class MetadataSidebar(BaseSidebar):
             self.scanning_edit.setText(conf.scanning)
             self.capture_roll_edit.setText(conf.capture_roll)
             self.capture_frame_edit.setText("" if conf.capture_frame is None else str(conf.capture_frame))
-            self.sync_check.setChecked(conf.sync_to_batch)
             self._description_fields = conf.description_fields or DEFAULT_DESCRIPTION_FIELDS
 
             if conf.exposure_override:
@@ -907,7 +912,6 @@ class MetadataSidebar(BaseSidebar):
             process_temperature_c=self._dev_temp_value(),
             scanning_id=self.scan_setup_combo.selected_id(),
             scanning=self.scanning_edit.text().strip(),
-            sync_to_batch=self.sync_check.isChecked(),
             exposure_override=exposure_override,
             description_fields=self._description_fields,
         )

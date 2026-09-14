@@ -12,7 +12,7 @@ from dataclasses import replace
 
 import piexif
 import pytest
-from PyQt6.QtWidgets import QApplication, QCheckBox, QLabel
+from PyQt6.QtWidgets import QApplication, QCheckBox, QLabel, QScrollArea
 
 from conftest import FakeController
 from negpy.desktop.view.sidebar import metadata as metadata_module
@@ -172,24 +172,37 @@ class TestSourceGpsPrefill:
         assert seen["center"] is None
 
 
-class TestSyncCheckbox:
-    def test_sits_at_the_top_beside_protect_and_not_inside_a_card(self, sidebar: MetadataSidebar) -> None:
-        order = [sidebar.layout.indexOf(w) for w in (sidebar.protect_check, sidebar.sync_check)]
+class TestTabIdentity:
+    def test_header_and_scope_hint_lead_the_panel(self, sidebar: MetadataSidebar) -> None:
+        order = [sidebar.layout.indexOf(w) for w in (sidebar.metadata_title_label, sidebar.metadata_scope_hint, sidebar.protect_check)]
         assert -1 not in order
-        assert order[0] < order[1] < sidebar.layout.indexOf(sidebar._metadata_controls)
-        assert sidebar._metadata_controls.findChildren(QCheckBox).count(sidebar.sync_check) == 0
+        assert order[0] < order[1] < order[2]
 
-    def test_protect_disables_it(self, sidebar: MetadataSidebar) -> None:
-        """Protect mode ignores the panel's fields, so syncing them would mean nothing."""
+
+class TestPreviewPinning:
+    """The Preview stays visible above the per-frame cards, which scroll on their own."""
+
+    def test_preview_is_pinned_above_the_scrolling_cards(self, sidebar: MetadataSidebar) -> None:
+        assert sidebar.layout.indexOf(sidebar.preview_section) != -1
+        assert sidebar.layout.indexOf(sidebar._metadata_controls) == -1
+        assert isinstance(sidebar._metadata_scroll_area, QScrollArea)
+        assert sidebar._metadata_scroll_area.widget() is sidebar._metadata_controls
+        assert sidebar.layout.indexOf(sidebar.preview_section) < sidebar.layout.indexOf(sidebar._metadata_scroll_area)
+
+
+class TestProtectCheckbox:
+    def test_sits_at_the_top_and_not_inside_a_card(self, sidebar: MetadataSidebar) -> None:
+        assert sidebar.layout.indexOf(sidebar.protect_check) != -1
+        assert sidebar._metadata_controls.findChildren(QCheckBox).count(sidebar.protect_check) == 0
+
+    def test_toggle_notifies_the_export_tab_for_sync_to_batch(self, sidebar: MetadataSidebar) -> None:
+        """Export tab's Sync To Batch checkbox disables alongside Protect; it lives there,
+        not here, so it listens on this signal instead of polling state."""
+        seen: list[bool] = []
+        sidebar.protect_toggled.connect(seen.append)
         sidebar._on_protect_toggled(True)
-        assert sidebar.sync_check.isEnabled() is False
         sidebar._on_protect_toggled(False)
-        assert sidebar.sync_check.isEnabled() is True
-
-    def test_toggle_persists(self, sidebar: MetadataSidebar) -> None:
-        sidebar.sync_check.setChecked(True)
-        sidebar._persist_all_metadata_settings()
-        assert sidebar.state.config.metadata.sync_to_batch is True
+        assert seen == [True, False]
 
 
 class TestPlaceButtons:

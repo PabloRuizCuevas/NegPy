@@ -33,9 +33,9 @@ class RightPanel(QWidget):
     Right sidebar panel ("Edit" dock): a flat tab switcher across Edit / Export /
     Metadata / Gear / Scan. Edit holds a sticky Analysis section pinned above the
     workflow control groups (Setup / Geometry / Tone / Color / Finish), Favorites
-    and History -- every tab that changes what the canvas shows. Export, Metadata,
-    Gear and Scan are roll and library bookkeeping instead: plain pages, with no
-    Analysis section of their own.
+    and History -- every tab that changes what the canvas shows. Metadata pins its
+    own Preview above its per-frame cards the same way. Export, Gear and Scan are
+    roll and library bookkeeping instead: plain pages, with no pinned section.
     """
 
     def __init__(self, controller: AppController):
@@ -62,6 +62,7 @@ class RightPanel(QWidget):
 
         self.export_sidebar = ExportSidebar(self.controller)
         self.metadata_sidebar = MetadataSidebar(self.controller)
+        self.metadata_sidebar.protect_toggled.connect(self.export_sidebar._on_metadata_protect_changed)
         self.gear_panel = GearLibraryPanel(current_config_fn=lambda: self.controller.state.config)
         self.gear_panel.library_changed.connect(self.metadata_sidebar._on_library_changed)
         self.gear_panel.presets_changed.connect(self.metadata_sidebar._refresh_metadata_presets)
@@ -105,9 +106,9 @@ class RightPanel(QWidget):
             btn.clicked.connect(lambda _checked=False, idx=i: self._switch_group(idx))
             self.group_switcher.add_button(btn, tooltip)
 
-            # Edit already manages its own scrolling (each inner tab wraps itself); the other
-            # pages are one control column each, so the page itself needs the scroll area.
-            page = content if key == "edit" else wrap_scroll(content)
+            # Edit and Metadata manage their own scrolling (a pinned section above a scroll
+            # area); the other pages are one control column each, so the page itself needs it.
+            page = content if key in ("edit", "metadata") else wrap_scroll(content)
             self.group_stack.addWidget(page)
             self._group_buttons.append(btn)
             self._group_keys.append(key)
