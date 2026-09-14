@@ -9,15 +9,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import sys
 
 from dataclasses import replace
+from unittest.mock import MagicMock, patch
 
 import piexif
 import pytest
-from PyQt6.QtWidgets import QApplication, QCheckBox, QLabel, QScrollArea
+from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QScrollArea
 
 from conftest import FakeController
 from negpy.desktop.view.sidebar import metadata as metadata_module
 from negpy.desktop.view.sidebar.metadata import MetadataSidebar
-from negpy.features.metadata.gear_models import GearLibrary
+from negpy.features.metadata.gear_models import Camera, GearLibrary
 
 if not QApplication.instance():
     _app = QApplication(sys.argv)
@@ -34,6 +35,75 @@ def sidebar(monkeypatch) -> MetadataSidebar:
 def _set_metadata(sidebar: MetadataSidebar, **changes) -> None:
     state = sidebar.state
     state.config = replace(state.config, metadata=replace(state.config.metadata, **changes))
+
+
+@pytest.fixture
+def gear_sidebar(monkeypatch) -> MetadataSidebar:
+    library = GearLibrary(
+        cameras=[
+            Camera(id="cam-bundled", make="Leica", model="M6", is_bundled=True),
+            Camera(id="cam-mine", make="Pentax", model="K1000", is_bundled=False),
+        ]
+    )
+    monkeypatch.setattr(metadata_module.GearProfiles, "load_library", staticmethod(lambda: library))
+    monkeypatch.setattr(metadata_module.GearProfiles, "save_library", staticmethod(lambda _lib: None))
+    controller = FakeController()
+    controller.session.update_config = lambda config, **_kwargs: setattr(controller.state, "config", config)
+    return MetadataSidebar(controller)
+
+
+class TestGearCombos:
+    def test_camera_combo_defaults_to_personal_gear_only(self, gear_sidebar: MetadataSidebar) -> None:
+        ids = {item_id for _label, item_id, _search in gear_sidebar.camera_combo._entries}
+        assert ids == {"cam-mine", metadata_module._OTHER_ID}
+
+    def test_a_bundled_selection_made_before_the_filter_stays_visible(self, monkeypatch) -> None:
+        library = GearLibrary(cameras=[Camera(id="cam-bundled", make="Leica", model="M6", is_bundled=True)])
+        monkeypatch.setattr(metadata_module.GearProfiles, "load_library", staticmethod(lambda: library))
+        controller = FakeController()
+        controller.session.update_config = lambda config, **_kwargs: setattr(controller.state, "config", config)
+        controller.state.config = replace(
+            controller.state.config, metadata=replace(controller.state.config.metadata, camera_id="cam-bundled")
+        )
+        sidebar = MetadataSidebar(controller)
+        assert sidebar.camera_combo.selected_id() == "cam-bundled"
+        assert sidebar.camera_combo.line_edit().text() == "Leica M6"
+
+    def test_other_pick_clones_the_catalog_camera_into_personal_gear(self, gear_sidebar: MetadataSidebar) -> None:
+        fake_dlg = MagicMock()
+        fake_dlg.exec.return_value = QDialog.DialogCode.Accepted
+        fake_dlg.wants_custom.return_value = False
+        fake_dlg.selected_id.return_value = "cam-bundled"
+        with patch.object(metadata_module, "GearCatalogDialog", return_value=fake_dlg):
+            gear_sidebar.camera_combo._commit_id(metadata_module._OTHER_ID)
+
+        new_id = gear_sidebar.state.config.metadata.camera_id
+        assert new_id not in ("cam-bundled", "cam-mine", metadata_module._OTHER_ID)
+        assert gear_sidebar.camera_combo.selected_id() == new_id
+        assert gear_sidebar.camera_combo.line_edit().text() == "Leica M6"
+
+    def test_other_pick_add_custom_starts_a_blank_personal_camera(self, gear_sidebar: MetadataSidebar) -> None:
+        fake_dlg = MagicMock()
+        fake_dlg.exec.return_value = QDialog.DialogCode.Accepted
+        fake_dlg.wants_custom.return_value = True
+        with patch.object(metadata_module, "GearCatalogDialog", return_value=fake_dlg):
+            gear_sidebar.camera_combo._commit_id(metadata_module._OTHER_ID)
+
+        new_id = gear_sidebar.state.config.metadata.camera_id
+        assert new_id not in ("cam-bundled", "cam-mine", metadata_module._OTHER_ID)
+        assert gear_sidebar.camera_combo.line_edit().text() == "New Camera"
+
+    def test_other_pick_cancelled_reverts_to_the_previous_selection(self, gear_sidebar: MetadataSidebar) -> None:
+        _set_metadata(gear_sidebar, camera_id="cam-mine")
+        gear_sidebar.sync_ui()
+
+        fake_dlg = MagicMock()
+        fake_dlg.exec.return_value = QDialog.DialogCode.Rejected
+        with patch.object(metadata_module, "GearCatalogDialog", return_value=fake_dlg):
+            gear_sidebar.camera_combo._commit_id(metadata_module._OTHER_ID)
+
+        assert gear_sidebar.camera_combo.selected_id() == "cam-mine"
+        assert gear_sidebar.state.config.metadata.camera_id == "cam-mine"
 
 
 class TestCaptureDate:
@@ -174,9 +244,9 @@ class TestSourceGpsPrefill:
 
 class TestTabIdentity:
     def test_header_and_scope_hint_lead_the_panel(self, sidebar: MetadataSidebar) -> None:
-        order = [sidebar.layout.indexOf(w) for w in (sidebar.metadata_title_label, sidebar.metadata_scope_hint, sidebar.protect_check)]
+        order = [sidebar.layout.indexOf(w) for w in (sidebar.metadata_title_label, sidebar.metadata_scope_hint)]
         assert -1 not in order
-        assert order[0] < order[1] < order[2]
+        assert order[0] < order[1]
 
 
 class TestPreviewPinning:
@@ -190,19 +260,21 @@ class TestPreviewPinning:
         assert sidebar.layout.indexOf(sidebar.preview_section) < sidebar.layout.indexOf(sidebar._metadata_scroll_area)
 
 
-class TestProtectCheckbox:
-    def test_sits_at_the_top_and_not_inside_a_card(self, sidebar: MetadataSidebar) -> None:
-        assert sidebar.layout.indexOf(sidebar.protect_check) != -1
-        assert sidebar._metadata_controls.findChildren(QCheckBox).count(sidebar.protect_check) == 0
+class TestProtectGating:
+    """Protect Original Metadata is a checkbox on the Export tab, not here (it is an
+    export-time behavior, not metadata content), but this tab's own fields still
+    disable under it through the ordinary config sync."""
 
-    def test_toggle_notifies_the_export_tab_for_sync_to_batch(self, sidebar: MetadataSidebar) -> None:
-        """Export tab's Sync To Batch checkbox disables alongside Protect; it lives there,
-        not here, so it listens on this signal instead of polling state."""
-        seen: list[bool] = []
-        sidebar.protect_toggled.connect(seen.append)
-        sidebar._on_protect_toggled(True)
-        sidebar._on_protect_toggled(False)
-        assert seen == [True, False]
+    def test_protect_disables_this_tabs_fields(self, sidebar: MetadataSidebar) -> None:
+        assert sidebar._metadata_controls.isEnabled() is True
+
+        _set_metadata(sidebar, protect_original_metadata=True)
+        sidebar.sync_ui()
+        assert sidebar._metadata_controls.isEnabled() is False
+
+        _set_metadata(sidebar, protect_original_metadata=False)
+        sidebar.sync_ui()
+        assert sidebar._metadata_controls.isEnabled() is True
 
 
 class TestPlaceButtons:

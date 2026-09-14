@@ -1,10 +1,10 @@
 import qtawesome as qta
 from dataclasses import asdict, replace
 from typing import Optional
-from PyQt6.QtCore import QTimer, pyqtSignal
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QComboBox,
+    QDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -27,6 +27,7 @@ from negpy.desktop.view.styles.fonts import mono_font_family
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
 from negpy.desktop.view.widgets.description_fields_dialog import DescriptionFieldsDialog
+from negpy.desktop.view.widgets.gear_catalog_dialog import GearCatalogDialog
 from negpy.desktop.view.widgets.location_picker_dialog import LocationPickerDialog
 from negpy.desktop.view.widgets.searchable_gear_combo import SearchableGearCombo
 from negpy.features.metadata.capture import (
@@ -41,7 +42,15 @@ from negpy.features.metadata.capture import (
     place_summary,
 )
 from negpy.features.metadata.exif_read import extract_scan_from_exif
-from negpy.features.metadata.gear_logic import metadata_from_gear, metadata_from_process, metadata_from_scan_setup
+from negpy.features.metadata.gear_logic import (
+    CATEGORY_SINGULAR,
+    blank_gear_item,
+    clone_into_personal,
+    gear_search_text,
+    metadata_from_gear,
+    metadata_from_process,
+    metadata_from_scan_setup,
+)
 from negpy.features.metadata.gear_models import GearLibrary
 from negpy.features.metadata.models import (
     DEFAULT_DESCRIPTION_FIELDS,
@@ -60,6 +69,19 @@ from negpy.services.assets.presets import MetadataPresets
 
 PUSH_PULL_OPTIONS = [PUSH_PULL_LABELS[v] for v in PUSH_PULL_VALUES]
 _LOAD_TOOLTIP = "Write the selected preset's fields onto this frame"
+
+# Sentinel row appended to every gear combo: picking it means "not in my own gear",
+# and opens the full shipped catalog rather than searching it by default.
+_OTHER_ID = "__other__"
+_OTHER_LABEL = "Other…"
+
+_GEAR_CATEGORY_SEARCH_PLACEHOLDER = {
+    "cameras": "Search cameras…",
+    "lenses": "Search lenses…",
+    "film_stocks": "Search film stocks…",
+    "processes": "Search processes…",
+    "scan_setups": "Search scan setups…",
+}
 _CLEAR_TOOLTIPS = {
     "gear_clear_btn": ("Clear the camera, lens and film stock selections", "metadata_clear_gear"),
     "process_clear_btn": (
@@ -74,9 +96,6 @@ class MetadataSidebar(BaseSidebar):
     """Panel for analog gear metadata written to exported files."""
 
     SIDE_MARGIN = THEME.space_xl
-    # Export tab's Sync To Batch checkbox disables alongside protect mode; it lives
-    # there, not here, so it learns of a protect toggle through this signal.
-    protect_toggled = pyqtSignal(bool)
 
     def _init_ui(self) -> None:
         conf = self.state.config.metadata
@@ -101,14 +120,6 @@ class MetadataSidebar(BaseSidebar):
         self.metadata_scope_hint = hint_label("Applies to the current frame only.")
         self.layout.addWidget(self.metadata_scope_hint)
 
-        self.protect_check = QCheckBox("Protect original metadata")
-        self.protect_check.setChecked(conf.protect_original_metadata)
-        self.protect_check.setToolTip(
-            "When enabled, NegPy copies EXIF and XMP from the source file onto exports "
-            "without adding or changing metadata. Gear and process fields are ignored."
-        )
-        self.layout.addWidget(self.protect_check)
-
         self._metadata_controls = QWidget()
         controls = QVBoxLayout(self._metadata_controls)
         controls.setContentsMargins(0, 0, 0, 0)
@@ -130,7 +141,7 @@ class MetadataSidebar(BaseSidebar):
 
         # ── ANALOG GEAR ──────────────────────────────────────────────────
         gear_body, gear = self._card_body()
-        gear.addWidget(hint_label("Type in any field to search the gear library."))
+        gear.addWidget(hint_label("Searches the gear you've declared as your own. Pick Other… for the full catalog."))
 
         gear.addWidget(field_label("Camera"))
         self.camera_combo = SearchableGearCombo(placeholder="Search cameras…")
@@ -299,6 +310,13 @@ class MetadataSidebar(BaseSidebar):
         self.exposure_edit = self._make_exif_field("exposure", exp)
         controls.addWidget(self._card("Exposure", "exposure", exp_body, "fa5s.stopwatch"))
 
+        self._gear_combo_category = {
+            id(self.camera_combo): "cameras",
+            id(self.lens_combo): "lenses",
+            id(self.film_stock_combo): "film_stocks",
+            id(self.process_combo): "processes",
+            id(self.scan_setup_combo): "scan_setups",
+        }
         self._refresh_gear_combos()
         controls.addStretch()
 
@@ -398,7 +416,6 @@ class MetadataSidebar(BaseSidebar):
         self._mark_dirty()
 
     def _connect_signals(self) -> None:
-        self.protect_check.toggled.connect(self._on_protect_toggled)
         self.description_fields_btn.clicked.connect(self._open_description_fields)
         self.gear_clear_btn.clicked.connect(self._on_gear_clear)
         self.process_clear_btn.clicked.connect(self._on_process_clear)
@@ -430,18 +447,6 @@ class MetadataSidebar(BaseSidebar):
         self.exposure_edit.textChanged.connect(self._mark_dirty)
 
         self.controller.session.file_selected.connect(self._on_file_selected)
-
-    def _on_protect_toggled(self, checked: bool) -> None:
-        self._set_metadata_controls_enabled(not checked)
-        self.protect_toggled.emit(checked)
-        self.update_config_section(
-            "metadata",
-            persist=True,
-            render=False,
-            readback_metrics=False,
-            protect_original_metadata=checked,
-        )
-        self._schedule_preview()
 
     def _open_description_fields(self) -> None:
         dlg = DescriptionFieldsDialog(self._description_fields, self)
@@ -481,40 +486,34 @@ class MetadataSidebar(BaseSidebar):
             seen[id(combo)] = key
             return True
 
-        if should_refresh(self.camera_combo):
-            self.camera_combo.set_gear_items(
-                library.cameras,
-                conf.camera_id or "",
-                lambda c: c.resolved_display_name,
-            )
+        combos = (
+            (self.camera_combo, library.cameras, conf.camera_id or ""),
+            (self.lens_combo, library.lenses, conf.lens_id or ""),
+            (self.film_stock_combo, library.film_stocks, conf.film_stock_id or ""),
+            (self.process_combo, library.processes, conf.process_id or ""),
+            (self.scan_setup_combo, library.scan_setups, conf.scanning_id or ""),
+        )
+        for combo, items, selected_id in combos:
+            if should_refresh(combo):
+                self._set_own_gear_items(combo, items, selected_id)
 
-        if should_refresh(self.lens_combo):
-            self.lens_combo.set_gear_items(
-                library.lenses,
-                conf.lens_id or "",
-                lambda lens: lens.resolved_display_name,
-            )
-
-        if should_refresh(self.film_stock_combo):
-            self.film_stock_combo.set_gear_items(
-                library.film_stocks,
-                conf.film_stock_id or "",
-                lambda stock: stock.resolved_display_name,
-            )
-
-        if should_refresh(self.process_combo):
-            self.process_combo.set_gear_items(
-                library.processes,
-                conf.process_id or "",
-                lambda process: process.resolved_display_name,
-            )
-
-        if should_refresh(self.scan_setup_combo):
-            self.scan_setup_combo.set_gear_items(
-                library.scan_setups,
-                conf.scanning_id or "",
-                lambda setup: setup.resolved_display_name,
-            )
+    def _set_own_gear_items(self, combo: SearchableGearCombo, items, selected_id: str) -> None:
+        """Personal gear only, plus the currently selected item even if it is a bundled
+        catalog pick made before this filter existed. Other… is the escape hatch back to
+        the full catalog, so the default search never returns gear the user doesn't own."""
+        own = [item for item in items if not item.is_bundled]
+        if selected_id and not any(item.id == selected_id for item in own):
+            legacy = next((item for item in items if item.id == selected_id), None)
+            if legacy is not None:
+                own = [*own, legacy]
+        search_text = {item.id: gear_search_text(item) for item in own}
+        entries = [(item.resolved_display_name, item.id) for item in own]
+        entries.append((_OTHER_LABEL, _OTHER_ID))
+        combo.set_labeled_items(
+            entries,
+            selected_id,
+            search_fn=lambda label, item_id: search_text.get(item_id, label.casefold()),
+        )
 
     def _gear_selected_id(self, combo: SearchableGearCombo, conf) -> str:
         return {
@@ -526,14 +525,55 @@ class MetadataSidebar(BaseSidebar):
         }.get(id(combo)) or ""
 
     def _on_process_selected(self, *_args) -> None:
+        self._resolve_other_pick(self.process_combo)
         self._dirty = False
         self._apply_metadata_config(metadata_from_process(self.state.config.metadata, self._gear_library, self.process_combo.selected_id()))
 
     def _on_scan_setup_selected(self, *_args) -> None:
+        self._resolve_other_pick(self.scan_setup_combo)
         self._dirty = False
         self._apply_metadata_config(
             metadata_from_scan_setup(self.state.config.metadata, self._gear_library, self.scan_setup_combo.selected_id())
         )
+
+    def _resolve_other_pick(self, combo: SearchableGearCombo) -> None:
+        """Other… resolves to a real personal item before the caller applies the
+        selection: picking a catalog model clones it into the user's own gear, Add
+        Custom starts a blank one, cancelling reverts to what was selected before."""
+        if combo.selected_id() != _OTHER_ID:
+            return
+        conf = self.state.config.metadata
+        previous = self._gear_selected_id(combo, conf)
+        category = self._gear_combo_category[id(combo)]
+        library = self._gear_library
+        items = getattr(library, category)
+        catalog = [item for item in items if item.is_bundled]
+        new_item = None
+        if catalog:
+            dlg = GearCatalogDialog(
+                self,
+                CATEGORY_SINGULAR[category],
+                catalog,
+                lambda item: item.resolved_display_name,
+                _GEAR_CATEGORY_SEARCH_PLACEHOLDER[category],
+            )
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                combo.set_selected_id(previous)
+                return
+            if dlg.wants_custom():
+                new_item = blank_gear_item(category)
+            else:
+                picked = next((item for item in catalog if item.id == dlg.selected_id()), None)
+                new_item = clone_into_personal(picked) if picked is not None else None
+        else:
+            new_item = blank_gear_item(category)
+        if new_item is None:
+            combo.set_selected_id(previous)
+            return
+        setattr(library, category, [*items, new_item])
+        GearProfiles.save_library(library)
+        self._refresh_gear_combos(force=True)
+        combo.set_selected_id(new_item.id)
 
     def _on_dev_time_changed(self, text: str) -> None:
         self._flag_invalid(self.dev_time_edit, bool(text.strip()) and parse_dev_time(text) is None)
@@ -607,15 +647,16 @@ class MetadataSidebar(BaseSidebar):
 
     def _on_gear_changed(self, *_args) -> None:
         sender = self.sender()
-        kwargs: dict = {}
         if sender is self.camera_combo:
-            kwargs["camera_id"] = self.camera_combo.selected_id()
+            combo, field = self.camera_combo, "camera_id"
         elif sender is self.lens_combo:
-            kwargs["lens_id"] = self.lens_combo.selected_id()
+            combo, field = self.lens_combo, "lens_id"
         elif sender is self.film_stock_combo:
-            kwargs["film_stock_id"] = self.film_stock_combo.selected_id()
+            combo, field = self.film_stock_combo, "film_stock_id"
         else:
             return
+        self._resolve_other_pick(combo)
+        kwargs: dict = {field: combo.selected_id()}
 
         new_meta = metadata_from_gear(
             self.state.config.metadata,
@@ -819,7 +860,6 @@ class MetadataSidebar(BaseSidebar):
 
         self.block_signals(True)
         try:
-            self.protect_check.setChecked(conf.protect_original_metadata)
             self._set_metadata_controls_enabled(not conf.protect_original_metadata)
             self._refresh_gear_combos()
 
