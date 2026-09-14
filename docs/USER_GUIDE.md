@@ -109,7 +109,7 @@ The **Library** section lists every **roll** you have imported: a named, openabl
 
 **+** (or the list's right-click menu) offers two actions:
 
-*   **Import Folder as a Roll…** — pick one folder; it becomes one roll and opens.
+*   **Import Folder as a Roll…** — pick one folder; it becomes one roll and opens. If its name matches a camera or film stock already in your Gear library (a word, or a run like "penf" for "Pen F"), Roll Settings opens pre-filled and ticked for the match — Apply to keep it, Cancel to skip it. Never guesses at gear you have not added.
 *   **Import Subfolders as Rolls…** — pick a parent folder, for example the one your scanner saves into; every folder directly inside it becomes its own roll in one pass, without opening any of them. One level only: a roll's own subfolders are not walked, so a deeper structure needs a second, more specific import.
 
 Either way NegPy reads the folder from disk and never creates, renames, moves or deletes anything in it: reorganize in Finder or Explorer, then re-import (or **↻**) to pick up the new arrangement. Every edit is stored against the image's content, so moving a file between folders keeps its edit, its history and its keep/reject mark.

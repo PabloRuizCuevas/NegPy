@@ -54,6 +54,7 @@ from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettings
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
 from negpy.services.assets import rolls
 from negpy.services.assets.gear import GearProfiles
+from negpy.services.assets.gear_match import match_gear_for_folder
 from negpy.services.assets.presets import is_valid_preset_name
 from negpy.infrastructure.filesystem.watcher import FolderWatchService
 from negpy.infrastructure.loaders.helpers import get_supported_raw_wildcards
@@ -795,6 +796,7 @@ class FileBrowser(QWidget):
 
     def _connect_signals(self) -> None:
         self.library_btn.clicked.connect(lambda: self.library_requested.emit(True))
+        self.library_tree.folder_roll_created.connect(self._maybe_suggest_gear)
         self.unload_btn.clicked.connect(self._on_unload_clicked)
         self.list_view.clicked.connect(self._on_item_clicked)
         self.list_view.doubleClicked.connect(self._on_item_double_clicked)
@@ -1306,15 +1308,21 @@ class FileBrowser(QWidget):
             self.session.sync_selected_settings(dlg.selected(), dlg.bounds_flags(), dlg.scope())
 
     def _open_roll_settings_dialog(self) -> None:
+        dlg = self._build_roll_settings_dialog()
+        if dlg is not None:
+            self._exec_roll_settings_dialog(dlg)
+
+    def _build_roll_settings_dialog(self) -> Optional[RollSettingsDialog]:
         state = self.session.state
         src = state.selected_file_idx
         if src == -1:
-            return
+            return None
         visible = self.session.asset_model.visible_actual_indices()
         sel_targets = len([i for i in set(state.selected_indices) if i != src and i in visible])
         roll_targets = len([i for i in visible if i != src])
+        return RollSettingsDialog(self, state.config, GearProfiles.load_library(), sel_count=sel_targets, roll_count=roll_targets)
 
-        dlg = RollSettingsDialog(self, state.config, GearProfiles.load_library(), sel_count=sel_targets, roll_count=roll_targets)
+    def _exec_roll_settings_dialog(self, dlg: RollSettingsDialog) -> None:
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         rows = dlg.selected_rows()
@@ -1322,6 +1330,20 @@ class FileBrowser(QWidget):
             return
         if self.controller.session.apply_preset_fields(dlg.selected_config(), rows, dlg.scope()):
             self.controller.request_render()
+
+    def _maybe_suggest_gear(self, folder_path: str) -> None:
+        """A folder just became a roll for the first time: offer Roll Settings pre-filled
+        from a folder-name match against the gear library, ticked but never applied
+        without the user pressing Apply."""
+        library = GearProfiles.load_library()
+        detected = match_gear_for_folder(folder_label(folder_path), library)
+        if not detected.any():
+            return
+        dlg = self._build_roll_settings_dialog()
+        if dlg is None:
+            return
+        dlg.apply_detected_gear(camera_id=detected.camera_id, film_stock_id=detected.film_stock_id)
+        self._exec_roll_settings_dialog(dlg)
 
     def _build_session_menu(self) -> QMenu:
         """Mirrors the panel toolbar's add/clear tools, for a right click on empty space."""

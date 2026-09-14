@@ -343,6 +343,49 @@ def test_open_roll_settings_dialog_noop_when_nothing_is_ticked(browser, session)
     session.apply_preset_fields.assert_not_called()
 
 
+def test_maybe_suggest_gear_opens_the_dialog_prefilled_when_something_matches(browser, session):
+    session.state.selected_file_idx = 0
+    session.apply_preset_fields = MagicMock(return_value=1)
+    detected = MagicMock(any=MagicMock(return_value=True), camera_id="cam1", film_stock_id="film1")
+    mock_dlg = MagicMock()
+    mock_dlg.exec.return_value = QDialog.DialogCode.Accepted
+    mock_dlg.selected_rows.return_value = [object()]
+    mock_dlg.selected_config.return_value = _edited_cfg()
+    mock_dlg.scope.return_value = "roll"
+    with (
+        patch("negpy.desktop.view.sidebar.files.match_gear_for_folder", return_value=detected),
+        patch("negpy.desktop.view.sidebar.files.RollSettingsDialog", return_value=mock_dlg),
+    ):
+        browser._maybe_suggest_gear("/library/08_penf_gold_marbella")
+
+    mock_dlg.apply_detected_gear.assert_called_once_with(camera_id="cam1", film_stock_id="film1")
+    browser.controller.request_render.assert_called_once()
+
+
+def test_maybe_suggest_gear_does_nothing_without_a_match(browser, session):
+    session.state.selected_file_idx = 0
+    detected = MagicMock(any=MagicMock(return_value=False))
+    with (
+        patch("negpy.desktop.view.sidebar.files.match_gear_for_folder", return_value=detected),
+        patch("negpy.desktop.view.sidebar.files.RollSettingsDialog") as ctor,
+    ):
+        browser._maybe_suggest_gear("/library/roll_a")
+
+    ctor.assert_not_called()
+
+
+def test_maybe_suggest_gear_noop_without_an_active_file(browser, session):
+    session.state.selected_file_idx = -1
+    detected = MagicMock(any=MagicMock(return_value=True), camera_id="cam1", film_stock_id="")
+    with (
+        patch("negpy.desktop.view.sidebar.files.match_gear_for_folder", return_value=detected),
+        patch("negpy.desktop.view.sidebar.files.RollSettingsDialog") as ctor,
+    ):
+        browser._maybe_suggest_gear("/library/roll_a")
+
+    ctor.assert_not_called()
+
+
 def test_context_menu_paste_disabled_without_clipboard(browser, session):
     session.state.clipboard = None
     paste = next(a for a in browser._build_context_menu().actions() if a.text().startswith("Paste"))
