@@ -115,10 +115,10 @@ class ThemeConfig:
     mode_e6: str = "#4FB0D8"
 
     # Library tree roll-kind icons: a folder roll shares the C-41 chip's amber; a virtual
-    # roll (built from a search or hand-picked set, no folder behind it) gets its own,
-    # distinct shade of red -- not accent_primary or error, which both carry their own
-    # meaning already.
-    roll_virtual: str = "#A85A50"
+    # roll (built from a search or hand-picked set, no folder behind it) shares
+    # channel_red_text's coral -- vivid rather than accent_primary/error's darker,
+    # more saturated reds, which both carry their own meaning already.
+    roll_virtual: str = "#FF5A5A"
 
     # Canvas background swatches
     canvas_bg_black: str = "#050505"

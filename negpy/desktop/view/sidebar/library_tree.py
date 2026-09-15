@@ -89,6 +89,10 @@ class LibraryTree(QWidget):
         self.tree.setColumnCount(2)
         self.tree.setHeaderHidden(True)
         self.tree.setUniformRowHeights(True)
+        # Every roll is a top-level item, never a child -- the branch/twisty gutter Qt
+        # reserves by default has nothing to show and only pushes the icon right.
+        self.tree.setRootIsDecorated(False)
+        self.tree.setIndentation(0)
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.header().setStretchLastSection(False)

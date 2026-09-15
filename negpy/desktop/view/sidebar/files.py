@@ -571,6 +571,7 @@ class FileBrowser(QWidget):
 
         for widget, label in (
             (self.new_roll_btn, "New Roll…"),
+            (self.save_roll_btn, "Save as Roll…"),
             (None, None),
             (self.add_btn, "Add"),
             (None, None),
@@ -581,7 +582,6 @@ class FileBrowser(QWidget):
             (self.half_frame_menu_btn, "Half Frame actions"),
             (self.apply_btn, "Apply settings"),
             (self.roll_settings_btn, "Roll Settings"),
-            (self.save_roll_btn, "Save as Roll…"),
             (None, None),
             (self.unload_btn, "Unload…"),
             (self.sheet_btn, "Sheet filter"),
