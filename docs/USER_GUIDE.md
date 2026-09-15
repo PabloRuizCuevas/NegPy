@@ -967,14 +967,19 @@ When you set capture gear, it is written to standard EXIF, and the digitizing ri
 
 ## 13. Gear tab
 
-A searchable, user-extendable library of cameras, lenses, film stocks, development processes, scan setups and metadata presets, shared by Metadata (§12), Roll Settings and every other picker in the app that offers gear. The list defaults to gear you have added yourself; a built-in reference catalog of common cameras, lenses, film stocks, processes and scan setups is available alongside it, without cluttering the list. Your own gear saves to `~/NegPy/gear/`.
+A searchable, user-extendable library shared by Metadata (§12), Roll Settings and every other picker in the app that offers gear, split into two subtabs: **Items** for physical gear, **Presets** for saved metadata field sets. Presets have no bundled/personal split to browse, so the Catalog toggle lives on Items only.
 
-**Category** picks what the list below shows: **Cameras**, **Lenses**, **Film Stocks**, **Process**, **Scanning** or **Presets**. A Process entry is a development recipe (developer, dilution, push/pull, time and temperature); a Scanning entry is a digitizing setup. An empty category reads "You haven't added any…yet" rather than showing a blank list.
+**Items** holds cameras, lenses, film stocks, development processes and scan setups. **Category** picks what the list below shows: **Cameras**, **Lenses**, **Film Stocks**, **Process** or **Scanning**. A Process entry is a development recipe (developer, dilution, push/pull, time and temperature); a Scanning entry is a digitizing setup. The list defaults to gear you have added yourself; a built-in reference catalog of common cameras, lenses, film stocks, processes and scan setups is available alongside it, without cluttering the list. Your own gear saves to `~/NegPy/gear/`. An empty category reads "You haven't added any…yet" rather than showing a blank list.
 
-*   **+**: for Cameras, Lenses, Film Stocks, Process and Scanning, pick the one you own from the built-in catalog — it copies into your own list, editable from there — or **Add Custom** to enter one by hand. On Presets, **+** stores the current frame's metadata under a name you pick.
+*   **+**: pick the one you own from the built-in catalog — it copies into your own list, editable from there — or **Add Custom** to enter one by hand.
 *   **Catalog**: show the built-in reference models alongside your own, for browsing the full list. Off by default.
-*   **pen**: Presets only — rename a preset or change which fields it stores.
 *   **copy / trash**: duplicate or delete the selected item. Trash is disabled on a built-in catalog entry, since it is reference data, not yours to remove; duplicate still copies it into your own list.
+
+**Presets** holds saved metadata field sets.
+
+*   **+** stores the current frame's metadata under a name you pick.
+*   **pen**: rename a preset or change which fields it stores.
+*   **copy / trash**: duplicate or delete the selected preset.
 *   The fields of a preset are then editable in place: swap its camera, lens, film stock, saved process or saved setup, or retype a developer, dilution, push, time, temperature, scanning note, roll or exposure. No frame needs to be open. Each of these searches your own gear by default, with **Other…** for the full catalog, same as the Metadata tab (§12). Picking from the library refills everything read from it; typing over a filled value unlinks the pick. A stored capture date, place, description-field set or flag is shown but not editable here, being a per-frame decision. **Notes** is free text.
 
 ---

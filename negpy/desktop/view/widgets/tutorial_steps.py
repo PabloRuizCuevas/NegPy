@@ -104,7 +104,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
         return w.right_panel.metadata_sidebar
 
     def _gear_library(w: "MainWindow") -> Optional[QWidget]:
-        return w.right_panel.gear_panel.category_list
+        return w.right_panel.gear_panel.items.category_list
 
     def _narrowband(w: "MainWindow") -> Optional[QWidget]:
         return w.controls_panel.sensor_sidebar.narrowband_scan_btn
