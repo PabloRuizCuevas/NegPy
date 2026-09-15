@@ -9,15 +9,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import sys
 
 from dataclasses import replace
+from unittest.mock import patch
 
 import piexif
 import pytest
-from PyQt6.QtWidgets import QApplication, QCheckBox, QLabel
+from PyQt6.QtWidgets import QApplication, QLabel, QScrollArea
 
 from conftest import FakeController
 from negpy.desktop.view.sidebar import metadata as metadata_module
 from negpy.desktop.view.sidebar.metadata import MetadataSidebar
-from negpy.features.metadata.gear_models import GearLibrary
+from negpy.features.metadata.gear_models import Camera, GearLibrary
 
 if not QApplication.instance():
     _app = QApplication(sys.argv)
@@ -34,6 +35,68 @@ def sidebar(monkeypatch) -> MetadataSidebar:
 def _set_metadata(sidebar: MetadataSidebar, **changes) -> None:
     state = sidebar.state
     state.config = replace(state.config, metadata=replace(state.config.metadata, **changes))
+
+
+@pytest.fixture
+def gear_sidebar(monkeypatch) -> MetadataSidebar:
+    library = GearLibrary(
+        cameras=[
+            Camera(id="cam-bundled", make="Leica", model="M6", is_bundled=True),
+            Camera(id="cam-mine", make="Pentax", model="K1000", is_bundled=False),
+        ]
+    )
+    monkeypatch.setattr(metadata_module.GearProfiles, "load_library", staticmethod(lambda: library))
+    monkeypatch.setattr(metadata_module.GearProfiles, "save_library", staticmethod(lambda _lib: None))
+    controller = FakeController()
+    controller.session.update_config = lambda config, **_kwargs: setattr(controller.state, "config", config)
+    return MetadataSidebar(controller)
+
+
+class TestGearCombos:
+    def test_camera_combo_defaults_to_personal_gear_only(self, gear_sidebar: MetadataSidebar) -> None:
+        ids = {item_id for _label, item_id, _search in gear_sidebar.camera_combo._entries}
+        assert ids == {"cam-mine", metadata_module.OTHER_ID}
+
+    def test_a_bundled_selection_made_before_the_filter_stays_visible(self, monkeypatch) -> None:
+        library = GearLibrary(cameras=[Camera(id="cam-bundled", make="Leica", model="M6", is_bundled=True)])
+        monkeypatch.setattr(metadata_module.GearProfiles, "load_library", staticmethod(lambda: library))
+        controller = FakeController()
+        controller.session.update_config = lambda config, **_kwargs: setattr(controller.state, "config", config)
+        controller.state.config = replace(
+            controller.state.config, metadata=replace(controller.state.config.metadata, camera_id="cam-bundled")
+        )
+        sidebar = MetadataSidebar(controller)
+        assert sidebar.camera_combo.selected_id() == "cam-bundled"
+        assert sidebar.camera_combo.line_edit().text() == "Leica M6"
+
+    def test_other_pick_clones_the_catalog_camera_into_personal_gear(self, gear_sidebar: MetadataSidebar) -> None:
+        cloned = Camera(id="cam-cloned", make="Leica", model="M6", is_bundled=False)
+        with patch.object(metadata_module, "resolve_other_gear_pick", return_value=cloned):
+            gear_sidebar.camera_combo._commit_id(metadata_module.OTHER_ID)
+
+        new_id = gear_sidebar.state.config.metadata.camera_id
+        assert new_id == "cam-cloned"
+        assert gear_sidebar.camera_combo.selected_id() == new_id
+        assert gear_sidebar.camera_combo.line_edit().text() == "Leica M6"
+
+    def test_other_pick_add_custom_starts_a_blank_personal_camera(self, gear_sidebar: MetadataSidebar) -> None:
+        custom = Camera(id="cam-custom", display_name="New Camera")
+        with patch.object(metadata_module, "resolve_other_gear_pick", return_value=custom):
+            gear_sidebar.camera_combo._commit_id(metadata_module.OTHER_ID)
+
+        new_id = gear_sidebar.state.config.metadata.camera_id
+        assert new_id == "cam-custom"
+        assert gear_sidebar.camera_combo.line_edit().text() == "New Camera"
+
+    def test_other_pick_cancelled_reverts_to_the_previous_selection(self, gear_sidebar: MetadataSidebar) -> None:
+        _set_metadata(gear_sidebar, camera_id="cam-mine")
+        gear_sidebar.sync_ui()
+
+        with patch.object(metadata_module, "resolve_other_gear_pick", return_value=None):
+            gear_sidebar.camera_combo._commit_id(metadata_module.OTHER_ID)
+
+        assert gear_sidebar.camera_combo.selected_id() == "cam-mine"
+        assert gear_sidebar.state.config.metadata.camera_id == "cam-mine"
 
 
 class TestCaptureDate:
@@ -172,24 +235,39 @@ class TestSourceGpsPrefill:
         assert seen["center"] is None
 
 
-class TestSyncCheckbox:
-    def test_sits_at_the_top_beside_protect_and_not_inside_a_card(self, sidebar: MetadataSidebar) -> None:
-        order = [sidebar.layout.indexOf(w) for w in (sidebar.protect_check, sidebar.sync_check)]
+class TestTabIdentity:
+    def test_header_and_scope_hint_lead_the_panel(self, sidebar: MetadataSidebar) -> None:
+        order = [sidebar.layout.indexOf(w) for w in (sidebar.metadata_title_label, sidebar.metadata_scope_hint)]
         assert -1 not in order
-        assert order[0] < order[1] < sidebar.layout.indexOf(sidebar._metadata_controls)
-        assert sidebar._metadata_controls.findChildren(QCheckBox).count(sidebar.sync_check) == 0
+        assert order[0] < order[1]
 
-    def test_protect_disables_it(self, sidebar: MetadataSidebar) -> None:
-        """Protect mode ignores the panel's fields, so syncing them would mean nothing."""
-        sidebar._on_protect_toggled(True)
-        assert sidebar.sync_check.isEnabled() is False
-        sidebar._on_protect_toggled(False)
-        assert sidebar.sync_check.isEnabled() is True
 
-    def test_toggle_persists(self, sidebar: MetadataSidebar) -> None:
-        sidebar.sync_check.setChecked(True)
-        sidebar._persist_all_metadata_settings()
-        assert sidebar.state.config.metadata.sync_to_batch is True
+class TestPreviewPinning:
+    """The Preview stays visible above the per-frame cards, which scroll on their own."""
+
+    def test_preview_is_pinned_above_the_scrolling_cards(self, sidebar: MetadataSidebar) -> None:
+        assert sidebar.layout.indexOf(sidebar.preview_section) != -1
+        assert sidebar.layout.indexOf(sidebar._metadata_controls) == -1
+        assert isinstance(sidebar._metadata_scroll_area, QScrollArea)
+        assert sidebar._metadata_scroll_area.widget() is sidebar._metadata_controls
+        assert sidebar.layout.indexOf(sidebar.preview_section) < sidebar.layout.indexOf(sidebar._metadata_scroll_area)
+
+
+class TestProtectGating:
+    """Protect Original Metadata is a checkbox on the Export tab, not here (it is an
+    export-time behavior, not metadata content), but this tab's own fields still
+    disable under it through the ordinary config sync."""
+
+    def test_protect_disables_this_tabs_fields(self, sidebar: MetadataSidebar) -> None:
+        assert sidebar._metadata_controls.isEnabled() is True
+
+        _set_metadata(sidebar, protect_original_metadata=True)
+        sidebar.sync_ui()
+        assert sidebar._metadata_controls.isEnabled() is False
+
+        _set_metadata(sidebar, protect_original_metadata=False)
+        sidebar.sync_ui()
+        assert sidebar._metadata_controls.isEnabled() is True
 
 
 class TestPlaceButtons:
