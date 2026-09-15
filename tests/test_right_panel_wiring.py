@@ -1,5 +1,5 @@
-"""Signal wiring of the right panel's analysis refresh, and the outer Edit / Metadata /
-Gear / Export / Scan tab switch.
+"""Signal wiring of the right panel's analysis refresh, and the outer Frame / Roll /
+Metadata / Gear / Export / Scan tab switch.
 
 _paint_negative_peek emits image_updated only, never metrics_available, so the
 image_updated path must refresh the histograms itself or entering Peek Negative
@@ -42,11 +42,11 @@ def test_update_analysis_skips_mid_gesture_frames() -> None:
     panel._update_histograms.assert_not_called()
 
 
-def _group_panel_stub(*, scan_index: int = 4, active_group: int = 0, n_groups: int = 5) -> MagicMock:
+def _group_panel_stub(*, scan_index: int = 5, active_group: int = 0, n_groups: int = 6) -> MagicMock:
     panel = MagicMock()
     panel._group_buttons = [MagicMock() for _ in range(n_groups)]
-    panel._group_icons = ["fa5s.sliders-h", "fa5s.tags", "fa5s.toolbox", "fa5s.file-export", "fa5s.camera-retro"][:n_groups]
-    panel._group_keys = ["edit", "metadata", "gear", "export", "scan"][:n_groups]
+    panel._group_icons = ["fa5s.image", "mdi6.film", "fa5s.tags", "fa5s.toolbox", "fa5s.file-export", "fa5s.camera-retro"][:n_groups]
+    panel._group_keys = ["frame", "roll", "metadata", "gear", "export", "scan"][:n_groups]
     panel._scan_group_index = scan_index
     panel._active_group = active_group
     return panel
@@ -66,30 +66,30 @@ def test_switch_group_persists_the_index_and_updates_the_stack():
 
 
 def test_switch_group_activates_scan_sidebars_only_on_the_scan_tab():
-    panel = _group_panel_stub(scan_index=4)
+    panel = _group_panel_stub(scan_index=5)
 
     RightPanel._switch_group(panel, 0)
     panel.scan_sidebar.on_activated.assert_not_called()
     panel.scanlight_sidebar.on_activated.assert_not_called()
 
-    RightPanel._switch_group(panel, 4)
+    RightPanel._switch_group(panel, 5)
     panel.scan_sidebar.on_activated.assert_called_once_with()
     panel.scanlight_sidebar.on_activated.assert_called_once_with()
 
 
 def test_show_tab_by_key_dispatches_to_a_group_tab():
     panel = _group_panel_stub()
-    panel._tab_keys = ["setup", "geometry"]
+    panel._tab_keys = ["favourites", "geometry"]
 
     RightPanel.show_tab_by_key(panel, "metadata")
 
-    panel._switch_group.assert_called_once_with(1)
+    panel._switch_group.assert_called_once_with(2)
     panel._switch_tab.assert_not_called()
 
 
-def test_show_tab_by_key_dispatches_to_an_edit_tab():
+def test_show_tab_by_key_dispatches_to_a_frame_tab():
     panel = _group_panel_stub()
-    panel._tab_keys = ["setup", "geometry"]
+    panel._tab_keys = ["favourites", "geometry"]
 
     RightPanel.show_tab_by_key(panel, "geometry")
 
@@ -99,7 +99,7 @@ def test_show_tab_by_key_dispatches_to_an_edit_tab():
 
 def test_show_tab_by_key_ignores_an_unknown_key():
     panel = _group_panel_stub()
-    panel._tab_keys = ["setup", "geometry"]
+    panel._tab_keys = ["favourites", "geometry"]
 
     RightPanel.show_tab_by_key(panel, "not-a-real-tab")
 
@@ -107,7 +107,7 @@ def test_show_tab_by_key_ignores_an_unknown_key():
     panel._switch_tab.assert_not_called()
 
 
-def test_reveal_section_switches_to_edit_then_the_section_tab():
+def test_reveal_section_switches_to_frame_then_the_section_tab():
     panel = _group_panel_stub()
     panel._section_tab_index = {"retouch_section": 3}
 
@@ -115,6 +115,18 @@ def test_reveal_section_switches_to_edit_then_the_section_tab():
 
     panel._switch_group.assert_called_once_with(0)
     panel._switch_tab.assert_called_once_with(3)
+
+
+def test_reveal_section_switches_to_roll_for_a_roll_section():
+    """sensor_section (Calibration) lives on the Roll tab, not as a Frame sub-tab --
+    switching group is the whole job, since Roll has no inner switcher to land on."""
+    panel = _group_panel_stub()
+    panel._section_tab_index = {}
+
+    RightPanel.reveal_section(panel, "sensor_section")
+
+    panel._switch_group.assert_called_once_with(1)
+    panel._switch_tab.assert_not_called()
 
 
 def test_reveal_section_ignores_an_unknown_section():

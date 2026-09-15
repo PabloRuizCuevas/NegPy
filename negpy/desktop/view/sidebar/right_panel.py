@@ -27,17 +27,25 @@ from negpy.desktop.view.widgets.gear_library_panel import GearLibraryPanel
 from negpy.desktop.view.widgets.stats import DensitometerRow, NegativeStatsWidget, ZonePlacementRows
 from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 
+# ControlsPanel sections built into the Roll tab (_build_roll_page), not a Frame sub-tab --
+# reveal_section routes these to the Roll group instead of Frame's inner tab switcher.
+_ROLL_SECTION_ATTRS = frozenset({"sensor_section", "demosaic_section", "roll_section", "process_section"})
+
 
 class RightPanel(QWidget):
     """
-    Right sidebar panel ("Edit" dock): a flat tab switcher across Edit / Metadata /
-    Gear / Export / Scan. Edit holds a sticky Analysis section pinned above the
-    workflow control groups (Setup / Geometry / Tone / Color / Finish), Favorites
-    and History -- every tab that changes what the canvas shows. Metadata pins its
-    own Preview above its per-frame cards the same way. Gear pins its own Items/Presets
-    switcher the same way; Export and Scan are plain pages, with no pinned section.
-    Export sits after Gear, not Scan: every roll ends with an export, but few ever
-    touch Scan at all -- it captures new film, not something already in the session.
+    Right sidebar panel: a flat tab switcher across Frame / Roll / Metadata / Gear /
+    Export / Scan. Frame holds a sticky Analysis section pinned above the per-image
+    workflow control groups (Geometry / Tone / Color / Finish), Favorites and History
+    -- every tab that changes what the canvas shows for the one loaded frame. Roll
+    holds what the whole roll shares instead: Calibration and Demosaic decide how the
+    rig's files decode, Roll Analysis and Normalization set one shared exposure
+    baseline, Presets stores reusable field sets -- none of it is a per-frame edit.
+    Metadata pins its own Preview above its per-frame cards the same way Frame pins
+    Analysis. Gear pins its own Items/Presets switcher the same way; Export and Scan
+    are plain pages, with no pinned section. Export sits after Gear, not Scan: every
+    roll ends with an export, but few ever touch Scan at all -- it captures new film,
+    not something already in the session.
     """
 
     def __init__(self, controller: AppController):
@@ -60,7 +68,8 @@ class RightPanel(QWidget):
             scroll.setWidget(widget)
             return scroll
 
-        edit_page = self._build_edit_page(wrap_scroll)
+        frame_page = self._build_frame_page(wrap_scroll)
+        roll_page = self._build_roll_page()
 
         self.export_sidebar = ExportSidebar(self.controller)
         self.metadata_sidebar = MetadataSidebar(self.controller)
@@ -77,7 +86,8 @@ class RightPanel(QWidget):
 
         # (key, icon_name, tooltip, content_widget)
         group_specs = [
-            ("edit", "fa5s.sliders-h", "Edit", edit_page),
+            ("frame", "fa5s.image", "Frame", frame_page),
+            ("roll", "mdi6.film", "Roll", roll_page),
             ("metadata", "fa5s.tags", "Metadata", self.metadata_sidebar),
             ("gear", "fa5s.toolbox", "Gear", self.gear_panel),
             ("export", "fa5s.file-export", "Export", self.export_sidebar),
@@ -107,10 +117,10 @@ class RightPanel(QWidget):
             btn.clicked.connect(lambda _checked=False, idx=i: self._switch_group(idx))
             self.group_switcher.add_button(btn, tooltip)
 
-            # Edit, Metadata and Gear manage their own scrolling (a pinned section or subtab
+            # Frame, Metadata and Gear manage their own scrolling (a pinned section or subtab
             # switcher above a scroll area); the other pages are one control column each, so
             # the page itself needs it.
-            page = content if key in ("edit", "metadata", "gear") else wrap_scroll(content)
+            page = content if key in ("frame", "metadata", "gear") else wrap_scroll(content)
             self.group_stack.addWidget(page)
             self._group_buttons.append(btn)
             self._group_keys.append(key)
@@ -128,10 +138,10 @@ class RightPanel(QWidget):
         saved_group = repo.get_global_setting("right_panel_group", 0)
         self._switch_group(saved_group if isinstance(saved_group, int) and 0 <= saved_group < len(self._group_buttons) else 0)
 
-    def _build_edit_page(self, wrap_scroll) -> QWidget:
+    def _build_frame_page(self, wrap_scroll) -> QWidget:
         """Sticky Analysis section pinned above a second, inner tab switcher for the
-        workflow control groups, Favorites and History -- everything that changes what
-        the canvas shows."""
+        per-image workflow control groups, Favorites and History -- everything that
+        changes what the canvas shows for the one loaded frame."""
         page = QWidget()
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
@@ -257,8 +267,24 @@ class RightPanel(QWidget):
 
         return page
 
+    def _build_roll_page(self) -> QWidget:
+        """Facts the whole roll shares, not one frame's own edit: what rig scanned it and
+        how (Calibration, Demosaic), the roll's shared exposure baseline (Roll Analysis,
+        Normalization), and reusable edit presets. Film mode leads, same as it always has,
+        since it decides which of the others even apply."""
+        cp = self.controls_panel
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(8)
+        page_layout.addWidget(cp.process_sidebar.mode_bar)
+        for section in (cp.sensor_section, cp.demosaic_section, cp.roll_section, cp.process_section, cp.presets_section):
+            page_layout.addWidget(section)
+        page_layout.addStretch(1)
+        return page
+
     def _build_scan_page(self) -> QWidget:
-        """The 'Scan' tab hosts two collapsible sections (like Edit's Color tab): the
+        """The 'Scan' tab hosts two collapsible sections (like Frame's Color tab): the
         SANE flatbed/film scanner on top, the RGB-Scan trichromatic capture below."""
         repo = self.controller.session.repo
         self.scan_sane_section = make_section(repo, "Film Scanner", "scan_sane", self.scan_sidebar, "fa5s.camera-retro", False)
@@ -381,9 +407,12 @@ class RightPanel(QWidget):
 
     def reveal_section(self, section_attr: str) -> None:
         """Switch to the tab containing the given ControlsPanel section."""
+        if section_attr in _ROLL_SECTION_ATTRS:
+            self._switch_group(self._group_keys.index("roll"))
+            return
         idx = self._section_tab_index.get(section_attr)
         if idx is not None:
-            self._switch_group(self._group_keys.index("edit"))
+            self._switch_group(self._group_keys.index("frame"))
             self._switch_tab(idx)
 
     def show_tab_by_key(self, key: str) -> None:
@@ -391,7 +420,7 @@ class RightPanel(QWidget):
             self._switch_group(self._group_keys.index(key))
             return
         if key in self._tab_keys:
-            self._switch_group(self._group_keys.index("edit"))
+            self._switch_group(self._group_keys.index("frame"))
             self._switch_tab(self._tab_keys.index(key))
 
     def show_gear_subtab_by_key(self, key: str) -> None:

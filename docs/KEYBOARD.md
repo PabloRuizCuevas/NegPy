@@ -147,7 +147,7 @@ Actions with no default key are not listed; every one of them can still be bound
 ## Tabs
 | Key | Action |
 |-----|--------|
-| `Ctrl + 1` | Setup tab |
+| `Ctrl + 1` | Roll tab |
 | `Ctrl + 2` | Geometry tab |
 | `Ctrl + 3` | Tone tab |
 | `Ctrl + 4` | Lab & Toning tab |
