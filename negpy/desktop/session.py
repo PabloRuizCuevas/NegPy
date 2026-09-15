@@ -16,6 +16,7 @@ from negpy.desktop.sticky import (
     load_sticky_config,
     load_sticky_rows,
     migrate_legacy,
+    migrate_legacy_export_destination,
     sticky_snapshot,
 )
 from negpy.desktop.view.canvas.crop_guides import CropGuide
@@ -638,6 +639,7 @@ class DesktopSessionManager(QObject):
         # is_dirty initialised to False via AppState default
 
         migrate_legacy(self.repo)
+        migrate_legacy_export_destination(self.repo)
 
         # Load global hardware settings
         saved_gpu = self.repo.get_global_setting("gpu_enabled")
