@@ -183,7 +183,7 @@ class LibraryTree(QWidget):
         is_folder = entry.get("kind") == "folder"
         item = QTreeWidgetItem([entry.get("name", ""), summarize_counts(self._frame_count(entry), 0)])
         item.setData(0, _ROLL_ID_ROLE, roll_id)
-        item.setIcon(0, qta.icon("fa5s.folder", color=THEME.channel_green if is_folder else THEME.channel_blue))
+        item.setIcon(0, qta.icon("fa5s.folder", color=THEME.mode_c41 if is_folder else THEME.roll_virtual))
         item.setForeground(1, QColor(THEME.text_muted))
         item.setToolTip(0, entry.get("folder_path", "") if is_folder else "Built from a search or a hand-picked set of frames")
         return item

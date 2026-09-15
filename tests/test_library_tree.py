@@ -56,7 +56,7 @@ def test_folder_and_virtual_rolls_appear_together_sorted_by_name(widget, tree_di
     assert not widget.empty_label.isVisibleTo(widget)
 
 
-def test_a_folder_roll_shows_a_green_icon_and_its_live_count(widget, tree_dirs, monkeypatch):
+def test_a_folder_roll_shows_an_amber_icon_and_its_live_count(widget, tree_dirs, monkeypatch):
     recognize_folder(widget.repo, str(tree_dirs / "roll_a"))
     colors = []
     monkeypatch.setattr(
@@ -66,11 +66,11 @@ def test_a_folder_roll_shows_a_green_icon_and_its_live_count(widget, tree_dirs, 
 
     widget.reload()
 
-    assert colors == [THEME.channel_green]
+    assert colors == [THEME.mode_c41]
     assert widget.tree.topLevelItem(0).text(1) == "2 photos"
 
 
-def test_a_virtual_roll_shows_a_blue_icon_and_its_member_count(widget, monkeypatch):
+def test_a_virtual_roll_shows_a_red_icon_and_its_member_count(widget, monkeypatch):
     create_virtual_roll(widget.repo, "Portra", ["/a.nef", "/b.nef"])
     colors = []
     monkeypatch.setattr(
@@ -80,7 +80,7 @@ def test_a_virtual_roll_shows_a_blue_icon_and_its_member_count(widget, monkeypat
 
     widget.reload()
 
-    assert colors == [THEME.channel_blue]
+    assert colors == [THEME.roll_virtual]
     assert widget.tree.topLevelItem(0).text(1) == "2 photos"
 
 

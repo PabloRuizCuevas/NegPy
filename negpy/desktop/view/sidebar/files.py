@@ -496,7 +496,7 @@ class FileBrowser(QWidget):
         self.roll_settings_btn.clicked.connect(self._open_roll_settings_dialog)
 
         self.save_roll_btn = QToolButton()
-        self.save_roll_btn.setIcon(qta.icon("fa5s.folder", color=THEME.channel_blue))
+        self.save_roll_btn.setIcon(qta.icon("fa5s.folder", color=THEME.roll_virtual))
         self.save_roll_btn.setToolTip("Save these frames as a roll — a named, reopenable group, not tied to a folder")
         self.save_roll_btn.clicked.connect(self._on_save_roll_clicked)
 

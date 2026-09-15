@@ -116,7 +116,7 @@ Right-click a roll for **Rename…** and **Delete…**. Deleting only forgets th
 
 #### Rolls that are not folders
 
-A roll does not have to be a folder, and the same photo can belong to more than one roll at once: a folder roll's icon is **green**, one built from a search or a hand-picked set of frames is **blue**. Search the library (the filter box's magnifier-over-folder button) or otherwise assemble a set of frames, then **Save as Roll…** in the Film Strip's row names and keeps it, right alongside your folder rolls. It is a fixed set of frames, not a live search: adding to it later means reopening it and using Save as Roll again, or adding to the session while it is the one loaded. Edits are unaffected either way — a frame's edit is its own, the same wherever it is opened from.
+A roll does not have to be a folder, and the same photo can belong to more than one roll at once: a folder roll's icon is **amber**, one built from a search or a hand-picked set of frames is **red**. Search the library (the filter box's magnifier-over-folder button) or otherwise assemble a set of frames, then **Save as Roll…** in the Film Strip's row names and keeps it, right alongside your folder rolls. It is a fixed set of frames, not a live search: adding to it later means reopening it and using Save as Roll again, or adding to the session while it is the one loaded. Edits are unaffected either way — a frame's edit is its own, the same wherever it is opened from.
 
 ### Importing and managing files
 
@@ -139,7 +139,7 @@ The Film Strip section has its own row of buttons above the frames, for actions 
     Half Frame does not apply to a frame assembled from more than one file: a Trichrome triplet, a stitch, or an HDR merge. Those are never split, and they never come back as a diptych, even when the file they are built around was worked on as two halves earlier.
 *   **Apply (clone)**: copy the current frame's settings to selected frames or the whole roll. You choose which aspects in a dialog; crop and rotation are always per-image.
 *   **Roll Settings** (tag icon): tag gear, capture, place, process and scanning metadata for the current frame, a selection or the whole roll in one dialog. Fields start filled from the active frame; type or pick new values directly, or **Load** a metadata preset to fill and tick its fields, then tick which groups to write. Defaults to the whole roll when one is loaded.
-*   **Save as Roll…** (blue folder icon): name and keep the frames currently loaded as a roll, whether or not they came from a folder. See [Rolls that are not folders](#rolls-that-are-not-folders).
+*   **Save as Roll…** (red folder icon): name and keep the frames currently loaded as a roll, whether or not they came from a folder. See [Rolls that are not folders](#rolls-that-are-not-folders).
 *   **Unload…**: drop the active frame, or the whole selection when more than one is selected. Never the rest of the roll — for that, see *Clear All…* below.
 *   **Sheet filter** (funnel): show *All Frames*, *Keepers Only*, or *Hide Rejected*. The choice is remembered between sessions and applies to every roll you open.
 
