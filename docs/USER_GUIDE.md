@@ -71,6 +71,8 @@ Open a frame you have not edited and it does not start from bare defaults: the s
 
 **Preferences → Session & Storage → Persistent Settings…** changes that list. Every setting the copy/paste picker knows is there, grouped by panel; tick one to make it carry, untick one to stop it. Tick the whole group from its header checkbox. Values shown are the ones from your last saved edit, so the list reads as what would actually carry.
 
+The **Carry settings between frames** checkbox next to that button is the master switch: unticked, a new frame gets bare defaults regardless of your ticks, which stay saved for when you turn it back on.
+
 A frame you have already edited keeps its own look whatever you tick, since only export and metadata settings reach it. **Reset Settings** on a frame ignores this list and returns it to bare defaults.
 
 ### Menu bar (macOS)
@@ -923,9 +925,11 @@ Gear travels as one unit: camera, lens, film stock, the film format and every ot
 <!-- panel:metadata_gear -->
 ### Analog Gear
 
-Searchable; type in any field to filter the library.
+Searches the gear you've declared as your own (§13); pick **Other…** for the full built-in catalog.
 
-*   **Camera / Lens / Film stock**: pick from your library. Empty means not set. **Clear** empties all three.
+*   **Camera / Lens / Film stock**: pick from your library. Empty means not set.
+*   **Clear**: empties all three.
+*   **Infer from folder name**: fills whichever of camera and film stock is not already set, by matching the roll's folder name against your own gear — the same match Roll Settings offers on import. Needs a folder: the active folder roll's own folder, or the current frame's containing directory with no roll active.
 
 <!-- panel:metadata_capture -->
 ### Capture

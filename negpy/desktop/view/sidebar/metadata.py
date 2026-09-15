@@ -62,6 +62,7 @@ from negpy.features.metadata.models import (
 )
 from negpy.features.metadata.payload import build_metadata_payload
 from negpy.services.assets.gear import GearProfiles
+from negpy.services.assets.gear_match import folder_name_for_active_context, match_gear_for_folder
 from negpy.services.assets.presets import MetadataPresets
 
 PUSH_PULL_OPTIONS = [PUSH_PULL_LABELS[v] for v in PUSH_PULL_VALUES]
@@ -143,8 +144,17 @@ class MetadataSidebar(BaseSidebar):
         self.film_stock_combo.setToolTip("Film stock used for the original capture. Click and type to search.")
         gear.addWidget(self.film_stock_combo)
 
+        gear_actions_row = QHBoxLayout()
+        gear_actions_row.setSpacing(THEME.space_sm)
         self.gear_clear_btn = self._labeled_action("", "Clear", "Empty camera, lens and film stock")
-        gear.addWidget(self.gear_clear_btn)
+        gear_actions_row.addWidget(self.gear_clear_btn)
+        self.gear_infer_btn = self._labeled_action(
+            "fa5s.magic",
+            "Infer from folder name",
+            "Fill camera and film stock by matching this roll's folder name against your own gear",
+        )
+        gear_actions_row.addWidget(self.gear_infer_btn)
+        gear.addLayout(gear_actions_row)
         controls.addWidget(self._card("Analog Gear", "gear", gear_body, "fa5s.camera-retro"))
 
         # ── CAPTURE ──────────────────────────────────────────────────────
@@ -411,6 +421,7 @@ class MetadataSidebar(BaseSidebar):
     def _connect_signals(self) -> None:
         self.description_fields_btn.clicked.connect(self._open_description_fields)
         self.gear_clear_btn.clicked.connect(self._on_gear_clear)
+        self.gear_infer_btn.clicked.connect(self._on_gear_infer_from_folder)
         self.process_clear_btn.clicked.connect(self._on_process_clear)
         self.scan_clear_btn.clicked.connect(self._on_scanning_clear)
         self.camera_combo.selection_changed.connect(self._on_gear_changed)
@@ -598,6 +609,26 @@ class MetadataSidebar(BaseSidebar):
             film="",
         )
         self._apply_metadata_config(cleared)
+
+    def _on_gear_infer_from_folder(self) -> None:
+        """Matches the active roll's folder name (or the current frame's own folder,
+        with no roll active) against the user's own gear -- fills whichever of camera
+        and film stock is not already set, same match Roll Settings offers on import."""
+        folder_name = folder_name_for_active_context(self.state, self.controller.session.repo)
+        if not folder_name:
+            self.controller.set_status("No folder to infer gear from", 2000, kind="warning")
+            return
+        detected = match_gear_for_folder(folder_name, self._gear_library)
+        meta = self.state.config.metadata
+        kwargs = {}
+        if not meta.camera_id and detected.camera_id:
+            kwargs["camera_id"] = detected.camera_id
+        if not meta.film_stock_id and detected.film_stock_id:
+            kwargs["film_stock_id"] = detected.film_stock_id
+        if not kwargs:
+            self.controller.set_status(f"Nothing in “{folder_name}” matches your gear", 2000, kind="warning")
+            return
+        self._apply_metadata_config(metadata_from_gear(meta, self._gear_library, **kwargs))
 
     def _clear_fields(self, fields: tuple[str, ...]) -> None:
         defaults = MetadataConfig()

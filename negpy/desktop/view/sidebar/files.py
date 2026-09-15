@@ -54,7 +54,7 @@ from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettings
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
 from negpy.services.assets import rolls
 from negpy.services.assets.gear import GearProfiles
-from negpy.services.assets.gear_match import GearMatch, match_gear_for_folder
+from negpy.services.assets.gear_match import GearMatch, folder_name_for_active_context, match_gear_for_folder
 from negpy.services.assets.presets import is_valid_preset_name
 from negpy.infrastructure.filesystem.watcher import FolderWatchService
 from negpy.infrastructure.loaders.helpers import get_supported_raw_wildcards
@@ -1351,20 +1351,7 @@ class FileBrowser(QWidget):
             self.controller.request_render()
 
     def _folder_name_for_gear_suggestion(self) -> str:
-        """The folder name to match gear against: the active folder roll's own folder,
-        else the current frame's containing directory -- Roll Settings can be opened
-        with no roll active at all, from a plain Add Files/Add Folder load."""
-        state = self.session.state
-        roll_id = state.active_roll_id
-        if roll_id:
-            entry = rolls.roll_for_id(self.session.repo, roll_id)
-            if entry and entry.get("kind") == "folder":
-                return folder_label(entry.get("folder_path", ""))
-        src = state.selected_file_idx
-        if src == -1 or src >= len(state.uploaded_files):
-            return ""
-        path = state.uploaded_files[src].get("path", "")
-        return folder_label(os.path.dirname(path)) if path else ""
+        return folder_name_for_active_context(self.session.state, self.session.repo)
 
     def _detect_gear_suggestion(self, folder_name: str) -> Optional[GearMatch]:
         """The gear match for *folder_name*, restricted to whichever of camera/film
