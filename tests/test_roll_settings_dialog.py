@@ -3,7 +3,7 @@ from dataclasses import replace
 from negpy.desktop.settings_catalog import all_rows, selected_flat_dict
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
 from negpy.domain.models import WorkspaceConfig
-from negpy.features.metadata.gear_models import GearLibrary
+from negpy.features.metadata.gear_models import Camera, FilmStock, GearLibrary
 from negpy.kernel.system.config import APP_CONFIG
 from negpy.services.assets.presets import MetadataPresets
 
@@ -81,3 +81,22 @@ def test_load_preset_is_a_noop_when_nothing_is_selected(qapp):
     dlg = _dialog(_cfg(capture_roll="Roll007"))
     dlg._on_load_preset()
     assert dlg.capture_roll_edit.text() == "Roll007"
+
+
+def test_apply_detected_gear_ticks_gear_and_fills_the_combos(qapp):
+    camera = Camera(make="Olympus", model="Pen F")
+    stock = FilmStock(manufacturer="Kodak", stock_name="Gold 200")
+    dlg = RollSettingsDialog(None, _cfg(), GearLibrary(cameras=[camera], film_stocks=[stock]), sel_count=0, roll_count=5)
+
+    dlg.apply_detected_gear(camera_id=camera.id, film_stock_id=stock.id)
+
+    assert dlg._checks["Gear"].isChecked()
+    assert dlg.camera_combo.selected_id() == camera.id
+    assert dlg.film_stock_combo.selected_id() == stock.id
+    assert dlg.selected_config().metadata.camera_id == camera.id
+
+
+def test_apply_detected_gear_with_nothing_detected_is_a_noop(qapp):
+    dlg = _dialog(_cfg())
+    dlg.apply_detected_gear(camera_id="", film_stock_id="")
+    assert not dlg._checks["Gear"].isChecked()
