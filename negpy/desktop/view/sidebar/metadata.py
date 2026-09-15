@@ -123,7 +123,7 @@ class MetadataSidebar(BaseSidebar):
         presets.addLayout(load_row)
 
         self._refresh_metadata_presets()
-        controls.addWidget(self._card("Metadata Presets", "presets", preset_body, "fa5s.magic"))
+        controls.addWidget(self._card("Metadata Presets", "presets", preset_body, "fa5s.magic", collapsible=False))
 
         # ── ANALOG GEAR ──────────────────────────────────────────────────
         gear_body, gear = self._card_body()
@@ -337,10 +337,9 @@ class MetadataSidebar(BaseSidebar):
         self.preview_empty = hint_label("Select gear or enter process metadata to see a preview.")
         preview_layout.addWidget(self.preview_empty)
 
-        self.preview_section = self._card("Metadata Preview", "preview", self.preview_content, "fa5s.eye")
-
         # Preview pinned above the per-frame cards, which scroll in their own area below it --
         # same pattern as Edit's Analysis section pinned above its tabs.
+        self.preview_section = self._card("Metadata Preview", "preview", self.preview_content, "fa5s.eye", collapsible=False)
         self.layout.addWidget(self.preview_section)
         self._metadata_scroll_area = QScrollArea()
         self._metadata_scroll_area.setWidgetResizable(True)
@@ -358,8 +357,16 @@ class MetadataSidebar(BaseSidebar):
         layout.setSpacing(THEME.space_md)
         return body, layout
 
-    def _card(self, title: str, key: str, content: QWidget, icon_name: str) -> CollapsibleSection:
-        return make_section(self.controller.session.repo, title, f"metadata_{key}", content, icon_name, default_expanded=True)
+    def _card(self, title: str, key: str, content: QWidget, icon_name: str, *, collapsible: bool = True) -> CollapsibleSection:
+        return make_section(
+            self.controller.session.repo,
+            title,
+            f"metadata_{key}",
+            content,
+            icon_name,
+            default_expanded=True,
+            collapsible=collapsible,
+        )
 
     def _make_exif_field(self, key: str, layout: QVBoxLayout) -> QLineEdit:
         row = QHBoxLayout()
