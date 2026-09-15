@@ -231,19 +231,99 @@ class TestAppController(unittest.TestCase):
         self.controller.session.repo.load_file_settings.return_value = None
         self.controller.request_asset_discovery = MagicMock()
 
-        self.controller._on_splits_detected({"/p/a.tif": 0.4, "/p/b.tif": 0.6})
+        self.controller._on_splits_detected({"/p/a.tif": (0.4, 0.02, (0.05, 0.05, 0.95, 0.95)), "/p/b.tif": (0.6, 0.0, None)})
 
         overrides = store["half_frame_overrides"]
         self.assertEqual(overrides["ha"]["split_x"], 0.4)
+        self.assertEqual(overrides["ha"]["gutter_thickness"], 0.02)
+        self.assertEqual(overrides["ha"]["crop_rect"], [0.05, 0.05, 0.95, 0.95])
         self.assertEqual(overrides["hb"]["split_x"], 0.6)
+        # No crop detected for this file: falls back to the full frame, same as before.
+        self.assertEqual(overrides["hb"]["crop_rect"], [0.0, 0.0, 1.0, 1.0])
         self.controller.request_asset_discovery.assert_called_once()
+
+    def test_on_splits_detected_keeps_the_existing_crop_when_none_is_detected(self):
+        self.controller.session.state.uploaded_files = [{"path": "/p/a.tif", "hash": "ha#1"}]
+        store = {"half_frame_overrides": {"ha": {"crop_rect": [0.1, 0.1, 0.9, 0.9], "split_x": 0.5, "gutter_thickness": 0.0}}}
+        self.controller.session.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
+        self.controller.session.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
+        self.controller.session.repo.load_file_settings.return_value = None
+        self.controller.request_asset_discovery = MagicMock()
+
+        self.controller._on_splits_detected({"/p/a.tif": (0.4, 0.03, None)})
+
+        self.assertEqual(store["half_frame_overrides"]["ha"]["crop_rect"], [0.1, 0.1, 0.9, 0.9])
+        self.assertEqual(store["half_frame_overrides"]["ha"]["split_x"], 0.4)
+        self.assertEqual(store["half_frame_overrides"]["ha"]["gutter_thickness"], 0.03)
 
     def test_on_splits_detected_no_op_when_nothing_matches(self):
         self.controller.session.state.uploaded_files = [{"path": "/p/a.tif", "hash": "ha#1"}]
         self.controller.request_asset_discovery = MagicMock()
-        self.controller._on_splits_detected({"/p/other.tif": 0.4})
+        self.controller._on_splits_detected({"/p/other.tif": (0.4, 0.0, None)})
         self.controller.session.repo.save_global_setting.assert_not_called()
         self.controller.request_asset_discovery.assert_not_called()
+
+    def _fake_settings_store(self) -> dict:
+        store: dict = {}
+        self.controller.session.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
+        self.controller.session.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
+        return store
+
+    def test_half_frame_mode_for_roll_reads_that_rolls_own_entry(self):
+        store = self._fake_settings_store()
+        store["half_frame_mode_by_roll"] = {"r1": True, "r2": False}
+        self.assertTrue(self.controller.half_frame_mode_for_roll("r1"))
+        self.assertFalse(self.controller.half_frame_mode_for_roll("r2"))
+
+    def test_half_frame_mode_for_roll_defaults_off_for_an_unseen_roll(self):
+        self._fake_settings_store()
+        self.assertFalse(self.controller.half_frame_mode_for_roll("new-roll"))
+
+    def test_half_frame_mode_for_roll_falls_back_to_the_sticky_flag_with_no_roll(self):
+        store = self._fake_settings_store()
+        store["half_frame_mode"] = True
+        store["half_frame_mode_by_roll"] = {"r1": False}
+        self.assertTrue(self.controller.half_frame_mode_for_roll(None))
+
+    def test_set_half_frame_mode_writes_the_active_rolls_own_entry(self):
+        store = self._fake_settings_store()
+        self.controller.state.active_roll_id = "r1"
+        self.controller.session.state.uploaded_files = []
+        self.controller.set_half_frame_mode(True)
+        self.assertEqual(store["half_frame_mode_by_roll"], {"r1": True})
+        self.assertNotIn("half_frame_mode", store)
+
+    def test_set_half_frame_mode_writes_the_sticky_flag_with_no_active_roll(self):
+        store = self._fake_settings_store()
+        self.controller.state.active_roll_id = None
+        self.controller.session.state.uploaded_files = []
+        self.controller.set_half_frame_mode(True)
+        self.assertEqual(store["half_frame_mode"], True)
+        self.assertNotIn("half_frame_mode_by_roll", store)
+
+    def test_open_roll_emits_that_rolls_own_half_frame_state(self):
+        store = self._fake_settings_store()
+        store["half_frame_mode_by_roll"] = {"r1": True}
+        with patch("negpy.desktop.controller.rolls") as mock_rolls:
+            mock_rolls.roll_for_id.return_value = {"kind": "folder", "folder_path": "/p", "extra_paths": []}
+            self.controller.request_asset_discovery = MagicMock()
+            seen = []
+            self.controller.half_frame_mode_changed.connect(seen.append)
+            self.controller.open_roll("r1")
+        self.assertEqual(seen, [True])
+        self.assertEqual(self.controller.state.active_roll_id, "r1")
+
+    def test_create_roll_from_session_seeds_the_new_rolls_half_frame_state(self):
+        """Saving the current ad hoc session as a roll must not silently reset its
+        toggle to off the next time that roll is opened."""
+        store = self._fake_settings_store()
+        store["half_frame_mode"] = True
+        self.controller.state.uploaded_files = [{"path": "/p/a.tif"}]
+        with patch("negpy.desktop.controller.rolls") as mock_rolls:
+            mock_rolls.create_virtual_roll.return_value = "new-roll"
+            roll_id = self.controller.create_roll_from_session("My Roll")
+        self.assertEqual(roll_id, "new-roll")
+        self.assertEqual(store["half_frame_mode_by_roll"], {"new-roll": True})
 
     def test_busy_toast_is_taken_down_when_the_frame_lands(self):
         """A slow render step holds its toast open; the finished frame clears it, and a

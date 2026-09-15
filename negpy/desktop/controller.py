@@ -315,6 +315,7 @@ class AppController(QObject):
     test_strip_changed = pyqtSignal(bool)  # True = mosaic is up, False = cleared or building
     zone_pins_changed = pyqtSignal()
     rgb_scan_mode_changed = pyqtSignal(bool)  # the mode changed from somewhere other than its button
+    half_frame_mode_changed = pyqtSignal(bool)  # a roll became active; each remembers its own toggle
     zone_arm_changed = pyqtSignal(object)  # armed zone, or None
     asset_discovery_requested = pyqtSignal(AssetDiscoveryTask)
     auto_detect_all_splits_requested = pyqtSignal(AutoDetectAllSplitsTask)
@@ -980,7 +981,7 @@ class AppController(QObject):
             replace_existing=replace_existing,
             reselect_path=reselect_path,
             rgb_scan=bool(self.session.repo.get_global_setting("rgbscan_mode", False)),
-            half_frame=bool(self.session.repo.get_global_setting("half_frame_mode", False)),
+            half_frame=self.half_frame_mode_for_roll(self.state.active_roll_id),
             half_frame_profile=self.half_frame_profile(),
             half_frame_overrides=self.half_frame_overrides(),
             hot_folder=hot_folder,
@@ -1076,6 +1077,7 @@ class AppController(QObject):
             # becomes the active roll -- that only makes sense for a single one.
             recognized = [rolls.recognize_folder(self.session.repo, f) for f in present]
             self.state.active_roll_id = recognized[0] if len(recognized) == 1 else None
+            self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(self.state.active_roll_id))
             self._register_library_roots(present)
         self.request_asset_discovery(
             present,
@@ -1102,6 +1104,7 @@ class AppController(QObject):
             self.set_status("This roll has no frames", 3000)
             return
         self.state.active_roll_id = roll_id
+        self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(roll_id))
         self.request_asset_discovery(paths, auto_open=True, replace_existing=True)
 
     def create_roll_from_session(self, name: str) -> Optional[str]:
@@ -1112,6 +1115,11 @@ class AppController(QObject):
             self.set_status("Nothing loaded to save as a roll", 3000)
             return None
         roll_id = rolls.create_virtual_roll(self.session.repo, name, paths)
+        # Seed the new roll's own half-frame toggle from the ad hoc session's, so saving as
+        # a roll doesn't silently reset it to off the next time this roll is opened.
+        by_roll = dict(self.session.repo.get_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, default=None) or {})
+        by_roll[roll_id] = self.half_frame_mode_for_roll(None)
+        self.session.repo.save_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, by_roll)
         self.state.active_roll_id = roll_id
         self.set_status(f'Saved as roll "{name}"', 3000)
         return roll_id
@@ -1157,6 +1165,7 @@ class AppController(QObject):
         # An ad hoc result, not (yet) any roll -- Save as Roll in the Film Strip turns it
         # into one.
         self.state.active_roll_id = None
+        self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(None))
         self.request_asset_discovery(paths, auto_open=True, replace_existing=True)
 
     def set_rgb_scan_mode(self, enabled: bool) -> None:
@@ -1236,10 +1245,30 @@ class AppController(QObject):
             self.session.settings_synced.emit(f"Scanning setup applied to {count} other frame{'s' if count != 1 else ''}")
             self.session.settings_saved.emit()
 
+    _HALF_FRAME_MODE_BY_ROLL_KEY = "half_frame_mode_by_roll"
+
+    def half_frame_mode_for_roll(self, roll_id: Optional[str]) -> bool:
+        """The half-frame toggle's state for *roll_id* -- each roll remembers its own,
+        so switching rolls switches the toggle with it. An ad hoc session (no
+        recognized roll, e.g. a library search result) reads the one sticky flag it
+        always had."""
+        if roll_id:
+            by_roll = self.session.repo.get_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, default=None) or {}
+            return bool(by_roll.get(roll_id, False))
+        return bool(self.session.repo.get_global_setting("half_frame_mode", False))
+
     def set_half_frame_mode(self, enabled: bool) -> None:
-        """Persist the half-frame toggle and re-discover already-loaded assets so the
-        mode splits/collapses frames in place (not only on the next folder load)."""
-        self.session.repo.save_global_setting("half_frame_mode", bool(enabled))
+        """Persist the half-frame toggle -- per roll when one is active, else the
+        single sticky flag an ad hoc session always had -- and re-discover
+        already-loaded assets so the mode splits/collapses frames in place (not only
+        on the next folder load)."""
+        roll_id = self.state.active_roll_id
+        if roll_id:
+            by_roll = dict(self.session.repo.get_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, default=None) or {})
+            by_roll[roll_id] = bool(enabled)
+            self.session.repo.save_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, by_roll)
+        else:
+            self.session.repo.save_global_setting("half_frame_mode", bool(enabled))
         self._active_diptych_memo = ("", None)
         files = self.session.state.uploaded_files
         if not files:
@@ -1416,10 +1445,12 @@ class AppController(QObject):
         self.status_progress_requested.emit(0, len(paths))
         self.auto_detect_all_splits_requested.emit(AutoDetectAllSplitsTask(paths=paths))
 
-    def _on_splits_detected(self, detected: dict[str, float]) -> None:
-        """AutoDetectAllSplitsTask finished: save each file's own detected split as
-        its override, re-anchoring its manual edits from whatever geometry it used
-        before."""
+    def _on_splits_detected(self, detected: dict[str, tuple[float, float, Optional[tuple[float, float, float, float]]]]) -> None:
+        """AutoDetectAllSplitsTask finished: save each file's own detected split,
+        gutter thickness and outer film crop as its override, re-anchoring its manual
+        edits from whatever geometry it used before. A file whose crop detection
+        failed keeps the crop it already had -- only the split and thickness move
+        for it."""
         self.status_progress_requested.emit(0, 0)
         seen: set[str] = set()
         for a in self.session.state.uploaded_files:
@@ -1430,7 +1461,13 @@ class AppController(QObject):
                 continue
             seen.add(file_hash)
             old_geom = self._half_frame_geometry_for(file_hash, a["path"])
-            new_geom = replace(old_geom, split_x=detected[a["path"]])
+            split_x, gutter_thickness, crop_rect = detected[a["path"]]
+            new_geom = replace(
+                old_geom,
+                split_x=split_x,
+                gutter_thickness=gutter_thickness,
+                crop_rect=old_geom.crop_rect if crop_rect is None else crop_rect,
+            )
             self._remap_half_frame_edits(file_hash, old_geom, new_geom)
             self.save_half_frame_override(
                 file_hash, new_geom.crop_rect or (0.0, 0.0, 1.0, 1.0), new_geom.split_x, new_geom.gutter_thickness
