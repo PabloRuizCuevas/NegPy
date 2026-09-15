@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QStyleOptionViewItem
 
 from negpy.desktop.view.sidebar.files import _ThumbnailDelegate
 from negpy.desktop.view.styles.theme import THEME
+from negpy.services.assets.thumbnails import asset_thumbnail_key
 
 
 def _paint(delegate, file_info: dict) -> QPixmap:
@@ -33,14 +34,25 @@ def _top_left_colour(pix: QPixmap) -> QColor:
 
 
 def test_stale_frame_gets_a_dot(qapp):
-    state = SimpleNamespace(is_dirty=False, current_file_path=None, stale_thumbnails={"h1"})
+    # Keyed like push_external_history keys it: asset_thumbnail_key, not the bare hash --
+    # a triplet's thumbnail cache key differs from its plain hash.
+    state = SimpleNamespace(is_dirty=False, current_file_path=None, stale_thumbnails={asset_thumbnail_key({"hash": "h1"})})
     dot = _top_left_colour(_paint(_ThumbnailDelegate(state=state), {"path": "/a.nef", "hash": "h1"}))
     assert dot.name().upper() == THEME.warn_amber.upper()
 
 
 def test_fresh_frame_does_not(qapp):
-    state = SimpleNamespace(is_dirty=False, current_file_path=None, stale_thumbnails={"h1"})
+    state = SimpleNamespace(is_dirty=False, current_file_path=None, stale_thumbnails={asset_thumbnail_key({"hash": "h1"})})
     clean = _top_left_colour(_paint(_ThumbnailDelegate(state=state), {"path": "/b.nef", "hash": "h2"}))
+    assert clean.name().upper() != THEME.warn_amber.upper()
+
+
+def test_stale_key_is_the_thumbnail_cache_key_not_the_bare_hash(qapp):
+    """A regression guard for the mismatch this indicator originally shipped with:
+    push_external_history adds asset_thumbnail_key(asset) (hash plus a cache-version
+    suffix), never the bare hash, so the read side must key the same way."""
+    state = SimpleNamespace(is_dirty=False, current_file_path=None, stale_thumbnails={"h1"})
+    clean = _top_left_colour(_paint(_ThumbnailDelegate(state=state), {"path": "/a.nef", "hash": "h1"}))
     assert clean.name().upper() != THEME.warn_amber.upper()
 
 
