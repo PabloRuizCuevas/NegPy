@@ -54,6 +54,7 @@ from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettings
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
 from negpy.services.assets import rolls
 from negpy.services.assets.gear import GearProfiles
+from negpy.services.assets.gear_match import GearMatch, match_gear_for_folder
 from negpy.services.assets.presets import is_valid_preset_name
 from negpy.infrastructure.filesystem.watcher import FolderWatchService
 from negpy.infrastructure.loaders.helpers import get_supported_raw_wildcards
@@ -420,10 +421,6 @@ class FileBrowser(QWidget):
         # Library's own +/refresh corner, or film_strip_toolbar next to the loaded frames.
         self.film_strip_toolbar = OverflowBar(height=btn_height, spacing=4)
 
-        self.library_btn = QToolButton()
-        self.library_btn.setIcon(qta.icon("fa5s.book-open", color=THEME.text_primary))
-        self.library_btn.setToolTip("Library — your imported rolls")
-
         # Clearing the strip is how you start a roll you will build entirely by drag-drop --
         # folder-plus rather than the destructive times-circle Unload uses, since the point
         # here is the empty roll you get, not the frames you are dropping.
@@ -563,11 +560,10 @@ class FileBrowser(QWidget):
             btn.setFixedHeight(btn_height)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Library and Sort join LibraryTree's own +/refresh corner row instead of a
-        # top-level toolbar: mini-button sized (20x20), matching that row's own convention.
-        for btn in (self.library_btn, self.sort_btn):
-            btn.setFixedSize(20, 20)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Sort joins LibraryTree's own +/refresh corner row instead of a top-level toolbar:
+        # mini-button sized (20x20), matching that row's own convention.
+        self.sort_btn.setFixedSize(20, 20)
+        self.sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
         for widget, label in (
             (self.new_roll_btn, "New Roll…"),
@@ -664,7 +660,7 @@ class FileBrowser(QWidget):
         self.empty_label.setVisible(False)
         self.empty_label.linkActivated.connect(lambda _: self._clear_frame_filters())
 
-        self.library_tree = LibraryTree(self.controller, leading_widgets=(self.library_btn, self.sort_btn))
+        self.library_tree = LibraryTree(self.controller, leading_widgets=(self.sort_btn,))
         self.library_section = self._make_section("Library", "library", "fa5s.folder-open", self.library_tree)
 
         frames = QWidget()
@@ -797,7 +793,7 @@ class FileBrowser(QWidget):
         self.sections_splitter.setSizes(sizes)
 
     def _connect_signals(self) -> None:
-        self.library_btn.clicked.connect(lambda: self.library_requested.emit(True))
+        self.library_tree.folder_roll_created.connect(self._maybe_suggest_gear)
         self.unload_btn.clicked.connect(self._on_unload_clicked)
         self.list_view.clicked.connect(self._on_item_clicked)
         self.list_view.doubleClicked.connect(self._on_item_double_clicked)
@@ -1309,15 +1305,28 @@ class FileBrowser(QWidget):
             self.session.sync_selected_settings(dlg.selected(), dlg.bounds_flags(), dlg.scope())
 
     def _open_roll_settings_dialog(self) -> None:
+        """The tag-icon button: always opens, and silently pre-fills a gear match too
+        (only when Gear is not already set) -- the automatic suggestion at import time
+        is one moment among several this same guess is useful in."""
+        detected = self._detect_gear_suggestion(self._folder_name_for_gear_suggestion())
+        dlg = self._build_roll_settings_dialog()
+        if dlg is None:
+            return
+        if detected is not None:
+            dlg.apply_detected_gear(camera_id=detected.camera_id, film_stock_id=detected.film_stock_id)
+        self._exec_roll_settings_dialog(dlg)
+
+    def _build_roll_settings_dialog(self) -> Optional[RollSettingsDialog]:
         state = self.session.state
         src = state.selected_file_idx
         if src == -1:
-            return
+            return None
         visible = self.session.asset_model.visible_actual_indices()
         sel_targets = len([i for i in set(state.selected_indices) if i != src and i in visible])
         roll_targets = len([i for i in visible if i != src])
+        return RollSettingsDialog(self, state.config, GearProfiles.load_library(), sel_count=sel_targets, roll_count=roll_targets)
 
-        dlg = RollSettingsDialog(self, state.config, GearProfiles.load_library(), sel_count=sel_targets, roll_count=roll_targets)
+    def _exec_roll_settings_dialog(self, dlg: RollSettingsDialog) -> None:
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         rows = dlg.selected_rows()
@@ -1325,6 +1334,52 @@ class FileBrowser(QWidget):
             return
         if self.controller.session.apply_preset_fields(dlg.selected_config(), rows, dlg.scope()):
             self.controller.request_render()
+
+    def _folder_name_for_gear_suggestion(self) -> str:
+        """The folder name to match gear against: the active folder roll's own folder,
+        else the current frame's containing directory -- Roll Settings can be opened
+        with no roll active at all, from a plain Add Files/Add Folder load."""
+        state = self.session.state
+        roll_id = state.active_roll_id
+        if roll_id:
+            entry = rolls.roll_for_id(self.session.repo, roll_id)
+            if entry and entry.get("kind") == "folder":
+                return folder_label(entry.get("folder_path", ""))
+        src = state.selected_file_idx
+        if src == -1 or src >= len(state.uploaded_files):
+            return ""
+        path = state.uploaded_files[src].get("path", "")
+        return folder_label(os.path.dirname(path)) if path else ""
+
+    def _detect_gear_suggestion(self, folder_name: str) -> Optional[GearMatch]:
+        """The gear match for *folder_name*, restricted to whichever of camera/film
+        stock the current frame does not already carry -- checked independently, so an
+        unrelated camera already set (carried from another frame, tagged by hand) does
+        not also block a film-stock match that is otherwise free to suggest. None when
+        there is nothing left to offer."""
+        if not folder_name:
+            return None
+        meta = self.session.state.config.metadata
+        detected = match_gear_for_folder(folder_name, GearProfiles.load_library())
+        result = GearMatch(
+            camera_id="" if meta.camera_id else detected.camera_id,
+            film_stock_id="" if meta.film_stock_id else detected.film_stock_id,
+        )
+        return result if result.any() else None
+
+    def _maybe_suggest_gear(self, folder_path: str) -> None:
+        """A folder just became a roll for the first time: offer Roll Settings pre-filled
+        from a folder-name match against the gear library, ticked but never applied
+        without the user pressing Apply. Silent when nothing matches -- checked before
+        building the dialog, so a folder with nothing to suggest never pops one up."""
+        detected = self._detect_gear_suggestion(folder_label(folder_path))
+        if detected is None:
+            return
+        dlg = self._build_roll_settings_dialog()
+        if dlg is None:
+            return
+        dlg.apply_detected_gear(camera_id=detected.camera_id, film_stock_id=detected.film_stock_id)
+        self._exec_roll_settings_dialog(dlg)
 
     def _build_session_menu(self) -> QMenu:
         """Mirrors the panel toolbar's add/clear tools, for a right click on empty space."""

@@ -40,6 +40,7 @@ class LibraryTree(QWidget):
     """
 
     rolls_changed = pyqtSignal()  # a roll was imported, renamed or deleted
+    folder_roll_created = pyqtSignal(str)  # a folder was recognized as a roll for the first time
 
     def __init__(self, controller, leading_widgets: tuple[QWidget, ...] = ()):
         super().__init__()
@@ -136,9 +137,12 @@ class LibraryTree(QWidget):
             return False
         if not confirm_load_roll(self, self.repo, images, folder_label(path)):
             return False
+        is_new = rolls.folder_roll_id_for_path(self.repo, path) is None
         self.controller.open_library_folder(path)
         self.reload()
         self.rolls_changed.emit()
+        if is_new:
+            self.folder_roll_created.emit(path)
         return True
 
     def prompt_import_subfolders(self) -> bool:

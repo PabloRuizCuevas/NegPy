@@ -259,6 +259,31 @@ def test_import_folder_recognizes_and_opens_it(widget, tree_dirs, monkeypatch):
     widget.controller.open_library_folder.assert_called_once_with(path)
 
 
+def test_import_folder_reports_a_newly_recognized_folder(widget, tree_dirs, monkeypatch):
+    path = str(tree_dirs / "roll_a")
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: path))
+    widget.repo.save_global_setting("library_autoload_folders", True)
+    created = []
+    widget.folder_roll_created.connect(created.append)
+
+    widget.prompt_import_folder()
+
+    assert created == [path]
+
+
+def test_import_folder_says_nothing_for_an_already_recognized_folder(widget, tree_dirs, monkeypatch):
+    path = str(tree_dirs / "roll_a")
+    recognize_folder(widget.repo, path)
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: path))
+    widget.repo.save_global_setting("library_autoload_folders", True)
+    created = []
+    widget.folder_roll_created.connect(created.append)
+
+    widget.prompt_import_folder()
+
+    assert created == []
+
+
 def test_import_folder_with_no_images_reports_status_without_opening(widget, tree_dirs, monkeypatch):
     empty = tree_dirs / "empty"
     empty.mkdir()
