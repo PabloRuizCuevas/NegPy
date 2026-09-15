@@ -413,10 +413,12 @@ class HalfFrameDialog(QDialog):
         self._gutter_label.setText(f"{g * 100:.1f}%")
 
     def _on_auto(self) -> None:
-        from negpy.services.assets.half_frame import detect_split_x
+        from negpy.services.assets.half_frame import detect_gutter
 
-        sx = detect_split_x(self._preview_rgb)
+        sx, gutter = detect_gutter(self._preview_rgb)
         self._label.set_split(sx)
+        self._label.set_gutter(gutter)
+        self._gutter_slider.setValue(int(gutter * 1000))
         self._update_gutter_label()
 
     def _set_scope(self, key: str) -> None:
