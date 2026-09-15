@@ -298,6 +298,7 @@ class RightPanel(QWidget):
         for btn, key, base in zip(self._group_buttons, self._group_keys, self._group_tooltips):
             btn.setToolTip(tooltip_with_shortcut(base, f"tab_{key}"))
         self.metadata_sidebar.apply_shortcut_tooltips()
+        self.gear_panel.apply_shortcut_tooltips()
 
     def _connect_signals(self) -> None:
         self.controller.image_updated.connect(self._update_analysis)
@@ -390,6 +391,10 @@ class RightPanel(QWidget):
         if key in self._tab_keys:
             self._switch_group(self._group_keys.index("edit"))
             self._switch_tab(self._tab_keys.index(key))
+
+    def show_gear_subtab_by_key(self, key: str) -> None:
+        self._switch_group(self._group_keys.index("gear"))
+        self.gear_panel.show_subtab_by_key(key)
 
     def scroll_to(self, widget: QWidget) -> None:
         """Ensure *widget* is visible within its enclosing scroll area."""
