@@ -1,5 +1,5 @@
-"""Signal wiring of the right panel's analysis refresh, and the outer Edit / Export /
-Metadata / Gear / Scan tab switch.
+"""Signal wiring of the right panel's analysis refresh, and the outer Edit / Metadata /
+Gear / Export / Scan tab switch.
 
 _paint_negative_peek emits image_updated only, never metrics_available, so the
 image_updated path must refresh the histograms itself or entering Peek Negative
@@ -45,8 +45,8 @@ def test_update_analysis_skips_mid_gesture_frames() -> None:
 def _group_panel_stub(*, scan_index: int = 4, active_group: int = 0, n_groups: int = 5) -> MagicMock:
     panel = MagicMock()
     panel._group_buttons = [MagicMock() for _ in range(n_groups)]
-    panel._group_icons = ["fa5s.sliders-h", "fa5s.file-export", "fa5s.tags", "fa5s.toolbox", "fa5s.camera-retro"][:n_groups]
-    panel._group_keys = ["edit", "export", "metadata", "gear", "scan"][:n_groups]
+    panel._group_icons = ["fa5s.sliders-h", "fa5s.tags", "fa5s.toolbox", "fa5s.file-export", "fa5s.camera-retro"][:n_groups]
+    panel._group_keys = ["edit", "metadata", "gear", "export", "scan"][:n_groups]
     panel._scan_group_index = scan_index
     panel._active_group = active_group
     return panel
@@ -83,7 +83,7 @@ def test_show_tab_by_key_dispatches_to_a_group_tab():
 
     RightPanel.show_tab_by_key(panel, "metadata")
 
-    panel._switch_group.assert_called_once_with(2)
+    panel._switch_group.assert_called_once_with(1)
     panel._switch_tab.assert_not_called()
 
 
