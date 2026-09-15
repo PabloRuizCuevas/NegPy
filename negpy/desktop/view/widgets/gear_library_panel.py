@@ -1,8 +1,11 @@
-"""Modal dialog for managing the analog gear library."""
+"""Panel for managing the analog gear library -- a persistent tab, not a dialog: the
+library is reference data you build up over time, reached exactly as often as Export
+or Metadata, not something opened, changed once and dismissed."""
 
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Callable, Optional
 
 import qtawesome as qta
 from PyQt6.QtCore import pyqtSignal
@@ -10,14 +13,12 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QDoubleSpinBox,
-    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
-    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -32,14 +33,22 @@ from negpy.desktop.settings_catalog import (
     selected_flat_dict,
 )
 from negpy.desktop.view.confirm import confirm_delete_named
-from negpy.desktop.view.styles.templates import dialog_pane_qss, field_label, hint_label, pane_header_qss, pin_dialog_default
+from negpy.desktop.view.sidebar.base import install_wheel_guards
+from negpy.desktop.view.styles.templates import field_label, hint_label, icon_button, section_subheader, tool_toggle, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
+from negpy.desktop.view.widgets.gear_catalog_dialog import GearCatalogDialog, resolve_other_gear_pick
 from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog
+from negpy.domain.models import WorkspaceConfig
 from negpy.features.metadata.gear_logic import (
+    CATEGORY_SINGULAR,
+    OTHER_ID,
+    blank_gear_item,
+    clone_into_personal,
     matches_gear_filter,
     metadata_from_gear,
     metadata_from_process,
     metadata_from_scan_setup,
+    own_gear_entries,
 )
 from negpy.features.metadata.capture import DEV_TIME_HINT, format_dev_time, format_temperature, parse_dev_time, parse_temperature
 from negpy.features.metadata.gear_models import (
@@ -70,6 +79,15 @@ _CATEGORIES = [
 # shows what one holds and the field picker edits it.
 _PRESETS = "metadata_presets"
 
+_CATEGORY_ICONS: dict[str, str] = {
+    "cameras": "fa5s.camera",
+    "lenses": "mdi6.camera-iris",
+    "film_stocks": "fa5s.film",
+    "processes": "fa5s.flask",
+    "scan_setups": "mdi6.scanner",
+    _PRESETS: "fa5s.magic",
+}
+
 _CATEGORY_FIELDS: dict[str, frozenset[str]] = {
     "cameras": frozenset({"display_name", "make", "model", "notes"}),
     "lenses": frozenset({"display_name", "make", "lens_model", "focal", "aperture", "notes"}),
@@ -88,6 +106,31 @@ _CATEGORY_SEARCH_PLACEHOLDER = {
     _PRESETS: "Search presets…",
 }
 
+# Categories backed by a bundled reference catalog union'd with the user's own file
+# (services/assets/gear.py). Presets are files the user writes directly, with no
+# shipped counterpart, so they carry none of the bundled/personal distinction below.
+_BUNDLED_CATEGORIES = frozenset({"cameras", "lenses", "film_stocks", "processes", "scan_setups"})
+
+_CATEGORY_SINGULAR = CATEGORY_SINGULAR
+
+_CATEGORY_PLURAL_NOUN = {
+    "cameras": "cameras",
+    "lenses": "lenses",
+    "film_stocks": "film stocks",
+    "processes": "processes",
+    "scan_setups": "scan setups",
+}
+
+_ADD_TOOLTIPS = {
+    key: f"Add a {singular.lower()} you own — pick one from the built-in list, or enter your own"
+    for key, singular in _CATEGORY_SINGULAR.items()
+}
+
+_DELETE_TOOLTIPS = {key: f"Remove this {singular.lower()} from your gear" for key, singular in _CATEGORY_SINGULAR.items()}
+_DELETE_TOOLTIPS[_PRESETS] = "Delete this preset"
+
+_DELETE_BUNDLED_TOOLTIP = "Built-in gear can't be removed — duplicate it to make your own copy"
+
 
 _PRESET_ROW_WIDGETS: dict[str, tuple[str, ...]] = {
     "metadata.camera_id": ("camera", "lens", "film_stock", "format", "format_other"),
@@ -102,101 +145,92 @@ def _push_pull_index(value: int) -> int:
     return PUSH_PULL_VALUES.index(value) if value in PUSH_PULL_VALUES else PUSH_PULL_VALUES.index(0)
 
 
-class GearLibraryDialog(QDialog):
+class GearLibraryPanel(QWidget):
+    """Cameras, lenses, film stocks, processes, scan setups and metadata presets: one
+    searchable, user-extendable library, shared by Roll Settings, Metadata and every
+    other picker in the app that offers gear. The item list defaults to what the user
+    has added; the Catalog toggle brings the shipped reference models back into view."""
+
     library_changed = pyqtSignal()
     presets_changed = pyqtSignal()
 
-    def __init__(self, library: GearLibrary | None = None, parent=None, current_config=None):
+    def __init__(
+        self,
+        library: GearLibrary | None = None,
+        parent=None,
+        current_config_fn: Optional[Callable[[], Optional[WorkspaceConfig]]] = None,
+    ):
         super().__init__(parent)
         self._library = library or GearProfiles.load_library()
-        self._current_config = current_config
+        # A getter, not a snapshot: this panel is built once and stays live for the
+        # whole session, so "save preset from the current frame" needs whichever frame
+        # is current *when Add is clicked*, not whichever was current at construction.
+        self._current_config_fn = current_config_fn or (lambda: None)
         self._category = "cameras"
         self._selected_idx = -1
         self._list_items: list = []
         self._updating = False
+        # Off by default: the list shows personal gear only until this is switched on.
+        self._show_bundled = False
 
-        self.setWindowTitle("Library")
-        self.resize(820, 560)
         self._init_ui()
         self._select_category("cameras")
-        pin_dialog_default(self._close_btn, scope=self)
 
     def library(self) -> GearLibrary:
         return self._library
 
     def _init_ui(self) -> None:
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(THEME.space_xl, 0, THEME.space_xl, 5)
+        root.setSpacing(THEME.space_lg)
 
-        # Category list
-        left = QWidget()
-        left.setFixedWidth(140)
-        left.setStyleSheet(dialog_pane_qss())
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(8, 8, 8, 8)
+        root.addWidget(section_subheader("My Gear"))
+        root.addWidget(hint_label("Cameras, lenses, film stocks and processes you own. Catalog shows the full shipped list."))
 
-        cat_label = QLabel("LIBRARY")
-        cat_label.setStyleSheet(pane_header_qss())
-        left_layout.addWidget(cat_label)
+        # Category, search and the item list: one vertical column, like every other
+        # sidebar tab. The detail form follows below rather than beside it.
+        root.addWidget(section_subheader("ITEMS"))
 
-        self.category_list = QListWidget()
+        root.addWidget(field_label("Category"))
+        self.category_list = QComboBox()
         for key, label in _CATEGORIES:
-            self.category_list.addItem(QListWidgetItem(label))
-        self.category_list.setProperty("keys", [k for k, _ in _CATEGORIES])
-        self.category_list.currentRowChanged.connect(self._on_category_changed)
-        left_layout.addWidget(self.category_list)
-        root.addWidget(left)
-
-        # Item list
-        mid = QWidget()
-        mid.setFixedWidth(220)
-        mid.setStyleSheet(dialog_pane_qss())
-        mid_layout = QVBoxLayout(mid)
-        mid_layout.setContentsMargins(8, 8, 8, 8)
-
-        self.items_label = QLabel("ITEMS")
-        self.items_label.setStyleSheet(pane_header_qss())
-        mid_layout.addWidget(self.items_label)
+            self.category_list.addItem(qta.icon(_CATEGORY_ICONS[key], color=THEME.text_primary), label, key)
+        root.addWidget(self.category_list)
 
         self.item_search = QLineEdit()
         self.item_search.setPlaceholderText("Search cameras…")
         self.item_search.textChanged.connect(self._on_item_search_changed)
-        mid_layout.addWidget(self.item_search)
+        root.addWidget(self.item_search)
 
         self.item_list = QListWidget()
+        self.item_list.setMaximumHeight(160)
         self.item_list.currentRowChanged.connect(self._on_item_changed)
-        mid_layout.addWidget(self.item_list)
+        root.addWidget(self.item_list)
+
+        self.empty_hint = hint_label()
+        self.empty_hint.setVisible(False)
+        root.addWidget(self.empty_hint)
 
         btn_row = QHBoxLayout()
-        self.add_btn = QPushButton()
-        self.add_btn.setIcon(qta.icon("fa5s.plus", color=THEME.text_primary))
-        self.add_btn.setToolTip("Add item")
+        btn_row.setSpacing(THEME.space_sm)
+        self.add_btn = icon_button("fa5s.plus", "Add item")
         self.add_btn.clicked.connect(self._add_item)
-        self.dup_btn = QPushButton()
-        self.dup_btn.setIcon(qta.icon("fa5s.copy", color=THEME.text_primary))
-        self.dup_btn.setToolTip("Duplicate")
+        self.dup_btn = icon_button("fa5s.copy", "Duplicate")
         self.dup_btn.clicked.connect(self._duplicate_item)
-        self.edit_btn = QPushButton()
-        self.edit_btn.setIcon(qta.icon("fa5s.pen", color=THEME.text_primary))
-        self.edit_btn.setToolTip("Rename the preset, or change which fields it stores")
+        self.edit_btn = icon_button("fa5s.pen", "Rename the preset, or change which fields it stores")
         self.edit_btn.clicked.connect(self._edit_preset)
-        self.del_btn = QPushButton()
-        self.del_btn.setIcon(qta.icon("fa5s.trash-alt", color=THEME.text_primary))
-        self.del_btn.setToolTip("Delete")
+        self.del_btn = icon_button("fa5s.trash-alt", "Delete")
         self.del_btn.clicked.connect(self._delete_item)
         for b in (self.add_btn, self.dup_btn, self.edit_btn, self.del_btn):
-            b.setFixedWidth(36)
             btn_row.addWidget(b)
         btn_row.addStretch()
-        mid_layout.addLayout(btn_row)
+        self.show_catalog_btn = tool_toggle("fa5s.list-ul", "Catalog", "Show the built-in catalog alongside your own gear")
+        self.show_catalog_btn.toggled.connect(self._on_show_catalog_toggled)
+        btn_row.addWidget(self.show_catalog_btn)
+        root.addLayout(btn_row)
 
-        root.addWidget(mid)
-
-        # Form: a single layout, with rows shown and hidden per category, never removeRow.
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(16, 16, 16, 16)
+        # Form: a single layout, with rows shown and hidden per category, never removed.
+        root.addWidget(section_subheader("DETAILS"))
 
         self.display_name_edit = QLineEdit()
         self.make_edit = QLineEdit()
@@ -254,8 +288,9 @@ class GearLibraryDialog(QDialog):
         self.push_pull_combo.currentIndexChanged.connect(self._on_form_changed)
 
         self.form_panel = QWidget()
-        self.form_layout = QFormLayout(self.form_panel)
-        self.form_layout.setSpacing(8)
+        self.form_layout = QVBoxLayout(self.form_panel)
+        self.form_layout.setContentsMargins(0, 0, 0, 0)
+        self.form_layout.setSpacing(THEME.space_md)
         self._form_rows: dict[str, tuple[QLabel, QWidget]] = {}
         self._register_form_row("display_name", "Display name", self.display_name_edit)
         self._register_form_row("make", "Make", self.make_edit)
@@ -276,46 +311,38 @@ class GearLibraryDialog(QDialog):
         self._register_form_row("scanning", "Scanning", self.scanning_edit)
         self._register_form_row("notes", "Notes", self.notes_edit)
 
-        right_layout.addWidget(self.form_panel)
+        root.addWidget(self.form_panel)
 
         self.preset_panel = QWidget()
         preset_layout = QVBoxLayout(self.preset_panel)
         preset_layout.setContentsMargins(0, 0, 0, 0)
-        preset_layout.setSpacing(8)
+        preset_layout.setSpacing(THEME.space_lg)
         self.preset_name_label = QLabel()
         self.preset_name_label.setStyleSheet(f"color: {THEME.text_primary}; font-weight: bold;")
-        self.preset_form_layout = QFormLayout()
-        self.preset_form_layout.setSpacing(8)
+        self.preset_form_layout = QVBoxLayout()
+        self.preset_form_layout.setSpacing(THEME.space_md)
         self._preset_rows: dict[str, tuple[QLabel, QWidget]] = {}
         self._build_preset_form()
-        self.preset_fields_layout = QFormLayout()
-        self.preset_fields_layout.setSpacing(8)
+        self.preset_fields_layout = QVBoxLayout()
+        self.preset_fields_layout.setSpacing(THEME.space_md)
         self.preset_empty_label = QLabel("This preset stores nothing.")
         self.preset_empty_label.setStyleSheet(f"color: {THEME.text_secondary};")
         preset_layout.addWidget(self.preset_name_label)
         preset_layout.addLayout(self.preset_form_layout)
         preset_layout.addLayout(self.preset_fields_layout)
         preset_layout.addWidget(self.preset_empty_label)
-        notes_row = QFormLayout()
-        notes_row.setSpacing(8)
+        preset_layout.addWidget(field_label("Notes"))
         self.preset_notes_edit = QLineEdit()
         self.preset_notes_edit.setPlaceholderText("Notes for this preset")
         self.preset_notes_edit.textChanged.connect(self._on_preset_notes_changed)
-        notes_row.addRow(field_label("Notes"), self.preset_notes_edit)
-        preset_layout.addLayout(notes_row)
+        preset_layout.addWidget(self.preset_notes_edit)
         preset_layout.addWidget(hint_label("The pen chooses which fields a preset stores; these edit their values."))
         self.preset_panel.setVisible(False)
-        right_layout.addWidget(self.preset_panel)
-        right_layout.addStretch()
+        root.addWidget(self.preset_panel)
+        root.addStretch()
 
-        close_row = QHBoxLayout()
-        close_row.addStretch()
-        self._close_btn = QPushButton("Close")
-        self._close_btn.clicked.connect(self.accept)
-        close_row.addWidget(self._close_btn)
-        right_layout.addLayout(close_row)
-
-        root.addWidget(right)
+        self.category_list.currentIndexChanged.connect(self._on_category_changed)
+        install_wheel_guards(self)
 
     def _build_preset_form(self) -> None:
         self.preset_camera_combo = SearchableGearCombo(placeholder="Search cameras…")
@@ -362,8 +389,24 @@ class GearLibraryDialog(QDialog):
             ("exposure", "Exposure", self.preset_exposure_edit),
         ):
             row_label = field_label(label)
-            self.preset_form_layout.addRow(row_label, widget)
+            self.preset_form_layout.addWidget(row_label)
+            self.preset_form_layout.addWidget(widget)
             self._preset_rows[key] = (row_label, widget)
+
+        self._preset_combo_category = {
+            id(self.preset_camera_combo): "cameras",
+            id(self.preset_lens_combo): "lenses",
+            id(self.preset_film_combo): "film_stocks",
+            id(self.preset_process_combo): "processes",
+            id(self.preset_scan_combo): "scan_setups",
+        }
+        self._preset_combo_field = {
+            id(self.preset_camera_combo): lambda meta: meta.camera_id,
+            id(self.preset_lens_combo): lambda meta: meta.lens_id,
+            id(self.preset_film_combo): lambda meta: meta.film_stock_id,
+            id(self.preset_process_combo): lambda meta: meta.process_id,
+            id(self.preset_scan_combo): lambda meta: meta.scanning_id,
+        }
 
         # A library pick re-resolves everything read from it; a typed value unlinks the pick,
         # exactly as the Metadata panel behaves.
@@ -391,7 +434,8 @@ class GearLibraryDialog(QDialog):
 
     def _register_form_row(self, key: str, label_text: str, widget: QWidget) -> None:
         label = field_label(label_text)
-        self.form_layout.addRow(label, widget)
+        self.form_layout.addWidget(label)
+        self.form_layout.addWidget(widget)
         self._form_rows[key] = (label, widget)
 
     def _show_form_for_category(self, category: str) -> None:
@@ -436,15 +480,22 @@ class GearLibraryDialog(QDialog):
         return item if isinstance(item, str) else item.id
 
     def _select_category(self, key: str) -> None:
-        for i, (k, _) in enumerate(_CATEGORIES):
-            if k == key:
-                self.category_list.setCurrentRow(i)
-                break
-
-    def _on_category_changed(self, row: int) -> None:
-        if row < 0:
+        idx = self.category_list.findData(key)
+        if idx < 0:
             return
-        self._category = _CATEGORIES[row][0]
+        if self.category_list.currentIndex() == idx:
+            self._on_category_changed(idx)
+        else:
+            self.category_list.setCurrentIndex(idx)
+
+    def _on_category_changed(self, index: int) -> None:
+        if index < 0:
+            return
+        self._category = self.category_list.itemData(index)
+        self._show_bundled = False
+        self.show_catalog_btn.blockSignals(True)
+        self.show_catalog_btn.setChecked(False)
+        self.show_catalog_btn.blockSignals(False)
         self.item_search.blockSignals(True)
         self.item_search.clear()
         self.item_search.setPlaceholderText(_CATEGORY_SEARCH_PLACEHOLDER.get(self._category, "Search…"))
@@ -455,11 +506,26 @@ class GearLibraryDialog(QDialog):
         self.form_panel.setVisible(not is_presets)
         self.preset_panel.setVisible(is_presets)
         self.edit_btn.setVisible(is_presets)
-        self.add_btn.setEnabled(not is_presets or self._current_config is not None)
-        self.add_btn.setToolTip("Store the current frame's metadata as a preset" if is_presets else "Add item")
+        self.show_catalog_btn.setVisible(self._category in _BUNDLED_CATEGORIES)
+        self.add_btn.setEnabled(not is_presets or self._current_config_fn() is not None)
+        self.add_btn.setToolTip(
+            wrap_tooltip("Store the current frame's metadata as a preset" if is_presets else _ADD_TOOLTIPS.get(self._category, "Add item"))
+        )
+        self._update_del_tooltip()
+
+    def _on_show_catalog_toggled(self, checked: bool) -> None:
+        self._show_bundled = checked
+        self._rebuild_item_list()
 
     def _on_item_search_changed(self, _text: str) -> None:
         self._rebuild_item_list()
+
+    def _visible_items(self, all_items: list) -> list:
+        """The default list is personal gear only; the catalog toggle brings the
+        bundled reference entries back in. Presets have no bundled entries to hide."""
+        if self._show_bundled or self._category not in _BUNDLED_CATEGORIES:
+            return all_items
+        return [item for item in all_items if not item.is_bundled]
 
     def _rebuild_item_list(self, *, select_id: str | None = None) -> None:
         all_items = self._current_items()
@@ -468,7 +534,8 @@ class GearLibraryDialog(QDialog):
             selected_id = self._item_id(all_items[self._selected_idx])
 
         query = self.item_search.text().strip()
-        visible = [item for item in all_items if self._matches(item, query)]
+        candidates = self._visible_items(all_items)
+        visible = [item for item in candidates if self._matches(item, query)]
 
         self._list_items = visible
         self.item_list.blockSignals(True)
@@ -487,6 +554,13 @@ class GearLibraryDialog(QDialog):
         self.item_list.setCurrentRow(row)
         self.item_list.blockSignals(False)
 
+        # An empty personal list reads as "nothing here yet", not a blank box.
+        no_personal_gear = not candidates and not query
+        self.empty_hint.setVisible(no_personal_gear)
+        if no_personal_gear:
+            self.empty_hint.setText(f"You haven't added any {_CATEGORY_PLURAL_NOUN.get(self._category, 'items')} yet.")
+        self.item_list.setVisible(not no_personal_gear)
+
         if not visible and not query:
             self._selected_idx = -1
             self._clear_form()
@@ -503,6 +577,7 @@ class GearLibraryDialog(QDialog):
             self._selected_idx = -1
             self._set_form_editable(True)
             self._clear_form()
+            self._update_del_tooltip()
             return
         item = self._list_items[row]
         item_id = self._item_id(item)
@@ -510,6 +585,17 @@ class GearLibraryDialog(QDialog):
         self._selected_idx = next(i for i, candidate in enumerate(all_items) if self._item_id(candidate) == item_id)
         self._set_form_editable(isinstance(item, str) or not item.is_bundled)
         self._populate_form(item)
+        self._update_del_tooltip()
+
+    def _update_del_tooltip(self) -> None:
+        item = self._selected_item()
+        bundled = item is not None and not isinstance(item, str) and item.is_bundled
+        text = _DELETE_BUNDLED_TOOLTIP if bundled else _DELETE_TOOLTIPS.get(self._category, "Delete")
+        self.del_btn.setToolTip(wrap_tooltip(text))
+
+    def _selected_item(self):
+        items = self._current_items()
+        return items[self._selected_idx] if 0 <= self._selected_idx < len(items) else None
 
     def _parsed_or_kept(self, edit: QLineEdit, parse, current):
         """Every keystroke saves, so a half-typed "9:" must not erase the stored value.
@@ -587,11 +673,11 @@ class GearLibraryDialog(QDialog):
         try:
             self.preset_name_label.setText(name)
             self.preset_notes_edit.setText(preset_notes(data))
-            self.preset_camera_combo.set_gear_items(self._library.cameras, meta.camera_id, lambda c: c.resolved_display_name)
-            self.preset_lens_combo.set_gear_items(self._library.lenses, meta.lens_id, lambda x: x.resolved_display_name)
-            self.preset_film_combo.set_gear_items(self._library.film_stocks, meta.film_stock_id, lambda f: f.resolved_display_name)
-            self.preset_process_combo.set_gear_items(self._library.processes, meta.process_id, lambda p: p.resolved_display_name)
-            self.preset_scan_combo.set_gear_items(self._library.scan_setups, meta.scanning_id, lambda x: x.resolved_display_name)
+            self._set_own_gear_items(self.preset_camera_combo, self._library.cameras, meta.camera_id)
+            self._set_own_gear_items(self.preset_lens_combo, self._library.lenses, meta.lens_id)
+            self._set_own_gear_items(self.preset_film_combo, self._library.film_stocks, meta.film_stock_id)
+            self._set_own_gear_items(self.preset_process_combo, self._library.processes, meta.process_id)
+            self._set_own_gear_items(self.preset_scan_combo, self._library.scan_setups, meta.scanning_id)
             self.preset_format_combo.setCurrentText(format_label(meta.format))
             self.preset_format_other_edit.setText(meta.format_other)
             self.preset_developer_edit.setText(meta.developer)
@@ -612,15 +698,22 @@ class GearLibraryDialog(QDialog):
             self._updating = False
 
         # Rows with no editor: per-frame decisions, shown as they are stored.
-        while self.preset_fields_layout.rowCount():
-            self.preset_fields_layout.removeRow(0)
+        self._clear_preset_fields_layout()
         read_only = [(label, value) for label, value in preset_values(data, "metadata") if not self._is_editable_row(label, stored)]
         for label, value in read_only:
             value_label = QLabel(value)
             value_label.setWordWrap(True)
             value_label.setStyleSheet(f"color: {THEME.text_secondary};")
-            self.preset_fields_layout.addRow(field_label(label), value_label)
+            self.preset_fields_layout.addWidget(field_label(label))
+            self.preset_fields_layout.addWidget(value_label)
         self.preset_empty_label.setVisible(not stored)
+
+    def _clear_preset_fields_layout(self) -> None:
+        while self.preset_fields_layout.count():
+            item = self.preset_fields_layout.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
 
     def _is_editable_row(self, label: str, stored: set[str]) -> bool:
         for row in rows_by_id().values():
@@ -655,6 +748,10 @@ class GearLibraryDialog(QDialog):
         return preset_config(data).metadata if data else None
 
     def _on_preset_gear_changed(self, *_args) -> None:
+        # No sender-based dispatch: called directly (no live signal) by callers that
+        # just set a combo's id and want the write-through, not just a real pick.
+        for combo in (self.preset_camera_combo, self.preset_lens_combo, self.preset_film_combo):
+            self._resolve_other_preset_pick(combo)
         meta = None if self._updating else self._preset_meta()
         if meta is None:
             return
@@ -669,14 +766,47 @@ class GearLibraryDialog(QDialog):
         )
 
     def _on_preset_process_picked(self, *_args) -> None:
+        self._resolve_other_preset_pick(self.preset_process_combo)
         meta = None if self._updating else self._preset_meta()
         if meta is not None:
             self._write_preset(metadata_from_process(meta, self._library, self.preset_process_combo.selected_id()))
 
     def _on_preset_scan_picked(self, *_args) -> None:
+        self._resolve_other_preset_pick(self.preset_scan_combo)
         meta = None if self._updating else self._preset_meta()
         if meta is not None:
             self._write_preset(metadata_from_scan_setup(meta, self._library, self.preset_scan_combo.selected_id()))
+
+    def _set_own_gear_items(self, combo: SearchableGearCombo, items, selected_id: str) -> None:
+        """Personal gear only, plus the currently selected item even if it is a bundled
+        catalog pick made before this filter existed. Other… is the escape hatch back to
+        the full catalog, so the default search never returns gear the user doesn't own."""
+        entries, search_text = own_gear_entries(items, selected_id)
+        combo.set_labeled_items(
+            entries,
+            selected_id,
+            search_fn=lambda label, item_id: search_text.get(item_id, label.casefold()),
+        )
+
+    def _resolve_other_preset_pick(self, combo: SearchableGearCombo) -> None:
+        """Other… resolves to a real personal item before the caller writes the
+        selection: picking a catalog model clones it into the user's own gear, Add
+        Custom starts a blank one, cancelling reverts to what was selected before."""
+        if combo.selected_id() != OTHER_ID or self._updating:
+            return
+        category = self._preset_combo_category[id(combo)]
+        meta = self._preset_meta()
+        previous = self._preset_combo_field[id(combo)](meta) if meta is not None else ""
+        new_item = resolve_other_gear_pick(self, category, self._library)
+        if new_item is None:
+            self._set_own_gear_items(combo, getattr(self._library, category), previous)
+            return
+        items = list(getattr(self._library, category))
+        items.append(new_item)
+        setattr(self._library, category, items)
+        GearProfiles.save_library(self._library)
+        self.library_changed.emit()
+        self._set_own_gear_items(combo, getattr(self._library, category), new_item.id)
 
     def _on_preset_value_changed(self, *_args) -> None:
         meta = None if self._updating else self._preset_meta()
@@ -737,8 +867,7 @@ class GearLibraryDialog(QDialog):
             self.preset_notes_edit.clear()
         finally:
             self._updating = False
-        while self.preset_fields_layout.rowCount():
-            self.preset_fields_layout.removeRow(0)
+        self._clear_preset_fields_layout()
         self.preset_empty_label.setVisible(False)
         self._updating = True
         try:
@@ -836,9 +965,10 @@ class GearLibraryDialog(QDialog):
 
     def _new_preset_from_frame(self) -> None:
         """A preset is the current frame's metadata, minus the fields left unticked."""
-        if self._current_config is None:
+        current_config = self._current_config_fn()
+        if current_config is None:
             return
-        dlg = GranularSettingsDialog(self, self._current_config, "current metadata", ask_name=True, exclude_sections=NON_METADATA_SECTIONS)
+        dlg = GranularSettingsDialog(self, current_config, "current metadata", ask_name=True, exclude_sections=NON_METADATA_SECTIONS)
         dlg.setWindowTitle("New Metadata Preset")
         # As when editing: which fields to store is the choice, so every row is on offer.
         dlg.show_unchanged_settings()
@@ -847,7 +977,7 @@ class GearLibraryDialog(QDialog):
         name = dlg.name().strip()
         if not self._name_is_usable(name):
             return
-        MetadataPresets.save_preset(name, selected_flat_dict(self._current_config, dlg.selected()))
+        MetadataPresets.save_preset(name, selected_flat_dict(current_config, dlg.selected()))
         self._rebuild_item_list(select_id=name)
         self.presets_changed.emit()
 
@@ -882,21 +1012,46 @@ class GearLibraryDialog(QDialog):
         if self._category == _PRESETS:
             self._new_preset_from_frame()
             return
-        if self._category == "cameras":
-            item = Camera(make="New", model="Camera")
-        elif self._category == "lenses":
-            item = Lens(lens_model="New lens")
-        elif self._category == "processes":
-            item = DevelopmentProcess(display_name="New process")
-        elif self._category == "scan_setups":
-            item = ScanSetup(display_name="New scan setup")
-        else:
-            item = FilmStock(stock_name="New stock")
+        catalog = [item for item in self._current_items() if item.is_bundled]
+        if not catalog:
+            self._add_custom_item()
+            return
+        dlg = GearCatalogDialog(
+            self,
+            _CATEGORY_SINGULAR[self._category],
+            catalog,
+            lambda item: item.resolved_display_name,
+            _CATEGORY_SEARCH_PLACEHOLDER[self._category],
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        if dlg.wants_custom():
+            self._add_custom_item()
+            return
+        picked = next((c for c in catalog if c.id == dlg.selected_id()), None)
+        if picked is not None:
+            self._clone_into_personal(picked)
+
+    def _add_custom_item(self) -> None:
+        """Blank-record escape hatch, offered by the catalog dialog when the user's own
+        gear isn't in the shipped list."""
+        item = blank_gear_item(self._category)
         items = list(self._current_items())
         items.append(item)
         self._set_current_items(items)
         GearProfiles.save_library(self._library)
         self._rebuild_item_list(select_id=item.id)
+        self.library_changed.emit()
+        self.display_name_edit.setFocus()
+        self.display_name_edit.selectAll()
+
+    def _clone_into_personal(self, source) -> None:
+        dup = clone_into_personal(source)
+        items = list(self._current_items())
+        items.append(dup)
+        self._set_current_items(items)
+        GearProfiles.save_library(self._library)
+        self._rebuild_item_list(select_id=dup.id)
         self.library_changed.emit()
 
     def _duplicate_item(self) -> None:
@@ -917,28 +1072,20 @@ class GearLibraryDialog(QDialog):
             self._rebuild_item_list(select_id=copy_name)
             self.presets_changed.emit()
             return
-        import copy
-
-        items = list(self._current_items())
-        dup = copy.deepcopy(items[self._selected_idx])
-        from negpy.features.metadata.gear_models import _new_id
-
-        dup.id = _new_id()
-        dup.is_bundled = False
-        items.append(dup)
-        self._set_current_items(items)
-        GearProfiles.save_library(self._library)
-        self._rebuild_item_list(select_id=dup.id)
-        self.library_changed.emit()
+        items = self._current_items()
+        self._clone_into_personal(items[self._selected_idx])
 
     def _delete_item(self) -> None:
         if self._selected_idx < 0:
             return
         items = self._current_items()
+        item = items[self._selected_idx]
+        if not isinstance(item, str) and item.is_bundled:
+            return
         kind = {"metadata_presets": "Preset", "film_stocks": "Film Stock", "scan_setups": "Scan Setup"}.get(
             self._category, dict(_CATEGORIES)[self._category].rstrip("s")
         )
-        if not confirm_delete_named(self, kind, self._item_label(items[self._selected_idx])):
+        if not confirm_delete_named(self, kind, self._item_label(item)):
             return
         if self._category == _PRESETS:
             name = self._selected_preset()

@@ -15,10 +15,10 @@ If Windows blocks writes to NegPy's default data folder, NegPy suggests `%LOCALA
 ### Screen layout
 
 *   **Left, the film strip**: your loaded frames as a contact sheet, plus import, sorting, and triage tools.
-*   **Center, the canvas**: the live preview of the current frame. Most tools (crop, white-balance picker, heal brush, dodge/burn masks) are used by clicking directly on it. Scroll/pinch to zoom and drag to pan; a floating toolbar along the bottom holds Fit/1:1 zoom (**1:1** is one scan pixel per screen pixel, and lights up while you are at it; below **HQ** the preview is scaled up to reach it, which a **preview res · HQ off** pill on the canvas says) plus undo/redo, rotate/flip and more, moving overflow items into an **⋯** menu when the window narrows. What does not fit collapses from the right, and the **⋯** menu keeps every action whatever the row shows. **Preferences…** in that menu holds every app-wide setting (§14): the interface options, the performance budgets, **Edit Toolbar…** for which controls sit on the row and in what order, and **Persistent Settings…** for what carries onto the next file you open. Right-click the image for **Reset View** and **Sticky Zoom** (keeps the current zoom level when you switch to another frame, instead of resetting to fit), alongside the picker tools, copy/paste settings, and **Unload** (removes the frame from the session; its saved edit is kept). With nothing loaded it shows **Load some scans to get started**; click it for **Add Files** / **Add Folder**.
-*   **Right, the controls**: a pinned **Analysis** readout at the top, and below it an icon tab bar. Each icon opens a *workflow page* holding one or more collapsible panels.
+*   **Center, the canvas**: the live preview of the current frame. Most tools (crop, white-balance picker, heal brush, dodge/burn masks) are used by clicking directly on it. Scroll/pinch to zoom and drag to pan; a floating toolbar along the bottom holds Fit/1:1 zoom (**1:1** is one scan pixel per screen pixel, and lights up while you are at it; below **HQ** the preview is scaled up to reach it, which a **preview res · HQ off** pill on the canvas says) plus undo/redo, rotate/flip and more, moving overflow items into an **⋯** menu when the window narrows. What does not fit collapses from the right, and the **⋯** menu keeps every action whatever the row shows. **Preferences…** in that menu holds every app-wide setting (§15): the interface options, the performance budgets, **Edit Toolbar…** for which controls sit on the row and in what order, and **Persistent Settings…** for what carries onto the next file you open. Right-click the image for **Reset View** and **Sticky Zoom** (keeps the current zoom level when you switch to another frame, instead of resetting to fit), alongside the picker tools, copy/paste settings, and **Unload** (removes the frame from the session; its saved edit is kept). With nothing loaded it shows **Load some scans to get started**; click it for **Add Files** / **Add Folder**.
+*   **Right, Edit**: one panel, tabbed across **Edit** / **Export** / **Metadata** / **Gear** / **Scan** at the top of the column. **Edit** — a pinned **Analysis** readout, then its own icon tab bar — is everything that changes what the canvas shows. Export, Metadata, Gear and Scan are roll identity, gear library and output settings, none of which touch the render, so they sit beside Edit rather than inside it.
 
-NegPy remembers the window size and whether it was maximized, the panel widths and which edge each panel sits on, which sections were open, and which controls tab was active. **Reset Panel Layout** in the **⋯** menu puts both panels back at their home edges and widths.
+Every side panel — the film strip (left) and Edit (right) — can be dragged loose by its title bar into its own floating window; a pin button there sends it back to its docked spot. NegPy remembers the window size and whether it was maximized, each panel's floating/docked state, edge and width, which sections were open, and which tab was active on each. **Reset Panel Layout** in the **⋯** menu puts both panels back at their home edges, widths and visibility.
 
 ### Before / After
 
@@ -38,7 +38,7 @@ While a peek is up the canvas carries a **NEGATIVE**, **EMBEDDED** or **FLAT SCA
 
 ### The workflow (and the order things happen)
 
-The right-hand tabs follow the order you work in, which mirrors the processing pipeline:
+The Edit tab's own tab bar follows the order you work in, which mirrors the processing pipeline:
 
 | Tab | Icon | Panels | What it is for |
 |-----|------|--------|---------------|
@@ -49,15 +49,21 @@ The right-hand tabs follow the order you work in, which mirrors the processing p
 | **Finish** | brush | Retouch · Finishing | Dust removal, vignette, border, carrier |
 | **Favorites** | star | Your chosen sliders | Quick access to the controls you use most |
 | **History** | clock | Work prints · Edit history | Keep named versions, step back through every change |
+
+Beside Edit, the panel's own tab bar holds the tabs that never change the render:
+
+| Tab | Icon | Panels | What it is for |
+|-----|------|--------|---------------|
 | **Export** | file | Export settings | Format, size, color, batch output |
 | **Metadata** | tags | Archival metadata | Original camera, lens and film details |
+| **Gear** | toolbox | Gear library | Manage cameras, lenses, film stocks, processes and scan setups |
 | **Scan** | camera | Scanner · Camera Scanning | Capture film directly (Linux/macOS) |
 
 You do not have to touch every panel. The defaults are tuned to produce a good print straight away, and most frames need only a crop, perhaps a white-balance nudge, and export.
 
 A small **dot** on a panel header, and on a tab icon, means you changed something from its default. Every panel header has a **reset** action and an **ⓘ** that opens this guide at that panel's section.
 
-Both side panels can be narrowed to give the canvas more room. As the controls panel shrinks, tab icons that no longer fit move into a **»** menu at the right of the tab bar. The tab you are on always stays visible.
+Every panel can be narrowed to give the canvas more room. As a panel shrinks, its tab icons that no longer fit move into a **»** menu at the right of its own tab bar. The tab you are on always stays visible.
 
 ### What carries to the next frame
 
@@ -90,7 +96,7 @@ A menu shows a key only when that key uses `⌘`. A shortcut bound to a plain ke
 <!-- panel:frames -->
 ## 2. Film strip (left panel)
 
-The header shows the NegPy logo and version. The **↻** button beside the version number asks GitHub for a newer release on demand; it becomes a green **⬇** when one is out. When a newer release is out, a green **⬇ Update Available** line also appears under the version; click either to read what changed and let NegPy install it ([§15](#15-updating-negpy)). The chevron at the header's top-right folds the branding away to give the frames more room.
+The header shows the NegPy logo and version. The **↻** button beside the version number asks GitHub for a newer release on demand; it becomes a green **⬇** when one is out. When a newer release is out, a green **⬇ Update Available** line also appears under the version; click either to read what changed and let NegPy install it ([§16](#16-updating-negpy)). The chevron at the header's top-right folds the branding away to give the frames more room.
 
 Below the header: the toolbar, the search box, and two collapsible sections. **Library** holds the folders your scans live in; **Film Strip** holds the frames you have open. Click either heading to fold it away; the one still open takes the whole panel. Drag the handle between them to resize the split; NegPy remembers both which were open and where you left the handle.
 
@@ -401,8 +407,23 @@ Bayer and X-Trans RAW only: a scanner TIFF, a Pakon scan or a linear DNG arrives
 
 *   **Preview** / **Export** (default **Auto** for both): *Auto* keeps NegPy's own choice, a fast half-size decode on screen and AHD for export. For the preview, Auto and Linear are the fastest; the others decode at full size. **AHD** is LibRaw's balanced default, **VNG** the smooth one, **PPG** fast with clean edges, **DCB** and **DHT** chase fine detail, and **AAHD** softens edges to suppress artifacts.
 
+<!-- panel:roll -->
+### 4.3 Roll Analysis: a consistent look across the roll
+
+Meter the whole roll once and share the baseline, so frames from the same film match.
+
+*   **Batch Analysis**: scans every loaded file and computes a roll-average density and color balance, discarding outliers. Run it once after importing. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)*
+*   **Use Luma Average**: this frame takes the roll-wide tonal range; color still re-derives per frame.
+*   **Use Color Average**: this frame takes the roll-wide color balance; tonal range still re-derives per frame. Enable both for a fully consistent roll; leave both off for per-image auto-exposure.
+
+**ROLL**, to reuse a baseline across sessions:
+
+*   **Roll dropdown** + **Load**: apply a saved roll's bounds and balance.
+*   **Save**: store the current Batch Analysis as a named roll, useful when you shoot the same stock repeatedly.
+*   **Delete**: remove the selected roll (it asks first). The frames keep their current look; only the saved baseline goes.
+
 <!-- panel:process -->
-### 4.3 Normalization: negative → positive
+### 4.4 Normalization: negative → positive
 
 How the negative is measured and normalized into a positive. The film mode that decides *which* conversion runs sits above the panels (§4), and how the scan is decoded lives in **Calibration** (§4.1).
 
@@ -448,21 +469,6 @@ How the negative is measured and normalized into a positive. The film mode that 
     **Narrowband** and **Single-Shot Narrowband Calibration** are grayed out for *any* transparency, Normalize or not; see [Narrowband and slides](#narrowband-and-slides). Reproducing a slide's appearance is a colorimetric problem, and narrowband illumination samples the spectrum at three isolated wavelengths, so the inter-band overlap the eye integrates is never measured, which is the same reason narrowband scans render oversaturated and hue-rotated. No input profile recovers what was never sampled, and the bundled one describes negative dyes besides.
 
 **Positive** (default off) sits next to Normalize, slide-only in the same way, and live only with Normalize off. As captured, NegPy reads the source as literal linear data and renders it like a raw capture, with a fixed exposure lift and a filmic highlight roll-off. Turn Positive on when the source is already a finished image, such as a scanned print or an export from other software: NegPy decodes its embedded profile instead (an untagged file falls back to sRGB) and skips the lift and the roll-off, so the Print sliders shape the image directly. With Normalize on it grays out, that render decoding on the source's own profile anyway.
-
-<!-- panel:roll -->
-### 4.4 Roll Analysis: a consistent look across the roll
-
-Meter the whole roll once and share the baseline, so frames from the same film match.
-
-*   **Batch Analysis**: scans every loaded file and computes a roll-average density and color balance, discarding outliers. Run it once after importing. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)*
-*   **Use Luma Average**: this frame takes the roll-wide tonal range; color still re-derives per frame.
-*   **Use Color Average**: this frame takes the roll-wide color balance; tonal range still re-derives per frame. Enable both for a fully consistent roll; leave both off for per-image auto-exposure.
-
-**ROLL**, to reuse a baseline across sessions:
-
-*   **Roll dropdown** + **Load**: apply a saved roll's bounds and balance.
-*   **Save**: store the current Batch Analysis as a named roll, useful when you shoot the same stock repeatedly.
-*   **Delete**: remove the selected roll (it asks first). The frames keep their current look; only the saved baseline goes.
 
 <!-- panel:presets -->
 ### 4.5 Presets
@@ -837,6 +843,9 @@ A scrollable list of every edit step, the last 100 kept, newest on top. The curr
 
 The primary **Export** action. Its chevron menu picks the scope: current frame (Ctrl+E), selected frames, or all visible frames. Every scope uses the settings below. To deliver the same frames in more than one format or size in a single run, use Export Presets.
 
+*   **Protect original metadata**: copy the source file's EXIF/XMP to exports unchanged, adding nothing. When it is on, the Metadata tab's fields (§12) are ignored and the source's resolution is copied exactly: the same numbers, axes and unit, whether the source states it in EXIF or in its own header, even where the export was resized. A source that declares no resolution stays that way in every format that can leave it out. TIFF cannot, so it states the export's own resolution rather than the unit-less value readers report as 1 DPI.
+*   **Sync custom metadata to all files in batch export**: batch and preset exports write this frame's capture, gear and process values to every file, instead of each file's own. Disabled alongside Protect original metadata, which ignores those values entirely.
+
 ### Format / Size / Color Management / Destination
 
 *   **Format**: `JPEG`, `TIFF`, `PNG`, `JPEG XL`, or `WebP`, with quality or effort options per format. **JPEG XL supports only `sRGB`, `P3 D65`, `Rec 2020` or `Grayscale`** for Export profile: it tags color with compact enumerated values rather than an embedded ICC profile, and NegPy's JXL encoder cannot carry an arbitrary one, so `Adobe RGB`, `ProPhoto RGB` and a custom Output ICC are rejected with an error. Pick a supported space or a different format.
@@ -901,10 +910,7 @@ A soft proof shows what the picture becomes when a given printer puts it on a gi
 
 Archival metadata for the **original analog capture** (camera, lens, film, process), written into exported files as EXIF and embedded XMP, so DAMs like Lightroom show your film gear rather than the scanner.
 
-Every export format carries it: JPEG, TIFF, PNG, JPEG XL and WebP. A TIFF holds the capture position in XMP only, and EXIF text is 7-bit, so typographic punctuation is transliterated (`4×5` is written `4x5`).
-
-*   **Protect original metadata**: copy the source file's EXIF/XMP to exports unchanged, adding nothing. When it is on, the fields below are ignored and the source's resolution is copied exactly: the same numbers, axes and unit, whether the source states it in EXIF or in its own header, even where the export was resized. A source that declares no resolution stays that way in every format that can leave it out. TIFF cannot, so it states the export's own resolution rather than the unit-less value readers report as 1 DPI.
-*   **Sync custom metadata to all files in batch export**: batch and preset exports write this frame's capture, gear and process values to every file, instead of each file's own.
+Every export format carries it: JPEG, TIFF, PNG, JPEG XL and WebP. A TIFF holds the capture position in XMP only, and EXIF text is 7-bit, so typographic punctuation is transliterated (`4×5` is written `4x5`). **Protect original metadata**, on the Export tab (§11), copies the source file's own EXIF/XMP instead of writing these fields.
 
 <!-- panel:metadata_presets -->
 ### Metadata Presets
@@ -912,7 +918,8 @@ Every export format carries it: JPEG, TIFF, PNG, JPEG XL and WebP. A TIFF holds 
 A saved set of metadata values, stored in `~/NegPy/presets/metadata/`, separate from the edit presets on the Setup tab:
 
 *   **Preset** + **Load**: write the selected preset's fields onto this frame. Only the fields the preset stores change; everything else on the frame stays. Hover the field for a list of what a preset holds.
-*   **Manage…**: the library, with a page each for **Cameras**, **Lenses**, **Film Stocks**, **Process**, **Scanning** and **Presets**. A Process entry is a development recipe (developer, dilution, push/pull, time and temperature); a Scanning entry is a digitizing setup. On the Presets page, **+** stores the current frame's metadata under a name you pick, the **pen** renames a preset or changes which fields it stores, and **copy** and **trash** duplicate and delete. The fields a preset stores are then editable in place: swap its camera, lens, film stock, saved process or saved setup, or retype a developer, dilution, push, time, temperature, scanning note, roll or exposure. No frame needs to be open. Picking from the library refills everything read from it; typing over a filled value unlinks the pick. A stored capture date, place, description-field set or flag is shown but not editable here, being a per-frame decision. **Notes** is free text. Starter data seeds into `~/NegPy/gear/` on first launch.
+
+Presets, cameras, lenses, film stocks and every other gear record are managed on the **Gear** tab (§13), not here.
 
 Gear travels as one unit: camera, lens, film stock, the film format and every other value read from them. So a loaded preset fills the dropdowns below and the exported EXIF with the same pick, and a preset for a 120 stock cannot leave the frame claiming 35mm. Picking a film stock sets the format either way, so set a frame format such as `6×7` after choosing the stock. The frame number is never stored in a preset.
 
@@ -961,7 +968,21 @@ When you set capture gear, it is written to standard EXIF, and the digitizing ri
 
 ---
 
-## 13. Scan tab
+## 13. Gear tab
+
+A searchable, user-extendable library of cameras, lenses, film stocks, development processes, scan setups and metadata presets, shared by Metadata (§12), Roll Settings and every other picker in the app that offers gear. The list defaults to gear you have added yourself; a built-in reference catalog of common cameras, lenses, film stocks, processes and scan setups is available alongside it, without cluttering the list. Your own gear saves to `~/NegPy/gear/`.
+
+**Category** picks what the list below shows: **Cameras**, **Lenses**, **Film Stocks**, **Process**, **Scanning** or **Presets**. A Process entry is a development recipe (developer, dilution, push/pull, time and temperature); a Scanning entry is a digitizing setup. An empty category reads "You haven't added any…yet" rather than showing a blank list.
+
+*   **+**: for Cameras, Lenses, Film Stocks, Process and Scanning, pick the one you own from the built-in catalog — it copies into your own list, editable from there — or **Add Custom** to enter one by hand. On Presets, **+** stores the current frame's metadata under a name you pick.
+*   **Catalog**: show the built-in reference models alongside your own, for browsing the full list. Off by default.
+*   **pen**: Presets only — rename a preset or change which fields it stores.
+*   **copy / trash**: duplicate or delete the selected item. Trash is disabled on a built-in catalog entry, since it is reference data, not yours to remove; duplicate still copies it into your own list.
+*   The fields of a preset are then editable in place: swap its camera, lens, film stock, saved process or saved setup, or retype a developer, dilution, push, time, temperature, scanning note, roll or exposure. No frame needs to be open. Each of these searches your own gear by default, with **Other…** for the full catalog, same as the Metadata tab (§12). Picking from the library refills everything read from it; typing over a filled value unlinks the pick. A stored capture date, place, description-field set or flag is shown but not editable here, being a per-frame decision. **Notes** is free text.
+
+---
+
+## 14. Scan tab
 
 Capture film directly into NegPy. Two collapsible sections.
 
@@ -1018,7 +1039,7 @@ Every preview dialog ends the same way: **Cancel**, then **Apply** (keep the fra
 
 ---
 
-## 14. Preferences
+## 15. Preferences
 
 Settings for the whole application, not for one photo. Open them from the canvas **⋯** menu → **Preferences…**, with `Ctrl + ,`, or on macOS from the application menu. Changes apply as you make them; the rows NegPy reads at startup say so and light a restart notice.
 
@@ -1035,7 +1056,7 @@ Settings for the whole application, not for one photo. Open them from the canvas
 ### Performance
 
 *   **GPU acceleration**: render the pipeline on the GPU. The active backend is named below the row. Off falls back to the CPU pipeline, which is slower but produces the same image. If the GPU viewport itself fails to start, a warning toast says so at launch and an amber line here repeats it; the display then runs on the CPU.
-*   **Multi-core CPU rendering**: see §4.3. It takes effect at once, with no restart.
+*   **Multi-core CPU rendering**: see §4.4. It takes effect at once, with no restart.
 *   **Preview size** (512 to 8192 px): long edge of the interactive canvas. Higher is sharper at 100% zoom, and costs proportionally more VRAM and CPU per frame, so lower the cache limit and the rendered-frame count to match. RAW files decode at half sensor size for the preview, so there is nothing to gain past half the long edge of your scan.
 *   **Preview cache** and **Preview cache limit**: how many recently-viewed photos stay decoded in memory, and the memory ceiling for them. Lower both on a machine with little RAM.
 *   **HQ buffers**: full-resolution HQ preview buffers kept in memory. Each is large (a 60 MP scan is about 700 MB), and keeping the previous frame makes going back instant.
@@ -1073,7 +1094,7 @@ If NegPy crashes on launch or has rendering glitches, force the backend without 
 
 ---
 
-## 15. Updating NegPy
+## 16. Updating NegPy
 
 NegPy asks GitHub for the newest release once at startup. If there is one, a green **⬇ Update Available: vX.Y.Z** line appears under the logo in the left panel. Click it to open the update window with the release notes, the download size and one button.
 
