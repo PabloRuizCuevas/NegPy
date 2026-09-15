@@ -3,13 +3,21 @@ personal, or fall back to a custom entry."""
 
 from __future__ import annotations
 
-from typing import Callable, Sequence
+from typing import Callable, Optional, Sequence
 
 from PyQt6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QVBoxLayout
 
 from negpy.desktop.view.styles.templates import field_label, hint_label, pin_dialog_default
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.searchable_gear_combo import SearchableGearCombo
+from negpy.features.metadata.gear_logic import (
+    CATEGORY_SEARCH_PLACEHOLDER,
+    CATEGORY_SINGULAR,
+    GearItem,
+    blank_gear_item,
+    clone_into_personal,
+)
+from negpy.features.metadata.gear_models import GearLibrary
 
 
 class GearCatalogDialog(QDialog):
@@ -64,3 +72,27 @@ class GearCatalogDialog(QDialog):
 
     def selected_id(self) -> str:
         return "" if self._custom else self.combo.selected_id()
+
+
+def resolve_other_gear_pick(parent, category: str, library: GearLibrary) -> Optional[GearItem]:
+    """The Other… row's flow, shared by every gear combo that defaults to personal gear:
+    search the shipped catalog for this category, clone a pick into a personal item, or
+    start a blank custom one. Returns the item to add to the library, or None if
+    cancelled -- the caller still owns saving it and refreshing its own combo."""
+    items = getattr(library, category)
+    catalog = [item for item in items if item.is_bundled]
+    if not catalog:
+        return blank_gear_item(category)
+    dlg = GearCatalogDialog(
+        parent,
+        CATEGORY_SINGULAR[category],
+        catalog,
+        lambda item: item.resolved_display_name,
+        CATEGORY_SEARCH_PLACEHOLDER[category],
+    )
+    if dlg.exec() != QDialog.DialogCode.Accepted:
+        return None
+    if dlg.wants_custom():
+        return blank_gear_item(category)
+    picked = next((item for item in catalog if item.id == dlg.selected_id()), None)
+    return clone_into_personal(picked) if picked is not None else None

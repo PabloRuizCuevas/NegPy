@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import uuid
 from dataclasses import replace
-from typing import Optional, Union
+from typing import Optional, Sequence, Union
 
 from negpy.features.metadata.gear_models import Camera, DevelopmentProcess, FilmStock, GearLibrary, Lens, ScanSetup
 from negpy.features.metadata.models import PUSH_PULL_LABELS, MetadataConfig
@@ -19,6 +19,36 @@ CATEGORY_SINGULAR: dict[str, str] = {
     "processes": "Process",
     "scan_setups": "Scan Setup",
 }
+
+CATEGORY_SEARCH_PLACEHOLDER: dict[str, str] = {
+    "cameras": "Search cameras…",
+    "lenses": "Search lenses…",
+    "film_stocks": "Search film stocks…",
+    "processes": "Search processes…",
+    "scan_setups": "Search scan setups…",
+}
+
+# Sentinel row appended by own_gear_entries(): picking it means "not in my own gear",
+# so the caller should offer the full shipped catalog instead of searching it by default.
+OTHER_ID = "__other__"
+OTHER_LABEL = "Other…"
+
+
+def own_gear_entries(items: Sequence[GearItem], selected_id: str) -> tuple[list[tuple[str, str]], dict[str, str]]:
+    """(label, id) rows for a gear combo that defaults to personal gear: bundled items
+    are left out, except one already selected (so a pre-existing pick, made before this
+    filter existed, never disappears), with a trailing Other… row for the rest of the
+    catalog. Returns the rows and an id -> search-text map, since Other…'s own search
+    text is just its label."""
+    own = [item for item in items if not item.is_bundled]
+    if selected_id and not any(item.id == selected_id for item in own):
+        legacy = next((item for item in items if item.id == selected_id), None)
+        if legacy is not None:
+            own = [*own, legacy]
+    search_text = {item.id: gear_search_text(item) for item in own}
+    entries = [(item.resolved_display_name, item.id) for item in own]
+    entries.append((OTHER_LABEL, OTHER_ID))
+    return entries, search_text
 
 
 def blank_gear_item(category: str) -> GearItem:

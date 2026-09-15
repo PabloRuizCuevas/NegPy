@@ -4,7 +4,6 @@ from typing import Optional
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
     QComboBox,
-    QDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -27,7 +26,7 @@ from negpy.desktop.view.styles.fonts import mono_font_family
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
 from negpy.desktop.view.widgets.description_fields_dialog import DescriptionFieldsDialog
-from negpy.desktop.view.widgets.gear_catalog_dialog import GearCatalogDialog
+from negpy.desktop.view.widgets.gear_catalog_dialog import resolve_other_gear_pick
 from negpy.desktop.view.widgets.location_picker_dialog import LocationPickerDialog
 from negpy.desktop.view.widgets.searchable_gear_combo import SearchableGearCombo
 from negpy.features.metadata.capture import (
@@ -43,13 +42,11 @@ from negpy.features.metadata.capture import (
 )
 from negpy.features.metadata.exif_read import extract_scan_from_exif
 from negpy.features.metadata.gear_logic import (
-    CATEGORY_SINGULAR,
-    blank_gear_item,
-    clone_into_personal,
-    gear_search_text,
+    OTHER_ID,
     metadata_from_gear,
     metadata_from_process,
     metadata_from_scan_setup,
+    own_gear_entries,
 )
 from negpy.features.metadata.gear_models import GearLibrary
 from negpy.features.metadata.models import (
@@ -70,18 +67,6 @@ from negpy.services.assets.presets import MetadataPresets
 PUSH_PULL_OPTIONS = [PUSH_PULL_LABELS[v] for v in PUSH_PULL_VALUES]
 _LOAD_TOOLTIP = "Write the selected preset's fields onto this frame"
 
-# Sentinel row appended to every gear combo: picking it means "not in my own gear",
-# and opens the full shipped catalog rather than searching it by default.
-_OTHER_ID = "__other__"
-_OTHER_LABEL = "Other…"
-
-_GEAR_CATEGORY_SEARCH_PLACEHOLDER = {
-    "cameras": "Search cameras…",
-    "lenses": "Search lenses…",
-    "film_stocks": "Search film stocks…",
-    "processes": "Search processes…",
-    "scan_setups": "Search scan setups…",
-}
 _CLEAR_TOOLTIPS = {
     "gear_clear_btn": ("Clear the camera, lens and film stock selections", "metadata_clear_gear"),
     "process_clear_btn": (
@@ -501,14 +486,7 @@ class MetadataSidebar(BaseSidebar):
         """Personal gear only, plus the currently selected item even if it is a bundled
         catalog pick made before this filter existed. Other… is the escape hatch back to
         the full catalog, so the default search never returns gear the user doesn't own."""
-        own = [item for item in items if not item.is_bundled]
-        if selected_id and not any(item.id == selected_id for item in own):
-            legacy = next((item for item in items if item.id == selected_id), None)
-            if legacy is not None:
-                own = [*own, legacy]
-        search_text = {item.id: gear_search_text(item) for item in own}
-        entries = [(item.resolved_display_name, item.id) for item in own]
-        entries.append((_OTHER_LABEL, _OTHER_ID))
+        entries, search_text = own_gear_entries(items, selected_id)
         combo.set_labeled_items(
             entries,
             selected_id,
@@ -540,37 +518,16 @@ class MetadataSidebar(BaseSidebar):
         """Other… resolves to a real personal item before the caller applies the
         selection: picking a catalog model clones it into the user's own gear, Add
         Custom starts a blank one, cancelling reverts to what was selected before."""
-        if combo.selected_id() != _OTHER_ID:
+        if combo.selected_id() != OTHER_ID:
             return
-        conf = self.state.config.metadata
-        previous = self._gear_selected_id(combo, conf)
+        previous = self._gear_selected_id(combo, self.state.config.metadata)
         category = self._gear_combo_category[id(combo)]
         library = self._gear_library
-        items = getattr(library, category)
-        catalog = [item for item in items if item.is_bundled]
-        new_item = None
-        if catalog:
-            dlg = GearCatalogDialog(
-                self,
-                CATEGORY_SINGULAR[category],
-                catalog,
-                lambda item: item.resolved_display_name,
-                _GEAR_CATEGORY_SEARCH_PLACEHOLDER[category],
-            )
-            if dlg.exec() != QDialog.DialogCode.Accepted:
-                combo.set_selected_id(previous)
-                return
-            if dlg.wants_custom():
-                new_item = blank_gear_item(category)
-            else:
-                picked = next((item for item in catalog if item.id == dlg.selected_id()), None)
-                new_item = clone_into_personal(picked) if picked is not None else None
-        else:
-            new_item = blank_gear_item(category)
+        new_item = resolve_other_gear_pick(self, category, library)
         if new_item is None:
             combo.set_selected_id(previous)
             return
-        setattr(library, category, [*items, new_item])
+        setattr(library, category, [*getattr(library, category), new_item])
         GearProfiles.save_library(library)
         self._refresh_gear_combos(force=True)
         combo.set_selected_id(new_item.id)

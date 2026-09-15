@@ -880,6 +880,55 @@ class TestEditingPresetValuesInTheLibrary:
         assert dlg.preset_time_edit.styleSheet() != ""
 
 
+class TestPresetGearCombosDefaultToOwnGear:
+    """Same mine-vs-catalog default as the Metadata tab's own combos, since this form
+    edits the same camera_id / lens_id / ... fields."""
+
+    @pytest.fixture
+    def dialog(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(APP_CONFIG, "gear_dir", str(tmp_path / "gear"))
+        library = GearLibrary(
+            cameras=[
+                Camera(id="c-bundled", make="Leica", model="M6", is_bundled=True),
+                Camera(id="c-mine", make="Nikon", model="FM2", is_bundled=False),
+            ]
+        )
+        dlg = GearLibraryPanel(library)
+        MetadataPresets.save_preset("Kit", selected_flat_dict(WorkspaceConfig(), [r for r in _metadata_rows() if r.label == "Gear"]))
+        dlg._select_category("metadata_presets")
+        dlg.item_list.setCurrentRow([dlg._item_label(i) for i in dlg._list_items].index("Kit"))
+        return dlg, library
+
+    def test_camera_combo_defaults_to_personal_gear_only(self, dialog):
+        dlg, _library = dialog
+        from negpy.desktop.view.widgets.gear_library_panel import OTHER_ID
+
+        ids = {item_id for _label, item_id, _search in dlg.preset_camera_combo._entries}
+        assert ids == {"c-mine", OTHER_ID}
+
+    def test_other_pick_clones_the_catalog_camera_and_writes_through(self, dialog):
+        dlg, _library = dialog
+        from negpy.desktop.view.widgets.gear_library_panel import OTHER_ID
+
+        cloned = Camera(id="c-cloned", make="Leica", model="M6", is_bundled=False)
+        with patch("negpy.desktop.view.widgets.gear_library_panel.resolve_other_gear_pick", return_value=cloned):
+            dlg.preset_camera_combo._commit_id(OTHER_ID)
+
+        stored = MetadataPresets.load_preset("Kit")
+        assert stored["camera_id"] == "c-cloned"
+        assert stored["camera_make"] == "Leica"
+        assert any(c.id == "c-cloned" for c in _library.cameras)
+
+    def test_other_pick_cancelled_reverts_to_no_selection(self, dialog):
+        dlg, _library = dialog
+        from negpy.desktop.view.widgets.gear_library_panel import OTHER_ID
+
+        with patch("negpy.desktop.view.widgets.gear_library_panel.resolve_other_gear_pick", return_value=None):
+            dlg.preset_camera_combo._commit_id(OTHER_ID)
+
+        assert dlg.preset_camera_combo.selected_id() == ""
+
+
 class TestMigrationNaming:
     """A name the store cannot take costs that one preset, never the presets after it."""
 

@@ -36,17 +36,19 @@ from negpy.desktop.view.confirm import confirm_delete_named
 from negpy.desktop.view.sidebar.base import install_wheel_guards
 from negpy.desktop.view.styles.templates import field_label, hint_label, icon_button, section_subheader, tool_toggle, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
-from negpy.desktop.view.widgets.gear_catalog_dialog import GearCatalogDialog
+from negpy.desktop.view.widgets.gear_catalog_dialog import GearCatalogDialog, resolve_other_gear_pick
 from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog
 from negpy.domain.models import WorkspaceConfig
 from negpy.features.metadata.gear_logic import (
     CATEGORY_SINGULAR,
+    OTHER_ID,
     blank_gear_item,
     clone_into_personal,
     matches_gear_filter,
     metadata_from_gear,
     metadata_from_process,
     metadata_from_scan_setup,
+    own_gear_entries,
 )
 from negpy.features.metadata.capture import DEV_TIME_HINT, format_dev_time, format_temperature, parse_dev_time, parse_temperature
 from negpy.features.metadata.gear_models import (
@@ -391,6 +393,21 @@ class GearLibraryPanel(QWidget):
             self.preset_form_layout.addWidget(widget)
             self._preset_rows[key] = (row_label, widget)
 
+        self._preset_combo_category = {
+            id(self.preset_camera_combo): "cameras",
+            id(self.preset_lens_combo): "lenses",
+            id(self.preset_film_combo): "film_stocks",
+            id(self.preset_process_combo): "processes",
+            id(self.preset_scan_combo): "scan_setups",
+        }
+        self._preset_combo_field = {
+            id(self.preset_camera_combo): lambda meta: meta.camera_id,
+            id(self.preset_lens_combo): lambda meta: meta.lens_id,
+            id(self.preset_film_combo): lambda meta: meta.film_stock_id,
+            id(self.preset_process_combo): lambda meta: meta.process_id,
+            id(self.preset_scan_combo): lambda meta: meta.scanning_id,
+        }
+
         # A library pick re-resolves everything read from it; a typed value unlinks the pick,
         # exactly as the Metadata panel behaves.
         for combo, handler in (
@@ -656,11 +673,11 @@ class GearLibraryPanel(QWidget):
         try:
             self.preset_name_label.setText(name)
             self.preset_notes_edit.setText(preset_notes(data))
-            self.preset_camera_combo.set_gear_items(self._library.cameras, meta.camera_id, lambda c: c.resolved_display_name)
-            self.preset_lens_combo.set_gear_items(self._library.lenses, meta.lens_id, lambda x: x.resolved_display_name)
-            self.preset_film_combo.set_gear_items(self._library.film_stocks, meta.film_stock_id, lambda f: f.resolved_display_name)
-            self.preset_process_combo.set_gear_items(self._library.processes, meta.process_id, lambda p: p.resolved_display_name)
-            self.preset_scan_combo.set_gear_items(self._library.scan_setups, meta.scanning_id, lambda x: x.resolved_display_name)
+            self._set_own_gear_items(self.preset_camera_combo, self._library.cameras, meta.camera_id)
+            self._set_own_gear_items(self.preset_lens_combo, self._library.lenses, meta.lens_id)
+            self._set_own_gear_items(self.preset_film_combo, self._library.film_stocks, meta.film_stock_id)
+            self._set_own_gear_items(self.preset_process_combo, self._library.processes, meta.process_id)
+            self._set_own_gear_items(self.preset_scan_combo, self._library.scan_setups, meta.scanning_id)
             self.preset_format_combo.setCurrentText(format_label(meta.format))
             self.preset_format_other_edit.setText(meta.format_other)
             self.preset_developer_edit.setText(meta.developer)
@@ -731,6 +748,10 @@ class GearLibraryPanel(QWidget):
         return preset_config(data).metadata if data else None
 
     def _on_preset_gear_changed(self, *_args) -> None:
+        # No sender-based dispatch: called directly (no live signal) by callers that
+        # just set a combo's id and want the write-through, not just a real pick.
+        for combo in (self.preset_camera_combo, self.preset_lens_combo, self.preset_film_combo):
+            self._resolve_other_preset_pick(combo)
         meta = None if self._updating else self._preset_meta()
         if meta is None:
             return
@@ -745,14 +766,47 @@ class GearLibraryPanel(QWidget):
         )
 
     def _on_preset_process_picked(self, *_args) -> None:
+        self._resolve_other_preset_pick(self.preset_process_combo)
         meta = None if self._updating else self._preset_meta()
         if meta is not None:
             self._write_preset(metadata_from_process(meta, self._library, self.preset_process_combo.selected_id()))
 
     def _on_preset_scan_picked(self, *_args) -> None:
+        self._resolve_other_preset_pick(self.preset_scan_combo)
         meta = None if self._updating else self._preset_meta()
         if meta is not None:
             self._write_preset(metadata_from_scan_setup(meta, self._library, self.preset_scan_combo.selected_id()))
+
+    def _set_own_gear_items(self, combo: SearchableGearCombo, items, selected_id: str) -> None:
+        """Personal gear only, plus the currently selected item even if it is a bundled
+        catalog pick made before this filter existed. Other… is the escape hatch back to
+        the full catalog, so the default search never returns gear the user doesn't own."""
+        entries, search_text = own_gear_entries(items, selected_id)
+        combo.set_labeled_items(
+            entries,
+            selected_id,
+            search_fn=lambda label, item_id: search_text.get(item_id, label.casefold()),
+        )
+
+    def _resolve_other_preset_pick(self, combo: SearchableGearCombo) -> None:
+        """Other… resolves to a real personal item before the caller writes the
+        selection: picking a catalog model clones it into the user's own gear, Add
+        Custom starts a blank one, cancelling reverts to what was selected before."""
+        if combo.selected_id() != OTHER_ID or self._updating:
+            return
+        category = self._preset_combo_category[id(combo)]
+        meta = self._preset_meta()
+        previous = self._preset_combo_field[id(combo)](meta) if meta is not None else ""
+        new_item = resolve_other_gear_pick(self, category, self._library)
+        if new_item is None:
+            self._set_own_gear_items(combo, getattr(self._library, category), previous)
+            return
+        items = list(getattr(self._library, category))
+        items.append(new_item)
+        setattr(self._library, category, items)
+        GearProfiles.save_library(self._library)
+        self.library_changed.emit()
+        self._set_own_gear_items(combo, getattr(self._library, category), new_item.id)
 
     def _on_preset_value_changed(self, *_args) -> None:
         meta = None if self._updating else self._preset_meta()
