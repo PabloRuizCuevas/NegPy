@@ -41,6 +41,7 @@ from negpy.desktop.settings_catalog import (
 )
 from negpy.desktop.view.confirm import confirm_delete_named
 from negpy.desktop.view.sidebar.base import install_wheel_guards
+from negpy.desktop.view.shortcut_registry import tooltip_with_shortcut
 from negpy.desktop.view.styles.templates import field_label, hint_label, icon_button, section_subheader, tool_toggle, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.gear_catalog_dialog import GearCatalogDialog, resolve_other_gear_pick
@@ -1210,15 +1211,20 @@ class GearLibraryPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # (icon_name, tooltip, content_widget)
-        specs = [("fa5s.toolbox", "Items", self.items), ("fa5s.magic", "Presets", self.presets)]
+        # (key, icon_name, tooltip, content_widget)
+        specs = [
+            ("items", "fa5s.toolbox", "Items", self.items),
+            ("presets", "fa5s.magic", "Presets", self.presets),
+        ]
 
         self.switcher = OverflowBar(tile=True, height=38, min_item=36)
         self.stack = QStackedWidget()
         self._sub_buttons: list[QPushButton] = []
+        self._sub_keys: list[str] = []
         self._sub_icons: list[str] = []
+        self._sub_tooltips: list[str] = []
 
-        for i, (icon_name, tooltip, content) in enumerate(specs):
+        for i, (key, icon_name, tooltip, content) in enumerate(specs):
             btn = QPushButton()
             btn.setObjectName("right_tab_btn")
             btn.setIcon(qta.icon(icon_name, color=THEME.text_secondary))
@@ -1229,7 +1235,9 @@ class GearLibraryPanel(QWidget):
             btn.clicked.connect(lambda _checked=False, idx=i: self._switch_subtab(idx))
             self.switcher.add_button(btn, tooltip)
             self._sub_buttons.append(btn)
+            self._sub_keys.append(key)
             self._sub_icons.append(icon_name)
+            self._sub_tooltips.append(tooltip)
 
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
@@ -1238,6 +1246,7 @@ class GearLibraryPanel(QWidget):
 
         layout.addWidget(self.switcher)
         layout.addWidget(self.stack, 1)
+        self.apply_shortcut_tooltips()
         self._switch_subtab(0)
 
     def _switch_subtab(self, index: int) -> None:
@@ -1248,3 +1257,11 @@ class GearLibraryPanel(QWidget):
         self.switcher.set_pinned(index)
         if index == 1:
             self.presets.on_activated()
+
+    def show_subtab_by_key(self, key: str) -> None:
+        if key in self._sub_keys:
+            self._switch_subtab(self._sub_keys.index(key))
+
+    def apply_shortcut_tooltips(self) -> None:
+        for btn, key, base in zip(self._sub_buttons, self._sub_keys, self._sub_tooltips):
+            btn.setToolTip(tooltip_with_shortcut(base, f"tab_gear_{key}"))

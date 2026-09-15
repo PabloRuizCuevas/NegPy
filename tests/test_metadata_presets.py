@@ -1102,3 +1102,36 @@ class TestItemsPresetsSplit:
 
         ids = {item_id for _label, item_id, _search in panel.presets.preset_camera_combo._entries}
         assert added.id in ids
+
+    def test_show_subtab_by_key_switches_the_stack_page(self, monkeypatch, tmp_path):
+        panel = self._panel(monkeypatch, tmp_path)
+
+        panel.show_subtab_by_key("presets")
+        assert panel.stack.currentWidget().widget() is panel.presets
+
+        panel.show_subtab_by_key("items")
+        assert panel.stack.currentWidget().widget() is panel.items
+
+    def test_show_subtab_by_key_ignores_an_unknown_key(self, monkeypatch, tmp_path):
+        panel = self._panel(monkeypatch, tmp_path)
+
+        panel.show_subtab_by_key("bogus")
+
+        assert panel.stack.currentWidget().widget() is panel.items
+
+    def test_subtab_tooltips_carry_their_bound_shortcut(self, monkeypatch, tmp_path):
+        # A bare, unmodified key: Ctrl/Shift combos render as platform symbols (e.g. macOS
+        # shows ⇧⌘ glyphs), which a literal string match can't see through.
+        import negpy.desktop.view.shortcut_registry as registry
+
+        panel = self._panel(monkeypatch, tmp_path)
+        monkeypatch.setattr(
+            registry,
+            "key_for",
+            lambda action_id, bindings=None: "G" if action_id == "tab_gear_items" else "",
+        )
+
+        panel.apply_shortcut_tooltips()
+
+        assert "G" in panel._sub_buttons[0].toolTip()
+        assert "G" not in panel._sub_buttons[1].toolTip()
