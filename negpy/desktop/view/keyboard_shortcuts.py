@@ -206,6 +206,7 @@ class ShortcutManager:
             "tab_export": lambda: right.show_tab_by_key("export"),
             "tab_metadata": lambda: right.show_tab_by_key("metadata"),
             "tab_history": lambda: right.show_tab_by_key("history"),
+            "tab_gear": lambda: right.show_tab_by_key("gear"),
             "tab_scan": lambda: right.show_tab_by_key("scan"),
             "fit_view": self.window.canvas.fit_to_window,
             "zoom_100": self.window.canvas.zoom_to_original,
