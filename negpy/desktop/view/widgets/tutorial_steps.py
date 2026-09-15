@@ -797,6 +797,6 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "between files."
             ),
             target=lambda w: None,
-            pre_hook=lambda w: w.right_panel.show_tab_by_key("setup"),
+            pre_hook=lambda w: w.right_panel.show_tab_by_key("roll"),
         ),
     ]

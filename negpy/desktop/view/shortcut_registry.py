@@ -201,7 +201,7 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "toggle_right_panel": ShortcutEntry("Ctrl+]", "Toggle controls panel (re-docks when floating)", "View"),
     "reset_panel_layout": ShortcutEntry("Ctrl+Shift+L", "Dock session and controls panels", "View"),
     "edit_toolbar": ShortcutEntry("", "Edit the canvas toolbar (which controls it shows, in what order)", "View"),
-    "tab_setup": ShortcutEntry("Ctrl+1", "Setup tab", "Tabs"),
+    "tab_roll": ShortcutEntry("Ctrl+1", "Roll tab", "Tabs"),
     "tab_geometry": ShortcutEntry("Ctrl+2", "Geometry tab", "Tabs"),
     "tab_tone": ShortcutEntry("Ctrl+3", "Tone tab", "Tabs"),
     "tab_color": ShortcutEntry("Ctrl+4", "Lab & Toning tab", "Tabs"),
