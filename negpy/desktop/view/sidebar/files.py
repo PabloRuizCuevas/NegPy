@@ -424,14 +424,6 @@ class FileBrowser(QWidget):
         self.library_btn.setIcon(qta.icon("fa5s.book-open", color=THEME.text_primary))
         self.library_btn.setToolTip("Library — your imported rolls")
 
-        # Clearing the strip is how you start a roll you will build entirely by drag-drop --
-        # folder-plus rather than the destructive times-circle Unload uses, since the point
-        # here is the empty roll you get, not the frames you are dropping.
-        self.new_roll_btn = QToolButton()
-        self.new_roll_btn.setIcon(qta.icon("fa5s.folder-plus", color=THEME.text_primary))
-        self.new_roll_btn.setToolTip("New Roll — clear the film strip so you can drag in a fresh batch of frames")
-        self.new_roll_btn.clicked.connect(self._on_clear_all)
-
         # One button for both: Add Files and Add Folder are two pickers for the same job
         # (put pictures in this session), not two different actions worth their own icons.
         self.add_btn = QToolButton()
@@ -547,7 +539,6 @@ class FileBrowser(QWidget):
         self.sort_btn.setMenu(sort_menu)
 
         for btn in (
-            self.new_roll_btn,
             self.add_btn,
             self.unload_btn,
             self.hot_folder_btn,
@@ -570,8 +561,6 @@ class FileBrowser(QWidget):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
         for widget, label in (
-            (self.new_roll_btn, "New Roll…"),
-            (None, None),
             (self.add_btn, "Add"),
             (None, None),
             (self.hot_folder_btn, "Hot Folder"),
@@ -679,6 +668,13 @@ class FileBrowser(QWidget):
         frames_layout.addWidget(self.list_view, 1)
         frames_layout.addWidget(self.empty_label, 1)
         self.frames_section = self._make_section("Film Strip", "frames", "fa5s.film", frames)
+
+        # Clearing the strip is how you start a roll you will build entirely by drag-drop,
+        # so it lives on the section header rather than its own toolbar button -- the
+        # header has room a wrapping toolbar row does not.
+        frames_menu = QMenu(self.frames_section)
+        frames_menu.addAction("New Roll…").triggered.connect(self._on_clear_all)
+        self.frames_section.set_actions_menu(frames_menu, "New Roll — clear the film strip so you can drag in a fresh batch of frames")
 
         # A splitter, like the right panel's Analysis/Tabs one, so the boundary can be
         # dragged; expanded sections still share it by _LIBRARY_SHARE/_FRAMES_SHARE.
