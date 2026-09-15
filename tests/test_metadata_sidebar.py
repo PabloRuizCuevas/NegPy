@@ -389,6 +389,34 @@ class TestGearInferFromFolder:
 
         sidebar.controller.set_status.assert_called_once()
 
+    def test_infers_iso_and_capture_date_from_the_folder_name(self, monkeypatch) -> None:
+        sidebar = self._sidebar_with_folder(monkeypatch, "06_scala_50_2024-05-12_vietnam")
+        sidebar.gear_infer_btn.click()
+        meta = sidebar.state.config.metadata
+        assert meta.film_iso == 50
+        assert meta.capture_date == "2024-05-12"
+
+    def test_does_not_overwrite_an_already_set_iso_or_capture_date(self, monkeypatch) -> None:
+        sidebar = self._sidebar_with_folder(monkeypatch, "06_scala_50_2024-05-12_vietnam")
+        _set_metadata(sidebar, film_iso=800, capture_date="1999-01-01")
+        sidebar.gear_infer_btn.click()
+        meta = sidebar.state.config.metadata
+        assert meta.film_iso == 800
+        assert meta.capture_date == "1999-01-01"
+
+    def test_iso_from_folder_stays_off_once_a_stock_matches(self, monkeypatch) -> None:
+        """A matched stock's own ISO reaches the frame through the gear pick, so the
+        standalone folder-name guess never overrides it."""
+        sidebar = self._sidebar_with_folder(
+            monkeypatch,
+            "05_penees_kodakgold200_tailandia",
+            film_stocks=[FilmStock(id="f1", manufacturer="Kodak", stock_name="Gold 200", iso=200)],
+        )
+        sidebar.gear_infer_btn.click()
+        meta = sidebar.state.config.metadata
+        assert meta.film_stock_id == "f1"
+        assert meta.film_iso == 200
+
 
 def _card_titled(sidebar: MetadataSidebar, title: str) -> CollapsibleSection:
     for section in sidebar.findChildren(CollapsibleSection):

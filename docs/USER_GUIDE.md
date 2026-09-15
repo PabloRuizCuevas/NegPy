@@ -836,7 +836,7 @@ Searches the gear you've declared as your own (§12); pick **Other…** for the 
 
 *   **Camera / Lens / Film stock**: pick from your library. Empty means not set.
 *   **Clear**: empties all three.
-*   **Infer from folder name**: fills whichever of camera and film stock is not already set, by matching the roll's folder name against your own gear — the same match Roll Settings offers on import. Needs a folder: the active folder roll's own folder, or the current frame's containing directory with no roll active.
+*   **Infer from folder name**: fills whichever of camera, film stock, ISO and capture date is not already set. Camera and film stock match against the gear catalog (your own gear and the built-in reference list) — the same match Roll Settings offers on import; ISO and capture date read any plausible number or date in the name directly. Two plausible readings of the same field leave it alone rather than guess. Needs a folder: the active folder roll's own folder, or the current frame's containing directory with no roll active.
 
 <!-- panel:metadata_capture -->
 ### Capture

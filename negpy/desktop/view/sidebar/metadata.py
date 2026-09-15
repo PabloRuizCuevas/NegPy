@@ -151,7 +151,7 @@ class MetadataSidebar(BaseSidebar):
         self.gear_infer_btn = self._labeled_action(
             "fa5s.magic",
             "Infer from folder name",
-            "Fill camera and film stock by matching this roll's folder name against your own gear",
+            "Fill camera, film stock, ISO and capture date from this roll's folder name",
         )
         gear_actions_row.addWidget(self.gear_infer_btn)
         gear.addLayout(gear_actions_row)
@@ -611,8 +611,9 @@ class MetadataSidebar(BaseSidebar):
 
     def _on_gear_infer_from_folder(self) -> None:
         """Matches the active roll's folder name (or the current frame's own folder,
-        with no roll active) against the user's own gear -- fills whichever of camera
-        and film stock is not already set, same match Roll Settings offers on import."""
+        with no roll active) against your gear -- fills whichever of camera, film
+        stock, film ISO and capture date is not already set, same match Roll
+        Settings offers on import."""
         folder_name = folder_name_for_active_context(self.state, self.controller.session.repo)
         if not folder_name:
             self.controller.set_status("No folder to infer gear from", 2000, kind="warning")
@@ -624,10 +625,15 @@ class MetadataSidebar(BaseSidebar):
             kwargs["camera_id"] = detected.camera_id
         if not meta.film_stock_id and detected.film_stock_id:
             kwargs["film_stock_id"] = detected.film_stock_id
-        if not kwargs:
-            self.controller.set_status(f"Nothing in “{folder_name}” matches your gear", 2000, kind="warning")
+        updated = metadata_from_gear(meta, self._gear_library, **kwargs) if kwargs else meta
+        if not updated.film_iso and detected.iso:
+            updated = replace(updated, film_iso=detected.iso)
+        if not updated.capture_date and detected.capture_date:
+            updated = replace(updated, capture_date=detected.capture_date)
+        if updated == meta:
+            self.controller.set_status(f"Nothing in “{folder_name}” matches your gear, ISO or date", 2000, kind="warning")
             return
-        self._apply_metadata_config(metadata_from_gear(meta, self._gear_library, **kwargs))
+        self._apply_metadata_config(updated)
 
     def _clear_fields(self, fields: tuple[str, ...]) -> None:
         defaults = MetadataConfig()
