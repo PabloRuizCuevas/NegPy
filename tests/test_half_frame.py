@@ -10,6 +10,7 @@ from negpy.domain.models import ExportConfig, WorkspaceConfig
 from negpy.services.assets.half_frame import (
     HalfGeometry,
     base_hash,
+    detect_film_crop,
     detect_gutter,
     detect_split_x,
     SPLIT_SCANS_KEY,
@@ -79,6 +80,80 @@ class TestDetectSplitX:
 
     def test_tiny_image_falls_back(self):
         assert detect_split_x(np.zeros((4, 20, 3), np.float32)) == 0.5
+
+
+def _diptych_scan_with_rebate() -> np.ndarray:
+    """Light bed (1.0) >> film base/rebate (0.78) > exposed frames (0.25), a wide margin
+    on every side (as a scanner bed around a whole film strip would be), too wide for the
+    edge search's own bounded margin -- it is real content the detector cannot tell from
+    a bed this size, so it is left alone rather than trimmed on a guess."""
+    img = np.full((480, 720, 3), 1.0, dtype=np.float32)
+    img[80:400, 100:620] = 0.78  # film strip incl. rebate
+    img[105:375, 135:585] = 0.25  # both exposed frames plus the gutter between them
+    return img
+
+
+def _diptych_scan_with_edge_rebate(margin_w: int = 40, w: int = 600, h: int = 300, rebate: float = 0.95, seed: int = 0) -> np.ndarray:
+    """A tight diptych with a real, narrow rebate band on the left edge only, within a
+    plausible sprocket margin -- the shape the edge search is built to find."""
+    rng = np.random.default_rng(seed)
+    img = (0.3 + 0.3 * rng.random((h, w, 3))).astype(np.float32)
+    img[:, :margin_w] = rebate
+    return img
+
+
+def _diptych_scan_with_rebate_on_two_sides(seed: int = 1) -> np.ndarray:
+    """The same rebate tone on the left and top edges, meeting at a consistent corner --
+    each side is detected independently."""
+    rng = np.random.default_rng(seed)
+    h, w = 300, 600
+    img = (0.3 + 0.3 * rng.random((h, w, 3))).astype(np.float32)
+    img[:, :30] = 0.95
+    img[:20, :] = 0.95
+    return img
+
+
+def _scene_with_a_flat_midtone_band() -> np.ndarray:
+    """A locally uniform strip near one edge that sits well inside the frame's own
+    tonal range rather than near its darkest or brightest tone -- real content (a calm
+    sea, an overcast sky), not unexposed film, even though it is flat and contrasts
+    with its immediate neighbor."""
+    rng = np.random.default_rng(3)
+    img = (0.15 + 0.3 * rng.random((300, 600, 3))).astype(np.float32)
+    img[:, :50] = 0.55
+    img[:, 400:410] = 1.0  # establishes the frame's real peak, off the flat band
+    return img
+
+
+class TestDetectFilmCrop:
+    def test_narrow_rebate_on_one_side_is_trimmed(self):
+        roi = detect_film_crop(_diptych_scan_with_edge_rebate())
+        assert roi is not None
+        x1, y1, x2, y2 = roi
+        assert abs(x1 - 40 / 600) < 0.01
+        assert (y1, x2, y2) == (0.0, 1.0, 1.0)
+
+    def test_each_side_is_detected_independently(self):
+        roi = detect_film_crop(_diptych_scan_with_rebate_on_two_sides())
+        assert roi is not None
+        x1, y1, x2, y2 = roi
+        assert abs(x1 - 30 / 600) < 0.01
+        assert abs(y1 - 20 / 300) < 0.01
+        assert (x2, y2) == (1.0, 1.0)
+
+    def test_a_scanner_bed_margin_is_too_wide_to_trust(self):
+        """A margin far wider than any plausible rebate is real content the edge
+        search cannot rule out, so every side is left uncropped."""
+        assert detect_film_crop(_diptych_scan_with_rebate()) is None
+
+    def test_a_flat_band_that_is_not_extremal_is_rejected(self):
+        assert detect_film_crop(_scene_with_a_flat_midtone_band()) is None
+
+    def test_no_rebate_on_any_side_returns_none(self):
+        assert detect_film_crop(_two_frame_scan(0.02)) is None
+
+    def test_tiny_image_returns_none(self):
+        assert detect_film_crop(np.zeros((4, 20, 3), np.float32)) is None
 
 
 def _gradient_gutter_scan(
@@ -247,13 +322,14 @@ def test_expand_half_frames_per_file_override_wins_over_the_profile(monkeypatch)
 
 
 def test_auto_detect_all_splits_worker_emits_per_file_results(monkeypatch):
-    """process_auto_detect_all_splits reports one detected split per path, so a big
-    roll's detection can run off the GUI thread and still land as one dict."""
+    """process_auto_detect_all_splits reports one (split, thickness, crop) triple
+    per path, so a big roll's detection can run off the GUI thread and still land
+    as one dict."""
     from negpy.desktop.workers import render as render_mod
     from negpy.desktop.workers.render import AutoDetectAllSplitsTask
 
-    detected = {"/p/a.tif": 0.4, "/p/b.tif": 0.6}
-    monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_x_for_file", lambda p: detected[p])
+    detected = {"/p/a.tif": (0.4, 0.02, (0.05, 0.05, 0.95, 0.95)), "/p/b.tif": (0.6, 0.0, None)}
+    monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_and_crop_for_file", lambda p: detected[p])
     worker = render_mod.AssetDiscoveryWorker()
     results = []
     worker.splits_detected.connect(results.append)
