@@ -8,11 +8,14 @@ delimiter-free run, for the abbreviations scan-folder names tend to use ("penf" 
 same field is treated as no match: a wrong guess is worse than no guess.
 """
 
+import os
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from negpy.features.metadata.gear_models import GearLibrary
+from negpy.services.assets import rolls
+from negpy.services.assets.library import folder_label
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _MIN_TOKEN_LEN = 2
@@ -62,3 +65,19 @@ def match_gear_for_folder(folder_name: str, library: GearLibrary) -> GearMatch:
         folder_tokens, folder_squashed, library.film_stocks, lambda f: [f.manufacturer, f.stock_name, f.display_name]
     )
     return GearMatch(camera_id=camera_id or "", film_stock_id=film_stock_id or "")
+
+
+def folder_name_for_active_context(state: Any, repo: Any) -> str:
+    """The folder name to match gear against: the active folder roll's own folder,
+    else the current frame's containing directory -- callers may have no roll active
+    at all, from a plain Add Files/Add Folder load."""
+    roll_id = state.active_roll_id
+    if roll_id:
+        entry = rolls.roll_for_id(repo, roll_id)
+        if entry and entry.get("kind") == "folder":
+            return folder_label(entry.get("folder_path", ""))
+    src = state.selected_file_idx
+    if src == -1 or src >= len(state.uploaded_files):
+        return ""
+    path = state.uploaded_files[src].get("path", "")
+    return folder_label(os.path.dirname(path)) if path else ""

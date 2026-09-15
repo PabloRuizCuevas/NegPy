@@ -925,9 +925,11 @@ Gear travels as one unit: camera, lens, film stock, the film format and every ot
 <!-- panel:metadata_gear -->
 ### Analog Gear
 
-Searchable; type in any field to filter the library.
+Searches the gear you've declared as your own (§13); pick **Other…** for the full built-in catalog.
 
-*   **Camera / Lens / Film stock**: pick from your library. Empty means not set. **Clear** empties all three.
+*   **Camera / Lens / Film stock**: pick from your library. Empty means not set.
+*   **Clear**: empties all three.
+*   **Infer from folder name**: fills whichever of camera and film stock is not already set, by matching the roll's folder name against your own gear — the same match Roll Settings offers on import. Needs a folder: the active folder roll's own folder, or the current frame's containing directory with no roll active.
 
 <!-- panel:metadata_capture -->
 ### Capture
