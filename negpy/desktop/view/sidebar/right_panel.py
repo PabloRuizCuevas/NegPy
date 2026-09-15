@@ -34,8 +34,8 @@ class RightPanel(QWidget):
     Metadata / Gear / Scan. Edit holds a sticky Analysis section pinned above the
     workflow control groups (Setup / Geometry / Tone / Color / Finish), Favorites
     and History -- every tab that changes what the canvas shows. Metadata pins its
-    own Preview above its per-frame cards the same way. Export, Gear and Scan are
-    roll and library bookkeeping instead: plain pages, with no pinned section.
+    own Preview above its per-frame cards the same way. Gear pins its own Items/Presets
+    switcher the same way; Export and Scan are plain pages, with no pinned section.
     """
 
     def __init__(self, controller: AppController):
@@ -105,9 +105,10 @@ class RightPanel(QWidget):
             btn.clicked.connect(lambda _checked=False, idx=i: self._switch_group(idx))
             self.group_switcher.add_button(btn, tooltip)
 
-            # Edit and Metadata manage their own scrolling (a pinned section above a scroll
-            # area); the other pages are one control column each, so the page itself needs it.
-            page = content if key in ("edit", "metadata") else wrap_scroll(content)
+            # Edit, Metadata and Gear manage their own scrolling (a pinned section or subtab
+            # switcher above a scroll area); the other pages are one control column each, so
+            # the page itself needs it.
+            page = content if key in ("edit", "metadata", "gear") else wrap_scroll(content)
             self.group_stack.addWidget(page)
             self._group_buttons.append(btn)
             self._group_keys.append(key)
