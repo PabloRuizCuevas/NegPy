@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import QApplication, QCheckBox, QLabel
 from conftest import FakeController
 from negpy.desktop.view.sidebar import metadata as metadata_module
 from negpy.desktop.view.sidebar.metadata import MetadataSidebar
+from negpy.desktop.view.widgets.collapsible import CollapsibleSection
 from negpy.features.metadata.gear_models import GearLibrary
 
 if not QApplication.instance():
@@ -249,3 +250,41 @@ class TestClearButtons:
         for action_id in ("metadata_clear_gear", "metadata_clear_process", "metadata_clear_scanning"):
             assert action_id in REGISTRY
             assert REGISTRY[action_id].default_key == ""
+
+
+def _card_titled(sidebar: MetadataSidebar, title: str) -> CollapsibleSection:
+    for section in sidebar.findChildren(CollapsibleSection):
+        if section.title_label.text() == title:
+            return section
+    raise AssertionError(f"no card titled {title!r}")
+
+
+class TestPreviewPinning:
+    """The preview sits outside the scrolling controls area, so it stays visible
+    whatever card above it is expanded or collapsed."""
+
+    def test_preview_is_a_sibling_of_the_scrolling_controls_area(self, sidebar: MetadataSidebar) -> None:
+        assert sidebar.layout.indexOf(sidebar.preview_section) != -1
+        assert sidebar.preview_section not in sidebar._metadata_controls.findChildren(CollapsibleSection)
+
+
+class TestFlatCards:
+    """Metadata Preview and Metadata Presets are always expanded, with no collapse chevron;
+    every other card on the tab keeps its chevron and default expanded state."""
+
+    def test_preview_and_presets_have_no_chevron_and_stay_expanded(self, sidebar: MetadataSidebar) -> None:
+        for title in ("Metadata Preview", "Metadata Presets"):
+            section = _card_titled(sidebar, title)
+            assert section.collapsible is False
+            assert section.chevron_label is None
+            assert section.content_area.isHidden() is False
+
+    def test_preview_header_click_does_not_collapse_it(self, sidebar: MetadataSidebar) -> None:
+        sidebar.preview_section.toggle_button.click()
+        assert sidebar.preview_section.content_area.isHidden() is False
+
+    def test_other_cards_stay_collapsible(self, sidebar: MetadataSidebar) -> None:
+        for title in ("Analog Gear", "Capture", "Process", "Scanning", "Exposure"):
+            section = _card_titled(sidebar, title)
+            assert section.collapsible is True
+            assert section.chevron_label is not None
