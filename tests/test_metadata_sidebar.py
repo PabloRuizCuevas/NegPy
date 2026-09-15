@@ -18,7 +18,8 @@ from PyQt6.QtWidgets import QApplication, QLabel, QScrollArea
 from conftest import FakeController
 from negpy.desktop.view.sidebar import metadata as metadata_module
 from negpy.desktop.view.sidebar.metadata import MetadataSidebar
-from negpy.features.metadata.gear_models import Camera, GearLibrary
+from negpy.desktop.view.widgets.collapsible import CollapsibleSection
+from negpy.features.metadata.gear_models import Camera, FilmStock, GearLibrary
 
 if not QApplication.instance():
     _app = QApplication(sys.argv)
@@ -327,3 +328,60 @@ class TestClearButtons:
         for action_id in ("metadata_clear_gear", "metadata_clear_process", "metadata_clear_scanning"):
             assert action_id in REGISTRY
             assert REGISTRY[action_id].default_key == ""
+
+
+class TestGearInferFromFolder:
+    def _sidebar_with_folder(self, monkeypatch, folder_name: str, **library_kwargs) -> MetadataSidebar:
+        library = GearLibrary(**library_kwargs)
+        monkeypatch.setattr(metadata_module.GearProfiles, "load_library", staticmethod(lambda: library))
+        controller = FakeController()
+        controller.session.update_config = lambda config, **_kwargs: setattr(controller.state, "config", config)
+        controller.state.uploaded_files = [{"path": f"/scans/{folder_name}/frame001.tif"}]
+        controller.state.selected_file_idx = 0
+        return MetadataSidebar(controller)
+
+    def test_infers_camera_and_film_stock_from_the_folder_name(self, monkeypatch) -> None:
+        sidebar = self._sidebar_with_folder(
+            monkeypatch,
+            "04_om1_Fuji400_Japon",
+            cameras=[Camera(id="c1", make="Olympus", model="OM-1")],
+            film_stocks=[FilmStock(id="f1", manufacturer="Fuji", stock_name="400")],
+        )
+        sidebar.gear_infer_btn.click()
+        meta = sidebar.state.config.metadata
+        assert meta.camera_id == "c1"
+        assert meta.film_stock_id == "f1"
+
+    def test_does_not_overwrite_an_already_set_camera(self, monkeypatch) -> None:
+        sidebar = self._sidebar_with_folder(
+            monkeypatch,
+            "04_om1_Fuji400_Japon",
+            cameras=[Camera(id="c1", make="Olympus", model="OM-1"), Camera(id="c2", make="Nikon", model="FM2")],
+            film_stocks=[FilmStock(id="f1", manufacturer="Fuji", stock_name="400")],
+        )
+        _set_metadata(sidebar, camera_id="c2")
+        sidebar.gear_infer_btn.click()
+        meta = sidebar.state.config.metadata
+        assert meta.camera_id == "c2"
+        assert meta.film_stock_id == "f1"
+
+    def test_no_match_shows_a_status_warning_and_changes_nothing(self, monkeypatch) -> None:
+        sidebar = self._sidebar_with_folder(
+            monkeypatch,
+            "unrelated_folder_name",
+            cameras=[Camera(id="c1", make="Olympus", model="OM-1")],
+        )
+        sidebar.gear_infer_btn.click()
+        assert sidebar.state.config.metadata.camera_id == ""
+        sidebar.controller.set_status.assert_called_once()
+
+    def test_no_open_file_shows_a_status_warning(self, monkeypatch) -> None:
+        library = GearLibrary()
+        monkeypatch.setattr(metadata_module.GearProfiles, "load_library", staticmethod(lambda: library))
+        controller = FakeController()
+        controller.session.update_config = lambda config, **_kwargs: setattr(controller.state, "config", config)
+        sidebar = MetadataSidebar(controller)
+
+        sidebar.gear_infer_btn.click()
+
+        sidebar.controller.set_status.assert_called_once()
