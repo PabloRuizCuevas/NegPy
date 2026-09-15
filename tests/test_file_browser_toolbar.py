@@ -32,7 +32,6 @@ def test_library_and_sort_join_the_library_tree_corner_row(panel):
 def test_film_strip_toolbar_holds_roll_scoped_actions(panel):
     browser = panel.file_browser
     expected = [
-        browser.new_roll_btn,
         browser.save_roll_btn,
         browser.add_btn,
         browser.hot_folder_btn,
@@ -45,6 +44,17 @@ def test_film_strip_toolbar_holds_roll_scoped_actions(panel):
         browser.sheet_btn,
     ]
     assert browser.film_strip_toolbar.buttons == expected
+
+
+def test_new_roll_lives_on_the_film_strip_section_header(panel):
+    """Not a toolbar button (it wrapped the row to a second line): the section header's
+    actions menu instead, next to the info and chevron icons."""
+    browser = panel.file_browser
+    assert not hasattr(browser, "new_roll_btn")
+    actions_btn = browser.frames_section.actions_btn
+    assert actions_btn is not None
+    labels = [action.text() for action in actions_btn.menu().actions()]
+    assert labels == ["New Roll…"]
 
 
 def test_narrowing_the_panel_raises_a_populated_overflow_menu(panel, qapp):

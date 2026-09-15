@@ -647,12 +647,14 @@ def test_session_menu_clear_all_clears_every_frame(browser, session):
     session.clear_files.assert_called_once()
 
 
-def test_new_roll_button_clears_the_session_like_clear_all(browser, session):
+def test_new_roll_menu_action_clears_the_session_like_clear_all(browser, session):
     """Distinct from Unload: this is the deliberate "start over" action, for building a
     roll entirely by drag-drop, so it confirms and clears everything, not the selection."""
     session.clear_files = MagicMock()
+    menu = browser.frames_section.actions_btn.menu()
+    action = next(a for a in menu.actions() if a.text() == "New Roll…")
     with patch("negpy.desktop.view.sidebar.files.confirm_unload", return_value=True) as confirm:
-        browser.new_roll_btn.click()
+        action.trigger()
     confirm.assert_called_once_with(browser, clear_all=True)
     session.clear_files.assert_called_once()
 
