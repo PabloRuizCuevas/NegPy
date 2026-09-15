@@ -337,10 +337,9 @@ class MetadataSidebar(BaseSidebar):
         self.preview_empty = hint_label("Select gear or enter process metadata to see a preview.")
         preview_layout.addWidget(self.preview_empty)
 
-        self.preview_section = self._card("Metadata Preview", "preview", self.preview_content, "fa5s.eye", collapsible=False)
-
         # Preview pinned above the per-frame cards, which scroll in their own area below it --
         # same pattern as Edit's Analysis section pinned above its tabs.
+        self.preview_section = self._card("Metadata Preview", "preview", self.preview_content, "fa5s.eye", collapsible=False)
         self.layout.addWidget(self.preview_section)
         self._metadata_scroll_area = QScrollArea()
         self._metadata_scroll_area.setWidgetResizable(True)

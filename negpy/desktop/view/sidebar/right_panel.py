@@ -30,12 +30,14 @@ from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 
 class RightPanel(QWidget):
     """
-    Right sidebar panel ("Edit" dock): a flat tab switcher across Edit / Export /
-    Metadata / Gear / Scan. Edit holds a sticky Analysis section pinned above the
+    Right sidebar panel ("Edit" dock): a flat tab switcher across Edit / Metadata /
+    Gear / Export / Scan. Edit holds a sticky Analysis section pinned above the
     workflow control groups (Setup / Geometry / Tone / Color / Finish), Favorites
     and History -- every tab that changes what the canvas shows. Metadata pins its
     own Preview above its per-frame cards the same way. Gear pins its own Items/Presets
     switcher the same way; Export and Scan are plain pages, with no pinned section.
+    Export sits after Gear, not Scan: every roll ends with an export, but few ever
+    touch Scan at all -- it captures new film, not something already in the session.
     """
 
     def __init__(self, controller: AppController):
@@ -76,9 +78,9 @@ class RightPanel(QWidget):
         # (key, icon_name, tooltip, content_widget)
         group_specs = [
             ("edit", "fa5s.sliders-h", "Edit", edit_page),
-            ("export", "fa5s.file-export", "Export", self.export_sidebar),
             ("metadata", "fa5s.tags", "Metadata", self.metadata_sidebar),
             ("gear", "fa5s.toolbox", "Gear", self.gear_panel),
+            ("export", "fa5s.file-export", "Export", self.export_sidebar),
             ("scan", "fa5s.camera-retro", "Scan", self.scan_page),
         ]
 

@@ -812,7 +812,90 @@ A scrollable list of every edit step, the last 100 kept, newest on top. The curr
 
 ---
 
-## 11. Export tab
+## 11. Metadata tab
+
+Archival metadata for the **original analog capture** (camera, lens, film, process), written into exported files as EXIF and embedded XMP, so DAMs like Lightroom show your film gear rather than the scanner.
+
+Every export format carries it: JPEG, TIFF, PNG, JPEG XL and WebP. A TIFF holds the capture position in XMP only, and EXIF text is 7-bit, so typographic punctuation is transliterated (`4×5` is written `4x5`). **Protect original metadata**, on the Export tab (§13), copies the source file's own EXIF/XMP instead of writing these fields.
+
+<!-- panel:metadata_presets -->
+### Metadata Presets
+
+A saved set of metadata values, stored in `~/NegPy/presets/metadata/`, separate from the edit presets on the Setup tab:
+
+*   **Preset** + **Load**: write the selected preset's fields onto this frame. Only the fields the preset stores change; everything else on the frame stays. Hover the field for a list of what a preset holds.
+
+Presets, cameras, lenses, film stocks and every other gear record are managed on the **Gear** tab (§12), not here.
+
+Gear travels as one unit: camera, lens, film stock, the film format and every other value read from them. So a loaded preset fills the dropdowns below and the exported EXIF with the same pick, and a preset for a 120 stock cannot leave the frame claiming 35mm. Picking a film stock sets the format either way, so set a frame format such as `6×7` after choosing the stock. The frame number is never stored in a preset.
+
+<!-- panel:metadata_gear -->
+### Analog Gear
+
+Searches the gear you've declared as your own (§12); pick **Other…** for the full built-in catalog.
+
+*   **Camera / Lens / Film stock**: pick from your library. Empty means not set.
+*   **Clear**: empties all three.
+*   **Infer from folder name**: fills whichever of camera and film stock is not already set, by matching the roll's folder name against your own gear — the same match Roll Settings offers on import. Needs a folder: the active folder roll's own folder, or the current frame's containing directory with no roll active.
+
+<!-- panel:metadata_capture -->
+### Capture
+
+*   **Date**: when the frame was shot. Give only what you know: `1998`, `1998-07`, `1998-07-14` or `1998-07-14 16:30`, with an optional offset such as `+02:00`. An impossible date turns the field red and is not saved. EXIF `DateTimeOriginal` pads the missing parts; XMP `photoshop:DateCreated` keeps the truncated form and `negpy:CaptureDatePrecision` names it. The scan file's own timestamp moves to `DateTimeDigitized`.
+*   **Place**: the capture location. The map-pin button opens a map to search a place name, click a position or paste coordinates, the ✕ beside it empties the place, and the field itself accepts a pasted coordinate pair or an OpenStreetMap/Google Maps link. Coordinates are written to the EXIF GPS tags and XMP `exif:GPS*`, the names to XMP `photoshop:City`/`State`/`Country`; a TIFF carries the location in XMP only, and a place you set replaces the source file's GPS block whole, rather than leaving its altitude or heading beside your coordinates. A geotagged source with no place set here keeps its own coordinates on export, and the map opens centered on them. Where the frame was digitized is a starting view, never the capture place. Zoom the map with its **+** / **−** buttons, a scroll wheel or a trackpad pinch, and drag to pan. Opening the map contacts OpenStreetMap; typing coordinates needs no network.
+
+<!-- panel:metadata_process -->
+### Process
+
+*   **Saved process**: pick a development recipe from the library to fill Developer, Dilution, Push / Pull, Time and Temperature. Typing over any of them unlinks it, so the picker never names a value that is gone.
+*   **Format**: `—` (not set), `35mm`, `120`, `4×5`, `8×10`, `110`, or `Other` with a free-text field.
+*   **Developer** and **Dilution**: the developer, for example `D-76`, and its working strength, for example `1+1`, `1+50` or `stock`. The two join in EXIF `ImageDescription` as `D-76 1+1`; the dilution also goes to XMP as `negpy:DevelopmentDilution`.
+*   **Push / Pull**: `Push +3` … `Normal` … `Pull -3`.
+*   **Time** and **Temp (°C)**: development time as `9:30` or plain minutes, and the temperature it ran at. An unreadable time turns the field red and is not saved. Both are written to XMP as `negpy:DevelopmentTime` and `negpy:DevelopmentTemperature`, and searchable as `devtime:` (minutes) and `temp:`.
+*   **Clear**: empties the saved process and everything it fills: developer, dilution, push/pull, time and temperature. Format stays, since the film stock sets it.
+
+<!-- panel:metadata_scanning -->
+### Scanning
+
+*   **Saved setup**: pick a digitizing setup from the library to fill Scanning. Typing over it unlinks it.
+*   **Scanning**: scan method or notes. EXIF `Software` is always `NegPy`.
+*   **Clear**: empties the saved setup and the scanning note. Roll and Frame stay, since the scan stamps them rather than the setup.
+*   **Roll / Frame**: Scanlight capture roll name and frame number, stamped automatically on capture and editable here. Available in export filename templates as `{{ roll }}` and `{{ frame }}`, and written to XMP as `negpy:CaptureRoll` and `negpy:CaptureFrame` when set. Not the Roll Analysis normalization name.
+
+<!-- panel:metadata_exposure -->
+### Exposure
+
+Optional original shutter, aperture and ISO. Click the lock to edit a free-text string, for example `1/125s f/2.8 ISO 400`.
+
+<!-- panel:metadata_preview -->
+### Metadata Preview
+
+A live view of exactly what will be embedded, grouped by capture, scan, process and file. The Scan group shows the source file's own timestamp and coordinates, so you can see what you are replacing. **Description…** opens a checklist of which fields join into EXIF `ImageDescription`. The defaults are camera, lens, film stock and ISO; format, developer, push/pull and scanning are off until you enable them. Confirming **Description…** sets that frame's selection and becomes the sticky default for other frames that do not have their own, so the last confirm on the roll wins. Sync metadata and Sync settings can also copy a frame's selection with the rest of the metadata.
+
+When you set capture gear, it is written to standard EXIF, and the digitizing rig is preserved separately in `negpy:Scan*` XMP tags. Leave gear unset and your scanner or DSLR stays visible in EXIF instead.
+
+---
+
+## 12. Gear tab
+
+A searchable, user-extendable library shared by Metadata (§11), Roll Settings and every other picker in the app that offers gear, split into two subtabs: **Items** for physical gear, **Presets** for saved metadata field sets. Presets have no bundled/personal split to browse, so the Catalog toggle lives on Items only.
+
+**Items** holds cameras, lenses, film stocks, development processes and scan setups. **Category** picks what the list below shows: **Cameras**, **Lenses**, **Film Stocks**, **Process** or **Scanning**. A Process entry is a development recipe (developer, dilution, push/pull, time and temperature); a Scanning entry is a digitizing setup. The list defaults to gear you have added yourself; a built-in reference catalog of common cameras, lenses, film stocks, processes and scan setups is available alongside it, without cluttering the list. Your own gear saves to `~/NegPy/gear/`. An empty category reads "You haven't added any…yet" rather than showing a blank list.
+
+*   **+**: pick the one you own from the built-in catalog — it copies into your own list, editable from there — or **Add Custom** to enter one by hand.
+*   **Catalog**: show the built-in reference models alongside your own, for browsing the full list. Off by default.
+*   **copy / trash**: duplicate or delete the selected item. Trash is disabled on a built-in catalog entry, since it is reference data, not yours to remove; duplicate still copies it into your own list.
+
+**Presets** holds saved metadata field sets.
+
+*   **+** stores the current frame's metadata under a name you pick.
+*   **pen**: rename a preset or change which fields it stores.
+*   **copy / trash**: duplicate or delete the selected preset.
+*   The fields of a preset are then editable in place: swap its camera, lens, film stock, saved process or saved setup, or retype a developer, dilution, push, time, temperature, scanning note, roll or exposure. No frame needs to be open. Each of these searches your own gear by default, with **Other…** for the full catalog, same as the Metadata tab (§11). Picking from the library refills everything read from it; typing over a filled value unlinks the pick. A stored capture date, place, description-field set or flag is shown but not editable here, being a per-frame decision. **Notes** is free text.
+
+---
+
+## 13. Export tab
 
 ### Output intent
 
@@ -842,7 +925,7 @@ A scrollable list of every edit step, the last 100 kept, newest on top. The curr
 
 The primary **Export** action. Its chevron menu picks the scope: current frame (Ctrl+E), selected frames, or all visible frames. Every scope uses the settings below. To deliver the same frames in more than one format or size in a single run, use Export Presets.
 
-*   **Protect original metadata**: copy the source file's EXIF/XMP to exports unchanged, adding nothing. When it is on, the Metadata tab's fields (§12) are ignored and the source's resolution is copied exactly: the same numbers, axes and unit, whether the source states it in EXIF or in its own header, even where the export was resized. A source that declares no resolution stays that way in every format that can leave it out. TIFF cannot, so it states the export's own resolution rather than the unit-less value readers report as 1 DPI.
+*   **Protect original metadata**: copy the source file's EXIF/XMP to exports unchanged, adding nothing. When it is on, the Metadata tab's fields (§11) are ignored and the source's resolution is copied exactly: the same numbers, axes and unit, whether the source states it in EXIF or in its own header, even where the export was resized. A source that declares no resolution stays that way in every format that can leave it out. TIFF cannot, so it states the export's own resolution rather than the unit-less value readers report as 1 DPI.
 *   **Sync custom metadata to all files in batch export**: batch and preset exports write this frame's capture, gear and process values to every file, instead of each file's own. Disabled alongside Protect original metadata, which ignores those values entirely.
 
 ### Format / Size / Color Management / Destination
@@ -902,89 +985,6 @@ A soft proof shows what the picture becomes when a given printer puts it on a gi
 *   **Simulate ink black** (off): show the paper's deepest real black instead of mapping it to the screen's. Shadows lift and lose separation, as they do in the print.
 *   **Gamut warning**: flatten every color the profile cannot print to gray, so unprintable areas are visible rather than only counted. The Analysis panel's **Gamut** row counts the same pixels. The mark fades over a short distance instead of stopping at a hard edge, so read it as a region rather than a pixel mask.
 *   **Display**: the monitor profile the preview is shown through, auto-detected. Set it by hand if detection fails. It is the other half of the proof chain.
-
----
-
-## 12. Metadata tab
-
-Archival metadata for the **original analog capture** (camera, lens, film, process), written into exported files as EXIF and embedded XMP, so DAMs like Lightroom show your film gear rather than the scanner.
-
-Every export format carries it: JPEG, TIFF, PNG, JPEG XL and WebP. A TIFF holds the capture position in XMP only, and EXIF text is 7-bit, so typographic punctuation is transliterated (`4×5` is written `4x5`). **Protect original metadata**, on the Export tab (§11), copies the source file's own EXIF/XMP instead of writing these fields.
-
-<!-- panel:metadata_presets -->
-### Metadata Presets
-
-A saved set of metadata values, stored in `~/NegPy/presets/metadata/`, separate from the edit presets on the Setup tab:
-
-*   **Preset** + **Load**: write the selected preset's fields onto this frame. Only the fields the preset stores change; everything else on the frame stays. Hover the field for a list of what a preset holds.
-
-Presets, cameras, lenses, film stocks and every other gear record are managed on the **Gear** tab (§13), not here.
-
-Gear travels as one unit: camera, lens, film stock, the film format and every other value read from them. So a loaded preset fills the dropdowns below and the exported EXIF with the same pick, and a preset for a 120 stock cannot leave the frame claiming 35mm. Picking a film stock sets the format either way, so set a frame format such as `6×7` after choosing the stock. The frame number is never stored in a preset.
-
-<!-- panel:metadata_gear -->
-### Analog Gear
-
-Searches the gear you've declared as your own (§13); pick **Other…** for the full built-in catalog.
-
-*   **Camera / Lens / Film stock**: pick from your library. Empty means not set.
-*   **Clear**: empties all three.
-*   **Infer from folder name**: fills whichever of camera and film stock is not already set, by matching the roll's folder name against your own gear — the same match Roll Settings offers on import. Needs a folder: the active folder roll's own folder, or the current frame's containing directory with no roll active.
-
-<!-- panel:metadata_capture -->
-### Capture
-
-*   **Date**: when the frame was shot. Give only what you know: `1998`, `1998-07`, `1998-07-14` or `1998-07-14 16:30`, with an optional offset such as `+02:00`. An impossible date turns the field red and is not saved. EXIF `DateTimeOriginal` pads the missing parts; XMP `photoshop:DateCreated` keeps the truncated form and `negpy:CaptureDatePrecision` names it. The scan file's own timestamp moves to `DateTimeDigitized`.
-*   **Place**: the capture location. The map-pin button opens a map to search a place name, click a position or paste coordinates, the ✕ beside it empties the place, and the field itself accepts a pasted coordinate pair or an OpenStreetMap/Google Maps link. Coordinates are written to the EXIF GPS tags and XMP `exif:GPS*`, the names to XMP `photoshop:City`/`State`/`Country`; a TIFF carries the location in XMP only, and a place you set replaces the source file's GPS block whole, rather than leaving its altitude or heading beside your coordinates. A geotagged source with no place set here keeps its own coordinates on export, and the map opens centered on them. Where the frame was digitized is a starting view, never the capture place. Zoom the map with its **+** / **−** buttons, a scroll wheel or a trackpad pinch, and drag to pan. Opening the map contacts OpenStreetMap; typing coordinates needs no network.
-
-<!-- panel:metadata_process -->
-### Process
-
-*   **Saved process**: pick a development recipe from the library to fill Developer, Dilution, Push / Pull, Time and Temperature. Typing over any of them unlinks it, so the picker never names a value that is gone.
-*   **Format**: `—` (not set), `35mm`, `120`, `4×5`, `8×10`, `110`, or `Other` with a free-text field.
-*   **Developer** and **Dilution**: the developer, for example `D-76`, and its working strength, for example `1+1`, `1+50` or `stock`. The two join in EXIF `ImageDescription` as `D-76 1+1`; the dilution also goes to XMP as `negpy:DevelopmentDilution`.
-*   **Push / Pull**: `Push +3` … `Normal` … `Pull -3`.
-*   **Time** and **Temp (°C)**: development time as `9:30` or plain minutes, and the temperature it ran at. An unreadable time turns the field red and is not saved. Both are written to XMP as `negpy:DevelopmentTime` and `negpy:DevelopmentTemperature`, and searchable as `devtime:` (minutes) and `temp:`.
-*   **Clear**: empties the saved process and everything it fills: developer, dilution, push/pull, time and temperature. Format stays, since the film stock sets it.
-
-<!-- panel:metadata_scanning -->
-### Scanning
-
-*   **Saved setup**: pick a digitizing setup from the library to fill Scanning. Typing over it unlinks it.
-*   **Scanning**: scan method or notes. EXIF `Software` is always `NegPy`.
-*   **Clear**: empties the saved setup and the scanning note. Roll and Frame stay, since the scan stamps them rather than the setup.
-*   **Roll / Frame**: Scanlight capture roll name and frame number, stamped automatically on capture and editable here. Available in export filename templates as `{{ roll }}` and `{{ frame }}`, and written to XMP as `negpy:CaptureRoll` and `negpy:CaptureFrame` when set. Not the Roll Analysis normalization name.
-
-<!-- panel:metadata_exposure -->
-### Exposure
-
-Optional original shutter, aperture and ISO. Click the lock to edit a free-text string, for example `1/125s f/2.8 ISO 400`.
-
-<!-- panel:metadata_preview -->
-### Metadata Preview
-
-A live view of exactly what will be embedded, grouped by capture, scan, process and file. The Scan group shows the source file's own timestamp and coordinates, so you can see what you are replacing. **Description…** opens a checklist of which fields join into EXIF `ImageDescription`. The defaults are camera, lens, film stock and ISO; format, developer, push/pull and scanning are off until you enable them. Confirming **Description…** sets that frame's selection and becomes the sticky default for other frames that do not have their own, so the last confirm on the roll wins. Sync metadata and Sync settings can also copy a frame's selection with the rest of the metadata.
-
-When you set capture gear, it is written to standard EXIF, and the digitizing rig is preserved separately in `negpy:Scan*` XMP tags. Leave gear unset and your scanner or DSLR stays visible in EXIF instead.
-
----
-
-## 13. Gear tab
-
-A searchable, user-extendable library shared by Metadata (§12), Roll Settings and every other picker in the app that offers gear, split into two subtabs: **Items** for physical gear, **Presets** for saved metadata field sets. Presets have no bundled/personal split to browse, so the Catalog toggle lives on Items only.
-
-**Items** holds cameras, lenses, film stocks, development processes and scan setups. **Category** picks what the list below shows: **Cameras**, **Lenses**, **Film Stocks**, **Process** or **Scanning**. A Process entry is a development recipe (developer, dilution, push/pull, time and temperature); a Scanning entry is a digitizing setup. The list defaults to gear you have added yourself; a built-in reference catalog of common cameras, lenses, film stocks, processes and scan setups is available alongside it, without cluttering the list. Your own gear saves to `~/NegPy/gear/`. An empty category reads "You haven't added any…yet" rather than showing a blank list.
-
-*   **+**: pick the one you own from the built-in catalog — it copies into your own list, editable from there — or **Add Custom** to enter one by hand.
-*   **Catalog**: show the built-in reference models alongside your own, for browsing the full list. Off by default.
-*   **copy / trash**: duplicate or delete the selected item. Trash is disabled on a built-in catalog entry, since it is reference data, not yours to remove; duplicate still copies it into your own list.
-
-**Presets** holds saved metadata field sets.
-
-*   **+** stores the current frame's metadata under a name you pick.
-*   **pen**: rename a preset or change which fields it stores.
-*   **copy / trash**: duplicate or delete the selected preset.
-*   The fields of a preset are then editable in place: swap its camera, lens, film stock, saved process or saved setup, or retype a developer, dilution, push, time, temperature, scanning note, roll or exposure. No frame needs to be open. Each of these searches your own gear by default, with **Other…** for the full catalog, same as the Metadata tab (§12). Picking from the library refills everything read from it; typing over a filled value unlinks the pick. A stored capture date, place, description-field set or flag is shown but not editable here, being a per-frame decision. **Notes** is free text.
 
 ---
 
