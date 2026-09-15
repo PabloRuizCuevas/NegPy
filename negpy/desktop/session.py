@@ -478,7 +478,7 @@ class AssetListModel(QAbstractListModel):
             summary = composite_summary(file_info)
             if summary:
                 lines.append(summary)
-            if file_info.get("hash") in self._state.stale_thumbnails:
+            if asset_thumbnail_key(file_info) in self._state.stale_thumbnails:
                 lines.append("Thumbnail predates a settings change; open the frame to refresh it.")
             return "\n".join(lines)
 

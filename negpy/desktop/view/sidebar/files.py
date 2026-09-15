@@ -62,6 +62,7 @@ from negpy.desktop.view.sidebar.library_tree import LibraryTree
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
 from negpy.desktop.view.widgets.file_dialogs import last_open_folder, pick_start_dir
 from negpy.services.assets.library import folder_counts, folder_label
+from negpy.services.assets.thumbnails import asset_thumbnail_key
 
 
 _UNBOUNDED_HEIGHT = 16777215  # QWIDGETSIZE_MAX — Qt's "no maximum"
@@ -105,7 +106,9 @@ class _ThumbnailDelegate(QStyledItemDelegate):
     def _is_stale_thumbnail(self, file_info: dict) -> bool:
         """True while the cached bitmap predates a settings write a render hasn't caught up to."""
         state = self._state
-        return bool(state and file_info.get("hash") in state.stale_thumbnails)
+        if not state or not file_info.get("hash"):
+            return False
+        return asset_thumbnail_key(file_info) in state.stale_thumbnails
 
     def _draw_stale_dot(self, painter: QPainter, img_rect: QRect) -> None:
         r = self._STALE_DOT_RADIUS
