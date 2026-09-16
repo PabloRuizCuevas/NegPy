@@ -407,7 +407,7 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(cfg[0].process.hue_trim, 2.5)
         self.assertTrue(kwargs["persist"])
 
-    def test_set_roll_default_writes_the_roll_and_leaves_the_frames_own_row_alone(self):
+    def test_set_roll_default_writes_the_roll_default_and_the_frames_own_row(self):
         from negpy.services.assets import rolls
 
         self._wire_repo_store()
@@ -422,7 +422,29 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id), {"hue_trim": 2.5})
         cfg, kwargs = self.mock_session_manager.update_config.call_args
         self.assertEqual(cfg[0].process.hue_trim, 2.5)
-        self.assertFalse(kwargs["persist"])
+        # Persisted normally, same as any edit -- while this frame stays unlocked, the
+        # roll's default always wins over the row's own value anyway, so the redundant
+        # copy here is harmless.
+        self.assertTrue(kwargs["persist"])
+
+    def test_set_roll_default_keeps_a_non_roll_field_out_of_the_roll_store(self):
+        """A bounds-invalidation clear riding alongside a Crosstalk change lands on the
+        frame's own row like always, never in the roll's shared defaults."""
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.uploaded_files = [{"name": "a.dng", "path": "/a.dng", "hash": "h1"}]
+        state.current_file_hash = "h1"
+
+        self.controller.set_roll_default("sensor", crosstalk_strength=0.5, locked_floors=(0.1, 0.1, 0.1))
+
+        self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id), {"crosstalk_strength": 0.5})
+        cfg, _kwargs = self.mock_session_manager.update_config.call_args
+        self.assertEqual(cfg[0].process.crosstalk_strength, 0.5)
+        self.assertEqual(cfg[0].process.locked_floors, (0.1, 0.1, 0.1))
 
     def test_set_roll_default_flags_every_other_frames_thumbnail_stale(self):
         from negpy.services.assets import rolls

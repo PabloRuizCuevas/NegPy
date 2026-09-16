@@ -3440,24 +3440,30 @@ class AppController(QObject):
         frame that has not locked *card_key* away from the roll picks it up as soon as
         it is next loaded or rendered, no batch-apply needed. Falls back to a plain
         per-frame edit with no active roll, or when the active frame has this card
-        locked."""
+        locked.
+
+        *changes* may include fields outside ROLL_DEFAULT_FIELDS (a bounds-invalidation
+        clear alongside a Crosstalk change, say) -- only the card's own fields go to
+        the roll; everything else still lands on the active frame's own row, same as
+        any other edit.
+        """
+        new_config = replace(self.state.config, process=replace(self.state.config.process, **changes))
         roll_id = self.state.active_roll_id
         if roll_id is None or self.roll_card_locked(card_key):
-            new_config = replace(self.state.config, process=replace(self.state.config.process, **changes))
             self.apply_config(new_config, persist=True)
             return
 
-        rolls.set_roll_defaults(self.session.repo, roll_id, **changes)
-        # Not persisted to the active frame's own row: unlocked, its effective config is
-        # always re-derived from the roll, so a value saved here would never be read back.
-        new_config = replace(self.state.config, process=replace(self.state.config.process, **changes))
-        self.apply_config(new_config, persist=False)
+        roll_fields = {k: v for k, v in changes.items() if k in rolls.ROLL_DEFAULT_FIELDS[card_key]}
+        if roll_fields:
+            rolls.set_roll_defaults(self.session.repo, roll_id, **roll_fields)
+        self.apply_config(new_config, persist=True)
 
-        active_hash = self.state.current_file_hash
-        for f in self.state.uploaded_files:
-            if f.get("hash") != active_hash:
-                self.state.stale_thumbnails.add(asset_thumbnail_key(f))
-        self.session.asset_model.refresh()
+        if roll_fields:
+            active_hash = self.state.current_file_hash
+            for f in self.state.uploaded_files:
+                if f.get("hash") != active_hash:
+                    self.state.stale_thumbnails.add(asset_thumbnail_key(f))
+            self.session.asset_model.refresh()
 
     def set_roll_card_locked(self, card_key: str, locked: bool) -> None:
         """Lock or unlock one Roll-tab card for the active frame, within the active

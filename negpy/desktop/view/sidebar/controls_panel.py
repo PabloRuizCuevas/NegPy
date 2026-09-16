@@ -361,6 +361,10 @@ class ControlsPanel(QWidget):
         self.demosaic_section.reset_requested.connect(lambda: self._reset_process_fields(_DEMOSAIC_FIELDS))
         self.flatfield_section.reset_requested.connect(self._reset_flatfield)
 
+        self.sensor_section.lock_toggled.connect(lambda locked: self.controller.set_roll_card_locked("sensor", locked))
+        self.demosaic_section.lock_toggled.connect(lambda locked: self.controller.set_roll_card_locked("demosaic", locked))
+        self.process_section.lock_toggled.connect(lambda locked: self.controller.set_roll_card_locked("process", locked))
+
     def apply_shortcut_tooltips(self) -> None:
         """Single source for every shortcut-bearing widget tooltip — re-run on each
         rebind to re-render the key chips. Don't set these locally in the sidebars:
@@ -765,6 +769,18 @@ class ControlsPanel(QWidget):
         self.sensor_sidebar.sync_ui()
         self.demosaic_sidebar.sync_ui()
         self._sync_modified_dots()
+        self._sync_roll_locks()
+
+    def _sync_roll_locks(self) -> None:
+        """Show each Roll-tab card's lock only while a roll gives it something to lock
+        away from; reflect whether the active frame currently has it locked."""
+        active = self.controller.state.active_roll_id is not None
+        for card_key, section in (
+            ("sensor", self.sensor_section),
+            ("demosaic", self.demosaic_section),
+            ("process", self.process_section),
+        ):
+            section.set_lock_button(active, active and self.controller.roll_card_locked(card_key))
 
     def _update_histogram(self) -> None:
         """Repaint only when the render produced a new buffer."""
