@@ -1,8 +1,11 @@
-"""A Roll is a navigation layer over a folder or a hand-built set of paths; it never
-scopes or duplicates the edits themselves."""
+"""A Roll is a navigation layer over a folder or a hand-built set of paths; it does not
+scope or duplicate the edits themselves, with one exception: roll-wide defaults for a
+handful of Calibration/Demosaic/Normalization facts (see TestRollDefaults below)."""
 
 from unittest.mock import MagicMock
 
+from negpy.domain.models import ProcessConfig
+from negpy.features.process.models import DemosaicMode, ProcessMode
 from negpy.infrastructure.storage.repository import StorageRepository
 from negpy.services.assets.rolls import (
     add_extra_member,
@@ -10,11 +13,16 @@ from negpy.services.assets.rolls import (
     create_virtual_roll,
     delete_roll,
     folder_roll_id_for_path,
+    frame_override_cards,
     import_subfolders_as_rolls,
     recognize_folder,
     rename_roll,
+    resolve_roll_process_config,
+    roll_defaults,
     roll_for_id,
     saved_rolls,
+    set_frame_override,
+    set_roll_defaults,
     virtual_rolls,
 )
 
@@ -149,3 +157,97 @@ def test_import_subfolders_as_rolls_is_idempotent_per_subfolder(tmp_path):
 def test_import_subfolders_as_rolls_on_a_missing_parent_returns_nothing():
     repo = _repo()
     assert import_subfolders_as_rolls(repo, "/does/not/exist") == []
+
+
+class TestRollDefaults:
+    """Calibration/Demosaic/Normalization facts a roll shares across every member frame,
+    unless a frame has locked the owning card to its own value."""
+
+    def test_a_field_with_no_roll_default_leaves_the_frame_alone(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        config = ProcessConfig(linear_raw=True)
+
+        resolved = resolve_roll_process_config(repo, roll_id, "h1", config)
+
+        assert resolved is config
+
+    def test_a_roll_default_overrides_the_frames_own_value(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_defaults(repo, roll_id, linear_raw=True, narrowband_scan=True)
+
+        resolved = resolve_roll_process_config(repo, roll_id, "h1", ProcessConfig(linear_raw=False))
+
+        assert resolved.linear_raw is True
+        assert resolved.narrowband_scan is True
+
+    def test_no_roll_id_leaves_the_frame_alone(self):
+        repo = _repo()
+        assert resolve_roll_process_config(repo, None, "h1", ProcessConfig()) == ProcessConfig()
+
+    def test_locking_a_card_keeps_that_frames_own_value(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_defaults(repo, roll_id, linear_raw=True, demosaic_preview=DemosaicMode.VNG)
+        set_frame_override(repo, roll_id, "h1", "sensor", locked=True)
+
+        resolved = resolve_roll_process_config(repo, roll_id, "h1", ProcessConfig(linear_raw=False))
+
+        # sensor (Calibration) is locked, so linear_raw keeps the frame's own value...
+        assert resolved.linear_raw is False
+        # ...but demosaic (a different card) is not locked, so it still takes the roll default.
+        assert resolved.demosaic_preview == DemosaicMode.VNG
+
+    def test_locking_does_not_affect_a_different_frame_in_the_same_roll(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_defaults(repo, roll_id, linear_raw=True)
+        set_frame_override(repo, roll_id, "h1", "sensor", locked=True)
+
+        resolved = resolve_roll_process_config(repo, roll_id, "h2", ProcessConfig(linear_raw=False))
+
+        assert resolved.linear_raw is True
+
+    def test_unlocking_a_card_reverts_to_the_roll_default(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_defaults(repo, roll_id, linear_raw=True)
+        set_frame_override(repo, roll_id, "h1", "sensor", locked=True)
+        set_frame_override(repo, roll_id, "h1", "sensor", locked=False)
+
+        resolved = resolve_roll_process_config(repo, roll_id, "h1", ProcessConfig(linear_raw=False))
+
+        assert resolved.linear_raw is True
+        assert frame_override_cards(repo, roll_id, "h1") == set()
+
+    def test_frame_override_cards_is_empty_for_an_unknown_roll(self):
+        repo = _repo()
+        assert frame_override_cards(repo, "not-a-real-id", "h1") == set()
+
+    def test_set_roll_defaults_on_unknown_roll_is_a_noop(self):
+        repo = _repo()
+        set_roll_defaults(repo, "not-a-real-id", linear_raw=True)
+        assert saved_rolls(repo) == {}
+
+    def test_roll_defaults_reads_back_what_was_set(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_defaults(repo, roll_id, linear_raw=True)
+        set_roll_defaults(repo, roll_id, hue_trim=2.5)
+
+        assert roll_defaults(repo, roll_id) == {"linear_raw": True, "hue_trim": 2.5}
+
+    def test_process_mode_has_no_card_and_cannot_be_locked_away(self):
+        """process_mode is a roll default like the rest, but sits on the mode bar above
+        every card -- there is nothing to lock it to, so it always takes the roll's value."""
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_defaults(repo, roll_id, process_mode=ProcessMode.BW)
+        set_frame_override(repo, roll_id, "h1", "sensor", locked=True)
+        set_frame_override(repo, roll_id, "h1", "demosaic", locked=True)
+        set_frame_override(repo, roll_id, "h1", "process", locked=True)
+
+        resolved = resolve_roll_process_config(repo, roll_id, "h1", ProcessConfig(process_mode=ProcessMode.C41))
+
+        assert resolved.process_mode == ProcessMode.BW
