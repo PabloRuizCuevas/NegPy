@@ -1,3 +1,5 @@
+from typing import Optional
+
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
@@ -6,9 +8,10 @@ from PyQt6.QtWidgets import (
 
 from negpy.desktop.view.confirm import confirm_delete_named
 from negpy.desktop.view.sidebar.base import BaseSidebar
-from negpy.desktop.view.styles.templates import labeled_action
+from negpy.desktop.view.styles.templates import hint_label, labeled_action, set_hint_kind
 from negpy.desktop.view.widgets.searchable_gear_combo import SearchableGearCombo
 from negpy.features.process.models import invalidate_local_bounds
+from negpy.services.assets import rolls
 
 # A control character keeps this impossible to collide with a user's saved roll name.
 _CURRENT_ROLL_ID = "\x00current"
@@ -27,6 +30,9 @@ class RollAnalysisSidebar(BaseSidebar):
         self.roll_combo = SearchableGearCombo(placeholder="Search rolls…")
         self.roll_combo.setToolTip("Current Roll scans the loaded files fresh; a saved name applies its stored baseline.")
         self.layout.addWidget(self.roll_combo)
+
+        self.roll_status_hint = hint_label("", "muted")
+        self.layout.addWidget(self.roll_status_hint)
 
         roll_actions = QHBoxLayout()
         self.apply_roll_btn = labeled_action(
@@ -112,6 +118,16 @@ class RollAnalysisSidebar(BaseSidebar):
         else:
             self.controller.request_batch_normalization()
 
+    def _active_roll_name(self) -> Optional[str]:
+        """The loaded folder/virtual roll's own name, or None with no roll recognized
+        (a loose file selection) -- distinct from process.roll_name, the saved
+        baseline picked in this section."""
+        roll_id = self.controller.state.active_roll_id
+        if not roll_id:
+            return None
+        entry = rolls.roll_for_id(self.controller.session.repo, roll_id)
+        return entry["name"] if entry else None
+
     def _refresh_rolls(self, *, force: bool = False) -> None:
         """
         Rebuilds the picker from the saved-roll table, skipping a rebuild mid-search
@@ -122,13 +138,31 @@ class RollAnalysisSidebar(BaseSidebar):
         names = self.controller.session.repo.list_normalization_rolls()
         conf = self.state.config.process
         selected = conf.roll_name if conf.roll_name in names else _CURRENT_ROLL_ID
-        key = (tuple(names), selected)
+        active_name = self._active_roll_name()
+        key = (tuple(names), selected, active_name)
         if not force and key == self._roll_sync_key:
             return
         self._roll_sync_key = key
-        entries = [(_CURRENT_ROLL_LABEL, _CURRENT_ROLL_ID)] + [(name, name) for name in names]
+        entries = [(active_name or _CURRENT_ROLL_LABEL, _CURRENT_ROLL_ID)] + [(name, name) for name in names]
         self.roll_combo.set_labeled_items(entries, selected)
         self._update_delete_enabled()
+        self._update_roll_status_hint(active_name, names)
+
+    def _update_roll_status_hint(self, active_name: Optional[str], saved_names: list[str]) -> None:
+        """Flags whether the applied baseline belongs to this roll or was carried over
+        from another one's Batch Analysis, once this roll's own identity is known."""
+        if not active_name:
+            self.roll_status_hint.setText("")
+            return
+        applied = self.state.config.process.roll_name
+        if applied and applied != active_name:
+            set_hint_kind(self.roll_status_hint, "warning")
+            self.roll_status_hint.setText(f'Using "{applied}", a baseline saved for a different roll')
+        elif active_name in saved_names:
+            set_hint_kind(self.roll_status_hint, "success")
+            self.roll_status_hint.setText("Analyzed and saved for this roll")
+        else:
+            self.roll_status_hint.setText("")
 
     def _update_delete_enabled(self, *_args) -> None:
         """Current Roll is not a saved row, so Delete only applies to a real selection."""
@@ -137,9 +171,10 @@ class RollAnalysisSidebar(BaseSidebar):
 
     def _on_save_roll(self) -> None:
         """
-        Prompts user for name and saves current normalization.
+        Prompts user for name and saves current normalization. Pre-fills the loaded
+        roll's own name, so accepting it is what the "Analyzed" hint above looks for.
         """
-        name, ok = QInputDialog.getText(self, "Save Roll", "Enter name for this roll:")
+        name, ok = QInputDialog.getText(self, "Save Roll", "Enter name for this roll:", text=self._active_roll_name() or "")
         if not ok or not name:
             return
         if name.strip().casefold() == _CURRENT_ROLL_LABEL.casefold():
