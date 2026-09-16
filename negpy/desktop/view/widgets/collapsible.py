@@ -173,26 +173,14 @@ class CollapsibleSection(QWidget):
             self.chevron_label.setPixmap(qta.icon("fa5s.chevron-right", color=THEME.text_secondary).pixmap(12, 12))
 
     def set_modified(self, count: int) -> None:
-        """Append count to title when non-zero; show reset button."""
+        """Append count to title when non-zero; show reset button. Unrelated to
+        set_lock_button's roll-override state -- keeping this title to only what it
+        has always meant (how far from NegPy's own defaults) instead of chaining a
+        second, unrelated fact onto the same "· count" reading."""
         self.modified_count = count
-        self.reset_btn.setVisible(count > 0)
-        self._refresh_title()
-
-    def _refresh_title(self) -> None:
-        """Composes the header title from whatever state has something to say: the
-        modified count (set_modified), then, for a Roll-tab card, whether this frame
-        overrides it (set_lock_button) -- loud enough that switching frames and seeing
-        a slider jump has an obvious "why" right beside it."""
-        parts = [self._title_text]
-        if getattr(self, "modified_count", 0):
-            parts.append(str(self.modified_count))
-        if self._locked:
-            parts.append("This Frame Only")
-        self.title_label.setText(" · ".join(parts))
-        color = THEME.warn_amber if self._locked else THEME.text_on_accent
-        self.title_label.setStyleSheet(
-            f"font-weight: 600; font-size: {THEME.font_size_header}px; letter-spacing: 0.01em; background: transparent; color: {color};"
-        )
+        visible = count > 0
+        self.reset_btn.setVisible(visible)
+        self.title_label.setText(f"{self._title_text} · {count}" if visible else self._title_text)
 
     def set_selection_state(self, checked: int, total: int) -> None:
         """Reflect how many of the section's rows are ticked. Emits nothing."""
@@ -243,12 +231,15 @@ class CollapsibleSection(QWidget):
 
     def set_lock_button(self, visible: bool, locked: bool) -> None:
         """A per-frame override lock for a section backing a Roll-tab card: locked
-        freezes this card at the frame's own value, away from the roll's. Visible only
-        while a roll gives it something to lock away from -- hidden in an ad hoc
-        session, where every card is already per-frame."""
+        freezes this card at the frame's own value, away from the roll's. Locked
+        reads as a labeled amber badge, not just an icon, so the header itself says
+        what the card's amber [roll_locked] border is about -- deliberately a
+        separate widget from title_label's own "· count" (set_modified), which
+        answers an unrelated question (how far from NegPy's own defaults, not the
+        roll's). Unlocked, when shown at all, stays a plain muted icon."""
         if self.lock_btn is None:
             self.lock_btn = QPushButton()
-            self.lock_btn.setFixedSize(20, 20)
+            self.lock_btn.setFixedHeight(20)
             self.lock_btn.setIconSize(QSize(10, 10))
             self.lock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.lock_btn.setObjectName("collapsible_reset_btn")
@@ -256,23 +247,24 @@ class CollapsibleSection(QWidget):
             self._header_row.insertWidget(self._header_row.count() - 1, self.lock_btn)
         self._locked = locked
         self.lock_btn.setVisible(visible)
+        self.lock_btn.setText(" This Frame Only" if locked else "")
         icon_name = "fa5s.lock" if locked else "fa5s.lock-open"
-        color = THEME.accent_primary if locked else THEME.text_muted
+        color = THEME.warn_amber if locked else THEME.text_muted
         self.lock_btn.setIcon(qta.icon(icon_name, color=color))
+        self.lock_btn.setStyleSheet(f"color: {THEME.warn_amber}; font-size: {THEME.font_size_small}px; font-weight: 600;" if locked else "")
         self.lock_btn.setToolTip(
             f"{self._title_text} follows this frame's own value, not the roll's — click to use the roll's again"
             if locked
             else f"{self._title_text} follows the roll — click to lock this frame to its own value"
         )
         # An amber stripe down the whole card (QSS [roll_locked] rules), not just the
-        # small lock icon -- switching to a frame with an override should be obvious
-        # before its sliders are even read.
+        # badge -- switching to a frame with an override should be obvious before its
+        # sliders are even read.
         for widget in (self.toggle_button, self.content_area):
             widget.setProperty("roll_locked", "true" if locked else "false")
             style = widget.style()
             style.unpolish(widget)
             style.polish(widget)
-        self._refresh_title()
 
 
 def make_section(

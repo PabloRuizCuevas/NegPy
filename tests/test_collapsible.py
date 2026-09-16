@@ -101,24 +101,26 @@ class TestLockButton:
         section.set_lock_button(visible=True, locked=True)
         assert section.lock_btn is first
 
-    def test_locking_marks_the_title_and_the_card_border(self) -> None:
+    def test_locking_badges_the_lock_button_and_marks_the_card_border(self) -> None:
         section = CollapsibleSection("Calibration")
 
         section.set_lock_button(visible=True, locked=True)
-        assert section.title_label.text() == "Calibration · This Frame Only"
+        assert section.lock_btn.text() == " This Frame Only"
         assert section.toggle_button.property("roll_locked") == "true"
         assert section.content_area.property("roll_locked") == "true"
 
         section.set_lock_button(visible=False, locked=False)
-        assert section.title_label.text() == "Calibration"
+        assert section.lock_btn.text() == ""
         assert section.toggle_button.property("roll_locked") == "false"
         assert section.content_area.property("roll_locked") == "false"
 
-    def test_locked_and_modified_titles_combine(self) -> None:
+    def test_locking_does_not_touch_the_title_or_its_modified_count(self) -> None:
+        """title_label's "· count" is set_modified's own, unrelated fact (how far
+        from NegPy's defaults) -- set_lock_button must never chain onto it."""
         section = CollapsibleSection("Calibration")
         section.set_modified(2)
         section.set_lock_button(visible=True, locked=True)
-        assert section.title_label.text() == "Calibration · 2 · This Frame Only"
+        assert section.title_label.text() == "Calibration · 2"
 
 
 class TestMakeSection:
