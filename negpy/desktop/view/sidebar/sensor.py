@@ -245,22 +245,16 @@ class SensorSidebar(BaseSidebar):
         self.hue_trim_slider.valueCommitted.connect(lambda v: self._on_hue_trim_changed(v, persist=True))
 
     def _on_linear_raw_toggled(self, checked: bool) -> None:
-        from dataclasses import replace
-
-        new_config = replace(
-            self.state.config,
-            process=replace(
-                self.state.config.process,
-                linear_raw=checked,
-                **invalidate_local_bounds(self.state.config.process),
-            ),
+        # linear_raw switches use_camera_wb, so it is a source change: set_roll_default's
+        # apply_config re-decodes and suppresses the bounds analysis over the stale buffer.
+        self.controller.set_roll_default(
+            "sensor",
+            linear_raw=checked,
+            **invalidate_local_bounds(self.state.config.process),
         )
-        # linear_raw switches use_camera_wb, so it is a source change: apply_config re-decodes and
-        # suppresses the bounds analysis over the stale buffer.
-        self.controller.apply_config(new_config, persist=True)
 
     def _on_narrowband_scan_toggled(self, checked: bool) -> None:
-        self.update_config_section("process", narrowband_scan=checked, persist=True, render=True)
+        self.controller.set_roll_default("sensor", narrowband_scan=checked)
 
     def _open_scan_setup(self) -> None:
         from negpy.desktop.view.main_window import MainWindow

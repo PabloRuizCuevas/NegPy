@@ -145,6 +145,10 @@ ROLL_DEFAULT_FIELDS: Dict[str, tuple] = {
         "crosstalk_strength",
         "crosstalk_profile",
         "crosstalk_matrix",
+        # Baked alongside the profile+matrix so the render can gate the unmix on it
+        # without disk I/O -- travels with them, or another frame's roll-derived
+        # crosstalk would be read back through its own, unrelated film process.
+        "crosstalk_process",
         "hue_trim",
     ),
     "demosaic": ("demosaic_preview", "demosaic_export"),

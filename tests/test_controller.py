@@ -446,6 +446,29 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(cfg[0].process.crosstalk_strength, 0.5)
         self.assertEqual(cfg[0].process.locked_floors, (0.1, 0.1, 0.1))
 
+    def test_set_roll_default_mid_drag_does_not_touch_the_roll(self):
+        """persist=False (a slider mid-drag) previews on the active frame only -- the
+        roll, and every other frame's thumbnail, only picks up the settled value."""
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.uploaded_files = [
+            {"name": "a.dng", "path": "/a.dng", "hash": "h1"},
+            {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
+        ]
+        state.current_file_hash = "h1"
+
+        self.controller.set_roll_default("sensor", persist=False, hue_trim=2.5)
+
+        self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id), {})
+        self.assertEqual(state.stale_thumbnails, set())
+        cfg, kwargs = self.mock_session_manager.update_config.call_args
+        self.assertEqual(cfg[0].process.hue_trim, 2.5)
+        self.assertFalse(kwargs["persist"])
+
     def test_set_roll_default_flags_every_other_frames_thumbnail_stale(self):
         from negpy.services.assets import rolls
 
