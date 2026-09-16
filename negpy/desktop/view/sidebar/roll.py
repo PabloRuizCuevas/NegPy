@@ -136,6 +136,8 @@ class RollAnalysisSidebar(BaseSidebar):
         """
         Rebuilds the picker from every library roll, skipping a rebuild mid-search
         (SearchableGearCombo.is_editing) and one the roll set and selection don't need.
+        The loaded roll is pinned first in the dropdown, ahead of the alphabetical rest,
+        since it is the default choice.
         """
         if not force and self.roll_combo.is_editing():
             return
@@ -149,7 +151,8 @@ class RollAnalysisSidebar(BaseSidebar):
         if not force and key == self._roll_sync_key:
             return
         self._roll_sync_key = key
-        entries = [(f"{_TICK}{name}" if name in analyzed else name, name) for name in names]
+        ordered = [active_name, *(n for n in names if n != active_name)] if active_name in names else names
+        entries = [(f"{_TICK}{name}" if name in analyzed else name, name) for name in ordered]
         self.roll_combo.set_labeled_items(entries, selected, search_fn=lambda _label, item_id: item_id)
         self._update_delete_enabled()
         self._update_roll_status_hint(active_name, selected)

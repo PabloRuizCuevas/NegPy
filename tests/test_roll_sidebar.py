@@ -59,6 +59,18 @@ def test_picker_defaults_to_the_active_roll_and_lists_every_library_roll(qapp):
     assert sidebar.roll_combo.line_edit().text() == "Portra 400"
 
 
+def test_the_loaded_roll_is_pinned_first_in_the_dropdown(qapp):
+    _, sidebar = _sidebar(roll_names=["Agfa", "Tri-X", "Velvia"], active_name="Velvia")
+    ids = [item_id for _label, item_id, _search in sidebar.roll_combo._entries]
+    assert ids == ["Velvia", "Agfa", "Tri-X"]
+
+
+def test_dropdown_stays_alphabetical_without_an_active_roll(qapp):
+    _, sidebar = _sidebar(roll_names=["Agfa", "Tri-X", "Velvia"])
+    ids = [item_id for _label, item_id, _search in sidebar.roll_combo._entries]
+    assert ids == ["Agfa", "Tri-X", "Velvia"]
+
+
 def test_analyzed_rolls_get_a_tick_in_their_label(qapp):
     _, sidebar = _sidebar(roll_names=["Tri-X", "Portra 400"], analyzed=["Tri-X"], active_name="Tri-X")
     assert sidebar.roll_combo.line_edit().text() == "✓ Tri-X"
