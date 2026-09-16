@@ -3483,6 +3483,69 @@ class AppController(QObject):
         self.session.update_config(replace(self.state.config, process=new_process), persist=True)
         self.request_render()
 
+    def roll_card_locked(self, card_key: str) -> bool:
+        """True when the active frame has locked *card_key* to its own value, within
+        the active roll. Always false with no active roll."""
+        roll_id = self.state.active_roll_id
+        if roll_id is None or not self.state.current_file_hash:
+            return False
+        return card_key in rolls.frame_override_cards(self.session.repo, roll_id, self.state.current_file_hash)
+
+    def set_roll_default(self, card_key: str, persist: bool = True, readback_metrics: bool = True, **changes) -> None:
+        """Commit a Calibration/Demosaic/Normalization change roll-wide: every member
+        frame that has not locked *card_key* away from the roll picks it up as soon as
+        it is next loaded or rendered, no batch-apply needed. Falls back to a plain
+        per-frame edit with no active roll, or when the active frame has this card
+        locked.
+
+        persist=False (a slider mid-drag) applies to the active frame only, same as
+        any other live preview -- the roll only picks up the settled value, and other
+        frames are flagged stale then, not on every intermediate tick.
+
+        *changes* may include fields outside ROLL_DEFAULT_FIELDS (a bounds-invalidation
+        clear alongside a Crosstalk change, say) -- only the card's own fields go to
+        the roll; everything else still lands on the active frame's own row, same as
+        any other edit.
+        """
+        new_config = replace(self.state.config, process=replace(self.state.config.process, **changes))
+        roll_id = self.state.active_roll_id
+        if roll_id is None or self.roll_card_locked(card_key):
+            self.apply_config(new_config, persist=persist, readback_metrics=readback_metrics)
+            return
+
+        self.apply_config(new_config, persist=persist, readback_metrics=readback_metrics)
+        if not persist:
+            return
+
+        roll_fields = {k: v for k, v in changes.items() if k in rolls.ROLL_DEFAULT_FIELDS[card_key]}
+        if not roll_fields:
+            return
+        rolls.set_roll_defaults(self.session.repo, roll_id, **roll_fields)
+        active_hash = self.state.current_file_hash
+        for f in self.state.uploaded_files:
+            if f.get("hash") != active_hash:
+                self.state.stale_thumbnails.add(asset_thumbnail_key(f))
+        self.session.asset_model.refresh()
+
+    def set_roll_card_locked(self, card_key: str, locked: bool) -> None:
+        """Lock or unlock one Roll-tab card for the active frame, within the active
+        roll. Locking seeds the frame's own saved row with whatever is currently in
+        effect (the roll's default, most likely), so nothing appears to jump the
+        moment it stops following the roll; unlocking drops the flag and the roll's
+        current value takes over immediately. No-op with no active roll."""
+        roll_id = self.state.active_roll_id
+        if roll_id is None or not self.state.current_file_hash:
+            return
+        if locked:
+            card_fields = rolls.ROLL_DEFAULT_FIELDS[card_key]
+            frozen = {name: getattr(self.state.config.process, name) for name in card_fields}
+            new_config = replace(self.state.config, process=replace(self.state.config.process, **frozen))
+            self.session.update_config(new_config, persist=True, render=False)
+        rolls.set_frame_override(self.session.repo, roll_id, self.state.current_file_hash, card_key, locked)
+        if not locked:
+            asset = self.state.uploaded_files[self.state.selected_file_idx]
+            self.apply_config(self.session.config_for_asset(asset), persist=False)
+
     def reanalyze_current_file(self) -> None:
         """
         Clears cached local floors and forces a fresh analysis render.

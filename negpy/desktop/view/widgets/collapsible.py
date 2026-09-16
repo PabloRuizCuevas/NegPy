@@ -25,6 +25,7 @@ class CollapsibleSection(QWidget):
     expanded_changed = pyqtSignal(bool)
     info_requested = pyqtSignal()
     selection_toggled = pyqtSignal(bool)
+    lock_toggled = pyqtSignal(bool)
 
     def __init__(
         self,
@@ -118,6 +119,11 @@ class CollapsibleSection(QWidget):
         # Lazily built by set_actions_menu(): most sections have nothing that belongs
         # here, so no button exists until one asks for it.
         self.actions_btn: Optional[QPushButton] = None
+
+        # Lazily built by set_lock_button(): only a section backing a Roll-tab card has
+        # anything to lock away from.
+        self.lock_btn: Optional[QPushButton] = None
+        self._locked = False
 
         self.chevron_label: Optional[QLabel] = None
         if collapsible:
@@ -222,6 +228,30 @@ class CollapsibleSection(QWidget):
             self._header_row.insertWidget(self._header_row.count() - 1, self.actions_btn)
         self.actions_btn.setToolTip(tooltip)
         self.actions_btn.setMenu(menu)
+
+    def set_lock_button(self, visible: bool, locked: bool) -> None:
+        """A per-frame override lock for a section backing a Roll-tab card: locked
+        freezes this card at the frame's own value, away from the roll's. Visible only
+        while a roll gives it something to lock away from -- hidden in an ad hoc
+        session, where every card is already per-frame."""
+        if self.lock_btn is None:
+            self.lock_btn = QPushButton()
+            self.lock_btn.setFixedSize(20, 20)
+            self.lock_btn.setIconSize(QSize(10, 10))
+            self.lock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.lock_btn.setObjectName("collapsible_reset_btn")
+            self.lock_btn.clicked.connect(lambda: self.lock_toggled.emit(not self._locked))
+            self._header_row.insertWidget(self._header_row.count() - 1, self.lock_btn)
+        self._locked = locked
+        self.lock_btn.setVisible(visible)
+        icon_name = "fa5s.lock" if locked else "fa5s.lock-open"
+        color = THEME.accent_primary if locked else THEME.text_muted
+        self.lock_btn.setIcon(qta.icon(icon_name, color=color))
+        self.lock_btn.setToolTip(
+            f"{self._title_text} follows this frame's own value, not the roll's — click to use the roll's again"
+            if locked
+            else f"{self._title_text} follows the roll — click to lock this frame to its own value"
+        )
 
 
 def make_section(

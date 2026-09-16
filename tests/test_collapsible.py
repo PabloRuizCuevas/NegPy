@@ -62,6 +62,46 @@ class TestNonCollapsible:
         assert section.title_label.text() == "Title"
 
 
+class TestLockButton:
+    def test_hidden_until_set_lock_button_is_called(self) -> None:
+        section = CollapsibleSection("Calibration")
+        assert section.lock_btn is None
+
+    def test_visible_true_shows_it_visible_false_hides_it(self) -> None:
+        section = CollapsibleSection("Calibration")
+        section.set_lock_button(visible=True, locked=False)
+        assert section.lock_btn.isHidden() is False
+        section.set_lock_button(visible=False, locked=False)
+        assert section.lock_btn.isHidden() is True
+
+    def test_clicking_it_emits_the_opposite_of_the_current_state(self) -> None:
+        section = CollapsibleSection("Calibration")
+        section.set_lock_button(visible=True, locked=False)
+        received = []
+        section.lock_toggled.connect(received.append)
+
+        section.lock_btn.click()
+
+        assert received == [True]
+
+    def test_clicking_a_locked_button_emits_false(self) -> None:
+        section = CollapsibleSection("Calibration")
+        section.set_lock_button(visible=True, locked=True)
+        received = []
+        section.lock_toggled.connect(received.append)
+
+        section.lock_btn.click()
+
+        assert received == [False]
+
+    def test_reuses_the_same_button_across_calls(self) -> None:
+        section = CollapsibleSection("Calibration")
+        section.set_lock_button(visible=True, locked=False)
+        first = section.lock_btn
+        section.set_lock_button(visible=True, locked=True)
+        assert section.lock_btn is first
+
+
 class TestMakeSection:
     def test_collapsible_reads_and_persists_the_setting(self) -> None:
         repo = FakeRepo(section_expanded_demo=False)

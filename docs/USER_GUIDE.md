@@ -684,6 +684,8 @@ A scrollable list of every edit step, the last 100 kept, newest on top. The curr
 
 **Film mode** sits above the panels, because it is the first choice of every edit: **Color** (C-41 color negative), **B&W** (panchromatic negative) or **Slide** (transparency/reversal, E-6 and friends). Each swaps the core conversion math and re-runs the pipeline from scratch. The wand button beside them **auto-detects** the mode when a file loads.
 
+**Calibration, Demosaic and Normalization are shared by every frame in the roll**, not edited per frame: change one and every frame picks it up at once, no batch-apply needed. The **lock** button beside a card's header (hidden with no roll open) freezes that one card at the current frame's own value instead — the roll's value keeps changing for every other frame, undisturbed. Unlock to drop the override and rejoin the roll's current value immediately. A frame outside any roll edits every card per frame, exactly as before this existed.
+
 <!-- panel:sensor -->
 ### 10.1 Calibration: what your rig does to the colors
 
