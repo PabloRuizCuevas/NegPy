@@ -754,7 +754,7 @@ Bayer and X-Trans RAW only: a scanner TIFF, a Pakon scan or a linear DNG arrives
 Meter the whole roll once and share the baseline, so frames from the same film match.
 
 *   **Roll picker**: type to search every roll in your library, the same list the Library section shows — a roll with a saved baseline is ticked. Defaults to the loaded roll. Picking a different, ticked roll shows a hint that its baseline was saved for that roll, not this one.
-*   **Apply**: runs the picked roll. On the loaded roll it scans every loaded file and computes a roll-average density and color balance, discarding outliers — run it once after importing, and again any time to redo it. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)* On a different, ticked roll it loads that roll's stored bounds and balance instead of re-scanning.
+*   **Apply**: runs the picked roll. On the loaded roll it scans every loaded file and computes a roll-average density and color balance, discarding outliers — run it once after importing, and again any time to redo it. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)* On a different, ticked roll it loads that roll's stored bounds and balance instead of re-scanning. A frame with **Lock Bounds** on keeps its own exposure and is skipped. The status line afterward names any frame whose own measurement was discarded as an outlier: that frame is still given the roll average like everyone else, but the mismatch is worth a look — usually **Use Luma Average** / **Use Color Average** off for that one frame, below.
 *   **Save**: store the current bounds and balance as the picked roll's baseline, ticking it.
 *   **Delete**: clear the picked roll's saved baseline (it asks first; disabled until it has one). The frames keep their current look; only the saved baseline goes.
 *   **Use Luma Average**: this frame takes the roll-wide tonal range; color still re-derives per frame.
@@ -775,7 +775,7 @@ How the negative is measured and normalized into a positive. The film mode that 
 
 *   **Analysis Buffer** (0.0 to 0.25): insets the measurement window from the frame edge so film rebate, sprocket holes and scanner borders do not skew detection. Raise it on scans with wide borders.
 *   **Analysis Region** (square-draw tool): draw a freehand region on the canvas to meter *exactly* that area, overriding the buffer. Double-click inside to confirm; the ✕ button clears it.
-*   **Lock Bounds** (padlock): freezes the analyzed normalization bounds for this frame, so cropping or moving sliders no longer re-analyzes it. Lock it in once you are happy with the bounds.
+*   **Lock Bounds** (padlock): freezes the analyzed normalization bounds for this frame, so cropping or moving sliders no longer re-analyzes it, and Roll Analysis (§10.3) leaves it out of the roll-wide baseline it writes back, on the first run as well as every re-run. Lock it in once you are happy with the bounds.
 
 **Normalization tuning:**
 
