@@ -10,6 +10,18 @@ def _combo_items(combo):
     return [(combo.itemText(i), combo.itemData(i)) for i in range(combo.count())]
 
 
+def _row_index_containing(layout, widget) -> int:
+    """Index within *layout* of the (possibly nested) row that directly holds *widget*."""
+    for i in range(layout.count()):
+        item = layout.itemAt(i)
+        if item.widget() is widget:
+            return i
+        row = item.layout()
+        if row is not None and any(row.itemAt(j).widget() is widget for j in range(row.count())):
+            return i
+    raise AssertionError(f"{widget} not found in layout")
+
+
 def test_tone_reset_covers_dye_separation():
     """The section header's reset button resets the fields listed in _TONE_FIELDS, so
     every control the panel shows has to be in it — a renamed field that falls out of
@@ -252,6 +264,21 @@ def test_white_black_point_hide_on_the_transparency_transfer(qapp):
 
     assert sidebar.white_point_slider.isHidden()
     assert sidebar.black_point_slider.isHidden()
+    assert sidebar.tonal_range_header.isHidden()
+
+
+def test_tonal_range_header_sits_directly_above_white_point(qapp):
+    """Marks White/Black Point off from the print-curve controls below -- they come
+    from a different pipeline stage (Normalization) and only share this card's
+    Global/R/G/B selector, not its print-curve subject."""
+    controller = MagicMock()
+    controller.state = AppState()
+    sidebar = ToneSidebar(controller)
+
+    header_i = sidebar.layout.indexOf(sidebar.tonal_range_header)
+    assert header_i >= 0
+    row_i = _row_index_containing(sidebar.layout, sidebar.white_point_slider)
+    assert header_i == row_i - 1
 
 
 def test_white_black_point_disabled_when_bounds_are_locked(qapp):

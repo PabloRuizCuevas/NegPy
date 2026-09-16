@@ -415,7 +415,7 @@ Color timing, like the dichroic filters on an enlarger head. A **Global / Shadow
 <!-- panel:tone -->
 ### 5.2 Tone: density, contrast and the print curve
 
-The paper's response. A **Global / R / G / B** selector at the top scopes most controls to the shared curve (Global), or to per-dye-layer trims for **crossover correction**, meaning casts that differ between shadows and highlights, which filtration alone cannot fix.
+The paper's response, plus this frame's own tonal window ahead of it. A **Global / R / G / B** selector at the top scopes most controls to the shared curve (Global), or to per-dye-layer trims for **crossover correction**, meaning casts that differ between shadows and highlights, which filtration alone cannot fix.
 
 **Automatic helpers**, on by default. They do per-frame work so you do not have to, and turning them off lets the negative print honestly.
 
@@ -427,9 +427,12 @@ The paper's response. A **Global / R / G / B** selector at the top scopes most c
 
 **Rotating a proof**: a patch shows only the slice of the frame at its own grid slot, so the part you want to judge is stuck at whichever rung sits over it. While either proof is up, the 90° **rotate** buttons and `[` / `]` turn the *ladder* instead of the image: each press moves the dense or hard end onto a different edge, and the axis labels follow. The image's own rotation is untouched, and turning is instant, because printing a proof assembles all four orientations at once. The orientation you land on is kept for the rest of the session.
 
+**Tonal Range**, marked off with its own subheader: unlike the print-curve controls below, these come from a different pipeline stage (Normalization) and only share this panel's Global/R/G/B selector, not its subject.
+
+*   **White Point** / **Black Point** (-0.25 to 0.25): manual offsets on top of the auto-detected normalization bounds ([§10.3](#103-normalization-negative--positive)). A positive white point brightens; a positive black point lifts blacks. In R/G/B mode these become per-layer trims: per-dye-layer film-base (Dmin) and Dmax corrections, scanner-style per-channel levels. Unlike everything below, these never join the roll — the same category as Density/Grade, a per-shot call rather than a rig or baseline fact. Hidden on the Transparency transfer path (Normalize off), where there is no auto-detected bounds to offset; disabled while **Lock Bounds** freezes this frame's own bounds.
+
 **Exposure:**
 
-*   **White Point** / **Black Point** (-0.25 to 0.25): manual offsets on top of the auto-detected normalization bounds ([§10.3](#103-normalization-negative--positive)). A positive white point brightens; a positive black point lifts blacks. In R/G/B mode these become per-layer trims: per-dye-layer film-base (Dmin) and Dmax corrections, scanner-style per-channel levels. Unlike everything else on this card, these never join the roll — the same category as Density/Grade below, a per-shot call rather than a rig or baseline fact. Hidden on the Transparency transfer path (Normalize off), where there is no auto-detected bounds to offset; disabled while **Lock Bounds** freezes this frame's own bounds.
 *   **Print Density** (0.0 to 2.0): overall brightness, simulating enlarger exposure time. Lower is brighter, higher is denser.
 *   **ISO-R Grade** (50 to 180): contrast, as a paper ISO-R value. R110 is about classic grade 2; **lower R is harder** (more contrast), higher is softer. In R/G/B mode a **Grade** trim rotates one layer's slope about the midtone.
 *   **Shadows Density** (±0.9 ΔD) / **Highlights Density** (±0.5 ΔD): brighten or darken just the shadow or highlight zone, without reshaping the curve. Bounded by paper black and white, so a burn cannot exceed the print's limits. The ranges differ because density is logarithmic: the same ΔD reads far smaller near paper black than near paper white.

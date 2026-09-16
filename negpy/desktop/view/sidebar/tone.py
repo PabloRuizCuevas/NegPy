@@ -74,7 +74,13 @@ class ToneSidebar(BaseSidebar):
 
         # This frame's own tonal window, before density/grade act on it -- unlike the H&D
         # curve controls below, White Point/Black Point never join a roll: they are the one
-        # thing meant to differ frame to frame, the same category as Density/Grade.
+        # thing meant to differ frame to frame, the same category as Density/Grade. Marked
+        # off with its own subheader, the same device Paper Response uses below, since
+        # they come from a different pipeline stage (Normalization) and only share this
+        # card's Global/R/G/B selector rather than its print-curve subject.
+        self.tonal_range_header = section_subheader("Tonal Range")
+        self.layout.addWidget(self.tonal_range_header)
+
         proc = self.state.config.process
         self.white_point_slider = CompactSlider("White Point", -0.25, 0.25, proc.white_point_offset, has_neutral=True)
         self.black_point_slider = CompactSlider("Black Point", -0.25, 0.25, proc.black_point_offset, has_neutral=True)
@@ -489,6 +495,7 @@ class ToneSidebar(BaseSidebar):
                 self.mask_spacer_slider,
                 # No auto-detected bounds exist on the transfer path, so an offset on top of
                 # them has nothing to act on either.
+                self.tonal_range_header,
                 self.white_point_slider,
                 self.black_point_slider,
             ):
