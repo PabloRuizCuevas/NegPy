@@ -777,6 +777,9 @@ How the negative is measured and normalized into a positive. The film mode that 
 *   **Use Color Average**: this frame takes the picked roll's color balance instead of its own analysis; tonal range still re-derives per frame. Disables Color Clip while on. Enable both for a fully consistent roll; leave both off for per-image auto-exposure.
 *   **Luma Range Clip** (-100 to 100): how aggressively the tonal range, the black/white-point span, is set. Neutral already applies a small robust clip. Positive tightens it, which is good for dense or fogged negatives where a few stray pixels would push the bounds to extremes. Negative pushes the bounds *outward*, for lifted blacks and unclipped highlights.
 *   **Color Clip** (-100 to 100): the per-channel color-balance clip (orange-mask removal), independent of the tonal range. Positive tightens channel balance; negative samples nearer the extremes.
+
+**Per-Frame Exposure**, marked off with its own subheader: unlike everything above, these never join the roll, on this frame or applied to any other — the same category as Density/Grade in Exposure, a per-shot call rather than a rig or baseline fact.
+
 *   **Global / R / G / B** selector → **White Point** / **Black Point** (-0.25 to 0.25): manual offsets on top of the auto-detected bounds. A positive white point brightens; a positive black point lifts blacks. In R/G/B mode these become per-layer trims: per-dye-layer film-base (Dmin) and Dmax corrections, which is scanner-style per-channel levels. The selector is hidden in B&W Negative, where per-layer trims are meaningless, and in Transparency with Normalize off, where the sliders it scopes are hidden with the rest of the normalization tuning.
 
 **Crosstalk**, **Hue Trim** and the sensor unmix all live in **Calibration** (§10.1). They correct the capture rather than the negative-to-positive conversion.

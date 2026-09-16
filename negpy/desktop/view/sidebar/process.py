@@ -184,6 +184,13 @@ class ProcessSidebar(BaseSidebar):
         clip_row.addWidget(self.color_range_clip_slider)
         self.layout.addLayout(clip_row)
 
+        # Unlike every field above, White/Black Point never join the roll: they are this
+        # frame's own exposure call, the same category as Density/Grade elsewhere, not a
+        # rig or baseline fact -- the subheader says so, since two plain sliders sitting
+        # beside roll-shared ones otherwise give no clue that they behave differently.
+        self.per_frame_subheader = section_subheader("Per-Frame Exposure")
+        self.layout.addWidget(self.per_frame_subheader)
+
         # Channel selector scoped to the White/Black Point row below it. Global = the shared
         # offsets, R/G/B = the per-layer trims (film base, Dmax).
         self.ch_global_btn = self._labeled_toggle("fa5s.globe", " Global", True, "Global — shared white/black point offsets (all layers)")
@@ -483,6 +490,7 @@ class ProcessSidebar(BaseSidebar):
                 self.luma_range_clip_slider,
                 self.color_range_clip_slider,
                 self.lock_bounds_btn,
+                self.per_frame_subheader,
                 self.white_point_slider,
                 self.black_point_slider,
             ):

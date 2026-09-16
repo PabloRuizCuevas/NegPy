@@ -223,6 +223,25 @@ def test_average_toggles_hide_on_the_transparency_transfer(qapp):
     assert sidebar.use_color_avg_btn.isHidden()
 
 
+def test_per_frame_exposure_subheader_sits_above_the_channel_selector(qapp):
+    """White/Black Point never join the roll -- unlike every clip/average field above
+    them -- and the subheader is the only cue, since they are otherwise plain sliders
+    sitting beside roll-shared ones."""
+    _, sidebar = _sidebar()
+    header_i = sidebar.layout.indexOf(sidebar.per_frame_subheader)
+    assert header_i >= 0
+    selector_i = _row_index_containing(sidebar.layout, sidebar.ch_global_btn)
+    assert header_i == selector_i - 1
+
+
+def test_per_frame_exposure_subheader_hides_on_the_transparency_transfer(qapp):
+    controller, sidebar = _sidebar()
+    cfg = controller.state.config
+    controller.state.config = replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.E6, e6_normalize=False))
+    sidebar.sync_ui()
+    assert sidebar.per_frame_subheader.isHidden()
+
+
 def test_use_luma_average_toggle_reaches_the_controller(qapp):
     """Goes through set_roll_default, the same Normalization card write every other
     roll-eligible control on this card uses -- flipping it locks the card to this

@@ -6,7 +6,7 @@ from PyQt6.QtCore import QTimer, pyqtSignal
 
 from negpy.desktop.controller import AppController
 from negpy.desktop.view.shortcut_registry import tooltip_with_shortcut
-from negpy.desktop.view.styles.templates import hint_label, section_subheader, set_hint_kind, wrap_tooltip
+from negpy.desktop.view.styles.templates import hint_label, set_hint_kind, wrap_tooltip
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
 from negpy.desktop.view.widgets.charts import MiniHistogramWidget, MiniRGBHistogramWidget
 from negpy.desktop.view.styles.theme import THEME
@@ -193,7 +193,6 @@ class ControlsPanel(QWidget):
         normalization_layout = QVBoxLayout(normalization_body)
         normalization_layout.setContentsMargins(0, 0, 0, 0)
         normalization_layout.setSpacing(4)
-        normalization_layout.addWidget(section_subheader("Batch Analysis"))
         normalization_layout.addWidget(self.roll_sidebar)
         normalization_layout.addWidget(self.process_sidebar)
         self.process_section = self._make_section(

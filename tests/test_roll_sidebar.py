@@ -39,6 +39,15 @@ def _sidebar(roll_names=(), analyzed=(), active_name=None):
     return controller, RollAnalysisSidebar(controller), ids
 
 
+def test_picker_owns_its_batch_analysis_subheader(qapp):
+    """The subheader belongs to the picker itself, not the composite Normalization
+    body -- everything else in that card (Analysis Buffer, clip sliders, White/Black
+    Point) isn't Batch Analysis, and labeling it that way would mislead."""
+    _, sidebar, _ids = _sidebar()
+    assert sidebar.layout.itemAt(0).widget() is not sidebar.roll_combo
+    assert sidebar.layout.itemAt(1).widget() is sidebar.roll_combo
+
+
 def test_picker_defaults_to_the_active_roll_and_lists_every_library_roll(qapp):
     _, sidebar, ids = _sidebar(roll_names=["Portra 400", "Tri-X"], active_name="Tri-X")
     assert sidebar.roll_combo.selected_id() == ids["Tri-X"]

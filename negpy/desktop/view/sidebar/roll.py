@@ -1,7 +1,7 @@
 from typing import Optional
 
 from negpy.desktop.view.sidebar.base import BaseSidebar
-from negpy.desktop.view.styles.templates import hint_label, set_hint_kind
+from negpy.desktop.view.styles.templates import hint_label, section_subheader, set_hint_kind
 from negpy.desktop.view.widgets.searchable_gear_combo import SearchableGearCombo
 from negpy.services.assets import rolls
 
@@ -21,6 +21,7 @@ class RollAnalysisSidebar(BaseSidebar):
     """
 
     def _init_ui(self) -> None:
+        self.layout.addWidget(section_subheader("Batch Analysis"))
         self.roll_combo = SearchableGearCombo(placeholder="Search rolls…")
         self.roll_combo.setToolTip("Picking a roll loads its saved Batch Analysis baseline onto the loaded files.")
         self.layout.addWidget(self.roll_combo)
