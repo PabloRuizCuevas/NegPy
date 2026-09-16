@@ -400,6 +400,21 @@ class TestRollDefaults:
 
         assert resolved.process_mode == ProcessMode.BW
 
+    def test_positive_source_has_no_card_and_cannot_be_locked_away(self):
+        """Positive is a roll default like process_mode: a fact about how the whole
+        roll was scanned, not a per-shot choice, so it always takes the roll's value
+        regardless of any card's lock."""
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_defaults(repo, roll_id, positive_source=True)
+        set_frame_override(repo, roll_id, "h1", "sensor", locked=True)
+        set_frame_override(repo, roll_id, "h1", "demosaic", locked=True)
+        set_frame_override(repo, roll_id, "h1", "process", locked=True)
+
+        resolved = resolve_roll_process_config(repo, roll_id, "h1", ProcessConfig(positive_source=False))
+
+        assert resolved.positive_source is True
+
 
 class TestRollNormalization:
     """A roll's own Batch Analysis baseline: written only by Batch Analysis itself, read

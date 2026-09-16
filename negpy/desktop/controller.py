@@ -3619,6 +3619,19 @@ class AppController(QObject):
     def set_roll_override_locked_frames(self, value: bool) -> None:
         self.session.repo.save_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, value)
 
+    def _push_unlockable_roll_field(self, roll_id: str, **field) -> None:
+        """Shared by set_process_mode/set_positive_source: writes one roll-wide fact
+        that has no lock possible (rolls._UNLOCKABLE_FIELDS), and marks every other
+        member frame's thumbnail stale so its badge reflects the change without an
+        eager per-file rewrite -- resolve_roll_process_config picks it up next time
+        each frame is hydrated."""
+        rolls.set_roll_defaults(self.session.repo, roll_id, **field)
+        active_hash = self.state.current_file_hash
+        for f in self.state.uploaded_files:
+            if f.get("hash") != active_hash:
+                self.state.stale_thumbnails.add(asset_thumbnail_key(f))
+        self.session.asset_model.refresh()
+
     def set_process_mode(self, mode: str) -> None:
         """Switches Film Mode. A roll is one film type -- Color, B&W or Slide -- never
         mixed, so unlike Calibration/Demosaic/Normalization this cannot diverge per
@@ -3639,14 +3652,23 @@ class AppController(QObject):
             **invalidate_local_bounds(self.state.config.process),
         )
         self.apply_config(replace(self.state.config, process=new_process), persist=True)
-        roll_id = self.state.active_roll_id
-        if roll_id is not None:
-            rolls.set_roll_defaults(self.session.repo, roll_id, process_mode=mode)
-            active_hash = self.state.current_file_hash
-            for f in self.state.uploaded_files:
-                if f.get("hash") != active_hash:
-                    self.state.stale_thumbnails.add(asset_thumbnail_key(f))
-            self.session.asset_model.refresh()
+        if self.state.active_roll_id is not None:
+            self._push_unlockable_roll_field(self.state.active_roll_id, process_mode=mode)
+
+    def set_positive_source(self, checked: bool) -> None:
+        """Toggles Positive. Whether the source is already a finished positive
+        describes how the whole roll was scanned, not a per-shot choice -- a roll is
+        scanned one way, not some frames pre-positivized and others not -- so like
+        Film Mode this propagates to every member frame immediately, with no lock
+        possible and no Apply needed."""
+        new_process = replace(
+            self.state.config.process,
+            positive_source=checked,
+            **invalidate_local_bounds(self.state.config.process),
+        )
+        self.apply_config(replace(self.state.config, process=new_process), persist=True)
+        if self.state.active_roll_id is not None:
+            self._push_unlockable_roll_field(self.state.active_roll_id, positive_source=checked)
 
     def set_roll_default(self, card_key: str, persist: bool = True, readback_metrics: bool = True, **changes) -> None:
         """Edits *card_key* for the active frame alone, same as any other control --

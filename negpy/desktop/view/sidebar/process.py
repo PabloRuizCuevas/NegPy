@@ -286,13 +286,7 @@ class ProcessSidebar(BaseSidebar):
         )
 
     def _on_positive_source_toggled(self, checked: bool) -> None:
-        # Changes the decode like Linear RAW does: set_roll_default's apply_config
-        # re-decodes and suppresses the bounds analysis over the stale buffer.
-        self.controller.set_roll_default(
-            "process",
-            positive_source=checked,
-            **invalidate_local_bounds(self.state.config.process),
-        )
+        self.controller.set_positive_source(checked)
 
     def _on_use_luma_average_toggled(self, checked: bool) -> None:
         self._toggle_roll_axis(use_luma_average=checked)

@@ -250,8 +250,7 @@ def virtual_rolls(repo: Any) -> List[tuple]:
 # edit, grouped by the card that owns them -- the same grouping a per-card lock button
 # unlocks. White/Black Point and their trims stay off this list on purpose: they are
 # exposure choices that can legitimately vary shot to shot within a roll, unlike these,
-# which describe the rig or the roll's own shared baseline. Film Mode is a roll default
-# too but has no card of its own to unlock, so it never appears in a frame_overrides set.
+# which describe the rig or the roll's own shared baseline.
 ROLL_DEFAULT_FIELDS: Dict[str, tuple] = {
     "sensor": (
         "linear_raw",
@@ -270,7 +269,6 @@ ROLL_DEFAULT_FIELDS: Dict[str, tuple] = {
     "demosaic": ("demosaic_preview", "demosaic_export"),
     "process": (
         "e6_normalize",
-        "positive_source",
         "analysis_buffer",
         "luma_range_clip",
         "color_range_clip",
@@ -282,7 +280,11 @@ ROLL_DEFAULT_FIELDS: Dict[str, tuple] = {
         "use_color_average",
     ),
 }
-_MODE_FIELD = "process_mode"
+# Roll defaults too, but with no card of their own to unlock, so neither ever appears
+# in a frame_overrides set: Film Mode and Positive both describe how the whole roll
+# was shot or scanned, not a per-shot choice -- a roll is one film type, and scanned
+# one way, not some frames pre-positivized and others not.
+_UNLOCKABLE_FIELDS = ("process_mode", "positive_source")
 
 
 def roll_defaults(repo: Any, roll_id: str) -> Dict[str, Any]:
@@ -350,9 +352,7 @@ def resolve_roll_process_config(repo: Any, roll_id: Optional[str], file_hash: st
     if not defaults:
         return process_config
     locked_cards = frame_override_cards(repo, roll_id, file_hash)
-    updates = {}
-    if _MODE_FIELD in defaults:
-        updates[_MODE_FIELD] = defaults[_MODE_FIELD]
+    updates = {name: defaults[name] for name in _UNLOCKABLE_FIELDS if name in defaults}
     for card_key, field_names in ROLL_DEFAULT_FIELDS.items():
         if card_key in locked_cards:
             continue

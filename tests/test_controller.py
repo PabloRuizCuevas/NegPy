@@ -2681,6 +2681,34 @@ class TestPresetExportSelected(unittest.TestCase):
         self.assertIn(asset_thumbnail_key(h3), stale)
         self.assertNotIn(asset_thumbnail_key(h2), stale)  # h2 is the active frame
 
+    def test_set_positive_source_pushes_the_roll_default_when_a_roll_is_active(self):
+        self.mock_session_manager.state.active_roll_id = "roll-1"
+
+        with patch.object(rolls, "set_roll_defaults") as mock_set:
+            self.controller.set_positive_source(True)
+
+        mock_set.assert_called_once_with(self.mock_session_manager.repo, "roll-1", positive_source=True)
+
+    def test_set_positive_source_does_not_touch_the_roll_without_an_active_roll(self):
+        self.mock_session_manager.state.active_roll_id = None
+
+        with patch.object(rolls, "set_roll_defaults") as mock_set:
+            self.controller.set_positive_source(True)
+
+        mock_set.assert_not_called()
+
+    def test_set_positive_source_marks_other_frames_thumbnails_stale(self):
+        self.mock_session_manager.state.active_roll_id = "roll-1"
+
+        with patch.object(rolls, "set_roll_defaults"):
+            self.controller.set_positive_source(True)
+
+        stale = self.mock_session_manager.state.stale_thumbnails
+        h1, h2, h3 = self.mock_session_manager.state.uploaded_files
+        self.assertIn(asset_thumbnail_key(h1), stale)
+        self.assertIn(asset_thumbnail_key(h3), stale)
+        self.assertNotIn(asset_thumbnail_key(h2), stale)  # h2 is the active frame
+
     def test_request_reset_roll_resets_every_visible_frame(self):
         self.controller.request_reset_roll()
 

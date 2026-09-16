@@ -96,9 +96,7 @@ def test_positive_toggle_reaches_the_controller(qapp):
     sidebar.sync_ui()
 
     sidebar.positive_source_btn.setChecked(True)
-    args, kwargs = controller.set_roll_default.call_args
-    assert args[0] == "process"
-    assert kwargs["positive_source"] is True
+    controller.set_positive_source.assert_called_once_with(True)
 
 
 def _row_index_containing(layout, widget) -> int:
