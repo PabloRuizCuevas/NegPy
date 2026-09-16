@@ -3,7 +3,10 @@ from typing import Any, Dict
 import numpy as np
 import qtawesome as qta
 from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtGui import QActionGroup
 from PyQt6.QtWidgets import (
+    QCheckBox,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSplitter,
@@ -24,8 +27,18 @@ from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.charts import PhotometricCurveWidget, StepWedgeWidget, ZoneStripWidget
 from negpy.desktop.view.widgets.collapsible import make_section
 from negpy.desktop.view.widgets.gear_library_panel import GearLibraryPanel
+from negpy.desktop.view.widgets.split_button import make_split_button
 from negpy.desktop.view.widgets.stats import DensitometerRow, NegativeStatsWidget, ZonePlacementRows
 from negpy.desktop.view.widgets.overflow_bar import OverflowBar
+
+# key -> (menu label, split-button label) -- the same current/selected/all scopes the
+# Export button offers, applied here to what a Calibration/Demosaic/Normalization edit
+# targets rather than what Export sends out.
+_ROLL_EDIT_SCOPES = {
+    "all": ("Apply to all frames in the roll", " All Roll"),
+    "current": ("Apply to the current frame only", " Current Frame"),
+    "selected": ("Apply to the selected frames", " Selected Frames"),
+}
 
 # ControlsPanel sections built into the Roll tab (_build_roll_page), not a Frame sub-tab --
 # reveal_section routes these to the Roll group instead of Frame's inner tab switcher.
@@ -278,10 +291,57 @@ class RightPanel(QWidget):
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(8)
         page_layout.addWidget(cp.process_sidebar.mode_bar)
+        page_layout.addWidget(self._build_roll_scope_control())
         for section in (cp.sensor_section, cp.demosaic_section, cp.roll_section, cp.process_section, cp.presets_section):
             page_layout.addWidget(section)
         page_layout.addStretch(1)
         return page
+
+    def _build_roll_scope_control(self) -> QWidget:
+        """Sticky all/current/selected scope for a Calibration, Demosaic or
+        Normalization write -- the same split-button convention Export's own button
+        uses for the identical choice, picked once here rather than per card since it
+        governs every one of them until changed back. Doubles as the answer to "does
+        this apply to the whole roll": the button's own label always says so."""
+        wrap = QWidget()
+        wrap_layout = QVBoxLayout(wrap)
+        wrap_layout.setContentsMargins(0, 0, 0, 0)
+        wrap_layout.setSpacing(4)
+
+        menu = QMenu(self)
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+        self._roll_scope_actions: Dict[str, Any] = {}
+        for key, (menu_label, _btn_label) in _ROLL_EDIT_SCOPES.items():
+            action = menu.addAction(menu_label)
+            action.setCheckable(True)
+            action.triggered.connect(lambda _checked=False, k=key: self._set_roll_edit_scope(k))
+            group.addAction(action)
+            self._roll_scope_actions[key] = action
+
+        container, self.roll_scope_btn, roll_scope_menu_btn = make_split_button("", "fa5s.crosshairs", menu)
+        self.roll_scope_btn.clicked.connect(lambda: menu.exec(roll_scope_menu_btn.mapToGlobal(roll_scope_menu_btn.rect().bottomLeft())))
+        self.roll_scope_btn.setToolTip("What a Calibration, Demosaic or Normalization change applies to")
+        wrap_layout.addWidget(container)
+
+        self.roll_override_check = QCheckBox("Include already-overridden frames")
+        self.roll_override_check.setToolTip(
+            "With All Roll, also overwrite and unlock any frame that already has this card set to its own value"
+        )
+        self.roll_override_check.toggled.connect(lambda checked: self.controller.set_roll_override_locked_frames(checked))
+        wrap_layout.addWidget(self.roll_override_check)
+
+        self._set_roll_edit_scope(self.controller.roll_edit_scope(), persist=False)
+        self.roll_override_check.setChecked(self.controller.roll_override_locked_frames())
+        return wrap
+
+    def _set_roll_edit_scope(self, key: str, *, persist: bool = True) -> None:
+        _menu_label, btn_label = _ROLL_EDIT_SCOPES[key]
+        self._roll_scope_actions[key].setChecked(True)
+        self.roll_scope_btn.setText(btn_label)
+        self.roll_override_check.setEnabled(key == "all")
+        if persist:
+            self.controller.set_roll_edit_scope(key)
 
     def _build_scan_page(self) -> QWidget:
         """The 'Scan' tab hosts two collapsible sections (like Frame's Color tab): the

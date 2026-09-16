@@ -772,15 +772,16 @@ class ControlsPanel(QWidget):
         self._sync_roll_locks()
 
     def _sync_roll_locks(self) -> None:
-        """Show each Roll-tab card's lock only while a roll gives it something to lock
-        away from; reflect whether the active frame currently has it locked."""
-        active = self.controller.state.active_roll_id is not None
+        """Show each Roll-tab card's lock only once it is actually locked -- the
+        exception worth flagging, not the common case of following the roll, which
+        the roll-scope control above the cards already speaks for."""
         for card_key, section in (
             ("sensor", self.sensor_section),
             ("demosaic", self.demosaic_section),
             ("process", self.process_section),
         ):
-            section.set_lock_button(active, active and self.controller.roll_card_locked(card_key))
+            locked = self.controller.roll_card_locked(card_key)
+            section.set_lock_button(locked, locked)
 
     def _update_histogram(self) -> None:
         """Repaint only when the render produced a new buffer."""

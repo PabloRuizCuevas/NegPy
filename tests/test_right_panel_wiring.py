@@ -137,3 +137,38 @@ def test_reveal_section_ignores_an_unknown_section():
 
     panel._switch_group.assert_not_called()
     panel._switch_tab.assert_not_called()
+
+
+def _roll_scope_panel_stub() -> MagicMock:
+    panel = MagicMock()
+    panel._roll_scope_actions = {k: MagicMock() for k in ("all", "current", "selected")}
+    return panel
+
+
+def test_set_roll_edit_scope_checks_the_matching_action_and_labels_the_button():
+    panel = _roll_scope_panel_stub()
+
+    RightPanel._set_roll_edit_scope(panel, "current")
+
+    panel._roll_scope_actions["current"].setChecked.assert_called_once_with(True)
+    panel.roll_scope_btn.setText.assert_called_once_with(" Current Frame")
+    panel.controller.set_roll_edit_scope.assert_called_once_with("current")
+
+
+def test_set_roll_edit_scope_enables_the_override_checkbox_only_for_all():
+    panel = _roll_scope_panel_stub()
+
+    RightPanel._set_roll_edit_scope(panel, "all")
+    panel.roll_override_check.setEnabled.assert_called_once_with(True)
+
+    panel.roll_override_check.reset_mock()
+    RightPanel._set_roll_edit_scope(panel, "selected")
+    panel.roll_override_check.setEnabled.assert_called_once_with(False)
+
+
+def test_set_roll_edit_scope_with_persist_false_does_not_write_the_setting():
+    panel = _roll_scope_panel_stub()
+
+    RightPanel._set_roll_edit_scope(panel, "all", persist=False)
+
+    panel.controller.set_roll_edit_scope.assert_not_called()

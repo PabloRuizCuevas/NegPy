@@ -3400,13 +3400,23 @@ class AppController(QObject):
         self.status_progress_requested.emit(current, total)
         self.batch_progress.emit(current, total, f"{name} [{marker}]")
 
-    def _on_normalization_finished(self, locked_floors: tuple, locked_ceils: tuple) -> None:
+    def _on_normalization_finished(self, locked_floors: tuple, locked_ceils: tuple, outlier_paths: list) -> None:
         """
-        Applies averaged normalization baseline to all files.
+        Applies averaged normalization baseline to all files. A frame with Lock Bounds on
+        keeps its own exposure -- the roll baseline never overwrites a locked frame, so the
+        lock survives a re-run of Batch Analysis. *outlier_paths* are frames whose own
+        measured bounds fell outside the pooled average on at least one channel: they still
+        take the baseline like everyone else (this is a report, not an exemption), but the
+        mismatch is worth a look and often means Use Luma/Color Average should be turned off
+        for that one frame.
         """
         self._end_batch("normalization")
+        locked_skipped = 0
         for f_info in self.state.uploaded_files:
             p = self.session.repo.load_file_settings(f_info["hash"]) or self.session.config_for_asset(f_info)
+            if p.process.lock_bounds:
+                locked_skipped += 1
+                continue
             new_process = replace(
                 p.process,
                 use_luma_average=True,
@@ -3421,18 +3431,31 @@ class AppController(QObject):
                 self.session.push_external_history(f_info["hash"], p, new_p)
             self.session.repo.save_file_settings(f_info["hash"], new_p, file_path=f_info["path"])
 
-        # Update current state
-        new_process = replace(
-            self.state.config.process,
-            use_luma_average=True,
-            use_color_average=True,
-            locked_floors=locked_floors,
-            locked_ceils=locked_ceils,
-            roll_name=None,
-        )
-        self.session.update_config(replace(self.state.config, process=new_process), persist=True)
+        # Update current state, unless the active frame is itself locked.
+        if not self.state.config.process.lock_bounds:
+            new_process = replace(
+                self.state.config.process,
+                use_luma_average=True,
+                use_color_average=True,
+                locked_floors=locked_floors,
+                locked_ceils=locked_ceils,
+                roll_name=None,
+            )
+            self.session.update_config(replace(self.state.config, process=new_process), persist=True)
 
-        self.set_status("Batch analysis complete", timeout=3000)
+        names_by_path = {f["path"]: f["name"] for f in self.state.uploaded_files}
+        outlier_names = [names_by_path.get(p, p) for p in outlier_paths]
+        message = "Batch analysis complete"
+        timeout = 3000
+        if locked_skipped:
+            message += f" — {count_of(locked_skipped, 'locked frame')} kept its own exposure"
+        if outlier_names:
+            shown = ", ".join(outlier_names[:3])
+            if len(outlier_names) > 3:
+                shown += f" +{len(outlier_names) - 3} more"
+            message += f". {count_of(len(outlier_names), 'frame')} far from the roll average: {shown}"
+            timeout = 8000
+        self.set_status(message, timeout=timeout)
         self.status_progress_requested.emit(0, 0)
         self.request_render()
 
@@ -3496,6 +3519,9 @@ class AppController(QObject):
         self.session.update_config(replace(self.state.config, process=new_process), persist=True)
         self.request_render()
 
+    _ROLL_EDIT_SCOPE_KEY = "roll_edit_scope"
+    _ROLL_OVERRIDE_LOCKED_KEY = "roll_override_locked_frames"
+
     def roll_card_locked(self, card_key: str) -> bool:
         """True when the active frame has locked *card_key* to its own value, within
         the active roll. Always false with no active roll. Keyed on the unforked hash,
@@ -3506,21 +3532,41 @@ class AppController(QObject):
             return False
         return card_key in rolls.frame_override_cards(self.session.repo, roll_id, rolls.unforked_hash(self.state.current_file_hash))
 
+    def roll_edit_scope(self) -> str:
+        """What a Roll-tab card write targets: "all" the roll (default), "current"
+        frame only, or the film strip's "selected" frames -- sticky across sessions,
+        the same convention export_scope already uses."""
+        scope = self.session.repo.get_global_setting(self._ROLL_EDIT_SCOPE_KEY, "all")
+        return scope if scope in ("all", "current", "selected") else "all"
+
+    def set_roll_edit_scope(self, scope: str) -> None:
+        self.session.repo.save_global_setting(self._ROLL_EDIT_SCOPE_KEY, scope)
+
+    def roll_override_locked_frames(self) -> bool:
+        """Whether an "all" scope write also reclaims frames already locked away from
+        the card it touches, instead of leaving them on their own value."""
+        return bool(self.session.repo.get_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, False))
+
+    def set_roll_override_locked_frames(self, value: bool) -> None:
+        self.session.repo.save_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, value)
+
     def set_roll_default(self, card_key: str, persist: bool = True, readback_metrics: bool = True, **changes) -> None:
-        """Commit a Calibration/Demosaic/Normalization change roll-wide: every member
-        frame that has not locked *card_key* away from the roll picks it up as soon as
-        it is next loaded or rendered, no batch-apply needed. Falls back to a plain
-        per-frame edit with no active roll, or when the active frame has this card
-        locked.
+        """Commit a Calibration/Demosaic/Normalization change under roll_edit_scope():
+        "all" (default) reaches every member frame that has not locked *card_key* away
+        from the roll, picked up as soon as it is next loaded or rendered; "current"
+        locks the active frame to this value; "selected" does the same for every film
+        strip selected frame. Falls back to a plain per-frame edit with no active roll,
+        or when the active frame already has this card locked -- scope only decides
+        where a *new* override lands, not whether an existing one still holds.
 
         persist=False (a slider mid-drag) applies to the active frame only, same as
-        any other live preview -- the roll only picks up the settled value, and other
-        frames are flagged stale then, not on every intermediate tick.
+        any other live preview -- scope and the roll only pick up the settled value,
+        not every intermediate tick.
 
         *changes* may include fields outside ROLL_DEFAULT_FIELDS (a bounds-invalidation
         clear alongside a Crosstalk change, say) -- only the card's own fields go to
-        the roll; everything else still lands on the active frame's own row, same as
-        any other edit.
+        the roll or a locked frame; everything else still lands on the active frame's
+        own row, same as any other edit.
         """
         new_config = replace(self.state.config, process=replace(self.state.config.process, **changes))
         roll_id = self.state.active_roll_id
@@ -3532,6 +3578,15 @@ class AppController(QObject):
         if not persist:
             return
 
+        scope = self.roll_edit_scope()
+        if scope == "current":
+            self.set_roll_card_locked(card_key, True)
+            return
+        if scope == "selected":
+            self.set_roll_card_locked(card_key, True)
+            self._apply_roll_card_to_selected(card_key)
+            return
+
         roll_fields = {k: v for k, v in changes.items() if k in rolls.ROLL_DEFAULT_FIELDS[card_key]}
         if not roll_fields:
             return
@@ -3540,7 +3595,50 @@ class AppController(QObject):
         for f in self.state.uploaded_files:
             if f.get("hash") != active_hash:
                 self.state.stale_thumbnails.add(asset_thumbnail_key(f))
+        if self.roll_override_locked_frames():
+            self._reclaim_locked_frames(card_key, roll_id)
         self.session.asset_model.refresh()
+
+    def _apply_roll_card_to_selected(self, card_key: str) -> None:
+        """Freezes *card_key*'s current value onto every film strip selected frame
+        other than the active one (already handled by set_roll_card_locked) and locks
+        each to it, the same protection Current Frame scope gives a single frame."""
+        roll_id = self.state.active_roll_id
+        card_fields = rolls.ROLL_DEFAULT_FIELDS[card_key]
+        frozen = {name: getattr(self.state.config.process, name) for name in card_fields}
+        active_hash = self.state.current_file_hash
+        for i in sorted(set(self.state.selected_indices)):
+            if not (0 <= i < len(self.state.uploaded_files)):
+                continue
+            f_info = self.state.uploaded_files[i]
+            f_hash = f_info.get("hash")
+            if not f_hash or f_hash == active_hash:
+                continue
+            p = self.session.repo.load_file_settings(f_hash) or self.session.config_for_asset(f_info)
+            new_p = replace(p, process=replace(p.process, **frozen))
+            self.session.push_external_history(f_hash, p, new_p)
+            self.session.repo.save_file_settings(f_hash, new_p, file_path=f_info.get("path", ""))
+            rolls.set_frame_override(self.session.repo, roll_id, rolls.unforked_hash(f_hash), card_key, True)
+
+    def _reclaim_locked_frames(self, card_key: str, roll_id: str) -> None:
+        """Backs "Include already-overridden frames": overwrites every other frame
+        currently locked away from *card_key* with the roll's new value and unlocks
+        it, so an "all" apply really does make the whole roll uniform again."""
+        card_fields = rolls.ROLL_DEFAULT_FIELDS[card_key]
+        frozen = {name: getattr(self.state.config.process, name) for name in card_fields}
+        active_hash = self.state.current_file_hash
+        for f_info in self.state.uploaded_files:
+            f_hash = f_info.get("hash")
+            if not f_hash or f_hash == active_hash:
+                continue
+            unforked = rolls.unforked_hash(f_hash)
+            if card_key not in rolls.frame_override_cards(self.session.repo, roll_id, unforked):
+                continue
+            p = self.session.repo.load_file_settings(f_hash) or self.session.config_for_asset(f_info)
+            new_p = replace(p, process=replace(p.process, **frozen))
+            self.session.push_external_history(f_hash, p, new_p)
+            self.session.repo.save_file_settings(f_hash, new_p, file_path=f_info.get("path", ""))
+            rolls.set_frame_override(self.session.repo, roll_id, unforked, card_key, False)
 
     def set_roll_card_locked(self, card_key: str, locked: bool) -> None:
         """Lock or unlock one Roll-tab card for the active frame, within the active
