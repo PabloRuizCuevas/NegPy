@@ -392,6 +392,7 @@ class TestAppController(unittest.TestCase):
         store: dict = {}
         self.controller.session.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
         self.controller.session.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
+        self.mock_session_manager.asset_model = MagicMock()
         return store
 
     def test_set_roll_default_with_no_active_roll_falls_back_to_a_per_frame_edit(self):
@@ -469,7 +470,9 @@ class TestAppController(unittest.TestCase):
         state.uploaded_files = [{"name": "a.dng", "path": "/a.dng", "hash": "h1"}]
         state.selected_file_idx = 0
         state.current_file_hash = "h1"
-        state.config = replace(state.config, process=rolls.resolve_roll_process_config(self.controller.session.repo, roll_id, "h1", state.config.process))
+        state.config = replace(
+            state.config, process=rolls.resolve_roll_process_config(self.controller.session.repo, roll_id, "h1", state.config.process)
+        )
 
         self.controller.set_roll_card_locked("sensor", locked=True)
 
@@ -492,9 +495,7 @@ class TestAppController(unittest.TestCase):
         state.uploaded_files = [asset]
         state.selected_file_idx = 0
         state.current_file_hash = "h1"
-        self.mock_session_manager.config_for_asset.return_value = replace(
-            state.config, process=replace(state.config.process, hue_trim=9.0)
-        )
+        self.mock_session_manager.config_for_asset.return_value = replace(state.config, process=replace(state.config.process, hue_trim=9.0))
 
         self.controller.set_roll_card_locked("sensor", locked=False)
 
