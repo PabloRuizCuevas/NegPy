@@ -38,7 +38,13 @@ While a peek is up the canvas carries a **NEGATIVE**, **EMBEDDED** or **FLAT SCA
 
 ### The workflow (and the order things happen)
 
-The Frame tab's own tab bar follows the order you work in, which mirrors the processing pipeline:
+**Roll** leads: what the whole roll shares, set once rather than edited per frame.
+
+| Tab | Icon | Panels | What it is for |
+|-----|------|--------|---------------|
+| **Roll** | film | Calibration · Demosaic · Roll Analysis · Normalization · Presets | Film type, capture-side color corrections, negative→positive normalization, roll-wide baselines |
+
+Beside Roll sits **Frame**, whose own tab bar follows the order you work in, mirroring the processing pipeline:
 
 | Tab | Icon | Panels | What it is for |
 |-----|------|--------|---------------|
@@ -48,12 +54,6 @@ The Frame tab's own tab bar follows the order you work in, which mirrors the pro
 | **Finish** | brush | Retouch · Finishing | Dust removal, vignette, border, carrier |
 | **Favorites** | star | Your chosen sliders | Quick access to the controls you use most |
 | **History** | clock | Work prints · Edit history | Keep named versions, step back through every change |
-
-Beside Frame sits **Roll**: what the whole roll shares, set once rather than edited per frame.
-
-| Tab | Icon | Panels | What it is for |
-|-----|------|--------|---------------|
-| **Roll** | film | Calibration · Demosaic · Roll Analysis · Normalization · Presets | Film type, capture-side color corrections, negative→positive normalization, roll-wide baselines |
 
 Beside Frame and Roll, the panel's own tab bar holds the tabs that never change the render:
 
@@ -753,10 +753,10 @@ Bayer and X-Trans RAW only: a scanner TIFF, a Pakon scan or a linear DNG arrives
 
 Meter the whole roll once and share the baseline, so frames from the same film match.
 
-*   **Roll picker**: type to search. **Current Roll** (the default) targets the loaded files themselves; a saved name targets a baseline stored earlier.
-*   **Apply**: runs the picked roll. On **Current Roll** it scans every loaded file and computes a roll-average density and color balance, discarding outliers — run it once after importing. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)* On a saved name it loads that roll's stored bounds and balance instead of re-scanning.
-*   **Save**: store the roll's current bounds and balance under a name, useful when you shoot the same stock repeatedly.
-*   **Delete**: remove the selected saved roll (it asks first; disabled on Current Roll). The frames keep their current look; only the saved baseline goes.
+*   **Roll picker**: type to search. The first entry (the default) targets the loaded files themselves, labeled with the loaded roll's own name when it is a recognized roll, "Current Roll" otherwise; a saved name targets a baseline stored earlier. A hint under the picker reads **Analyzed and saved for this roll** once a saved baseline exists under the loaded roll's own name, or **Using "X", a baseline saved for a different roll** when the applied baseline came from elsewhere.
+*   **Apply**: runs the picked roll. On the loaded roll's own entry it scans every loaded file and computes a roll-average density and color balance, discarding outliers — run it once after importing, and again any time to redo it. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)* On a saved name it loads that roll's stored bounds and balance instead of re-scanning.
+*   **Save**: store the roll's current bounds and balance under a name, pre-filled with the loaded roll's own name so the picker recognizes it as analyzed.
+*   **Delete**: remove the selected saved roll (it asks first; disabled on the current-roll entry). The frames keep their current look; only the saved baseline goes.
 *   **Use Luma Average**: this frame takes the roll-wide tonal range; color still re-derives per frame.
 *   **Use Color Average**: this frame takes the roll-wide color balance; tonal range still re-derives per frame. Enable both for a fully consistent roll; leave both off for per-image auto-exposure.
 
