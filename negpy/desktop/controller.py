@@ -3521,6 +3521,8 @@ class AppController(QObject):
 
     _ROLL_EDIT_SCOPE_KEY = "roll_edit_scope"
     _ROLL_OVERRIDE_LOCKED_KEY = "roll_override_locked_frames"
+    _ROLL_CARDS = ("sensor", "demosaic", "process")
+    _ROLL_CARD_LABELS = {"sensor": "Calibration", "demosaic": "Demosaic", "process": "Normalization"}
 
     def roll_card_locked(self, card_key: str) -> bool:
         """True when the active frame has locked *card_key* to its own value, within
@@ -3532,77 +3534,96 @@ class AppController(QObject):
             return False
         return card_key in rolls.frame_override_cards(self.session.repo, roll_id, rolls.unforked_hash(self.state.current_file_hash))
 
+    def diverged_roll_cards(self) -> List[str]:
+        """Every Roll-tab card locked away from the roll on the active frame -- what
+        Apply to All Roll / Apply to Selected act on."""
+        return [key for key in self._ROLL_CARDS if self.roll_card_locked(key)]
+
     def roll_edit_scope(self) -> str:
-        """What a Roll-tab card write targets: "all" the roll (default), "current"
-        frame only, or the film strip's "selected" frames -- sticky across sessions,
-        the same convention export_scope already uses."""
+        """Which action the Roll tab's split button's main half currently performs:
+        "all" (default, Apply to All Roll) or "selected" (Apply to Selected) -- sticky
+        across sessions, the same convention export_scope already uses. Picking one
+        only decides what the next click does; editing a card never reads this."""
         scope = self.session.repo.get_global_setting(self._ROLL_EDIT_SCOPE_KEY, "all")
-        return scope if scope in ("all", "current", "selected") else "all"
+        return scope if scope in ("all", "selected") else "all"
 
     def set_roll_edit_scope(self, scope: str) -> None:
         self.session.repo.save_global_setting(self._ROLL_EDIT_SCOPE_KEY, scope)
 
     def roll_override_locked_frames(self) -> bool:
-        """Whether an "all" scope write also reclaims frames already locked away from
-        the card it touches, instead of leaving them on their own value."""
+        """Whether Apply to All Roll also reclaims frames already locked away from the
+        card it touches, instead of leaving them on their own value."""
         return bool(self.session.repo.get_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, False))
 
     def set_roll_override_locked_frames(self, value: bool) -> None:
         self.session.repo.save_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, value)
 
     def set_roll_default(self, card_key: str, persist: bool = True, readback_metrics: bool = True, **changes) -> None:
-        """Commit a Calibration/Demosaic/Normalization change under roll_edit_scope():
-        "all" (default) reaches every member frame that has not locked *card_key* away
-        from the roll, picked up as soon as it is next loaded or rendered; "current"
-        locks the active frame to this value; "selected" does the same for every film
-        strip selected frame. Falls back to a plain per-frame edit with no active roll,
-        or when the active frame already has this card locked -- scope only decides
-        where a *new* override lands, not whether an existing one still holds.
+        """Edits *card_key* for the active frame alone, same as any other control --
+        marking it locked away from the roll the instant it changes and was not
+        already, since the frame no longer matches whatever the roll currently says.
+        Apply to All Roll / Apply to Selected (apply_roll_cards_to_roll /
+        apply_roll_cards_to_selected) are the only things that push a value back out;
+        editing alone never does, here or on an already-locked card.
 
-        persist=False (a slider mid-drag) applies to the active frame only, same as
-        any other live preview -- scope and the roll only pick up the settled value,
-        not every intermediate tick.
-
-        *changes* may include fields outside ROLL_DEFAULT_FIELDS (a bounds-invalidation
-        clear alongside a Crosstalk change, say) -- only the card's own fields go to
-        the roll or a locked frame; everything else still lands on the active frame's
-        own row, same as any other edit.
+        persist=False (a slider mid-drag) previews on the active frame only, same as
+        any other live preview -- the lock only follows the settled value, not every
+        intermediate tick.
         """
         new_config = replace(self.state.config, process=replace(self.state.config.process, **changes))
-        roll_id = self.state.active_roll_id
-        if roll_id is None or self.roll_card_locked(card_key):
-            self.apply_config(new_config, persist=persist, readback_metrics=readback_metrics)
-            return
-
         self.apply_config(new_config, persist=persist, readback_metrics=readback_metrics)
         if not persist:
             return
+        roll_id = self.state.active_roll_id
+        if roll_id is None or self.roll_card_locked(card_key):
+            return
+        rolls.set_frame_override(self.session.repo, roll_id, rolls.unforked_hash(self.state.current_file_hash), card_key, True)
 
-        scope = self.roll_edit_scope()
-        if scope == "current":
-            self.set_roll_card_locked(card_key, True)
-            return
-        if scope == "selected":
-            self.set_roll_card_locked(card_key, True)
-            self._apply_roll_card_to_selected(card_key)
-            return
-
-        roll_fields = {k: v for k, v in changes.items() if k in rolls.ROLL_DEFAULT_FIELDS[card_key]}
-        if not roll_fields:
-            return
-        rolls.set_roll_defaults(self.session.repo, roll_id, **roll_fields)
+    def apply_roll_cards_to_roll(self) -> int:
+        """Apply to All Roll: pushes every card diverged_roll_cards() names out to the
+        roll's shared default and clears its lock, so the active frame rejoins the
+        roll on each. Returns how many cards it touched, and status-messages either
+        way -- clicking Apply with nothing diverged is a no-op worth saying so."""
+        roll_id = self.state.active_roll_id
+        cards = self.diverged_roll_cards() if roll_id else []
+        if not cards:
+            self.set_status("Nothing to apply — every card already follows the roll", 2500)
+            return 0
         active_hash = self.state.current_file_hash
+        for card_key in cards:
+            fields = {name: getattr(self.state.config.process, name) for name in rolls.ROLL_DEFAULT_FIELDS[card_key]}
+            rolls.set_roll_defaults(self.session.repo, roll_id, **fields)
+            rolls.set_frame_override(self.session.repo, roll_id, rolls.unforked_hash(active_hash), card_key, False)
+            if self.roll_override_locked_frames():
+                self._reclaim_locked_frames(card_key, roll_id)
         for f in self.state.uploaded_files:
             if f.get("hash") != active_hash:
                 self.state.stale_thumbnails.add(asset_thumbnail_key(f))
-        if self.roll_override_locked_frames():
-            self._reclaim_locked_frames(card_key, roll_id)
         self.session.asset_model.refresh()
+        self.config_updated.emit()
+        names = ", ".join(self._ROLL_CARD_LABELS[k] for k in cards)
+        self.set_status(f"Applied to the roll: {names}", 3000)
+        return len(cards)
+
+    def apply_roll_cards_to_selected(self) -> int:
+        """Apply to Selected: pushes every card diverged_roll_cards() names onto every
+        film strip selected frame, locking each to it -- the roll's own default is
+        untouched. Returns how many cards it touched."""
+        cards = self.diverged_roll_cards() if self.state.active_roll_id else []
+        if not cards:
+            self.set_status("Nothing to apply — every card already follows the roll", 2500)
+            return 0
+        for card_key in cards:
+            self._apply_roll_card_to_selected(card_key)
+        self.config_updated.emit()
+        names = ", ".join(self._ROLL_CARD_LABELS[k] for k in cards)
+        self.set_status(f"Applied to the selected frames: {names}", 3000)
+        return len(cards)
 
     def _apply_roll_card_to_selected(self, card_key: str) -> None:
         """Freezes *card_key*'s current value onto every film strip selected frame
-        other than the active one (already handled by set_roll_card_locked) and locks
-        each to it, the same protection Current Frame scope gives a single frame."""
+        other than the active one (already locked, by definition, for the card to be
+        in diverged_roll_cards()) and locks each to it."""
         roll_id = self.state.active_roll_id
         card_fields = rolls.ROLL_DEFAULT_FIELDS[card_key]
         frozen = {name: getattr(self.state.config.process, name) for name in card_fields}

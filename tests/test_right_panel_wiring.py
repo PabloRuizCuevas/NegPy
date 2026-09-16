@@ -141,18 +141,18 @@ def test_reveal_section_ignores_an_unknown_section():
 
 def _roll_scope_panel_stub() -> MagicMock:
     panel = MagicMock()
-    panel._roll_scope_actions = {k: MagicMock() for k in ("all", "current", "selected")}
+    panel._roll_scope_actions = {k: MagicMock() for k in ("all", "selected")}
     return panel
 
 
 def test_set_roll_edit_scope_checks_the_matching_action_and_labels_the_button():
     panel = _roll_scope_panel_stub()
 
-    RightPanel._set_roll_edit_scope(panel, "current")
+    RightPanel._set_roll_edit_scope(panel, "selected")
 
-    panel._roll_scope_actions["current"].setChecked.assert_called_once_with(True)
-    panel.roll_scope_btn.setText.assert_called_once_with(" Current Frame")
-    panel.controller.set_roll_edit_scope.assert_called_once_with("current")
+    panel._roll_scope_actions["selected"].setChecked.assert_called_once_with(True)
+    panel.roll_scope_btn.setText.assert_called_once_with(" Apply to Selected")
+    panel.controller.set_roll_edit_scope.assert_called_once_with("selected")
 
 
 def test_set_roll_edit_scope_enables_force_settings_only_for_all():
@@ -172,3 +172,23 @@ def test_set_roll_edit_scope_with_persist_false_does_not_write_the_setting():
     RightPanel._set_roll_edit_scope(panel, "all", persist=False)
 
     panel.controller.set_roll_edit_scope.assert_not_called()
+
+
+def test_apply_clicked_runs_apply_to_roll_by_default():
+    panel = _roll_scope_panel_stub()
+    panel.controller.roll_edit_scope.return_value = "all"
+
+    RightPanel._on_roll_apply_clicked(panel)
+
+    panel.controller.apply_roll_cards_to_roll.assert_called_once()
+    panel.controller.apply_roll_cards_to_selected.assert_not_called()
+
+
+def test_apply_clicked_runs_apply_to_selected_when_that_is_the_current_scope():
+    panel = _roll_scope_panel_stub()
+    panel.controller.roll_edit_scope.return_value = "selected"
+
+    RightPanel._on_roll_apply_clicked(panel)
+
+    panel.controller.apply_roll_cards_to_selected.assert_called_once()
+    panel.controller.apply_roll_cards_to_roll.assert_not_called()

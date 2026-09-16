@@ -487,7 +487,9 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(cfg[0].process.hue_trim, 2.5)
         self.assertTrue(kwargs["persist"])
 
-    def test_set_roll_default_writes_the_roll_default_and_the_frames_own_row(self):
+    def test_set_roll_default_locks_the_card_the_instant_it_changes(self):
+        """Editing is a plain per-frame write now -- the roll's shared defaults are
+        never touched here, only by apply_roll_cards_to_roll()."""
         from negpy.services.assets import rolls
 
         self._wire_repo_store()
@@ -499,17 +501,15 @@ class TestAppController(unittest.TestCase):
 
         self.controller.set_roll_default("sensor", hue_trim=2.5)
 
-        self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id), {"hue_trim": 2.5})
+        self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id), {})
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h1"), {"sensor"})
         cfg, kwargs = self.mock_session_manager.update_config.call_args
         self.assertEqual(cfg[0].process.hue_trim, 2.5)
-        # Persisted normally, same as any edit -- while this frame stays unlocked, the
-        # roll's default always wins over the row's own value anyway, so the redundant
-        # copy here is harmless.
         self.assertTrue(kwargs["persist"])
 
-    def test_set_roll_default_keeps_a_non_roll_field_out_of_the_roll_store(self):
-        """A bounds-invalidation clear riding alongside a Crosstalk change lands on the
-        frame's own row like always, never in the roll's shared defaults."""
+    def test_set_roll_default_mid_drag_never_locks(self):
+        """persist=False (a slider mid-drag) previews on the active frame only -- the
+        lock only follows the settled value."""
         from negpy.services.assets import rolls
 
         self._wire_repo_store()
@@ -517,56 +517,16 @@ class TestAppController(unittest.TestCase):
         state = self.mock_session_manager.state
         state.active_roll_id = roll_id
         state.uploaded_files = [{"name": "a.dng", "path": "/a.dng", "hash": "h1"}]
-        state.current_file_hash = "h1"
-
-        self.controller.set_roll_default("sensor", crosstalk_strength=0.5, locked_floors=(0.1, 0.1, 0.1))
-
-        self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id), {"crosstalk_strength": 0.5})
-        cfg, _kwargs = self.mock_session_manager.update_config.call_args
-        self.assertEqual(cfg[0].process.crosstalk_strength, 0.5)
-        self.assertEqual(cfg[0].process.locked_floors, (0.1, 0.1, 0.1))
-
-    def test_set_roll_default_mid_drag_does_not_touch_the_roll(self):
-        """persist=False (a slider mid-drag) previews on the active frame only -- the
-        roll, and every other frame's thumbnail, only picks up the settled value."""
-        from negpy.services.assets import rolls
-
-        self._wire_repo_store()
-        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
-        state = self.mock_session_manager.state
-        state.active_roll_id = roll_id
-        state.uploaded_files = [
-            {"name": "a.dng", "path": "/a.dng", "hash": "h1"},
-            {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
-        ]
         state.current_file_hash = "h1"
 
         self.controller.set_roll_default("sensor", persist=False, hue_trim=2.5)
 
-        self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id), {})
-        self.assertEqual(state.stale_thumbnails, set())
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h1"), set())
         cfg, kwargs = self.mock_session_manager.update_config.call_args
         self.assertEqual(cfg[0].process.hue_trim, 2.5)
         self.assertFalse(kwargs["persist"])
 
-    def test_set_roll_default_flags_every_other_frames_thumbnail_stale(self):
-        from negpy.services.assets import rolls
-
-        self._wire_repo_store()
-        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
-        state = self.mock_session_manager.state
-        state.active_roll_id = roll_id
-        state.uploaded_files = [
-            {"name": "a.dng", "path": "/a.dng", "hash": "h1"},
-            {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
-        ]
-        state.current_file_hash = "h1"
-
-        self.controller.set_roll_default("sensor", hue_trim=2.5)
-
-        self.assertEqual(state.stale_thumbnails, {asset_thumbnail_key(state.uploaded_files[1])})
-
-    def test_set_roll_default_falls_back_when_the_active_frame_has_the_card_locked(self):
+    def test_set_roll_default_does_not_relock_an_already_locked_card(self):
         from negpy.services.assets import rolls
 
         self._wire_repo_store()
@@ -579,7 +539,7 @@ class TestAppController(unittest.TestCase):
 
         self.controller.set_roll_default("sensor", hue_trim=2.5)
 
-        self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id), {})
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h1"), {"sensor"})
         cfg, kwargs = self.mock_session_manager.update_config.call_args
         self.assertEqual(cfg[0].process.hue_trim, 2.5)
         self.assertTrue(kwargs["persist"])
@@ -595,53 +555,132 @@ class TestAppController(unittest.TestCase):
         store["roll_edit_scope"] = "bogus"
         self.assertEqual(self.controller.roll_edit_scope(), "all")
 
+    def test_roll_edit_scope_rejects_the_retired_current_value(self):
+        """ "current" used to be a valid scope; editing alone now does what it meant,
+        so it is no longer one of roll_edit_scope()'s two choices."""
+        store = self._wire_repo_store()
+        store["roll_edit_scope"] = "current"
+        self.assertEqual(self.controller.roll_edit_scope(), "all")
+
     def test_roll_override_locked_frames_defaults_to_false_and_round_trips(self):
         self._wire_repo_store()
         self.assertFalse(self.controller.roll_override_locked_frames())
         self.controller.set_roll_override_locked_frames(True)
         self.assertTrue(self.controller.roll_override_locked_frames())
 
-    def test_set_roll_default_under_current_scope_locks_just_the_active_frame(self):
+    def test_diverged_roll_cards_lists_locked_cards_in_a_fixed_order(self):
         from negpy.services.assets import rolls
 
         self._wire_repo_store()
         roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
-        self.controller.set_roll_edit_scope("current")
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h1", "process", locked=True)
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h1", "sensor", locked=True)
         state = self.mock_session_manager.state
         state.active_roll_id = roll_id
-        state.uploaded_files = [{"name": "a.dng", "path": "/a.dng", "hash": "h1"}]
-        state.selected_file_idx = 0
+        state.current_file_hash = "h1"
+
+        self.assertEqual(self.controller.diverged_roll_cards(), ["sensor", "process"])
+
+    def test_diverged_roll_cards_empty_without_an_active_roll(self):
+        self._wire_repo_store()
+        self.mock_session_manager.state.active_roll_id = None
+        self.assertEqual(self.controller.diverged_roll_cards(), [])
+
+    def test_apply_roll_cards_to_roll_does_nothing_without_anything_diverged(self):
+        self._wire_repo_store()
+        self.mock_session_manager.state.active_roll_id = "roll1"
+
+        touched = self.controller.apply_roll_cards_to_roll()
+
+        self.assertEqual(touched, 0)
+        self.mock_session_manager.repo.save_file_settings.assert_not_called()
+
+    def test_apply_roll_cards_to_roll_pushes_every_diverged_card_and_clears_its_lock(self):
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h1", "sensor", locked=True)
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.uploaded_files = [
+            {"name": "a.dng", "path": "/a.dng", "hash": "h1"},
+            {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
+        ]
         state.current_file_hash = "h1"
         state.config = replace(state.config, process=replace(state.config.process, hue_trim=2.5))
 
-        self.controller.set_roll_default("sensor", hue_trim=2.5)
+        touched = self.controller.apply_roll_cards_to_roll()
 
-        self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id), {})
-        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h1"), {"sensor"})
+        self.assertEqual(touched, 1)
+        # The whole card's current snapshot goes out, not just the field that changed --
+        # same as locking a card has always frozen the full card, not one field of it.
+        self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id)["hue_trim"], 2.5)
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h1"), set())
+        self.assertEqual(state.stale_thumbnails, {asset_thumbnail_key(state.uploaded_files[1])})
 
-    def test_set_roll_default_mid_drag_ignores_scope(self):
-        """persist=False never locks anything, whatever the sticky scope says -- a
-        live preview tick is not a commit."""
+    def test_apply_roll_cards_to_roll_with_override_reclaims_a_locked_frame(self):
         from negpy.services.assets import rolls
 
         self._wire_repo_store()
         roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
-        self.controller.set_roll_edit_scope("current")
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h1", "sensor", locked=True)
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h2", "sensor", locked=True)
+        self.controller.set_roll_override_locked_frames(True)
         state = self.mock_session_manager.state
         state.active_roll_id = roll_id
-        state.uploaded_files = [{"name": "a.dng", "path": "/a.dng", "hash": "h1"}]
+        state.uploaded_files = [
+            {"name": "a.dng", "path": "/a.dng", "hash": "h1"},
+            {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
+        ]
         state.current_file_hash = "h1"
+        state.config = replace(state.config, process=replace(state.config.process, hue_trim=2.5))
+        self.mock_session_manager.repo.load_file_settings.return_value = None
+        self.mock_session_manager.config_for_asset.side_effect = lambda asset: WorkspaceConfig()
 
-        self.controller.set_roll_default("sensor", persist=False, hue_trim=2.5)
+        self.controller.apply_roll_cards_to_roll()
 
-        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h1"), set())
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h2"), set())
+        saved_hash, saved_cfg = self.mock_session_manager.repo.save_file_settings.call_args.args[:2]
+        self.assertEqual(saved_hash, "h2")
+        self.assertEqual(saved_cfg.process.hue_trim, 2.5)
 
-    def test_set_roll_default_under_selected_scope_locks_every_selected_frame(self):
+    def test_apply_roll_cards_to_roll_without_override_leaves_a_locked_frame_alone(self):
         from negpy.services.assets import rolls
 
         self._wire_repo_store()
         roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
-        self.controller.set_roll_edit_scope("selected")
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h1", "sensor", locked=True)
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h2", "sensor", locked=True)
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.uploaded_files = [
+            {"name": "a.dng", "path": "/a.dng", "hash": "h1"},
+            {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
+        ]
+        state.current_file_hash = "h1"
+        state.config = replace(state.config, process=replace(state.config.process, hue_trim=2.5))
+
+        self.controller.apply_roll_cards_to_roll()
+
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h2"), {"sensor"})
+        self.mock_session_manager.repo.save_file_settings.assert_not_called()
+
+    def test_apply_roll_cards_to_selected_does_nothing_without_anything_diverged(self):
+        self._wire_repo_store()
+        self.mock_session_manager.state.active_roll_id = "roll1"
+
+        touched = self.controller.apply_roll_cards_to_selected()
+
+        self.assertEqual(touched, 0)
+        self.mock_session_manager.repo.save_file_settings.assert_not_called()
+
+    def test_apply_roll_cards_to_selected_pushes_every_diverged_card_onto_selected_frames(self):
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h1", "sensor", locked=True)
         state = self.mock_session_manager.state
         state.active_roll_id = roll_id
         state.uploaded_files = [
@@ -649,15 +688,15 @@ class TestAppController(unittest.TestCase):
             {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
             {"name": "c.dng", "path": "/c.dng", "hash": "h3"},
         ]
-        state.selected_file_idx = 0
         state.current_file_hash = "h1"
         state.selected_indices = [0, 1]
         state.config = replace(state.config, process=replace(state.config.process, hue_trim=2.5))
         self.mock_session_manager.repo.load_file_settings.return_value = None
         self.mock_session_manager.config_for_asset.side_effect = lambda asset: WorkspaceConfig()
 
-        self.controller.set_roll_default("sensor", hue_trim=2.5)
+        touched = self.controller.apply_roll_cards_to_selected()
 
+        self.assertEqual(touched, 1)
         self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id), {})
         self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h1"), {"sensor"})
         self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h2"), {"sensor"})
@@ -665,51 +704,6 @@ class TestAppController(unittest.TestCase):
         saved_hash, saved_cfg = self.mock_session_manager.repo.save_file_settings.call_args.args[:2]
         self.assertEqual(saved_hash, "h2")
         self.assertEqual(saved_cfg.process.hue_trim, 2.5)
-
-    def test_set_roll_default_with_override_reclaims_a_locked_frame(self):
-        from negpy.services.assets import rolls
-
-        self._wire_repo_store()
-        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
-        rolls.set_frame_override(self.controller.session.repo, roll_id, "h2", "sensor", locked=True)
-        self.controller.set_roll_override_locked_frames(True)
-        state = self.mock_session_manager.state
-        state.active_roll_id = roll_id
-        state.uploaded_files = [
-            {"name": "a.dng", "path": "/a.dng", "hash": "h1"},
-            {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
-        ]
-        state.current_file_hash = "h1"
-        state.config = replace(state.config, process=replace(state.config.process, hue_trim=2.5))
-        self.mock_session_manager.repo.load_file_settings.return_value = None
-        self.mock_session_manager.config_for_asset.side_effect = lambda asset: WorkspaceConfig()
-
-        self.controller.set_roll_default("sensor", hue_trim=2.5)
-
-        self.assertEqual(rolls.roll_defaults(self.controller.session.repo, roll_id), {"hue_trim": 2.5})
-        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h2"), set())
-        saved_hash, saved_cfg = self.mock_session_manager.repo.save_file_settings.call_args.args[:2]
-        self.assertEqual(saved_hash, "h2")
-        self.assertEqual(saved_cfg.process.hue_trim, 2.5)
-
-    def test_set_roll_default_without_override_leaves_a_locked_frame_alone(self):
-        from negpy.services.assets import rolls
-
-        self._wire_repo_store()
-        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
-        rolls.set_frame_override(self.controller.session.repo, roll_id, "h2", "sensor", locked=True)
-        state = self.mock_session_manager.state
-        state.active_roll_id = roll_id
-        state.uploaded_files = [
-            {"name": "a.dng", "path": "/a.dng", "hash": "h1"},
-            {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
-        ]
-        state.current_file_hash = "h1"
-
-        self.controller.set_roll_default("sensor", hue_trim=2.5)
-
-        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h2"), {"sensor"})
-        self.mock_session_manager.repo.save_file_settings.assert_not_called()
 
     def test_locking_a_card_seeds_the_frames_own_row_then_sets_the_flag(self):
         from negpy.services.assets import rolls

@@ -31,13 +31,13 @@ from negpy.desktop.view.widgets.split_button import make_split_button
 from negpy.desktop.view.widgets.stats import DensitometerRow, NegativeStatsWidget, ZonePlacementRows
 from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 
-# key -> (menu label, split-button label) -- the same current/selected/all scopes the
-# Export button offers, applied here to what a Calibration/Demosaic/Normalization edit
-# targets rather than what Export sends out.
+# key -> (menu label, split-button label) -- current/all, the same vocabulary Export's
+# own scope button uses minus "current": editing a Calibration/Demosaic/Normalization
+# card already makes it current-frame-only the instant it changes, so there is nothing
+# left for a separate "apply to current" action to do.
 _ROLL_EDIT_SCOPES = {
-    "all": ("Apply to all frames in the roll", " All Roll"),
-    "current": ("Apply to the current frame only", " Current Frame"),
-    "selected": ("Apply to the selected frames", " Selected Frames"),
+    "all": ("Apply to all frames in the roll", " Apply to All Roll"),
+    "selected": ("Apply to the selected frames", " Apply to Selected"),
 }
 
 # ControlsPanel sections built into the Roll tab (_build_roll_page), not a Frame sub-tab --
@@ -299,12 +299,12 @@ class RightPanel(QWidget):
         return page
 
     def _build_roll_scope_control(self) -> QWidget:
-        """Sticky all/current/selected scope for a Calibration, Demosaic or
-        Normalization write -- the same split-button convention Export's own button
-        uses for the identical choice, picked once here rather than per card since it
-        governs every one of them until changed back, and leading the tab since it is
-        the answer to "does this apply to the whole roll": the button's own label
-        always says so. Force Settings sits beside it, not below -- it only modifies
+        """Apply to All Roll / Apply to Selected: pushes whatever Calibration, Demosaic
+        or Normalization cards the active frame has diverged (editing a card locks it
+        the instant it changes -- see set_roll_default) out to the roll or a chosen
+        set of frames. The chevron picks which one the button's main half does next,
+        the same split-button convention Export's own button uses; clicking the main
+        half runs it now. Force Settings sits beside it, not below -- it only modifies
         what All Roll does, not a separate choice of its own."""
         row = QWidget()
         row_layout = QHBoxLayout(row)
@@ -322,9 +322,8 @@ class RightPanel(QWidget):
             group.addAction(action)
             self._roll_scope_actions[key] = action
 
-        container, self.roll_scope_btn, roll_scope_menu_btn = make_split_button("", "fa5s.crosshairs", menu)
-        self.roll_scope_btn.clicked.connect(lambda: menu.exec(roll_scope_menu_btn.mapToGlobal(roll_scope_menu_btn.rect().bottomLeft())))
-        self.roll_scope_btn.setToolTip("What a Calibration, Demosaic or Normalization change applies to")
+        container, self.roll_scope_btn, _roll_scope_menu_btn = make_split_button("", "fa5s.crosshairs", menu, primary=True)
+        self.roll_scope_btn.clicked.connect(self._on_roll_apply_clicked)
         row_layout.addWidget(container, 1)
 
         self.roll_force_btn = labeled_toggle(
@@ -343,9 +342,16 @@ class RightPanel(QWidget):
         _menu_label, btn_label = _ROLL_EDIT_SCOPES[key]
         self._roll_scope_actions[key].setChecked(True)
         self.roll_scope_btn.setText(btn_label)
+        self.roll_scope_btn.setToolTip(_menu_label)
         self.roll_force_btn.setEnabled(key == "all")
         if persist:
             self.controller.set_roll_edit_scope(key)
+
+    def _on_roll_apply_clicked(self) -> None:
+        if self.controller.roll_edit_scope() == "selected":
+            self.controller.apply_roll_cards_to_selected()
+        else:
+            self.controller.apply_roll_cards_to_roll()
 
     def _build_scan_page(self) -> QWidget:
         """The 'Scan' tab hosts two collapsible sections (like Frame's Color tab): the
