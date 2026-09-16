@@ -155,15 +155,15 @@ def test_set_roll_edit_scope_checks_the_matching_action_and_labels_the_button():
     panel.controller.set_roll_edit_scope.assert_called_once_with("current")
 
 
-def test_set_roll_edit_scope_enables_the_override_checkbox_only_for_all():
+def test_set_roll_edit_scope_enables_force_settings_only_for_all():
     panel = _roll_scope_panel_stub()
 
     RightPanel._set_roll_edit_scope(panel, "all")
-    panel.roll_override_check.setEnabled.assert_called_once_with(True)
+    panel.roll_force_btn.setEnabled.assert_called_once_with(True)
 
-    panel.roll_override_check.reset_mock()
+    panel.roll_force_btn.reset_mock()
     RightPanel._set_roll_edit_scope(panel, "selected")
-    panel.roll_override_check.setEnabled.assert_called_once_with(False)
+    panel.roll_force_btn.setEnabled.assert_called_once_with(False)
 
 
 def test_set_roll_edit_scope_with_persist_false_does_not_write_the_setting():

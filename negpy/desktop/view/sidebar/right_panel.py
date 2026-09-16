@@ -5,7 +5,7 @@ import qtawesome as qta
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QActionGroup
 from PyQt6.QtWidgets import (
-    QCheckBox,
+    QHBoxLayout,
     QMenu,
     QPushButton,
     QScrollArea,
@@ -22,7 +22,7 @@ from negpy.desktop.view.sidebar.export import ExportSidebar
 from negpy.desktop.view.sidebar.favourites import FavouritesSidebar
 from negpy.desktop.view.sidebar.history import HistoryPanel
 from negpy.desktop.view.sidebar.metadata import MetadataSidebar
-from negpy.desktop.view.styles.templates import EditedDot
+from negpy.desktop.view.styles.templates import EditedDot, labeled_toggle
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.charts import PhotometricCurveWidget, StepWedgeWidget, ZoneStripWidget
 from negpy.desktop.view.widgets.collapsible import make_section
@@ -290,8 +290,8 @@ class RightPanel(QWidget):
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(8)
-        page_layout.addWidget(cp.process_sidebar.mode_bar)
         page_layout.addWidget(self._build_roll_scope_control())
+        page_layout.addWidget(cp.process_sidebar.mode_bar)
         for section in (cp.sensor_section, cp.demosaic_section, cp.roll_section, cp.process_section, cp.presets_section):
             page_layout.addWidget(section)
         page_layout.addStretch(1)
@@ -301,12 +301,14 @@ class RightPanel(QWidget):
         """Sticky all/current/selected scope for a Calibration, Demosaic or
         Normalization write -- the same split-button convention Export's own button
         uses for the identical choice, picked once here rather than per card since it
-        governs every one of them until changed back. Doubles as the answer to "does
-        this apply to the whole roll": the button's own label always says so."""
-        wrap = QWidget()
-        wrap_layout = QVBoxLayout(wrap)
-        wrap_layout.setContentsMargins(0, 0, 0, 0)
-        wrap_layout.setSpacing(4)
+        governs every one of them until changed back, and leading the tab since it is
+        the answer to "does this apply to the whole roll": the button's own label
+        always says so. Force Settings sits beside it, not below -- it only modifies
+        what All Roll does, not a separate choice of its own."""
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(8)
 
         menu = QMenu(self)
         group = QActionGroup(menu)
@@ -322,24 +324,25 @@ class RightPanel(QWidget):
         container, self.roll_scope_btn, roll_scope_menu_btn = make_split_button("", "fa5s.crosshairs", menu)
         self.roll_scope_btn.clicked.connect(lambda: menu.exec(roll_scope_menu_btn.mapToGlobal(roll_scope_menu_btn.rect().bottomLeft())))
         self.roll_scope_btn.setToolTip("What a Calibration, Demosaic or Normalization change applies to")
-        wrap_layout.addWidget(container)
+        row_layout.addWidget(container, 1)
 
-        self.roll_override_check = QCheckBox("Include already-overridden frames")
-        self.roll_override_check.setToolTip(
-            "With All Roll, also overwrite and unlock any frame that already has this card set to its own value"
+        self.roll_force_btn = labeled_toggle(
+            "fa5s.eraser",
+            " Force Settings",
+            self.controller.roll_override_locked_frames(),
+            "With All Roll, also overwrite and unlock any frame that already has this card set to its own value",
         )
-        self.roll_override_check.toggled.connect(lambda checked: self.controller.set_roll_override_locked_frames(checked))
-        wrap_layout.addWidget(self.roll_override_check)
+        self.roll_force_btn.toggled.connect(lambda checked: self.controller.set_roll_override_locked_frames(checked))
+        row_layout.addWidget(self.roll_force_btn)
 
         self._set_roll_edit_scope(self.controller.roll_edit_scope(), persist=False)
-        self.roll_override_check.setChecked(self.controller.roll_override_locked_frames())
-        return wrap
+        return row
 
     def _set_roll_edit_scope(self, key: str, *, persist: bool = True) -> None:
         _menu_label, btn_label = _ROLL_EDIT_SCOPES[key]
         self._roll_scope_actions[key].setChecked(True)
         self.roll_scope_btn.setText(btn_label)
-        self.roll_override_check.setEnabled(key == "all")
+        self.roll_force_btn.setEnabled(key == "all")
         if persist:
             self.controller.set_roll_edit_scope(key)
 
