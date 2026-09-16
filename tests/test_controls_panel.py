@@ -1,13 +1,17 @@
 """_sync_roll_locks: per-card lock buttons and the roll_override_summary one-liner
-that answers "roll-wide or this frame's own" for the whole Roll tab.
+that answers "roll-wide or this frame's own" for the whole Roll tab. _reset_process_fields:
+a card's reset scoped to only the fields it shows.
 
 Stub-on-unbound-method, like test_right_panel_wiring.py: ControlsPanel pulls in every
 sidebar in the app, so no test here constructs a real one.
 """
 
+from dataclasses import replace
 from unittest.mock import MagicMock
 
+from negpy.desktop.session import AppState
 from negpy.desktop.view.sidebar.controls_panel import ControlsPanel
+from negpy.features.process.models import ProcessConfig
 
 
 def _panel_stub(*, active_roll_id="roll1", locked_cards=()) -> MagicMock:
@@ -54,3 +58,23 @@ def test_sync_roll_locks_sets_each_sections_lock_button():
     panel.sensor_section.set_lock_button.assert_called_once_with(False, False)
     panel.demosaic_section.set_lock_button.assert_called_once_with(True, True)
     panel.process_section.set_lock_button.assert_called_once_with(False, False)
+
+
+def test_reset_process_fields_only_touches_the_given_fields():
+    """Regression: Normalization's own reset must not also reset Positive (moved
+    beside Film Mode) or a Calibration/Demosaic field -- all three cards, and Film
+    Mode, live on the same ProcessConfig, but each reset is scoped to its own card."""
+    panel = MagicMock()
+    panel.controller.state = AppState()
+    cfg = panel.controller.state.config
+    panel.controller.state.config = replace(
+        cfg,
+        process=replace(cfg.process, analysis_buffer=0.2, positive_source=True, sensor_profile="Custom"),
+    )
+
+    ControlsPanel._reset_process_fields(panel, ("analysis_buffer",))
+
+    new_cfg = panel.controller.apply_config.call_args[0][0]
+    assert new_cfg.process.analysis_buffer == ProcessConfig().analysis_buffer
+    assert new_cfg.process.positive_source is True
+    assert new_cfg.process.sensor_profile == "Custom"

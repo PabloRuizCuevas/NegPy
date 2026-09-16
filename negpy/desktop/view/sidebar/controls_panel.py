@@ -61,6 +61,28 @@ _SENSOR_FIELDS = (
     "crosstalk_strength",
     "hue_trim",
 )
+# Normalization's own fields -- not process_mode (Film Mode, shared above every card)
+# or positive_source (beside Film Mode now, not a Normalization setting), and not
+# locked_floors/locked_ceils, which stay Batch Analysis's own measured result, not a
+# tuning choice a reset undoes.
+_NORMALIZATION_FIELDS = (
+    "analysis_buffer",
+    "analysis_rect",
+    "lock_bounds",
+    "luma_range_clip",
+    "color_range_clip",
+    "white_point_offset",
+    "black_point_offset",
+    "white_point_trim_red",
+    "white_point_trim_green",
+    "white_point_trim_blue",
+    "black_point_trim_red",
+    "black_point_trim_green",
+    "black_point_trim_blue",
+    "e6_normalize",
+    "use_luma_average",
+    "use_color_average",
+)
 _TONE_FIELDS = (
     "density",
     "grade",
@@ -361,7 +383,7 @@ class ControlsPanel(QWidget):
         self.altproc_section.reset_requested.connect(lambda: self.controller.session.reset_section("altproc"))
         self.toning_section.reset_requested.connect(lambda: self.controller.session.reset_section("toning"))
         self.geometry_section.reset_requested.connect(lambda: self.controller.session.reset_section("geometry"))
-        self.process_section.reset_requested.connect(lambda: self.controller.session.reset_section("process"))
+        self.process_section.reset_requested.connect(lambda: self._reset_process_fields(_NORMALIZATION_FIELDS))
         self.retouch_section.reset_requested.connect(lambda: self.controller.session.reset_section("retouch"))
         self.local_section.reset_requested.connect(lambda: self.controller.session.reset_section("local"))
         self.finish_section.reset_requested.connect(lambda: self.controller.session.reset_section("finish"))
@@ -816,8 +838,10 @@ class ControlsPanel(QWidget):
         self._reset_process_fields(_SENSOR_FIELDS)
 
     def _reset_process_fields(self, fields) -> None:
-        """Calibration and Demosaic both live on ProcessConfig, so each reset is scoped to its
-        own fields. apply_config, not update_config: every one is a decode or a source bake."""
+        """Calibration, Demosaic and Normalization all live on ProcessConfig, so each
+        reset is scoped to its own fields -- a plain session.reset_section("process")
+        would reset all three cards (and Film Mode, and Positive) at once. apply_config,
+        not update_config: some of these fields are a decode or a source bake."""
         from dataclasses import replace
 
         cfg = self.controller.state.config
