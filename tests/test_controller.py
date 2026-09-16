@@ -630,6 +630,23 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(cfg[0].process.hue_trim, 9.0)
         self.assertFalse(kwargs["persist"])
 
+    def test_roll_lock_state_is_keyed_on_the_unforked_hash(self):
+        """A locked card is about this physical frame's relationship to the roll, not
+        its current edit identity -- it must read the same locked whether the frame is
+        showing its forked edit or the shared one."""
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.current_file_hash = rolls.roll_edit_hash("h1", roll_id)
+
+        self.controller.set_roll_card_locked("sensor", locked=True)
+
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h1"), {"sensor"})
+        self.assertTrue(self.controller.roll_card_locked("sensor"))
+
     def test_thumbnail_miss_marks_file_unreadable(self):
         from PIL import Image
 

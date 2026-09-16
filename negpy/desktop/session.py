@@ -1012,11 +1012,16 @@ class DesktopSessionManager(QObject):
         saved value, on every card it has not locked away from the roll within this
         roll. Applied before the asset-identity overlays below, so a composite's own
         required wiring (a trichrome triplet's forced narrowband decode, a merge's
-        process mode) always has the last word over a roll preference."""
+        process mode) always has the last word over a roll preference.
+
+        Keyed on the unforked hash: a lock is about this physical frame's relationship
+        to the roll, and must survive forking or unforking its edit identity.
+        """
         roll_id = self.state.active_roll_id
         if roll_id is None:
             return config
-        return replace(config, process=rolls.resolve_roll_process_config(self.repo, roll_id, asset["hash"], config.process))
+        file_hash = unforked_hash(asset["hash"])
+        return replace(config, process=rolls.resolve_roll_process_config(self.repo, roll_id, file_hash, config.process))
 
     def _hydrate_asset_config(self, asset: dict) -> tuple[WorkspaceConfig, bool]:
         """Build an asset's effective config and report whether it had saved edits."""

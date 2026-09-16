@@ -203,6 +203,34 @@ class TestDesktopSessionSync(unittest.TestCase):
 
         self.assertFalse(config.process.linear_raw)
 
+    def test_config_for_asset_reads_roll_state_by_the_unforked_hash(self):
+        """A lock (or a roll default's frame_overrides entry) is about this physical
+        frame, not its current edit identity -- a forked asset's suffixed hash must
+        still resolve against the plain hash's lock."""
+        from negpy.services.assets.rolls import roll_edit_hash
+
+        rolls_store = {
+            "r1": {
+                "kind": "virtual",
+                "name": "Portra",
+                "defaults": {"linear_raw": True},
+                "frame_overrides": {"a-hash": ["sensor"]},
+            }
+        }
+        globals_ = {"rolls_by_id": rolls_store}
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: globals_.get(key, default)
+        self.session.state.active_roll_id = "r1"
+        forked_hash = roll_edit_hash("a-hash", "r1")
+        asset = {"name": "a.dng", "path": "/roll/a.dng", "hash": forked_hash}
+        saved = replace(WorkspaceConfig(), process=replace(WorkspaceConfig().process, linear_raw=False))
+
+        with patch("negpy.desktop.session.load_or_promote", return_value=saved):
+            config = self.session.config_for_asset(asset)
+
+        # sensor (Calibration) is locked for a-hash, so linear_raw keeps its own value
+        # even though the asset is currently showing its forked edit identity.
+        self.assertFalse(config.process.linear_raw)
+
     def test_set_autodetect_enabled_persists(self):
         self.assertFalse(self.session.state.autodetect_enabled)
         self.session.set_autodetect_enabled(True)

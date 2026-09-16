@@ -3485,11 +3485,13 @@ class AppController(QObject):
 
     def roll_card_locked(self, card_key: str) -> bool:
         """True when the active frame has locked *card_key* to its own value, within
-        the active roll. Always false with no active roll."""
+        the active roll. Always false with no active roll. Keyed on the unforked hash,
+        like the lock itself: it is about this physical frame, not its current edit
+        identity, and must read the same locked or not whether or not it is forked."""
         roll_id = self.state.active_roll_id
         if roll_id is None or not self.state.current_file_hash:
             return False
-        return card_key in rolls.frame_override_cards(self.session.repo, roll_id, self.state.current_file_hash)
+        return card_key in rolls.frame_override_cards(self.session.repo, roll_id, rolls.unforked_hash(self.state.current_file_hash))
 
     def set_roll_default(self, card_key: str, persist: bool = True, readback_metrics: bool = True, **changes) -> None:
         """Commit a Calibration/Demosaic/Normalization change roll-wide: every member
@@ -3541,7 +3543,7 @@ class AppController(QObject):
             frozen = {name: getattr(self.state.config.process, name) for name in card_fields}
             new_config = replace(self.state.config, process=replace(self.state.config.process, **frozen))
             self.session.update_config(new_config, persist=True, render=False)
-        rolls.set_frame_override(self.session.repo, roll_id, self.state.current_file_hash, card_key, locked)
+        rolls.set_frame_override(self.session.repo, roll_id, rolls.unforked_hash(self.state.current_file_hash), card_key, locked)
         if not locked:
             asset = self.state.uploaded_files[self.state.selected_file_idx]
             self.apply_config(self.session.config_for_asset(asset), persist=False)
