@@ -348,7 +348,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "with a per-stock matrix in log-density space, <b>before any analysis</b>.<br><br>"
                 "Pick a profile matching your film stock and blend it in with the "
                 "<b>Strength</b> slider.<br><br>"
-                "Changed the matrix or strength? Pick <b>Current Roll</b> in Roll Analysis and "
+                "Changed the matrix or strength? Pick your loaded roll in Roll Analysis and "
                 "press <b>Apply</b> again, because bounds measured under a different matrix "
                 "are invalid."
             ),
@@ -358,15 +358,15 @@ def build(window: "MainWindow") -> list[TutorialStep]:
         TutorialStep(
             title="Roll Consistency: Batch Analysis",
             body=(
-                "One enlarger setting for the whole roll. Pick <b>Current Roll</b> and press "
+                "One enlarger setting for the whole roll. Pick your loaded roll and press "
                 "<b>Apply</b> to meter every loaded frame and build a roll-wide baseline, "
                 "then two buttons lock frames to it on independent axes: <b>Use Luma "
                 "Average</b> takes the roll-wide tonal range, <b>Use Color Average</b> takes "
                 "the roll-wide color balance. Turn on either, or both, so exposure and color "
                 "do not jump from frame to frame.<br><br>"
-                "<b>Save</b> the baseline under a name to reuse it in a later session, and "
-                "pick it back up with the same roll picker and <b>Apply</b>. A locked "
-                "baseline is also what keeps <b>Flat masters</b> consistent across a roll."
+                "<b>Save</b> the baseline to reuse it in a later session, and pick that roll "
+                "back up with the same picker and <b>Apply</b>. A locked baseline is also "
+                "what keeps <b>Flat masters</b> consistent across a roll."
             ),
             target=_roll,
             section_attr="roll_section",

@@ -2,8 +2,6 @@ from typing import Optional
 
 from PyQt6.QtWidgets import (
     QHBoxLayout,
-    QInputDialog,
-    QMessageBox,
 )
 
 from negpy.desktop.view.confirm import confirm_delete_named
@@ -13,22 +11,23 @@ from negpy.desktop.view.widgets.searchable_gear_combo import SearchableGearCombo
 from negpy.features.process.models import invalidate_local_bounds
 from negpy.services.assets import rolls
 
-# A control character keeps this impossible to collide with a user's saved roll name.
-_CURRENT_ROLL_ID = "\x00current"
-_CURRENT_ROLL_LABEL = "Current Roll"
+# Prefixes a roll's label once it has a saved baseline -- the field itself is the
+# "analyzed" indicator, so the search text ignores it (built from the plain name).
+_TICK = "✓ "
 
 
 class RollAnalysisSidebar(BaseSidebar):
     """
-    Roll-wide normalization: a searchable picker over saved baselines and the
-    current session, one Apply action, then the per-axis average toggles.
+    Roll-wide normalization: a searchable picker over every roll in your library,
+    ticked once it has a saved baseline, one Apply action, then the per-axis average
+    toggles.
     """
 
     def _init_ui(self) -> None:
         conf = self.state.config.process
 
         self.roll_combo = SearchableGearCombo(placeholder="Search rolls…")
-        self.roll_combo.setToolTip("Current Roll scans the loaded files fresh; a saved name applies its stored baseline.")
+        self.roll_combo.setToolTip("Apply on the loaded roll scans it fresh; picking another roll loads that roll's saved baseline.")
         self.layout.addWidget(self.roll_combo)
 
         self.roll_status_hint = hint_label("", "muted")
@@ -38,14 +37,14 @@ class RollAnalysisSidebar(BaseSidebar):
         self.apply_roll_btn = labeled_action(
             "fa5s.check",
             " Apply",
-            "Apply the picked roll: Current Roll re-scans the loaded files for a fresh baseline, "
-            "a saved name loads its stored bounds and balance",
+            "Apply the picked roll: the loaded roll re-scans its files for a fresh baseline, "
+            "another roll loads its stored bounds and balance",
             primary=True,
         )
         self.save_roll_btn = self._labeled_action(
-            "fa5s.save", " Save", "Save the current roll baseline (bounds and balance) under a name, to reuse later"
+            "fa5s.save", " Save", "Save the current bounds and balance as the picked roll's baseline, to reuse later"
         )
-        self.delete_roll_btn = self._labeled_action("fa5s.trash", " Delete", "Remove the selected saved roll from the database")
+        self.delete_roll_btn = self._labeled_action("fa5s.trash", " Delete", "Clear the picked roll's saved baseline")
 
         roll_actions.addWidget(self.apply_roll_btn)
         roll_actions.addWidget(self.save_roll_btn)
@@ -83,7 +82,7 @@ class RollAnalysisSidebar(BaseSidebar):
 
         self.save_roll_btn.clicked.connect(self._on_save_roll)
         self.delete_roll_btn.clicked.connect(self._on_delete_roll)
-        self.roll_combo.selection_changed.connect(self._update_delete_enabled)
+        self.roll_combo.selection_changed.connect(self._on_roll_picked)
         self.sync_ui()
 
     def _on_use_luma_average_toggled(self, checked: bool) -> None:
@@ -111,10 +110,11 @@ class RollAnalysisSidebar(BaseSidebar):
         self.sync_ui()
 
     def _on_apply_roll(self) -> None:
-        """Current Roll re-runs Batch Analysis on the loaded files; a saved name loads its baseline."""
-        roll_id = self.roll_combo.selected_id()
-        if roll_id and roll_id != _CURRENT_ROLL_ID:
-            self.controller.apply_normalization_roll(roll_id)
+        """The loaded roll re-runs Batch Analysis on its files; another roll loads its
+        saved baseline instead -- there is nothing of its own loaded to scan."""
+        selected = self.roll_combo.selected_id()
+        if selected and selected != self._active_roll_name():
+            self.controller.apply_normalization_roll(selected)
         else:
             self.controller.request_batch_normalization()
 
@@ -128,74 +128,64 @@ class RollAnalysisSidebar(BaseSidebar):
         entry = rolls.roll_for_id(self.controller.session.repo, roll_id)
         return entry["name"] if entry else None
 
+    def _on_roll_picked(self, *_args) -> None:
+        self._update_delete_enabled()
+        self._update_roll_status_hint(self._active_roll_name(), self.roll_combo.selected_id())
+
     def _refresh_rolls(self, *, force: bool = False) -> None:
         """
-        Rebuilds the picker from the saved-roll table, skipping a rebuild mid-search
+        Rebuilds the picker from every library roll, skipping a rebuild mid-search
         (SearchableGearCombo.is_editing) and one the roll set and selection don't need.
         """
         if not force and self.roll_combo.is_editing():
             return
-        names = self.controller.session.repo.list_normalization_rolls()
-        conf = self.state.config.process
-        selected = conf.roll_name if conf.roll_name in names else _CURRENT_ROLL_ID
+        repo = self.controller.session.repo
+        names = [entry.get("name", "") for _roll_id, entry in rolls.all_rolls_sorted(repo)]
+        analyzed = set(repo.list_normalization_rolls())
         active_name = self._active_roll_name()
-        key = (tuple(names), selected, active_name)
+        conf = self.state.config.process
+        selected = conf.roll_name if conf.roll_name in names else (active_name or "")
+        key = (tuple(names), tuple(sorted(analyzed)), selected, active_name)
         if not force and key == self._roll_sync_key:
             return
         self._roll_sync_key = key
-        entries = [(active_name or _CURRENT_ROLL_LABEL, _CURRENT_ROLL_ID)] + [(name, name) for name in names]
-        self.roll_combo.set_labeled_items(entries, selected)
+        entries = [(f"{_TICK}{name}" if name in analyzed else name, name) for name in names]
+        self.roll_combo.set_labeled_items(entries, selected, search_fn=lambda _label, item_id: item_id)
         self._update_delete_enabled()
-        self._update_roll_status_hint(active_name, names)
+        self._update_roll_status_hint(active_name, selected)
 
-    def _update_roll_status_hint(self, active_name: Optional[str], saved_names: list[str]) -> None:
-        """Flags whether the applied baseline belongs to this roll or was carried over
-        from another one's Batch Analysis, once this roll's own identity is known."""
-        if not active_name:
-            self.roll_status_hint.setText("")
-            return
-        applied = self.state.config.process.roll_name
-        if applied and applied != active_name:
+    def _update_roll_status_hint(self, active_name: Optional[str], selected_name: str) -> None:
+        """Flags a baseline picked from a roll other than the one loaded -- the tick in
+        the field already says whether the loaded roll itself has one saved."""
+        if active_name and selected_name and selected_name != active_name:
             set_hint_kind(self.roll_status_hint, "warning")
-            self.roll_status_hint.setText(f'Using "{applied}", a baseline saved for a different roll')
-        elif active_name in saved_names:
-            set_hint_kind(self.roll_status_hint, "success")
-            self.roll_status_hint.setText("Analyzed and saved for this roll")
+            self.roll_status_hint.setText(f'Using "{selected_name}", a baseline saved for a different roll')
         else:
             self.roll_status_hint.setText("")
 
     def _update_delete_enabled(self, *_args) -> None:
-        """Current Roll is not a saved row, so Delete only applies to a real selection."""
-        roll_id = self.roll_combo.selected_id()
-        self.delete_roll_btn.setEnabled(bool(roll_id) and roll_id != _CURRENT_ROLL_ID)
+        """Delete clears a saved baseline, so it needs a roll that has one."""
+        name = self.roll_combo.selected_id()
+        self.delete_roll_btn.setEnabled(bool(name) and name in self.controller.session.repo.list_normalization_rolls())
 
     def _on_save_roll(self) -> None:
-        """
-        Prompts user for name and saves current normalization. Pre-fills the loaded
-        roll's own name, so accepting it is what the "Analyzed" hint above looks for.
-        """
-        name, ok = QInputDialog.getText(self, "Save Roll", "Enter name for this roll:", text=self._active_roll_name() or "")
-        if not ok or not name:
-            return
-        if name.strip().casefold() == _CURRENT_ROLL_LABEL.casefold():
-            QMessageBox.warning(self, "Roll Name", f'"{_CURRENT_ROLL_LABEL}" is reserved for the loaded files. Choose another name.')
+        """Saves the current bounds and balance as the picked roll's baseline."""
+        name = self.roll_combo.selected_id()
+        if not name:
             return
         self.controller.save_current_normalization_as_roll(name)
         self._refresh_rolls(force=True)
-        self.roll_combo.set_selected_id(name)
 
     def _on_delete_roll(self) -> None:
-        """
-        Removes selected roll from DB.
-        """
+        """Clears the picked roll's saved baseline; the roll itself stays."""
         name = self.roll_combo.selected_id()
-        if not name or name == _CURRENT_ROLL_ID:
+        if not name:
             return
         if confirm_delete_named(
             self,
-            "Roll",
+            "Saved Baseline",
             name,
-            informative="The frames keep their current look; only the saved roll baseline goes.",
+            informative="The frames keep their current look; only the saved baseline goes.",
         ):
             self.controller.session.repo.delete_normalization_roll(name)
             self._refresh_rolls(force=True)

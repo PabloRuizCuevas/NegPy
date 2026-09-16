@@ -166,8 +166,8 @@ def wrap_tooltip(text: str, footer: str = "") -> str:
 
 def hint_label(text: str = "", kind: str = "muted") -> QLabel:
     """Small informational label under a control. kind: "muted" | "warning" |
-    "error" | "success" — styled by the QLabel[hint=...] rules in modern_dark.qss.
-    Change kind at runtime with set_hint_kind (a plain setProperty won't repolish)."""
+    "error" — styled by the QLabel[hint=...] rules in modern_dark.qss. Change
+    kind at runtime with set_hint_kind (a plain setProperty won't repolish)."""
     lbl = QLabel(text)
     lbl.setWordWrap(True)
     lbl.setProperty("hint", kind)

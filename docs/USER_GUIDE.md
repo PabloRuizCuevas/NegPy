@@ -753,10 +753,10 @@ Bayer and X-Trans RAW only: a scanner TIFF, a Pakon scan or a linear DNG arrives
 
 Meter the whole roll once and share the baseline, so frames from the same film match.
 
-*   **Roll picker**: type to search. The first entry (the default) targets the loaded files themselves, labeled with the loaded roll's own name when it is a recognized roll, "Current Roll" otherwise; a saved name targets a baseline stored earlier. A hint under the picker reads **Analyzed and saved for this roll** once a saved baseline exists under the loaded roll's own name, or **Using "X", a baseline saved for a different roll** when the applied baseline came from elsewhere.
-*   **Apply**: runs the picked roll. On the loaded roll's own entry it scans every loaded file and computes a roll-average density and color balance, discarding outliers — run it once after importing, and again any time to redo it. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)* On a saved name it loads that roll's stored bounds and balance instead of re-scanning.
-*   **Save**: store the roll's current bounds and balance under a name, pre-filled with the loaded roll's own name so the picker recognizes it as analyzed.
-*   **Delete**: remove the selected saved roll (it asks first; disabled on the current-roll entry). The frames keep their current look; only the saved baseline goes.
+*   **Roll picker**: type to search every roll in your library, the same list the Library section shows — a roll with a saved baseline is ticked. Defaults to the loaded roll. Picking a different, ticked roll shows a hint that its baseline was saved for that roll, not this one.
+*   **Apply**: runs the picked roll. On the loaded roll it scans every loaded file and computes a roll-average density and color balance, discarding outliers — run it once after importing, and again any time to redo it. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)* On a different, ticked roll it loads that roll's stored bounds and balance instead of re-scanning.
+*   **Save**: store the current bounds and balance as the picked roll's baseline, ticking it.
+*   **Delete**: clear the picked roll's saved baseline (it asks first; disabled until it has one). The frames keep their current look; only the saved baseline goes.
 *   **Use Luma Average**: this frame takes the roll-wide tonal range; color still re-derives per frame.
 *   **Use Color Average**: this frame takes the roll-wide color balance; tonal range still re-derives per frame. Enable both for a fully consistent roll; leave both off for per-image auto-exposure.
 
