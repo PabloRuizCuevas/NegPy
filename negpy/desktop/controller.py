@@ -3402,13 +3402,15 @@ class AppController(QObject):
 
     def _on_normalization_finished(self, locked_floors: tuple, locked_ceils: tuple, outlier_paths: list) -> None:
         """
-        Applies averaged normalization baseline to all files. A frame with Lock Bounds on
-        keeps its own exposure -- the roll baseline never overwrites a locked frame, so the
-        lock survives a re-run of Batch Analysis. *outlier_paths* are frames whose own
-        measured bounds fell outside the pooled average on at least one channel: they still
-        take the baseline like everyone else (this is a report, not an exemption), but the
-        mismatch is worth a look and often means Use Luma/Color Average should be turned off
-        for that one frame.
+        Applies averaged normalization baseline to all files, and records it as the
+        active roll's own Batch Analysis result (rolls.set_roll_normalization) so
+        another roll's Use Luma/Color Average can borrow it later. A frame with Lock
+        Bounds on keeps its own exposure -- the roll baseline never overwrites a
+        locked frame, so the lock survives a re-run of Batch Analysis. *outlier_paths*
+        are frames whose own measured bounds fell outside the pooled average on at
+        least one channel: they still take the baseline like everyone else (this is a
+        report, not an exemption), but the mismatch is worth a look and often means
+        Use Luma/Color Average should be turned off for that one frame.
         """
         self._end_batch("normalization")
         locked_skipped = 0
@@ -3443,6 +3445,9 @@ class AppController(QObject):
             )
             self.session.update_config(replace(self.state.config, process=new_process), persist=True)
 
+        if self.state.active_roll_id is not None:
+            rolls.set_roll_normalization(self.session.repo, self.state.active_roll_id, locked_floors, locked_ceils)
+
         names_by_path = {f["path"]: f["name"] for f in self.state.uploaded_files}
         outlier_names = [names_by_path.get(p, p) for p in outlier_paths]
         message = "Batch analysis complete"
@@ -3469,41 +3474,38 @@ class AppController(QObject):
         self.set_status(f"Reset {count_of(len(visible), 'frame')} to defaults", timeout=3000)
         self.request_render()
 
-    def save_current_normalization_as_roll(self, name: str) -> None:
+    def apply_normalization_roll(self, roll_id: str) -> None:
         """
-        Persists current batch normalization values as a named roll.
+        Loads a roll's saved Batch Analysis baseline onto every loaded file that has
+        not locked its own bounds. No-op if that roll has never been analyzed.
         """
-        proc = self.state.config.process
-        self.session.repo.save_normalization_roll(name, proc.locked_floors, proc.locked_ceils)
-        self.session.update_config(
-            replace(self.state.config, process=replace(proc, roll_name=name)),
-            persist=True,
-            render=False,
-        )
-        self.set_status(f"Roll '{name}' saved", 2000)
+        data = rolls.roll_normalization(self.session.repo, roll_id)
+        if not data:
+            return
+        entry = rolls.roll_for_id(self.session.repo, roll_id)
+        name = entry["name"] if entry else roll_id
+        locked_floors, locked_ceils = data["floors"], data["ceils"]
 
-    def apply_normalization_roll(self, name: str) -> None:
-        """
-        Loads and applies a named normalization roll to the entire session.
-        """
-        data = self.session.repo.load_normalization_roll(name)
-        if data:
-            locked_floors, locked_ceils = data
-            for f_info in self.state.uploaded_files:
-                p = self.session.repo.load_file_settings(f_info["hash"]) or self.session.config_for_asset(f_info)
-                new_process = replace(
-                    p.process,
-                    use_luma_average=True,
-                    use_color_average=True,
-                    locked_floors=locked_floors,
-                    locked_ceils=locked_ceils,
-                    roll_name=name,
-                )
-                new_p = replace(p, process=new_process)
-                if f_info["hash"] != self.state.current_file_hash:
-                    self.session.push_external_history(f_info["hash"], p, new_p)
-                self.session.repo.save_file_settings(f_info["hash"], new_p, file_path=f_info["path"])
+        locked_skipped = 0
+        for f_info in self.state.uploaded_files:
+            p = self.session.repo.load_file_settings(f_info["hash"]) or self.session.config_for_asset(f_info)
+            if p.process.lock_bounds:
+                locked_skipped += 1
+                continue
+            new_process = replace(
+                p.process,
+                use_luma_average=True,
+                use_color_average=True,
+                locked_floors=locked_floors,
+                locked_ceils=locked_ceils,
+                roll_name=name,
+            )
+            new_p = replace(p, process=new_process)
+            if f_info["hash"] != self.state.current_file_hash:
+                self.session.push_external_history(f_info["hash"], p, new_p)
+            self.session.repo.save_file_settings(f_info["hash"], new_p, file_path=f_info["path"])
 
+        if not self.state.config.process.lock_bounds:
             new_process = replace(
                 self.state.config.process,
                 use_luma_average=True,
@@ -3513,8 +3515,12 @@ class AppController(QObject):
                 roll_name=name,
             )
             self.session.update_config(replace(self.state.config, process=new_process), persist=True)
-            self.set_status(f"Applied Roll '{name}'", 2000)
-            self.request_render()
+
+        message = f'Applied "{name}"\'s baseline'
+        if locked_skipped:
+            message += f" — {count_of(locked_skipped, 'locked frame')} kept its own exposure"
+        self.set_status(message, 2000)
+        self.request_render()
 
     _ROLL_EDIT_SCOPE_KEY = "roll_edit_scope"
     _ROLL_OVERRIDE_LOCKED_KEY = "roll_override_locked_frames"

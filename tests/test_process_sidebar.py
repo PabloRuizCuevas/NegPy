@@ -183,3 +183,63 @@ def test_positive_toggle_reaches_the_controller(qapp):
     args, kwargs = controller.set_roll_default.call_args
     assert args[0] == "process"
     assert kwargs["positive_source"] is True
+
+
+def _row_index_containing(layout, widget) -> int:
+    """Index within *layout* of the (possibly nested) row that directly holds *widget*."""
+    for i in range(layout.count()):
+        item = layout.itemAt(i)
+        if item.widget() is widget:
+            return i
+        row = item.layout()
+        if row is not None and any(row.itemAt(j).widget() is widget for j in range(row.count())):
+            return i
+    raise AssertionError(f"{widget} not found in layout")
+
+
+def test_average_toggles_sit_above_the_clip_sliders(qapp):
+    """Which baseline each axis' bounds come from sits right above the sliders it
+    disables when on -- both moved here from the old Roll Analysis panel."""
+    _, sidebar = _sidebar()
+    avg_i = _row_index_containing(sidebar.layout, sidebar.use_luma_avg_btn)
+    clip_i = _row_index_containing(sidebar.layout, sidebar.luma_range_clip_slider)
+    assert avg_i == clip_i - 1
+
+
+def test_average_toggles_sync_from_config(qapp):
+    controller, sidebar = _sidebar()
+    cfg = controller.state.config
+    controller.state.config = replace(cfg, process=replace(cfg.process, use_luma_average=True, use_color_average=False))
+    sidebar.sync_ui()
+    assert sidebar.use_luma_avg_btn.isChecked()
+    assert not sidebar.use_color_avg_btn.isChecked()
+
+
+def test_average_toggles_hide_on_the_transparency_transfer(qapp):
+    controller, sidebar = _sidebar()
+    cfg = controller.state.config
+    controller.state.config = replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.E6, e6_normalize=False))
+    sidebar.sync_ui()
+    assert sidebar.use_luma_avg_btn.isHidden()
+    assert sidebar.use_color_avg_btn.isHidden()
+
+
+def test_use_luma_average_toggle_reaches_the_controller(qapp):
+    """Goes through set_roll_default, the same Normalization card write every other
+    roll-eligible control on this card uses -- flipping it locks the card to this
+    frame, and drops roll_name since a single picked baseline no longer applies."""
+    controller, sidebar = _sidebar()
+    sidebar.use_luma_avg_btn.setChecked(True)
+    args, kwargs = controller.set_roll_default.call_args
+    assert args[0] == "process"
+    assert kwargs["use_luma_average"] is True
+    assert kwargs["roll_name"] is None
+
+
+def test_use_color_average_toggle_reaches_the_controller(qapp):
+    controller, sidebar = _sidebar()
+    sidebar.use_color_avg_btn.setChecked(True)
+    args, kwargs = controller.set_roll_default.call_args
+    assert args[0] == "process"
+    assert kwargs["use_color_average"] is True
+    assert kwargs["roll_name"] is None

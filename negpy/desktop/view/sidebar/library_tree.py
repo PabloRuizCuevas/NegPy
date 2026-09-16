@@ -238,6 +238,7 @@ class LibraryTree(QWidget):
     def _show_context_menu(self, pos) -> None:
         item = self.tree.itemAt(pos)
         menu = QMenu(self)
+        menu.setToolTipsVisible(True)
         if item is not None:
             roll_id = item.data(0, _ROLL_ID_ROLE)
             selection = self._selected_roll_items()
@@ -246,6 +247,15 @@ class LibraryTree(QWidget):
             else:
                 name = item.text(0)
                 menu.addAction("Open").triggered.connect(lambda: self.controller.open_roll(roll_id))
+                is_active = roll_id == self.controller.state.active_roll_id
+                analyze_action = menu.addAction("Analyze Roll…")
+                analyze_action.setEnabled(is_active)
+                analyze_action.setToolTip(
+                    "Measures every file's exposure bounds and saves their average as this roll's baseline."
+                    if is_active
+                    else "Open this roll first — Batch Analysis measures the files currently loaded."
+                )
+                analyze_action.triggered.connect(self.controller.request_batch_normalization)
                 menu.addAction("Rename…").triggered.connect(lambda: self._rename_roll(roll_id, name))
                 menu.addAction("Delete…").triggered.connect(lambda: self._delete_roll(roll_id, name))
             menu.addSeparator()

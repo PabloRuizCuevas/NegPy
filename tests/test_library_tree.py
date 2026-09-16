@@ -223,6 +223,60 @@ def test_right_clicking_outside_a_multi_selection_still_targets_just_that_row(wi
     assert "Delete…" in labels
 
 
+def _menu_with_distinct_actions(monkeypatch):
+    """A QMenu stub whose addAction(label) returns its own mock per label, so each
+    action's setEnabled/triggered calls can be checked independently."""
+    menu = MagicMock()
+    actions: dict[str, MagicMock] = {}
+
+    def add_action(label, *a, **k):
+        actions.setdefault(label, MagicMock())
+        return actions[label]
+
+    menu.addAction.side_effect = add_action
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.QMenu", lambda *a, **k: menu)
+    return actions
+
+
+def test_right_click_on_the_loaded_roll_offers_an_enabled_analyze_action(widget, monkeypatch):
+    roll_id = create_virtual_roll(widget.repo, "Portra", [])
+    widget.controller.state.active_roll_id = roll_id
+    widget.reload()
+    item = widget.tree.topLevelItem(0)
+    monkeypatch.setattr(widget.tree, "itemAt", lambda pos: item)
+    actions = _menu_with_distinct_actions(monkeypatch)
+
+    widget._show_context_menu(QPoint(0, 0))
+
+    actions["Analyze Roll…"].setEnabled.assert_called_once_with(True)
+
+
+def test_right_click_on_a_different_roll_offers_a_disabled_analyze_action(widget, monkeypatch):
+    create_virtual_roll(widget.repo, "Portra", [])
+    widget.controller.state.active_roll_id = "some-other-roll"
+    widget.reload()
+    item = widget.tree.topLevelItem(0)
+    monkeypatch.setattr(widget.tree, "itemAt", lambda pos: item)
+    actions = _menu_with_distinct_actions(monkeypatch)
+
+    widget._show_context_menu(QPoint(0, 0))
+
+    actions["Analyze Roll…"].setEnabled.assert_called_once_with(False)
+
+
+def test_analyze_action_reaches_the_controller(widget, monkeypatch):
+    roll_id = create_virtual_roll(widget.repo, "Portra", [])
+    widget.controller.state.active_roll_id = roll_id
+    widget.reload()
+    item = widget.tree.topLevelItem(0)
+    monkeypatch.setattr(widget.tree, "itemAt", lambda pos: item)
+    actions = _menu_with_distinct_actions(monkeypatch)
+
+    widget._show_context_menu(QPoint(0, 0))
+
+    actions["Analyze Roll…"].triggered.connect.assert_called_once_with(widget.controller.request_batch_normalization)
+
+
 def test_deleting_a_multi_selection_removes_every_selected_roll(widget, monkeypatch):
     id_a = create_virtual_roll(widget.repo, "apple", [])
     id_b = create_virtual_roll(widget.repo, "banana", [])

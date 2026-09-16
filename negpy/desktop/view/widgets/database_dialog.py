@@ -27,7 +27,6 @@ _EDIT_ROWS = (
     ("file_marks", "Keep / reject marks"),
 )
 _TOOLING_ROWS = (
-    ("normalization_rolls", "Normalization rolls"),
     ("export_presets", "Export presets"),
     ("library_rolls", "Library rolls"),
     ("app_preferences", "App preferences"),
@@ -174,7 +173,7 @@ class DatabaseDialog(QDialog):
 
     def _update_enabled(self, stats: dict) -> None:
         edits = sum(stats.get(k, 0) for k in ("file_settings", "edit_history", "work_prints", "file_marks"))
-        total = edits + sum(stats.get(k, 0) for k in ("normalization_rolls", "export_presets", "app_preferences"))
+        total = edits + sum(stats.get(k, 0) for k in ("export_presets", "app_preferences"))
         self.clear_edits_btn.setEnabled(edits > 0)
         self.reset_all_btn.setEnabled(total > 0)
         self.clear_thumbs_btn.setEnabled(stats.get("thumbnails", 0) > 0)
@@ -241,7 +240,7 @@ class DatabaseDialog(QDialog):
         if not self._confirm(
             "Reset Everything",
             "Wipe the entire database — every saved edit, undo history, keep/reject mark, "
-            "normalization roll, flat-field profile, export preset, and all app preferences?\n\n"
+            "flat-field profile, export preset, and all app preferences?\n\n"
             "The app returns to a first-run state.",
             "Reset Everything",
         ):

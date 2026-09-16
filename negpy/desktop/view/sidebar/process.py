@@ -151,6 +151,26 @@ class ProcessSidebar(BaseSidebar):
             buf_row.addWidget(btn, 1)
         self.layout.addLayout(buf_row)
 
+        # Which baseline each axis' bounds come from: the roll's shared Batch Analysis
+        # meter (picked in the Roll Baseline field above) or this frame's own
+        # analysis below. Sits right above the sliders it disables when on.
+        avg_row = QHBoxLayout()
+        self.use_luma_avg_btn = self._small_toggle(
+            "mdi6.film",
+            "Use Luma Average",
+            conf.use_luma_average,
+            "Take the tonal-range (black/white-point) baseline from the picked roll; color still re-derives per frame",
+        )
+        self.use_color_avg_btn = self._small_toggle(
+            "mdi6.film",
+            "Use Color Average",
+            conf.use_color_average,
+            "Take the per-channel color-balance baseline from the picked roll; luma range still re-derives per frame",
+        )
+        avg_row.addWidget(self.use_luma_avg_btn)
+        avg_row.addWidget(self.use_color_avg_btn)
+        self.layout.addLayout(avg_row)
+
         clip_row = QHBoxLayout()
         initial_luma_slider_val = _luma_range_value_to_slider(conf.luma_range_clip)
         self.luma_range_clip_slider = CompactSlider(
@@ -292,6 +312,8 @@ class ProcessSidebar(BaseSidebar):
 
         self.normalize_e6_btn.toggled.connect(self._on_normalize_e6_toggled)
         self.positive_source_btn.toggled.connect(self._on_positive_source_toggled)
+        self.use_luma_avg_btn.toggled.connect(self._on_use_luma_average_toggled)
+        self.use_color_avg_btn.toggled.connect(self._on_use_color_average_toggled)
         self.sync_ui()
 
     def _on_white_point_changed(self, val: float, persist: bool = True) -> None:
@@ -333,6 +355,22 @@ class ProcessSidebar(BaseSidebar):
         self.controller.set_roll_default(
             "process",
             positive_source=checked,
+            **invalidate_local_bounds(self.state.config.process),
+        )
+
+    def _on_use_luma_average_toggled(self, checked: bool) -> None:
+        self._toggle_roll_axis(use_luma_average=checked)
+
+    def _on_use_color_average_toggled(self, checked: bool) -> None:
+        self._toggle_roll_axis(use_color_average=checked)
+
+    def _toggle_roll_axis(self, **axis: bool) -> None:
+        # The other axis re-derives per frame, so a fresh analysis is forced; roll_name
+        # drops since the picked baseline no longer applies as a whole.
+        self.controller.set_roll_default(
+            "process",
+            roll_name=None,
+            **axis,
             **invalidate_local_bounds(self.state.config.process),
         )
 
@@ -378,6 +416,8 @@ class ProcessSidebar(BaseSidebar):
             self.analysis_buffer_slider.setValue(conf.analysis_buffer)
             self.luma_range_clip_slider.setValue(_luma_range_value_to_slider(conf.luma_range_clip))
             self.color_range_clip_slider.setValue(_color_value_to_slider(conf.color_range_clip))
+            self.use_luma_avg_btn.setChecked(conf.use_luma_average)
+            self.use_color_avg_btn.setChecked(conf.use_color_average)
 
             # Transparency transfer: the stretch is a fixed window anchored to the decoder's white
             # level, so nothing that tunes a measured stretch has anything to act on.
@@ -450,6 +490,8 @@ class ProcessSidebar(BaseSidebar):
                 self.analysis_buffer_slider,
                 self.analysis_region_btn,
                 self.clear_analysis_region_btn,
+                self.use_luma_avg_btn,
+                self.use_color_avg_btn,
                 self.luma_range_clip_slider,
                 self.color_range_clip_slider,
                 self.lock_bounds_btn,
@@ -488,6 +530,8 @@ class ProcessSidebar(BaseSidebar):
             self.ch_b_btn,
             self.analysis_buffer_slider,
             self.analysis_region_btn,
+            self.use_luma_avg_btn,
+            self.use_color_avg_btn,
             self.luma_range_clip_slider,
             self.color_range_clip_slider,
             self.white_point_slider,

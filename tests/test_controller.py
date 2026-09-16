@@ -22,6 +22,7 @@ from negpy.domain.models import (
     WorkspaceConfig,
 )
 from negpy.infrastructure.scanners.params import ScanParams
+from negpy.services.assets import rolls
 from negpy.services.assets.thumbnails import asset_thumbnail_key
 from negpy.services.rendering.preview_manager import PreviewManager
 
@@ -2393,6 +2394,73 @@ class TestPresetExportSelected(unittest.TestCase):
         message = next(m for m in msgs if "far from the roll average" in m)
         self.assertIn("locked frame", message)
         self.assertIn("scan.tif", message)
+
+    def test_batch_normalization_records_the_rolls_own_baseline_when_a_roll_is_active(self):
+        self.mock_session_manager.state.active_roll_id = "roll-1"
+        self.mock_session_manager.repo.load_file_settings.return_value = None
+        self.mock_session_manager.config_for_asset.return_value = WorkspaceConfig()
+
+        with patch.object(rolls, "set_roll_normalization") as mock_set:
+            self.controller._on_normalization_finished((0.1, 0.1, 0.1), (0.9, 0.9, 0.9), [])
+
+        mock_set.assert_called_once_with(self.mock_session_manager.repo, "roll-1", (0.1, 0.1, 0.1), (0.9, 0.9, 0.9))
+
+    def test_batch_normalization_does_not_touch_the_roll_store_without_an_active_roll(self):
+        self.mock_session_manager.state.active_roll_id = None
+        self.mock_session_manager.repo.load_file_settings.return_value = None
+        self.mock_session_manager.config_for_asset.return_value = WorkspaceConfig()
+
+        with patch.object(rolls, "set_roll_normalization") as mock_set:
+            self.controller._on_normalization_finished((0.1, 0.1, 0.1), (0.9, 0.9, 0.9), [])
+
+        mock_set.assert_not_called()
+
+    def test_apply_normalization_roll_is_a_noop_for_an_unanalyzed_roll(self):
+        with patch.object(rolls, "roll_normalization", return_value=None):
+            self.controller.apply_normalization_roll("roll-1")
+
+        self.mock_session_manager.repo.save_file_settings.assert_not_called()
+        self.mock_session_manager.update_config.assert_not_called()
+
+    def test_apply_normalization_roll_loads_the_saved_baseline_onto_every_file(self):
+        self.mock_session_manager.repo.load_file_settings.return_value = None
+        self.mock_session_manager.config_for_asset.return_value = WorkspaceConfig()
+        data = {"floors": (0.1, 0.1, 0.1), "ceils": (0.9, 0.9, 0.9), "cast": (0.0, 0.0, 0.0)}
+
+        with (
+            patch.object(rolls, "roll_normalization", return_value=data),
+            patch.object(rolls, "roll_for_id", return_value={"name": "Tri-X"}),
+        ):
+            self.controller.apply_normalization_roll("roll-1")
+
+        saved = {c.args[0]: c.args[1] for c in self.mock_session_manager.repo.save_file_settings.call_args_list}
+        self.assertEqual(set(saved), {"h1", "h2", "h3"})
+        self.assertTrue(saved["h1"].process.use_luma_average)
+        self.assertTrue(saved["h1"].process.use_color_average)
+        self.assertEqual(saved["h1"].process.locked_floors, (0.1, 0.1, 0.1))
+        self.assertEqual(saved["h1"].process.roll_name, "Tri-X")
+        # h2 is the active frame -- its in-memory state also updates via update_config.
+        pushed = {c.args[0] for c in self.mock_session_manager.push_external_history.call_args_list}
+        self.assertEqual(pushed, {"h1", "h3"})
+        self.mock_session_manager.update_config.assert_called_once()
+        new_cfg = self.mock_session_manager.update_config.call_args.args[0]
+        self.assertEqual(new_cfg.process.roll_name, "Tri-X")
+
+    def test_apply_normalization_roll_skips_locked_frames(self):
+        locked_cfg = replace(WorkspaceConfig(), process=replace(WorkspaceConfig().process, lock_bounds=True))
+        self.mock_session_manager.repo.load_file_settings.side_effect = lambda h: locked_cfg if h == "h1" else None
+        self.mock_session_manager.config_for_asset.return_value = WorkspaceConfig()
+        data = {"floors": (0.1, 0.1, 0.1), "ceils": (0.9, 0.9, 0.9), "cast": (0.0, 0.0, 0.0)}
+
+        with (
+            patch.object(rolls, "roll_normalization", return_value=data),
+            patch.object(rolls, "roll_for_id", return_value={"name": "Tri-X"}),
+        ):
+            self.controller.apply_normalization_roll("roll-1")
+
+        saved = {c.args[0]: c.args[1] for c in self.mock_session_manager.repo.save_file_settings.call_args_list}
+        self.assertNotIn("h1", saved)  # locked frame keeps its own exposure
+        self.assertIn("h3", saved)
 
     def test_request_reset_roll_resets_every_visible_frame(self):
         self.controller.request_reset_roll()

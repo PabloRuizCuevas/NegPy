@@ -23,10 +23,12 @@ from negpy.services.assets.rolls import (
     roll_defaults,
     roll_edit_hash,
     roll_for_id,
+    roll_normalization,
     rolls_containing_path,
     saved_rolls,
     set_frame_override,
     set_roll_defaults,
+    set_roll_normalization,
     unfork_edit,
     unforked_hash,
     virtual_rolls,
@@ -347,3 +349,52 @@ class TestRollDefaults:
         resolved = resolve_roll_process_config(repo, roll_id, "h1", ProcessConfig(process_mode=ProcessMode.C41))
 
         assert resolved.process_mode == ProcessMode.BW
+
+
+class TestRollNormalization:
+    """A roll's own Batch Analysis baseline: written only by Batch Analysis itself, read
+    by any frame's Use Luma/Color Average axes -- unlike ROLL_DEFAULT_FIELDS, this has no
+    lock/override of its own."""
+
+    def test_unanalyzed_roll_has_no_baseline(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        assert roll_normalization(repo, roll_id) is None
+
+    def test_reads_back_what_was_set(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_normalization(repo, roll_id, (0.1, 0.1, 0.1), (0.9, 0.9, 0.9), (0.01, 0.0, -0.01))
+
+        data = roll_normalization(repo, roll_id)
+
+        assert data == {"floors": (0.1, 0.1, 0.1), "ceils": (0.9, 0.9, 0.9), "cast": (0.01, 0.0, -0.01)}
+
+    def test_defaults_cast_to_zero(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_normalization(repo, roll_id, (0.1, 0.1, 0.1), (0.9, 0.9, 0.9))
+
+        assert roll_normalization(repo, roll_id)["cast"] == (0.0, 0.0, 0.0)
+
+    def test_overwrites_a_previous_baseline(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_normalization(repo, roll_id, (0.1, 0.1, 0.1), (0.9, 0.9, 0.9))
+        set_roll_normalization(repo, roll_id, (0.2, 0.2, 0.2), (0.8, 0.8, 0.8))
+
+        assert roll_normalization(repo, roll_id)["floors"] == (0.2, 0.2, 0.2)
+
+    def test_set_on_unknown_roll_is_a_noop(self):
+        repo = _repo()
+        set_roll_normalization(repo, "not-a-real-id", (0.1, 0.1, 0.1), (0.9, 0.9, 0.9))
+        assert saved_rolls(repo) == {}
+
+    def test_normalization_is_isolated_per_roll(self):
+        repo = _repo()
+        roll_a = create_virtual_roll(repo, "Portra", [])
+        roll_b = create_virtual_roll(repo, "Tri-X", [])
+        set_roll_normalization(repo, roll_a, (0.1, 0.1, 0.1), (0.9, 0.9, 0.9))
+
+        assert roll_normalization(repo, roll_a) is not None
+        assert roll_normalization(repo, roll_b) is None

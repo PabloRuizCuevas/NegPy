@@ -42,7 +42,7 @@ While a peek is up the canvas carries a **NEGATIVE**, **EMBEDDED** or **FLAT SCA
 
 | Tab | Icon | Panels | What it is for |
 |-----|------|--------|---------------|
-| **Roll** | film | Calibration · Demosaic · Roll Analysis · Normalization · Presets | Film type, capture-side color corrections, negative→positive normalization, roll-wide baselines |
+| **Roll** | film | Calibration · Demosaic · Normalization · Presets | Film type, capture-side color corrections, negative→positive normalization, roll-wide baselines |
 
 Beside Roll sits **Frame**, whose own tab bar follows the order you work in, mirroring the processing pipeline:
 
@@ -125,7 +125,7 @@ Either way NegPy reads the folder from disk and never creates, renames, moves or
 
 **Click** a roll to select it, **double-click** (or **Enter**) to open it. Opening asks whether to **load the roll** — only then does NegPy hash and thumbnail its frames, which is the part that takes a moment on a big roll. Say no and your open frames stay as they were. Tick **Always load without asking** in that prompt if you would rather it just get on with it. Opening a roll replaces what is in the Film Strip; nothing is lost either way, because your edits live in NegPy's database, keyed to each image, not to the list of open files.
 
-Right-click a roll for **Rename…** and **Delete…**. Deleting only forgets the roll record — the folder, its images and their edits are untouched, and a folder roll can always be re-imported. To forget every roll at once, use **Clear Library** in *Manage Database*.
+Right-click a roll for **Rename…** and **Delete…**. Deleting only forgets the roll record — the folder, its images and their edits are untouched, and a folder roll can always be re-imported. To forget every roll at once, use **Clear Library** in *Manage Database*. Right-click the **loaded** roll for **Analyze Roll…** as well: it runs Batch Analysis ([§10.3](#103-normalization-negative--positive)) and stores the result as that roll's baseline, so any frame's **Use Luma Average** / **Use Color Average** can borrow it later, from this roll or another. It is grayed out on a roll you have not opened, since Batch Analysis measures the files currently loaded.
 
 #### Rolls that are not folders
 
@@ -753,7 +753,7 @@ Bayer and X-Trans RAW only: a scanner TIFF, a Pakon scan or a linear DNG arrives
 <!-- panel:process -->
 ### 10.3 Normalization: negative → positive
 
-How the negative is measured and normalized into a positive. The film mode that decides *which* conversion runs sits above the panels (§10), and how the scan is decoded lives in **Calibration** (§10.1). Roll Analysis, the batch meter below, and the per-frame bounds and Point sliders further down are one card: getting a negative to a correctly normalized positive is one job, whether you run it as a roll-wide batch or nudge one frame's own result. Everything here except Batch Analysis itself follows the Roll tab's usual **Apply to All Roll** / **Apply to Selected** — see [§10](#10-roll-tab) — so editing one of these fields marks this card **This Frame Only** until applied.
+How the negative is measured and normalized into a positive. The film mode that decides *which* conversion runs sits above the panels (§10), and how the scan is decoded lives in **Calibration** (§10.1). The Roll Baseline picker below and the per-frame bounds and Point sliders further down are one card: getting a negative to a correctly normalized positive is one job, whether a frame borrows a roll's shared meter or measures its own. Every field here follows the Roll tab's usual **Apply to All Roll** / **Apply to Selected** — see [§10](#10-roll-tab) — so editing one marks this card **This Frame Only** until applied.
 
 *   **Multi-core CPU rendering** (**Preferences → Performance**, beside **GPU acceleration**): spreads the CPU rendering kernels across your cores. It takes effect immediately, with no recompile and no restart.
 
@@ -761,14 +761,9 @@ How the negative is measured and normalized into a positive. The film mode that 
 
     On Windows and Linux this is **on**. On macOS it is **off**, pending more evidence: the underlying threading layer terminates the process outright if two threads enter it at once, and while NegPy serialises every such call behind a lock, that has been proven on one Mac rather than on the range of them. If you turn it on and the app ever closes without warning, NegPy notices on the next launch and offers to turn it back off; that is the failure to expect, and it is recoverable. Setting `cpu_parallel` under `[performance]` in `override.toml` still wins over Preferences, for a machine that cannot start.
 
-**Batch Analysis**: meter the whole roll once and share the baseline, so frames from the same film match. Unlike the rest of this card, this runs immediately on every loaded file — it is a job, not a value to preview and apply.
+**Batch Analysis**: meter the whole roll once and share the baseline, so frames from the same film match. It is a **Library** action, not a value on this card — right-click the loaded roll and choose **Analyze Roll…** ([§2](#2-film-strip-left-panel)). It scans every loaded file and computes a roll-average density and color balance, discarding outliers, and stores the result as that roll's baseline. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)* A frame with **Lock Bounds** on keeps its own exposure and is skipped. The status message afterward names any frame whose own measurement was discarded as an outlier: that frame is still given the roll average like everyone else, but the mismatch is worth a look — usually **Use Luma Average** / **Use Color Average** off for that one frame, below.
 
-*   **Roll picker**: type to search every roll in your library, the same list the Library section shows — a roll with a saved baseline is ticked. Defaults to the loaded roll. Picking a different, ticked roll shows a hint that its baseline was saved for that roll, not this one.
-*   **Apply**: runs the picked roll. On the loaded roll it scans every loaded file and computes a roll-average density and color balance, discarding outliers — run it once after importing, and again any time to redo it. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)* On a different, ticked roll it loads that roll's stored bounds and balance instead of re-scanning. A frame with **Lock Bounds** on keeps its own exposure and is skipped. The status line afterward names any frame whose own measurement was discarded as an outlier: that frame is still given the roll average like everyone else, but the mismatch is worth a look — usually **Use Luma Average** / **Use Color Average** off for that one frame, below.
-*   **Save**: store the current bounds and balance as the picked roll's baseline, ticking it.
-*   **Delete**: clear the picked roll's saved baseline (it asks first; disabled until it has one). The frames keep their current look; only the saved baseline goes.
-*   **Use Luma Average**: this frame takes the roll-wide tonal range; color still re-derives per frame.
-*   **Use Color Average**: this frame takes the roll-wide color balance; tonal range still re-derives per frame. Enable both for a fully consistent roll; leave both off for per-image auto-exposure.
+*   **Roll Baseline**: type to search every roll in your library, the same list the Library section shows — a roll with a saved baseline is ticked. Defaults to the loaded roll. Picking a roll loads its baseline immediately, no separate Apply step; picking a different, ticked roll shows a hint that its baseline was saved for that roll, not this one. Picking a roll with no saved baseline yet does nothing until it has been analyzed.
 
 **Analysis window**, where NegPy measures the black and white points. The slider takes half the row, the three buttons the other half:
 
@@ -778,6 +773,8 @@ How the negative is measured and normalized into a positive. The film mode that 
 
 **Normalization tuning:**
 
+*   **Use Luma Average**: this frame takes the picked roll's tonal range instead of its own analysis; color still re-derives per frame. Disables Luma Range Clip while on.
+*   **Use Color Average**: this frame takes the picked roll's color balance instead of its own analysis; tonal range still re-derives per frame. Disables Color Clip while on. Enable both for a fully consistent roll; leave both off for per-image auto-exposure.
 *   **Luma Range Clip** (-100 to 100): how aggressively the tonal range, the black/white-point span, is set. Neutral already applies a small robust clip. Positive tightens it, which is good for dense or fogged negatives where a few stray pixels would push the bounds to extremes. Negative pushes the bounds *outward*, for lifted blacks and unclipped highlights.
 *   **Color Clip** (-100 to 100): the per-channel color-balance clip (orange-mask removal), independent of the tonal range. Positive tightens channel balance; negative samples nearer the extremes.
 *   **Global / R / G / B** selector → **White Point** / **Black Point** (-0.25 to 0.25): manual offsets on top of the auto-detected bounds. A positive white point brightens; a positive black point lifts blacks. In R/G/B mode these become per-layer trims: per-dye-layer film-base (Dmin) and Dmax corrections, which is scanner-style per-channel levels. The selector is hidden in B&W Negative, where per-layer trims are meaningless, and in Transparency with Normalize off, where the sliders it scopes are hidden with the rest of the normalization tuning.
@@ -864,7 +861,7 @@ Searches the gear you've declared as your own (§12); pick **Other…** for the 
 *   **Saved setup**: pick a digitizing setup from the library to fill Scanning. Typing over it unlinks it.
 *   **Scanning**: scan method or notes. EXIF `Software` is always `NegPy`.
 *   **Clear**: empties the saved setup and the scanning note. Roll and Frame stay, since the scan stamps them rather than the setup.
-*   **Roll / Frame**: Scanlight capture roll name and frame number, stamped automatically on capture and editable here. Available in export filename templates as `{{ roll }}` and `{{ frame }}`, and written to XMP as `negpy:CaptureRoll` and `negpy:CaptureFrame` when set. Not the Roll Analysis normalization name.
+*   **Roll / Frame**: Scanlight capture roll name and frame number, stamped automatically on capture and editable here. Available in export filename templates as `{{ roll }}` and `{{ frame }}`, and written to XMP as `negpy:CaptureRoll` and `negpy:CaptureFrame` when set. Not the Normalization card's Roll Baseline name.
 
 <!-- panel:metadata_exposure -->
 ### Exposure

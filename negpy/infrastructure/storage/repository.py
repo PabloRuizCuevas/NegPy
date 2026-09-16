@@ -43,20 +43,6 @@ class StorageRepository(IRepository):
                 )
             """)
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS normalization_rolls (
-                    name TEXT PRIMARY KEY,
-                    floors_json TEXT,
-                    ceils_json TEXT,
-                    cast_json TEXT
-                )
-            """)
-            # Migration: add cast_json if not exists
-            try:
-                conn.execute("ALTER TABLE normalization_rolls ADD COLUMN cast_json TEXT")
-            except sqlite3.OperationalError:
-                pass
-
-            conn.execute("""
                 CREATE TABLE IF NOT EXISTS edit_history (
                     file_hash TEXT,
                     step_index INTEGER,
@@ -110,47 +96,6 @@ class StorageRepository(IRepository):
                     value_json TEXT
                 )
             """)
-
-    def save_normalization_roll(self, name: str, floors: tuple, ceils: tuple, cast: tuple = (0.0, 0.0, 0.0)) -> None:
-        """
-        Persists a named normalization baseline (roll).
-        """
-        with self._connect(self.edits_db_path) as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO normalization_rolls (name, floors_json, ceils_json, cast_json) VALUES (?, ?, ?, ?)",
-                (name, json.dumps(floors), json.dumps(ceils), json.dumps(cast)),
-            )
-
-    def load_normalization_roll(self, name: str) -> Optional[tuple[tuple, tuple]]:
-        """
-        Retrieves a named normalization baseline.
-        """
-        with self._connect(self.edits_db_path) as conn:
-            cursor = conn.execute(
-                "SELECT floors_json, ceils_json FROM normalization_rolls WHERE name = ?",
-                (name,),
-            )
-            row = cursor.fetchone()
-            if row:
-                floors = tuple(json.loads(row[0]))
-                ceils = tuple(json.loads(row[1]))
-                return floors, ceils
-        return None
-
-    def list_normalization_rolls(self) -> list[str]:
-        """
-        Returns names of all saved normalization rolls.
-        """
-        with self._connect(self.edits_db_path) as conn:
-            cursor = conn.execute("SELECT name FROM normalization_rolls ORDER BY name")
-            return [row[0] for row in cursor.fetchall()]
-
-    def delete_normalization_roll(self, name: str) -> None:
-        """
-        Deletes a named normalization baseline.
-        """
-        with self._connect(self.edits_db_path) as conn:
-            conn.execute("DELETE FROM normalization_rolls WHERE name = ?", (name,))
 
     def save_file_mark(self, file_hash: str, mark: Optional[str], file_path: str = "") -> None:
         """Persists a triage mark ('keeper'/'excluded'); None clears it."""
@@ -463,7 +408,6 @@ class StorageRepository(IRepository):
             edit_history = self._count(conn, "edit_history")
             work_prints = self._count(conn, "work_prints")
             file_marks = self._count(conn, "file_marks")
-            normalization_rolls = self._count(conn, "normalization_rolls")
 
         with self._connect(self.settings_db_path) as conn:
             global_settings = self._count(conn, "global_settings")
@@ -477,7 +421,6 @@ class StorageRepository(IRepository):
             "edit_history": edit_history,
             "work_prints": work_prints,
             "file_marks": file_marks,
-            "normalization_rolls": normalization_rolls,
             "export_presets": export_presets,
             # global_settings rows minus the single export_presets row (if present).
             "app_preferences": max(0, global_settings - (1 if has_presets_row else 0)),
@@ -502,20 +445,18 @@ class StorageRepository(IRepository):
 
     def clear_saved_edits(self) -> None:
         """Drop per-image looks: saved edits, their undo history, work prints, and
-        keep/reject marks. Rig calibration (normalization rolls), export presets, and app
-        preferences are left intact — so a reloaded image starts from defaults
-        without losing the user's tooling. Flat-field profiles live in the file
-        store (APP_CONFIG.flatfield_dir), not here, so they are untouched too."""
+        keep/reject marks. Rig calibration, export presets, and app preferences are
+        left intact — so a reloaded image starts from defaults without losing the
+        user's tooling. Flat-field profiles live in the file store
+        (APP_CONFIG.flatfield_dir), not here, so they are untouched too."""
         self._wipe(self.edits_db_path, ["file_settings", "edit_history", "work_prints", "file_marks"])
 
     def reset_everything(self) -> None:
         """Full clean slate: every table in both databases. Export presets, rig
-        profiles, and all app preferences go too. Schema is preserved (rows only),
-        so the app keeps working against the emptied databases without re-init.
-        File-store assets (flat-field profiles, sensor/crosstalk matrices) are on
-        disk, not in these databases, so they survive — as with a fresh install."""
-        self._wipe(
-            self.edits_db_path,
-            ["file_settings", "edit_history", "work_prints", "file_marks", "normalization_rolls"],
-        )
+        profiles, roll baselines and all app preferences go too, the last three
+        living in global_settings. Schema is preserved (rows only), so the app keeps
+        working against the emptied databases without re-init. File-store assets
+        (flat-field profiles, sensor/crosstalk matrices) are on disk, not in these
+        databases, so they survive — as with a fresh install."""
+        self._wipe(self.edits_db_path, ["file_settings", "edit_history", "work_prints", "file_marks"])
         self._wipe(self.settings_db_path, ["global_settings"])

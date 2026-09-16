@@ -330,3 +330,27 @@ def resolve_roll_process_config(repo: Any, roll_id: Optional[str], file_hash: st
             if name in defaults:
                 updates[name] = defaults[name]
     return replace(process_config, **updates) if updates else process_config
+
+
+def roll_normalization(repo: Any, roll_id: str) -> Optional[Dict[str, tuple]]:
+    """The roll's saved Batch Analysis baseline (floors, ceils, cast), or None if it
+    has never been analyzed. Unlike roll_defaults, this is written only by Batch
+    Analysis itself -- a metering run over the roll's files, not a per-frame edit --
+    so a frame's own Use Luma/Color Average axes borrow it directly rather than
+    through the lock/override machinery above."""
+    entry = roll_for_id(repo, roll_id)
+    saved = entry.get("normalization") if entry else None
+    if not saved:
+        return None
+    return {"floors": tuple(saved["floors"]), "ceils": tuple(saved["ceils"]), "cast": tuple(saved["cast"])}
+
+
+def set_roll_normalization(repo: Any, roll_id: str, floors: tuple, ceils: tuple, cast: tuple = (0.0, 0.0, 0.0)) -> None:
+    """Records a Batch Analysis result as the roll's own baseline, overwriting
+    whatever was there. No-op for an unknown roll id."""
+    store = _read(repo)
+    entry = store.get(roll_id)
+    if entry is None:
+        return
+    entry["normalization"] = {"floors": list(floors), "ceils": list(ceils), "cast": list(cast)}
+    _write(repo, store)
