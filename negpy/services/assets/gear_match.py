@@ -32,9 +32,7 @@ _MIN_SQUASH_LEN = 4
 # Common still-film box speeds. A folder's own roll-sequence prefix ("05_...") or a film
 # format number ("120") is never one of these, so the whitelist alone keeps them out without
 # tracking token position.
-_ISO_VALUES = frozenset(
-    {25, 32, 40, 50, 64, 80, 100, 125, 160, 200, 250, 320, 400, 500, 640, 800, 1000, 1250, 1600, 3200, 6400}
-)
+_ISO_VALUES = frozenset({25, 32, 40, 50, 64, 80, 100, 125, 160, 200, 250, 320, 400, 500, 640, 800, 1000, 1250, 1600, 3200, 6400})
 _DIGITS_RE = re.compile(r"\d+")
 _DATE_RE = re.compile(r"(?<!\d)(\d{4})[-_. ]?(\d{2})[-_. ]?(\d{2})(?!\d)")
 
