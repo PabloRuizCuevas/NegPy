@@ -42,16 +42,17 @@ _ROLL_EDIT_SCOPES = {
 
 # ControlsPanel sections built into the Roll tab (_build_roll_page), not a Frame sub-tab --
 # reveal_section routes these to the Roll group instead of Frame's inner tab switcher.
-_ROLL_SECTION_ATTRS = frozenset({"sensor_section", "demosaic_section", "roll_section", "process_section"})
+_ROLL_SECTION_ATTRS = frozenset({"sensor_section", "demosaic_section", "process_section"})
 
 
 class RightPanel(QWidget):
     """
     Right sidebar panel: a flat tab switcher across Roll / Frame / Metadata / Gear /
     Export / Scan. Roll leads, since it's what you settle before working a frame:
-    Calibration and Demosaic decide how the rig's files decode, Roll Analysis and
-    Normalization set one shared exposure baseline, Presets stores reusable field sets
-    -- none of it is a per-frame edit. Frame holds a sticky Analysis section pinned
+    Calibration and Demosaic decide how the rig's files decode, Normalization (which
+    holds Roll Analysis, the batch meter, as well) sets one shared exposure baseline,
+    Presets stores reusable field sets -- none of it is a per-frame edit. Frame holds
+    a sticky Analysis section pinned
     above the per-image workflow control groups (Geometry / Tone / Color / Finish),
     Favorites and History -- every tab that changes what the canvas shows for the one
     loaded frame. Metadata pins its own Preview above its per-frame cards the same way
@@ -282,9 +283,10 @@ class RightPanel(QWidget):
 
     def _build_roll_page(self) -> QWidget:
         """Facts the whole roll shares, not one frame's own edit: what rig scanned it and
-        how (Calibration, Demosaic), the roll's shared exposure baseline (Roll Analysis,
-        Normalization), and reusable edit presets. Film mode leads, same as it always has,
-        since it decides which of the others even apply."""
+        how (Calibration, Demosaic), the roll's shared exposure baseline (Normalization,
+        which holds Roll Analysis's batch meter too), and reusable edit presets. Film
+        mode leads, same as it always has, since it decides which of the others even
+        apply."""
         cp = self.controls_panel
         page = QWidget()
         page_layout = QVBoxLayout(page)
@@ -293,7 +295,7 @@ class RightPanel(QWidget):
         page_layout.addWidget(cp.roll_override_summary)
         page_layout.addWidget(self._build_roll_scope_control())
         page_layout.addWidget(cp.process_sidebar.mode_bar)
-        for section in (cp.sensor_section, cp.demosaic_section, cp.roll_section, cp.process_section, cp.presets_section):
+        for section in (cp.sensor_section, cp.demosaic_section, cp.process_section, cp.presets_section):
             page_layout.addWidget(section)
         page_layout.addStretch(1)
         return page

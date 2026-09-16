@@ -369,7 +369,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "what keeps <b>Flat masters</b> consistent across a roll."
             ),
             target=_roll,
-            section_attr="roll_section",
+            section_attr="process_section",
         ),
         TutorialStep(
             title="Exposure: Density & Grade",

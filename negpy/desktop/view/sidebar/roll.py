@@ -95,14 +95,15 @@ class RollAnalysisSidebar(BaseSidebar):
 
     def _toggle_roll_axis(self, **axis: bool) -> None:
         """
-        Flip one roll-average axis. The other axis re-derives per frame, so we clear
-        the cached local bounds to force a fresh analysis, and drop roll_name (the
-        baseline is no longer applied as a named whole).
+        Flip one roll-average axis: a Normalization-card field like any other now, so
+        it locks the card to this frame the instant it changes and Apply to All Roll /
+        Apply to Selected is what spreads it. The other axis re-derives per frame, so
+        we clear the cached local bounds to force a fresh analysis, and drop roll_name
+        (the baseline is no longer applied as a named whole).
         """
-        self.update_config_section(
+        self.controller.set_roll_default(
             "process",
             persist=True,
-            render=True,
             roll_name=None,
             **axis,
             **invalidate_local_bounds(self.state.config.process),

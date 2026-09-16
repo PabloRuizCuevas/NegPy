@@ -748,10 +748,18 @@ Bayer and X-Trans RAW only: a scanner TIFF, a Pakon scan or a linear DNG arrives
 
 *   **Preview** / **Export** (default **Auto** for both): *Auto* keeps NegPy's own choice, a fast half-size decode on screen and AHD for export. For the preview, Auto and Linear are the fastest; the others decode at full size. **AHD** is LibRaw's balanced default, **VNG** the smooth one, **PPG** fast with clean edges, **DCB** and **DHT** chase fine detail, and **AAHD** softens edges to suppress artifacts.
 
-<!-- panel:roll -->
-### 10.3 Roll Analysis: a consistent look across the roll
+<!-- panel:process -->
+### 10.3 Normalization: negative → positive
 
-Meter the whole roll once and share the baseline, so frames from the same film match.
+How the negative is measured and normalized into a positive. The film mode that decides *which* conversion runs sits above the panels (§10), and how the scan is decoded lives in **Calibration** (§10.1). Roll Analysis, the batch meter below, and the per-frame bounds and Point sliders further down are one card: getting a negative to a correctly normalized positive is one job, whether you run it as a roll-wide batch or nudge one frame's own result. Everything here except Batch Analysis itself follows the Roll tab's usual **Apply to All Roll** / **Apply to Selected** — see [§10](#10-roll-tab) — so editing one of these fields marks this card **This Frame Only** until applied.
+
+*   **Multi-core CPU rendering** (**Preferences → Performance**, beside **GPU acceleration**): spreads the CPU rendering kernels across your cores. It takes effect immediately, with no recompile and no restart.
+
+    Be realistic about the gain. The kernels run much faster, but a merge is dominated by decoding the RAW files, which this does not touch, so the whole operation comes down by only about a tenth. Ordinary editing changes less again, because the GPU already carries the pipeline. The gain is largest wherever the CPU does the work: merges, exports, and any machine without a usable GPU.
+
+    On Windows and Linux this is **on**. On macOS it is **off**, pending more evidence: the underlying threading layer terminates the process outright if two threads enter it at once, and while NegPy serialises every such call behind a lock, that has been proven on one Mac rather than on the range of them. If you turn it on and the app ever closes without warning, NegPy notices on the next launch and offers to turn it back off; that is the failure to expect, and it is recoverable. Setting `cpu_parallel` under `[performance]` in `override.toml` still wins over Preferences, for a machine that cannot start.
+
+**Batch Analysis**: meter the whole roll once and share the baseline, so frames from the same film match. Unlike the rest of this card, this runs immediately on every loaded file — it is a job, not a value to preview and apply.
 
 *   **Roll picker**: type to search every roll in your library, the same list the Library section shows — a roll with a saved baseline is ticked. Defaults to the loaded roll. Picking a different, ticked roll shows a hint that its baseline was saved for that roll, not this one.
 *   **Apply**: runs the picked roll. On the loaded roll it scans every loaded file and computes a roll-average density and color balance, discarding outliers — run it once after importing, and again any time to redo it. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)* On a different, ticked roll it loads that roll's stored bounds and balance instead of re-scanning. A frame with **Lock Bounds** on keeps its own exposure and is skipped. The status line afterward names any frame whose own measurement was discarded as an outlier: that frame is still given the roll average like everyone else, but the mismatch is worth a look — usually **Use Luma Average** / **Use Color Average** off for that one frame, below.
@@ -760,22 +768,11 @@ Meter the whole roll once and share the baseline, so frames from the same film m
 *   **Use Luma Average**: this frame takes the roll-wide tonal range; color still re-derives per frame.
 *   **Use Color Average**: this frame takes the roll-wide color balance; tonal range still re-derives per frame. Enable both for a fully consistent roll; leave both off for per-image auto-exposure.
 
-<!-- panel:process -->
-### 10.4 Normalization: negative → positive
-
-How the negative is measured and normalized into a positive. The film mode that decides *which* conversion runs sits above the panels (§10), and how the scan is decoded lives in **Calibration** (§10.1).
-
-*   **Multi-core CPU rendering** (**Preferences → Performance**, beside **GPU acceleration**): spreads the CPU rendering kernels across your cores. It takes effect immediately, with no recompile and no restart.
-
-    Be realistic about the gain. The kernels run much faster, but a merge is dominated by decoding the RAW files, which this does not touch, so the whole operation comes down by only about a tenth. Ordinary editing changes less again, because the GPU already carries the pipeline. The gain is largest wherever the CPU does the work: merges, exports, and any machine without a usable GPU.
-
-    On Windows and Linux this is **on**. On macOS it is **off**, pending more evidence: the underlying threading layer terminates the process outright if two threads enter it at once, and while NegPy serialises every such call behind a lock, that has been proven on one Mac rather than on the range of them. If you turn it on and the app ever closes without warning, NegPy notices on the next launch and offers to turn it back off; that is the failure to expect, and it is recoverable. Setting `cpu_parallel` under `[performance]` in `override.toml` still wins over Preferences, for a machine that cannot start.
-
 **Analysis window**, where NegPy measures the black and white points. The slider takes half the row, the three buttons the other half:
 
 *   **Analysis Buffer** (0.0 to 0.25): insets the measurement window from the frame edge so film rebate, sprocket holes and scanner borders do not skew detection. Raise it on scans with wide borders.
 *   **Analysis Region** (square-draw tool): draw a freehand region on the canvas to meter *exactly* that area, overriding the buffer. Double-click inside to confirm; the ✕ button clears it.
-*   **Lock Bounds** (padlock): freezes the analyzed normalization bounds for this frame, so cropping or moving sliders no longer re-analyzes it, and the roll-wide baseline (§10.3) leaves it untouched, on the first run as well as every re-run. Lock it in once you are happy with the bounds.
+*   **Lock Bounds** (padlock): freezes the analyzed normalization bounds for this frame, so cropping or moving sliders no longer re-analyzes it, and Batch Analysis above leaves it untouched, on the first run as well as every re-run. Lock it in once you are happy with the bounds.
 
 **Normalization tuning:**
 
@@ -809,7 +806,7 @@ How the negative is measured and normalized into a positive. The film mode that 
 **Positive** (default off) sits next to Normalize, slide-only in the same way, and live only with Normalize off. As captured, NegPy reads the source as literal linear data and renders it like a raw capture, with a fixed exposure lift and a filmic highlight roll-off. Turn Positive on when the source is already a finished image, such as a scanned print or an export from other software: NegPy decodes its embedded profile instead (an untagged file falls back to sRGB) and skips the lift and the roll-off, so the Print sliders shape the image directly. With Normalize on it grays out, that render decoding on the source's own profile anyway.
 
 <!-- panel:presets -->
-### 10.5 Presets
+### 10.4 Presets
 
 Save and recall a complete edit, the full workspace, by name.
 
@@ -1069,7 +1066,7 @@ Settings for the whole application, not for one photo. Open them from the canvas
 ### Performance
 
 *   **GPU acceleration**: render the pipeline on the GPU. The active backend is named below the row. Off falls back to the CPU pipeline, which is slower but produces the same image. If the GPU viewport itself fails to start, a warning toast says so at launch and an amber line here repeats it; the display then runs on the CPU.
-*   **Multi-core CPU rendering**: see §10.4. It takes effect at once, with no restart.
+*   **Multi-core CPU rendering**: see §10.3. It takes effect at once, with no restart.
 *   **Preview size** (512 to 8192 px): long edge of the interactive canvas. Higher is sharper at 100% zoom, and costs proportionally more VRAM and CPU per frame, so lower the cache limit and the rendered-frame count to match. RAW files decode at half sensor size for the preview, so there is nothing to gain past half the long edge of your scan.
 *   **Preview cache** and **Preview cache limit**: how many recently-viewed photos stay decoded in memory, and the memory ceiling for them. Lower both on a machine with little RAM.
 *   **HQ buffers**: full-resolution HQ preview buffers kept in memory. Each is large (a 60 MP scan is about 700 MB), and keeping the previous frame makes going back instant.

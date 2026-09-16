@@ -30,12 +30,12 @@ def test_sync_roll_locks_blank_summary_without_an_active_roll():
     panel.roll_override_summary.setText.assert_called_once_with("")
 
 
-def test_sync_roll_locks_says_follows_the_roll_when_nothing_is_overridden():
+def test_sync_roll_locks_blank_summary_when_nothing_is_overridden():
     panel = _panel_stub(locked_cards=())
 
     ControlsPanel._sync_roll_locks(panel)
 
-    panel.roll_override_summary.setText.assert_called_once_with("Follows the roll")
+    panel.roll_override_summary.setText.assert_called_once_with("")
 
 
 def test_sync_roll_locks_names_every_overridden_card():

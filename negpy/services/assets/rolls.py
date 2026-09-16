@@ -238,7 +238,19 @@ ROLL_DEFAULT_FIELDS: Dict[str, tuple] = {
         "hue_trim",
     ),
     "demosaic": ("demosaic_preview", "demosaic_export"),
-    "process": ("e6_normalize", "positive_source", "analysis_buffer", "luma_range_clip", "color_range_clip"),
+    "process": (
+        "e6_normalize",
+        "positive_source",
+        "analysis_buffer",
+        "luma_range_clip",
+        "color_range_clip",
+        # Which baseline this frame's bounds come from -- the roll's shared meter or
+        # its own auto-analysis -- is the same "roll vs. this frame" choice as the
+        # rest of this card's fields, unlike locked_floors/locked_ceils themselves,
+        # which stay Batch Analysis's own job to spread (a metering run, not an edit).
+        "use_luma_average",
+        "use_color_average",
+    ),
 }
 _MODE_FIELD = "process_mode"
 

@@ -6,7 +6,7 @@ from PyQt6.QtCore import QTimer, pyqtSignal
 
 from negpy.desktop.controller import AppController
 from negpy.desktop.view.shortcut_registry import tooltip_with_shortcut
-from negpy.desktop.view.styles.templates import hint_label, set_hint_kind, wrap_tooltip
+from negpy.desktop.view.styles.templates import hint_label, section_subheader, set_hint_kind, wrap_tooltip
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
 from negpy.desktop.view.widgets.charts import MiniHistogramWidget, MiniRGBHistogramWidget
 from negpy.desktop.view.styles.theme import THEME
@@ -162,10 +162,22 @@ class ControlsPanel(QWidget):
         )
 
         self.process_sidebar = ProcessSidebar(self.controller)
+        self.roll_sidebar = RollAnalysisSidebar(self.controller)
+        # Roll Analysis (the batch meter) and Normalization (per-frame bounds, White/
+        # Black Point) are one feature -- getting a negative to a correctly normalized
+        # positive -- so they share a card. Batch Analysis stays its own explicit
+        # action, a job rather than a value to preview or Apply.
+        normalization_body = QWidget()
+        normalization_layout = QVBoxLayout(normalization_body)
+        normalization_layout.setContentsMargins(0, 0, 0, 0)
+        normalization_layout.setSpacing(4)
+        normalization_layout.addWidget(section_subheader("Batch Analysis"))
+        normalization_layout.addWidget(self.roll_sidebar)
+        normalization_layout.addWidget(self.process_sidebar)
         self.process_section = self._make_section(
             "Normalization",
             "process",
-            self.process_sidebar,
+            normalization_body,
             icon_name="fa5s.cogs",
         )
 
@@ -185,14 +197,6 @@ class ControlsPanel(QWidget):
             "demosaic",
             self.demosaic_sidebar,
             icon_name="mdi6.grid",
-        )
-
-        self.roll_sidebar = RollAnalysisSidebar(self.controller)
-        self.roll_section = self._make_section(
-            "Roll Analysis",
-            "roll",
-            self.roll_sidebar,
-            icon_name="mdi6.film",
         )
 
         # One-line answer to "roll-wide or this frame's own": which of Calibration,
@@ -361,7 +365,6 @@ class ControlsPanel(QWidget):
         self.retouch_section.reset_requested.connect(lambda: self.controller.session.reset_section("retouch"))
         self.local_section.reset_requested.connect(lambda: self.controller.session.reset_section("local"))
         self.finish_section.reset_requested.connect(lambda: self.controller.session.reset_section("finish"))
-        self.roll_section.reset_requested.connect(self.controller.clear_roll_baseline)
         self.sensor_section.reset_requested.connect(self._reset_sensor_fields)
         self.demosaic_section.reset_requested.connect(lambda: self._reset_process_fields(_DEMOSAIC_FIELDS))
         self.flatfield_section.reset_requested.connect(self._reset_flatfield)
@@ -794,14 +797,11 @@ class ControlsPanel(QWidget):
             if locked:
                 overridden.append(self._ROLL_CARD_LABELS[card_key])
 
-        if self.controller.state.active_roll_id is None:
-            self.roll_override_summary.setText("")
-        elif overridden:
+        if overridden:
             set_hint_kind(self.roll_override_summary, "warning")
             self.roll_override_summary.setText(f"This frame overrides: {', '.join(overridden)}")
         else:
-            set_hint_kind(self.roll_override_summary, "muted")
-            self.roll_override_summary.setText("Follows the roll")
+            self.roll_override_summary.setText("")
 
     def _update_histogram(self) -> None:
         """Repaint only when the render produced a new buffer."""
@@ -991,7 +991,9 @@ class ControlsPanel(QWidget):
         self.altproc_section.set_modified(altproc_count)
         self.toning_section.set_modified(toning_count)
         self.geometry_section.set_modified(geometry_count)
-        self.process_section.set_modified(process_count)
+        # roll_count (Batch Analysis's averaging axes) counts against the same card now
+        # that Roll Analysis and Normalization share one.
+        self.process_section.set_modified(process_count + roll_count)
         self.retouch_section.set_modified(retouch_count)
         # Presets and the two Scan sections stay out: they own no WorkspaceConfig fields.
         self.sensor_section.set_modified(sensor_count)
@@ -999,7 +1001,6 @@ class ControlsPanel(QWidget):
         self.flatfield_section.set_modified(flatfield_count)
         self.local_section.set_modified(len(cfg.local.masks))
         self.finish_section.set_modified(finish_count)
-        self.roll_section.set_modified(roll_count)
         self.modified_synced.emit()
 
     def _sync_tool_buttons(self) -> None:

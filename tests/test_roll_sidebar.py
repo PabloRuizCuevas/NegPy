@@ -147,11 +147,14 @@ def test_sync_ui_falls_back_to_blank_without_an_active_roll(qapp):
 
 
 def test_toggling_an_average_axis_still_reaches_the_controller(qapp):
+    """Goes through set_roll_default now, the same Normalization card write every
+    other roll-eligible control uses -- flipping it locks the card to this frame."""
     controller, sidebar = _sidebar()
     sidebar.use_luma_avg_btn.setChecked(True)
-    new_cfg = controller.apply_config.call_args[0][0]
-    assert new_cfg.process.use_luma_average is True
-    assert new_cfg.process.roll_name is None
+    args, kwargs = controller.set_roll_default.call_args
+    assert args[0] == "process"
+    assert kwargs["use_luma_average"] is True
+    assert kwargs["roll_name"] is None
 
 
 def test_active_roll_name_is_none_without_a_recognized_roll(qapp):
