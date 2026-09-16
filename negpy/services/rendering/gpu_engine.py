@@ -55,7 +55,7 @@ from negpy.features.exposure.transfer import (
     TRANSFER_CONSTANTS,
     ZONE_BLACK_TAPER,
     TRANSFER_DENSITY_RANGE,
-    is_transparency_transfer,
+    is_transfer_path,
     transfer_bounds,
     transfer_curve_params,
     transfer_widths,
@@ -683,7 +683,7 @@ class GPUEngine:
         unmix_m = effective_crosstalk_matrix(settings.process, settings.process.process_mode)
         # The transparency curve reads working space, so its meter must too: the same
         # camera matrix NormalizationProcessor._process_transparency applies, on the grid.
-        transfer = is_transparency_transfer(settings.process.process_mode, settings.process.e6_normalize)
+        transfer = is_transfer_path(settings.process.process_mode, settings.process.e6_normalize, settings.process.positive_source)
         cam_m = (
             camera_to_working_matrix(
                 cam_xyz, camera_wb if should_fold_camera_wb(settings.process, settings.exposure.render_intent) else None
@@ -1078,7 +1078,7 @@ class GPUEngine:
                     )
                     # A tiled export passes a per-tile slice, which is not reusable.
                     self._local_ev_key = None if tiled_maps else ev_key
-            if is_transparency_transfer(settings.process.process_mode, settings.process.e6_normalize):
+            if is_transfer_path(settings.process.process_mode, settings.process.e6_normalize, settings.process.positive_source):
                 # The transfer curve takes no dodge/burn map: local EV is a print-exposure
                 # input, and this path replaces the print.
                 self._dispatch_pass(
@@ -1500,7 +1500,7 @@ class GPUEngine:
 
         # Transparency transfer: the fixed window, with no WP/BP trims. Mirrors
         # NormalizationProcessor._process_transparency, whose identity they would break.
-        if is_transparency_transfer(settings.process.process_mode, settings.process.e6_normalize):
+        if is_transfer_path(settings.process.process_mode, settings.process.e6_normalize, settings.process.positive_source):
             t_floors, t_ceils = transfer_bounds()
             adj_floors, adj_ceils = t_floors, t_ceils
 
@@ -2404,7 +2404,7 @@ class GPUEngine:
         if settings.exposure.cast_removal_strength > 0.0 and settings.process.process_mode != ProcessMode.BW:
             if settings.process.process_mode == ProcessMode.C41:
                 global_shadow_refs = measure_shadow_refs_from_log(_prefiltered(), None, 0.0, sorted_grid=_sorted())
-            if is_transparency_transfer(settings.process.process_mode, settings.process.e6_normalize):
+            if is_transfer_path(settings.process.process_mode, settings.process.e6_normalize, settings.process.positive_source):
                 # Working space and the fixed window, as the transparency curve reads them.
                 cam_m = camera_to_working_matrix(
                     cam_xyz, camera_wb if should_fold_camera_wb(settings.process, settings.exposure.render_intent) else None

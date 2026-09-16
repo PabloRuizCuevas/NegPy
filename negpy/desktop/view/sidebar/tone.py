@@ -428,13 +428,15 @@ class ToneSidebar(BaseSidebar):
             self.paper_combo.setCurrentIndex(paper_idx if paper_idx >= 0 else 0)
             self.paper_combo.setVisible(mode != ProcessMode.E6)
 
-            # Transparency transfer (E-6, Normalize off): the render starts from the capture instead
-            # of printing it, so the paper model and the automatic grading that decides a look have
-            # nothing to act on. Density, Grade, Toe and Shoulder stay, because they drive the
-            # transfer curve (see features/exposure/transfer.py).
-            from negpy.features.exposure.transfer import is_transparency_transfer
+            # Transfer path (an as-captured Slide, or any mode marked Positive): the render
+            # starts from the capture instead of printing it, so the paper model and the
+            # automatic grading that decides a look have nothing to act on. Density, Grade,
+            # Toe and Shoulder stay, because they drive the transfer curve (see
+            # features/exposure/transfer.py).
+            from negpy.features.exposure.transfer import is_transfer_path
 
-            transfer = is_transparency_transfer(mode, self.state.config.process.e6_normalize, conf.render_intent)
+            proc = self.state.config.process
+            transfer = is_transfer_path(mode, proc.e6_normalize, proc.positive_source, conf.render_intent)
             # Shadows and Highlights Density stay live on the transfer path: the curve implements
             # Zone Density with the print's own weights, and they are the only controls there that
             # open shadows without moving the whole scale. Split Grade does not, because it rotates

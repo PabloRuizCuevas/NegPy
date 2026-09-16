@@ -26,7 +26,7 @@ from negpy.features.exposure.transfer import (
     TRANSFER_DENSITY_RANGE,
     apply_transfer_curve,
     display_rendering,
-    is_transparency_transfer,
+    is_transfer_path,
     transfer_bounds,
     transfer_curve_params,
     transfer_widths,
@@ -87,17 +87,25 @@ def _ramp(lo=1e-4, hi=0.6, n=512):
 
 
 class TestModeSelection(unittest.TestCase):
-    def test_only_e6_with_normalize_off_takes_the_transfer_path(self):
-        self.assertTrue(is_transparency_transfer(ProcessMode.E6, False))
-        self.assertFalse(is_transparency_transfer(ProcessMode.E6, True))
-        self.assertFalse(is_transparency_transfer(ProcessMode.C41, False))
-        self.assertFalse(is_transparency_transfer(ProcessMode.BW, False))
+    def test_e6_with_normalize_off_takes_the_transfer_path(self):
+        self.assertTrue(is_transfer_path(ProcessMode.E6, False))
+        self.assertFalse(is_transfer_path(ProcessMode.E6, True))
+        self.assertFalse(is_transfer_path(ProcessMode.C41, False))
+        self.assertFalse(is_transfer_path(ProcessMode.BW, False))
+
+    def test_positive_source_takes_the_transfer_path_on_any_mode(self):
+        """A file already positivized before NegPy saw it has nothing left to meter or
+        invert, in Color and B&W exactly as much as on a slide."""
+        self.assertTrue(is_transfer_path(ProcessMode.C41, False, positive_source=True))
+        self.assertTrue(is_transfer_path(ProcessMode.BW, False, positive_source=True))
+        # On Slide, Normalize on still wins: a metered rescue stretch, not a raw passthrough.
+        self.assertFalse(is_transfer_path(ProcessMode.E6, True, positive_source=True))
 
     def test_flat_intent_still_wins(self):
         """FLAT is an explicit export master; it must not be hijacked by the transfer."""
         from negpy.features.exposure.models import RenderIntent
 
-        self.assertFalse(is_transparency_transfer(ProcessMode.E6, False, RenderIntent.FLAT))
+        self.assertFalse(is_transfer_path(ProcessMode.E6, False, render_intent=RenderIntent.FLAT))
 
 
 class TestIdentityAtDefaults(unittest.TestCase):
@@ -216,20 +224,34 @@ class TestPositiveSourceSkipsDisplayRendering(unittest.TestCase):
     def test_default_is_off_and_unaffected_frames_keep_the_camera_render(self):
         self.assertFalse(ProcessConfig().positive_source)
 
-    def test_stays_off_the_print_path_and_off_normalize_on(self):
-        """Only the as-captured transfer reads it; nowhere else may be affected."""
+    def test_stays_off_the_print_path_when_normalize_is_on(self):
+        """Positive only applies with Normalize off; a metered stretch already decodes
+        on the source's own profile, so it has nothing left to skip."""
         rng = np.random.default_rng(5)
         img = (rng.random((16, 16, 3)) * 0.3 + 0.02).astype(np.float32)
-        for base_cfg in (
-            _e6_config(normalize=True),
-            replace(_e6_config(), process=replace(_e6_config().process, process_mode=ProcessMode.C41)),
-        ):
-            with self.subTest(process_mode=base_cfg.process.process_mode, normalize=base_cfg.process.e6_normalize):
+        base_cfg = _e6_config(normalize=True)
+        on = replace(base_cfg, process=replace(base_cfg.process, positive_source=True))
+        off = replace(base_cfg, process=replace(base_cfg.process, positive_source=False))
+        out_on, _ = _run_stages(img, on)
+        out_off, _ = _run_stages(img, off)
+        self.assertLess(float(np.abs(np.asarray(out_on) - np.asarray(out_off)).max()), 1e-6)
+
+    def test_takes_the_transfer_path_on_color_and_bw_too(self):
+        """Positive is not Slide-only: a C-41 or B&W scan already positivized by the
+        scanner has nothing left to meter or invert either."""
+        rng = np.random.default_rng(5)
+        img = (rng.random((16, 16, 3)) * 0.3 + 0.02).astype(np.float32)
+        for mode in (ProcessMode.C41, ProcessMode.BW):
+            with self.subTest(process_mode=mode):
+                cfg = DEFAULT_WORKSPACE_CONFIG
+                process = replace(cfg.process, process_mode=mode)
+                exposure = replace(cfg.exposure, cast_removal_strength=cast_removal_for_mode(mode, cfg.exposure.cast_removal_strength))
+                base_cfg = replace(cfg, process=process, exposure=exposure)
                 on = replace(base_cfg, process=replace(base_cfg.process, positive_source=True))
                 off = replace(base_cfg, process=replace(base_cfg.process, positive_source=False))
                 out_on, _ = _run_stages(img, on)
                 out_off, _ = _run_stages(img, off)
-                self.assertLess(float(np.abs(np.asarray(out_on) - np.asarray(out_off)).max()), 1e-6)
+                self.assertGreater(float(np.abs(np.asarray(out_on) - np.asarray(out_off)).max()), 1e-3)
 
 
 class TestExposureFaithfulness(unittest.TestCase):
@@ -487,7 +509,7 @@ class TestNormalizationContract(unittest.TestCase):
         the C-41 default process_mode that keeps a bare ProcessConfig on the print path."""
         conf = ProcessConfig()
         self.assertEqual(conf.process_mode, ProcessMode.C41)
-        self.assertFalse(is_transparency_transfer(conf.process_mode, conf.e6_normalize))
+        self.assertFalse(is_transfer_path(conf.process_mode, conf.e6_normalize))
 
 
 @unittest.skipUnless(GPUDevice.get().is_available, "GPU not available")

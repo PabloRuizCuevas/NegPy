@@ -45,7 +45,7 @@ from negpy.features.exposure.normalization import (
 from negpy.features.exposure.transfer import (
     TRANSFER_DENSITY_RANGE,
     apply_transfer_curve,
-    is_transparency_transfer,
+    is_transfer_path,
     transfer_bounds,
     transfer_curve_params,
     transfer_widths,
@@ -71,7 +71,7 @@ class NormalizationProcessor:
 
     def process(self, image: ImageBuffer, context: PipelineContext) -> ImageBuffer:
         epsilon = 1e-6
-        if is_transparency_transfer(context.process_mode, self.config.e6_normalize):
+        if is_transfer_path(context.process_mode, self.config.e6_normalize, self.config.positive_source):
             return self._process_transparency(image, context)
         # No upper clamp, mirroring normalization.wgsl, which clamps only the low side. Values
         # above 1.0 occur only with flat-field gain and must match the GPU.
@@ -296,7 +296,9 @@ class PhotometricProcessor:
     def process(self, image: ImageBuffer, context: PipelineContext) -> ImageBuffer:
         if self.config.render_intent == RenderIntent.FLAT:
             return self._process_flat(image, context)
-        if is_transparency_transfer(context.process_mode, self.process_config.e6_normalize, self.config.render_intent):
+        if is_transfer_path(
+            context.process_mode, self.process_config.e6_normalize, self.process_config.positive_source, self.config.render_intent
+        ):
             return self._process_transparency(image, context)
 
         paper = effective_paper_profile(self.config.paper_profile, context.process_mode)

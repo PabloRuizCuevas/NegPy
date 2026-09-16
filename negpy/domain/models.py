@@ -396,7 +396,7 @@ class WorkspaceConfig:
         collapsed is not one that needed a bracket.
 
         Held here rather than at the render, because e6_normalize is read from
-        `is_transparency_transfer` down through both engines and the sidebars, and a rule
+        `is_transfer_path` down through both engines and the sidebars, and a rule
         applied at some of those is the hidden-but-live trap the Calibration panel already
         learned. Inert everywhere, from one place.
 
