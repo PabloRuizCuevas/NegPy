@@ -2394,6 +2394,19 @@ class TestPresetExportSelected(unittest.TestCase):
         self.assertIn("locked frame", message)
         self.assertIn("scan.tif", message)
 
+    def test_request_reset_roll_resets_every_visible_frame(self):
+        self.controller.request_reset_roll()
+
+        visible = [self.mock_session_manager.state.uploaded_files[i] for i in self.visible_indices]
+        self.mock_session_manager.reset_roll.assert_called_once_with(visible)
+
+    def test_request_reset_roll_with_nothing_visible_does_nothing(self):
+        self.visible_indices = []
+
+        self.controller.request_reset_roll()
+
+        self.mock_session_manager.reset_roll.assert_not_called()
+
 
 class TestSessionRestore(unittest.TestCase):
     def setUp(self):

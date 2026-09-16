@@ -3459,6 +3459,16 @@ class AppController(QObject):
         self.status_progress_requested.emit(0, 0)
         self.request_render()
 
+    def request_reset_roll(self) -> None:
+        """Reset every visible frame to its own bare defaults -- Reset Settings, applied
+        to the whole roll at once."""
+        visible = [self.state.uploaded_files[i] for i in self.session.asset_model.visible_actual_indices_ordered()]
+        if not visible:
+            return
+        self.session.reset_roll(visible)
+        self.set_status(f"Reset {count_of(len(visible), 'frame')} to defaults", timeout=3000)
+        self.request_render()
+
     def save_current_normalization_as_roll(self, name: str) -> None:
         """
         Persists current batch normalization values as a named roll.

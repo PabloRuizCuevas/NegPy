@@ -959,6 +959,35 @@ class TestDesktopSessionSync(unittest.TestCase):
         self.mock_repo.save_history_step.assert_called_with("hash1", 1, edited)
         self.assertEqual(self.session.state.undo_index, 2)
 
+    def test_reset_roll_resets_the_active_frame_in_place(self):
+        self.session.select_file(0)
+        dirty = replace(self.session.state.config, exposure=replace(self.session.state.config.exposure, density=1.8))
+        self.session.update_config(dirty, persist=True)
+
+        self.session.reset_roll(self.session.state.uploaded_files)
+
+        self.assertEqual(self.session.state.config, WorkspaceConfig())
+
+    def test_reset_roll_writes_other_frames_straight_to_the_db(self):
+        self.session.select_file(0)  # hash1 active; hash2 is the "other" frame
+
+        self.session.reset_roll(self.session.state.uploaded_files)
+
+        self.mock_repo.save_file_settings.assert_any_call("hash2", WorkspaceConfig(), file_path="path2")
+        # Recorded as an external history step, undoable after switching to it.
+        steps = [c.args for c in self.mock_repo.save_history_step.call_args_list if c.args[0] == "hash2"]
+        self.assertEqual(len(steps), 2)
+        self.assertEqual(steps[1][2], WorkspaceConfig())
+
+    def test_reset_roll_does_not_touch_a_frame_outside_the_given_list(self):
+        self.session.select_file(0)
+        only_hash1 = [self.session.state.uploaded_files[0]]
+
+        self.session.reset_roll(only_hash1)
+
+        for c in self.mock_repo.save_file_settings.call_args_list:
+            self.assertNotEqual(c.args[0], "hash2")
+
     def test_sync_to_roll_records_target_history(self):
         self.mock_repo.get_max_history_index.return_value = 0
         self.mock_repo.load_history_step.return_value = None

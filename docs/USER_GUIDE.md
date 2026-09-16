@@ -135,7 +135,7 @@ A roll does not have to be a folder, and the same photo can belong to more than 
 
 **A note on Nikon High Efficiency raw.** The Z 8 and Z 9 can record NEFs in **High Efficiency (HE)** or **HE\***, which use a licensed codec NegPy cannot decode. Such a file is still called `.NEF` and still carries the same TIFF compression tag as an ordinary lossless NEF, so nothing looks unusual until it fails to open. NegPy names the reason rather than reporting a generic unsupported-file error. Re-shoot in **Lossless Compressed** NEF, or convert with Adobe DNG Converter. Lossless NEFs from the same cameras open normally.
 
-The **⋮** menu on the Film Strip section's own header, beside its ⓘ guide, holds **New Roll…**: clears the film strip, so you can drag in a fresh batch of frames to build a roll from scratch — **Save as Roll…**, below, is what turns that batch into a reopenable one. This is the same drop as **Clear All…** in the empty-space right-click menu.
+The **⋮** menu on the Film Strip section's own header, beside its ⓘ guide, holds **New Roll…**: clears the film strip, so you can drag in a fresh batch of frames to build a roll from scratch — **Save as Roll…**, below, is what turns that batch into a reopenable one. This is the same drop as **Clear All…** in the empty-space right-click menu. **Reset Roll to Defaults…**, beside it, undoes every visible frame's edit at once — the same reset **Reset Settings** does for one frame, applied to the whole roll; it asks first, and each frame's reset is still an ordinary undo step.
 
 The Film Strip section has its own row of buttons above the frames, for actions that read or rewrite the loaded roll:
 

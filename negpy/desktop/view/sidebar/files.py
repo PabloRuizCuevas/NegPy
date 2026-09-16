@@ -43,7 +43,7 @@ from PyQt6.QtWidgets import (
 from negpy.kernel.system.text import count_of
 from negpy.desktop.controller import AppController
 from negpy.desktop.session import AppState, _source_effective_bounds, composite_kind
-from negpy.desktop.view.confirm import confirm_unload
+from negpy.desktop.view.confirm import confirm_reset_roll, confirm_unload
 from negpy.features.hdr.logic import anchor_choices
 from negpy.features.hdr.models import hdr_frame_paths
 from negpy.desktop.view.widgets.overflow_bar import OverflowBar
@@ -691,7 +691,12 @@ class FileBrowser(QWidget):
         # header has room a wrapping toolbar row does not.
         frames_menu = QMenu(self.frames_section)
         frames_menu.addAction("New Roll…").triggered.connect(self._on_clear_all)
-        self.frames_section.set_actions_menu(frames_menu, "New Roll — clear the film strip so you can drag in a fresh batch of frames")
+        frames_menu.addAction("Reset Roll to Defaults…").triggered.connect(self._on_reset_roll)
+        self.frames_section.set_actions_menu(
+            frames_menu,
+            "New Roll clears the film strip so you can drag in a fresh batch of frames. "
+            "Reset Roll to Defaults undoes every loaded frame's edit at once.",
+        )
 
         # A splitter, like the right panel's Analysis/Tabs one, so the boundary can be
         # dragged; expanded sections still share it by _LIBRARY_SHARE/_FRAMES_SHARE.
@@ -871,6 +876,13 @@ class FileBrowser(QWidget):
         """Drop every loaded frame, from the empty-space context menu."""
         if confirm_unload(self, clear_all=True):
             self.session.clear_files()
+
+    def _on_reset_roll(self) -> None:
+        """Reset every visible frame back to its own defaults, from the Film Strip
+        header's ⋮ menu."""
+        count = len(self.session.asset_model.visible_actual_indices_ordered())
+        if count and confirm_reset_roll(self, count):
+            self.controller.request_reset_roll()
 
     def _on_save_roll_clicked(self) -> None:
         """Save whatever the Film Strip currently holds as a named, reopenable roll --

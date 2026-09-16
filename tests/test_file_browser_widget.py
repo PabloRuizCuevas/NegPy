@@ -862,6 +862,30 @@ def test_new_roll_menu_action_clears_the_session_like_clear_all(browser, session
     session.clear_files.assert_called_once()
 
 
+def test_reset_roll_menu_action_resets_every_visible_frame(browser, session):
+    menu = browser.frames_section.actions_btn.menu()
+    action = next(a for a in menu.actions() if a.text() == "Reset Roll to Defaults…")
+    with patch("negpy.desktop.view.sidebar.files.confirm_reset_roll", return_value=True) as confirm:
+        action.trigger()
+    confirm.assert_called_once_with(browser, 4)  # the session fixture's 4 uploaded_files
+    browser.controller.request_reset_roll.assert_called_once()
+
+
+def test_reset_roll_menu_action_cancelled_does_nothing(browser, session):
+    with patch("negpy.desktop.view.sidebar.files.confirm_reset_roll", return_value=False):
+        browser._on_reset_roll()
+    browser.controller.request_reset_roll.assert_not_called()
+
+
+def test_reset_roll_with_nothing_loaded_never_prompts(browser, session):
+    session.state.uploaded_files = []
+    session.asset_model.refresh()
+    with patch("negpy.desktop.view.sidebar.files.confirm_reset_roll") as confirm:
+        browser._on_reset_roll()
+    confirm.assert_not_called()
+    browser.controller.request_reset_roll.assert_not_called()
+
+
 def test_unload_button_always_targets_the_selection_never_the_whole_roll(browser, session):
     """The toolbar button never falls back to Clear All: opening a different roll already
     replaces the film strip, so a stray click with nothing multi-selected must remove only

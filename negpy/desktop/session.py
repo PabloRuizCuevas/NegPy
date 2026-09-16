@@ -1428,6 +1428,21 @@ class DesktopSessionManager(QObject):
         asset = self.state.uploaded_files[idx] if 0 <= idx < len(self.state.uploaded_files) else {}
         self.update_config(self._asset_defaults(WorkspaceConfig(), asset), persist=True)
 
+    def reset_roll(self, assets: List[Dict]) -> None:
+        """`reset_settings`, applied to every one of *assets* at once. Each frame's reset
+        is still an ordinary undo step; the active frame (if among them) re-renders via
+        `update_config`, the rest are written straight to the DB with an external history
+        step, the same split `_on_normalization_finished` uses for a roll-wide write.
+        """
+        for f_info in assets:
+            new_p = self._asset_defaults(WorkspaceConfig(), f_info)
+            if f_info["hash"] == self.state.current_file_hash:
+                self.update_config(new_p, persist=True)
+                continue
+            old_p = self.repo.load_file_settings(f_info["hash"]) or self.config_for_asset(f_info)
+            self.push_external_history(f_info["hash"], old_p, new_p)
+            self.repo.save_file_settings(f_info["hash"], new_p, file_path=f_info["path"])
+
     def reset_section(self, section: str) -> None:
         """Reset a single feature section to its default config."""
         from negpy.features.exposure.models import ExposureConfig

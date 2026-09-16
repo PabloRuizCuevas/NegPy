@@ -56,6 +56,21 @@ def confirm_unload(parent, *, clear_all: bool = False, count: int = 1) -> bool:
     return box.exec() == QMessageBox.StandardButton.Yes
 
 
+def confirm_reset_roll(parent, count: int) -> bool:
+    """Ask before resetting every visible frame to its own defaults. Each frame's
+    reset is still an ordinary undo step, but doing it to a whole roll at once is
+    easy to fire by accident. Enter confirms (default button); Esc cancels.
+    """
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle("Reset Roll to Defaults")
+    box.setText(f"Reset all {count} loaded frame{'s' if count != 1 else ''} to their own defaults?")
+    box.setInformativeText("Every frame's edit is undone at once. Each one is still a normal undo step, frame by frame.")
+    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+    box.setDefaultButton(QMessageBox.StandardButton.Yes)
+    return box.exec() == QMessageBox.StandardButton.Yes
+
+
 def confirm_delete_named(parent, kind: str, name: str, *, informative: str = "") -> bool:
     """Ask before deleting a named, user-created item — a work print, a roll, a
     flat-field profile. None of them are undoable and none can be re-derived from the
