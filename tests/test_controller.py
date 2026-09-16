@@ -653,6 +653,85 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h2"), {"sensor"})
         self.mock_session_manager.repo.save_file_settings.assert_not_called()
 
+    def test_apply_roll_cards_to_roll_with_override_sweeps_a_stray_lock_on_another_card(self):
+        """Regression: roll_card_locked() only ever sees the active frame's own lock,
+        so a stray lock on a *different* frame, on a card the active frame never
+        touched, was unreachable from any frame but that one. Force Settings must
+        sweep every card roll-wide, not just the ones diverged on the active frame."""
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        rolls.set_roll_defaults(self.controller.session.repo, roll_id, sensor_profile="Rig B")
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h2", "sensor", locked=True)
+        self.controller.set_roll_override_locked_frames(True)
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.uploaded_files = [
+            {"name": "a.dng", "path": "/a.dng", "hash": "h1"},
+            {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
+        ]
+        state.current_file_hash = "h1"
+        # Nothing diverged on the active frame -- "sensor" isn't in diverged_roll_cards() --
+        # yet h2's stray sensor lock must still be swept toward the roll's own default.
+        self.mock_session_manager.repo.load_file_settings.return_value = None
+        self.mock_session_manager.config_for_asset.side_effect = lambda asset: WorkspaceConfig()
+
+        touched = self.controller.apply_roll_cards_to_roll()
+
+        self.assertEqual(touched, 1)
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h2"), set())
+        saved_hash, saved_cfg = self.mock_session_manager.repo.save_file_settings.call_args.args[:2]
+        self.assertEqual(saved_hash, "h2")
+        self.assertEqual(saved_cfg.process.sensor_profile, "Rig B")
+
+    def test_apply_roll_cards_to_roll_sweep_is_a_noop_without_an_established_roll_default(self):
+        """A card neither diverged on the active frame nor ever given a roll default
+        has nothing to reclaim a stray lock toward, so Force Settings leaves it alone
+        rather than inventing a default."""
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h2", "sensor", locked=True)
+        self.controller.set_roll_override_locked_frames(True)
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.uploaded_files = [
+            {"name": "a.dng", "path": "/a.dng", "hash": "h1"},
+            {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
+        ]
+        state.current_file_hash = "h1"
+
+        touched = self.controller.apply_roll_cards_to_roll()
+
+        self.assertEqual(touched, 0)
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h2"), {"sensor"})
+        self.mock_session_manager.repo.save_file_settings.assert_not_called()
+
+    def test_apply_roll_cards_to_roll_without_override_does_not_sweep_other_cards(self):
+        """Force Settings off: a stray lock on a card the active frame never diverged
+        on stays put, exactly as before this fix."""
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        rolls.set_roll_defaults(self.controller.session.repo, roll_id, sensor_profile="Rig B")
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h2", "sensor", locked=True)
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.uploaded_files = [
+            {"name": "a.dng", "path": "/a.dng", "hash": "h1"},
+            {"name": "b.dng", "path": "/b.dng", "hash": "h2"},
+        ]
+        state.current_file_hash = "h1"
+
+        touched = self.controller.apply_roll_cards_to_roll()
+
+        self.assertEqual(touched, 0)
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h2"), {"sensor"})
+        self.mock_session_manager.repo.save_file_settings.assert_not_called()
+
     def test_apply_roll_cards_to_selected_does_nothing_without_anything_diverged(self):
         self._wire_repo_store()
         self.mock_session_manager.state.active_roll_id = "roll1"

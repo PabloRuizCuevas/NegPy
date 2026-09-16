@@ -3614,28 +3614,46 @@ class AppController(QObject):
     def apply_roll_cards_to_roll(self) -> int:
         """Apply to All Roll: pushes every card diverged_roll_cards() names out to the
         roll's shared default and clears its lock, so the active frame rejoins the
-        roll on each. Returns how many cards it touched, and status-messages either
-        way -- clicking Apply with nothing diverged is a no-op worth saying so."""
+        roll on each.
+
+        Force Settings widens this beyond the active frame: roll_card_locked() (and so
+        diverged_roll_cards()) only ever sees this one frame's own lock, so a stray lock
+        on a *different* frame, on a card this frame never touched, was otherwise
+        unreachable from any frame but that one. With Force Settings on, every card is
+        swept for other locked frames roll-wide, not just the ones diverged here --
+        pushed cards reclaim toward the active frame's value (about to become the new
+        default), the rest toward the roll's existing default.
+
+        Returns how many cards it touched, pushed or swept, and status-messages either
+        way -- clicking Apply with nothing to do anywhere is a no-op worth saying so."""
         roll_id = self.state.active_roll_id
-        cards = self.diverged_roll_cards() if roll_id else []
-        if not cards:
+        if roll_id is None:
             self.set_status("Nothing to apply — every card already follows the roll", 2500)
             return 0
+        pushed = self.diverged_roll_cards()
         active_hash = self.state.current_file_hash
-        for card_key in cards:
+        for card_key in pushed:
             fields = {name: getattr(self.state.config.process, name) for name in rolls.ROLL_DEFAULT_FIELDS[card_key]}
             rolls.set_roll_defaults(self.session.repo, roll_id, **fields)
             rolls.set_frame_override(self.session.repo, roll_id, rolls.unforked_hash(active_hash), card_key, False)
-            if self.roll_override_locked_frames():
-                self._reclaim_locked_frames(card_key, roll_id)
+
+        touched = set(pushed)
+        if self.roll_override_locked_frames():
+            for card_key in self._ROLL_CARDS:
+                if self._reclaim_locked_frames(card_key, roll_id):
+                    touched.add(card_key)
+
+        if not touched:
+            self.set_status("Nothing to apply — every card already follows the roll", 2500)
+            return 0
         for f in self.state.uploaded_files:
             if f.get("hash") != active_hash:
                 self.state.stale_thumbnails.add(asset_thumbnail_key(f))
         self.session.asset_model.refresh()
         self.config_updated.emit()
-        names = ", ".join(self._ROLL_CARD_LABELS[k] for k in cards)
+        names = ", ".join(self._ROLL_CARD_LABELS[k] for k in self._ROLL_CARDS if k in touched)
         self.set_status(f"Applied to the roll: {names}", 3000)
-        return len(cards)
+        return len(touched)
 
     def apply_roll_cards_to_selected(self) -> int:
         """Apply to Selected: pushes every card diverged_roll_cards() names onto every
@@ -3673,13 +3691,26 @@ class AppController(QObject):
             self.session.repo.save_file_settings(f_hash, new_p, file_path=f_info.get("path", ""))
             rolls.set_frame_override(self.session.repo, roll_id, rolls.unforked_hash(f_hash), card_key, True)
 
-    def _reclaim_locked_frames(self, card_key: str, roll_id: str) -> None:
-        """Backs "Include already-overridden frames": overwrites every other frame
-        currently locked away from *card_key* with the roll's new value and unlocks
-        it, so an "all" apply really does make the whole roll uniform again."""
+    def _reclaim_locked_frames(self, card_key: str, roll_id: str) -> bool:
+        """Backs Force Settings: overwrites every other frame currently locked away
+        from *card_key*, anywhere in the roll, and unlocks it, so an "all" apply really
+        does make the whole roll uniform again -- not just the frames that happen to
+        share the active frame's own divergence.
+
+        Freezes toward the active frame's value if this card is one of its diverged_roll_cards()
+        (about to become the new default), else toward the roll's already-stored default. A card
+        neither diverged here nor ever given a roll default has nothing to reclaim toward, so this
+        is a no-op. Returns whether anything was actually touched, for the caller's status line."""
         card_fields = rolls.ROLL_DEFAULT_FIELDS[card_key]
-        frozen = {name: getattr(self.state.config.process, name) for name in card_fields}
+        if card_key in self.diverged_roll_cards():
+            frozen = {name: getattr(self.state.config.process, name) for name in card_fields}
+        else:
+            defaults = rolls.roll_defaults(self.session.repo, roll_id)
+            frozen = {name: defaults[name] for name in card_fields if name in defaults}
+            if not frozen:
+                return False
         active_hash = self.state.current_file_hash
+        touched = False
         for f_info in self.state.uploaded_files:
             f_hash = f_info.get("hash")
             if not f_hash or f_hash == active_hash:
@@ -3692,6 +3723,8 @@ class AppController(QObject):
             self.session.push_external_history(f_hash, p, new_p)
             self.session.repo.save_file_settings(f_hash, new_p, file_path=f_info.get("path", ""))
             rolls.set_frame_override(self.session.repo, roll_id, unforked, card_key, False)
+            touched = True
+        return touched
 
     def set_roll_card_locked(self, card_key: str, locked: bool) -> None:
         """Lock or unlock one Roll-tab card for the active frame, within the active
