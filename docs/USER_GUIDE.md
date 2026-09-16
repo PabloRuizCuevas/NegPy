@@ -129,7 +129,7 @@ Right-click a roll for **Rename…** and **Delete…**. Deleting only forgets th
 
 #### Rolls that are not folders
 
-A roll does not have to be a folder, and the same photo can belong to more than one roll at once: a folder roll's icon is **amber**, one built from a search or a hand-picked set of frames is **red**. Search the library (the filter box's magnifier-over-folder button) or otherwise assemble a set of frames, then **Save as Roll…** in the Film Strip's row names and keeps it, right alongside your folder rolls. It is a fixed set of frames, not a live search: adding to it later means reopening it and using Save as Roll again, or adding to the session while it is the one loaded. Edits are unaffected either way — a frame's edit is its own, the same wherever it is opened from.
+A roll does not have to be a folder, and the same photo can belong to more than one roll at once: a folder roll's icon is **amber**, one built from a search or a hand-picked set of frames is **red**. Search the library (the filter box's magnifier-over-folder button) or otherwise assemble a set of frames, then **Save as Roll…** in the Film Strip's row names and keeps it, right alongside your folder rolls. It is a fixed set of frames, not a live search: adding to it later means reopening it and using Save as Roll again, or adding to the session while it is the one loaded. Edits are shared wherever a photo is opened from by default — a frame's edit is its own, the same in every roll it belongs to. Right-click a frame that belongs to more than one roll for **Edit Independently in This Roll**, which gives it its own edit for this roll alone, leaving every other roll on the shared one; **Use the Shared Edit Again** deletes that independent edit and reverts to sharing.
 
 ### Importing and managing files
 
@@ -270,7 +270,7 @@ The bottom-left badge is gray, not red, because it reports what the frame *is* r
 
 Hover any thumbnail and the tooltip says the same thing in words, with the frame count: *HDR merge of 5 exposures*, *Stitched composite of 3 frames*.
 
-The right-click menu also offers **Copy/Paste Settings** (with or without normalization bounds), **Reset Settings**, **Apply Settings…**, and per-frame export. A copy that took the bounds lists them in the paste picker as **Normalization bounds**, ticked; untick it to paste the look and keep the frame's own bounds.
+The right-click menu also offers **Copy/Paste Settings** (with or without normalization bounds), **Reset Settings**, **Apply Settings…**, and per-frame export. A copy that took the bounds lists them in the paste picker as **Normalization bounds**, ticked; untick it to paste the look and keep the frame's own bounds. A frame shared by more than one roll also offers **Edit Independently in This Roll** (or, once it has one, **Use the Shared Edit Again**) — see "Rolls that are not folders" above.
 
 ---
 

@@ -9,12 +9,18 @@ from negpy.services.assets.rolls import (
     all_rolls_sorted,
     create_virtual_roll,
     delete_roll,
+    fork_edit,
     folder_roll_id_for_path,
     import_subfolders_as_rolls,
+    is_forked,
     recognize_folder,
     rename_roll,
+    roll_edit_hash,
     roll_for_id,
+    rolls_containing_path,
     saved_rolls,
+    unfork_edit,
+    unforked_hash,
     virtual_rolls,
 )
 
@@ -149,3 +155,93 @@ def test_import_subfolders_as_rolls_is_idempotent_per_subfolder(tmp_path):
 def test_import_subfolders_as_rolls_on_a_missing_parent_returns_nothing():
     repo = _repo()
     assert import_subfolders_as_rolls(repo, "/does/not/exist") == []
+
+
+def test_roll_edit_hash_suffixes_the_roll_id():
+    assert roll_edit_hash("abc123", "r1") == "abc123#roll:r1"
+
+
+def test_roll_edit_hash_preserves_a_half_frame_suffix():
+    """A half-frame asset's own suffix (``#1``/``#2``) survives, so each half forks to
+    its own identity rather than collapsing together."""
+    assert roll_edit_hash("abc123#1", "r1") == "abc123#1#roll:r1"
+
+
+def test_unforked_hash_strips_only_the_roll_suffix():
+    assert unforked_hash("abc123#roll:r1") == "abc123"
+    assert unforked_hash("abc123#1#roll:r1") == "abc123#1"
+    assert unforked_hash("abc123#1") == "abc123#1"
+    assert unforked_hash("abc123") == "abc123"
+
+
+def test_fork_edit_seeds_the_forked_hash_and_marks_it_forked():
+    repo = _repo()
+    roll_id = create_virtual_roll(repo, "Portra", ["/a.nef"])
+    config = object()
+
+    forked = fork_edit(repo, roll_id, "abc123", "/a.nef", config)
+
+    assert forked == "abc123#roll:" + roll_id
+    repo.save_file_settings.assert_called_once_with(forked, config, file_path="/a.nef")
+    assert is_forked(repo, roll_id, "abc123")
+
+
+def test_fork_edit_on_an_unknown_roll_is_a_noop():
+    repo = _repo()
+    forked = fork_edit(repo, "not-a-real-id", "abc123", "/a.nef", object())
+    assert forked == "abc123"
+    repo.save_file_settings.assert_not_called()
+
+
+def test_is_forked_is_false_before_forking():
+    repo = _repo()
+    roll_id = create_virtual_roll(repo, "Portra", ["/a.nef"])
+    assert not is_forked(repo, roll_id, "abc123")
+
+
+def test_unfork_edit_reverses_fork_edit():
+    repo = _repo()
+    roll_id = create_virtual_roll(repo, "Portra", ["/a.nef"])
+    forked = fork_edit(repo, roll_id, "abc123", "/a.nef", object())
+
+    unfork_edit(repo, roll_id, "abc123")
+
+    assert not is_forked(repo, roll_id, "abc123")
+    repo.delete_file_settings.assert_called_once_with(forked)
+
+
+def test_rolls_containing_path_finds_a_folder_roll_by_prefix(tmp_path):
+    repo = _repo()
+    folder = tmp_path / "roll_a"
+    folder.mkdir()
+    roll_id = recognize_folder(repo, str(folder))
+    assert rolls_containing_path(repo, str(folder / "frame001.tif")) == [roll_id]
+
+
+def test_rolls_containing_path_finds_a_folder_rolls_extra_member():
+    repo = _repo()
+    roll_id = recognize_folder(repo, "/scans/roll_a")
+    add_extra_member(repo, roll_id, "/elsewhere/c.nef")
+    assert rolls_containing_path(repo, "/elsewhere/c.nef") == [roll_id]
+
+
+def test_rolls_containing_path_finds_a_virtual_rolls_member():
+    repo = _repo()
+    roll_id = create_virtual_roll(repo, "Portra", ["/a.nef"])
+    assert rolls_containing_path(repo, "/a.nef") == [roll_id]
+
+
+def test_rolls_containing_path_lists_every_matching_roll(tmp_path):
+    repo = _repo()
+    folder = tmp_path / "roll_a"
+    folder.mkdir()
+    frame = folder / "frame001.tif"
+    folder_roll = recognize_folder(repo, str(folder))
+    virtual_roll = create_virtual_roll(repo, "Picks", [str(frame)])
+    assert sorted(rolls_containing_path(repo, str(frame))) == sorted([folder_roll, virtual_roll])
+
+
+def test_rolls_containing_path_is_empty_for_an_unshared_path():
+    repo = _repo()
+    create_virtual_roll(repo, "Portra", ["/a.nef"])
+    assert rolls_containing_path(repo, "/unrelated.nef") == []

@@ -33,6 +33,7 @@ from negpy.kernel.system.config import APP_CONFIG
 from negpy.kernel.system.text import count_of
 from negpy.services.assets.composites import remember_composites
 from negpy.services.assets.flatfield import FlatFieldProfiles
+from negpy.services.assets.rolls import unforked_hash
 from negpy.services.assets.search import facts_for, match, parse_query
 from negpy.services.assets.sidecar import load_or_promote
 from negpy.services.assets.thumbnails import asset_thumbnail_key
@@ -1013,6 +1014,7 @@ class DesktopSessionManager(QObject):
             asset["path"],
             half=int(asset.get("half") or 0),
             composite=bool(asset.get("hdr_paths") or asset.get("stitch_paths")),
+            forked="#roll:" in asset["hash"],
         )
         if saved_config is not None:
             # A saved edit keeps its own process mode and shadow lift, which are the user's
@@ -1051,6 +1053,7 @@ class DesktopSessionManager(QObject):
             asset["path"],
             half=int(asset.get("half") or 0),
             composite=bool(asset.get("hdr_paths") or asset.get("stitch_paths")),
+            forked="#roll:" in asset["hash"],
         )
         return str(saved.process.process_mode) if saved is not None else ""
 
@@ -1114,7 +1117,7 @@ class DesktopSessionManager(QObject):
             f[mark] = set_all
             if set_all:
                 f[other] = False
-            self.repo.save_file_mark(f["hash"], mark if set_all else None, file_path=f.get("path", ""))
+            self.repo.save_file_mark(unforked_hash(f["hash"]), mark if set_all else None, file_path=f.get("path", ""))
         self.asset_model.refresh()
         self.files_changed.emit()
 
@@ -1575,10 +1578,11 @@ class DesktopSessionManager(QObject):
                     logger.error(f"Failed to add {path}: {e}")
 
         # Marks: the DB is the source of truth and toggles write through, so the unconditional
-        # overlay cannot lose one.
+        # overlay cannot lose one. Keyed on the base hash, not a roll-forked variant: a
+        # keep/reject is a judgement on the physical scan, shared by every roll it's in.
         marks = self.repo.load_file_marks()
         for f in self.state.uploaded_files:
-            m = marks.get(f["hash"])
+            m = marks.get(unforked_hash(f["hash"]))
             f["keeper"] = m == "keeper"
             f["excluded"] = m == "excluded"
 

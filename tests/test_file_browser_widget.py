@@ -178,6 +178,48 @@ def test_context_menu_offers_reset_only_with_a_saved_override(browser, session):
     assert "Reset Split to Roll Default" in _action_labels(browser._build_context_menu())
 
 
+def _set_rolls_store(session, rolls_store):
+    session.repo.get_global_setting.side_effect = lambda key, default=None: rolls_store if key == "rolls_by_id" else default
+
+
+def test_context_menu_offers_fork_only_when_the_file_is_in_two_rolls(browser, session):
+    session.state.selected_indices = [0]
+    session.state.selected_file_idx = 0
+    session.state.active_roll_id = "r1"
+    rolls_store = {"r1": {"kind": "virtual", "name": "A", "member_paths": ["/tmp/IMG_0001.cr2"]}}
+    _set_rolls_store(session, rolls_store)
+    assert "Edit Independently in This Roll" not in _action_labels(browser._build_context_menu())
+
+    rolls_store["r2"] = {"kind": "virtual", "name": "B", "member_paths": ["/tmp/IMG_0001.cr2"]}
+    assert "Edit Independently in This Roll" in _action_labels(browser._build_context_menu())
+
+
+def test_context_menu_needs_an_active_roll_to_offer_fork(browser, session):
+    session.state.selected_indices = [0]
+    session.state.selected_file_idx = 0
+    session.state.active_roll_id = None
+    rolls_store = {
+        "r1": {"kind": "virtual", "name": "A", "member_paths": ["/tmp/IMG_0001.cr2"]},
+        "r2": {"kind": "virtual", "name": "B", "member_paths": ["/tmp/IMG_0001.cr2"]},
+    }
+    _set_rolls_store(session, rolls_store)
+    assert "Edit Independently in This Roll" not in _action_labels(browser._build_context_menu())
+
+
+def test_context_menu_offers_unfork_once_forked(browser, session):
+    session.state.selected_indices = [0]
+    session.state.selected_file_idx = 0
+    session.state.active_roll_id = "r1"
+    rolls_store = {
+        "r1": {"kind": "virtual", "name": "A", "member_paths": ["/tmp/IMG_0001.cr2"], "forked_hashes": ["h1"]},
+        "r2": {"kind": "virtual", "name": "B", "member_paths": ["/tmp/IMG_0001.cr2"]},
+    }
+    _set_rolls_store(session, rolls_store)
+    labels = _action_labels(browser._build_context_menu())
+    assert "Use the Shared Edit Again" in labels
+    assert "Edit Independently in This Roll" not in labels
+
+
 def test_current_file_returns_the_base_hash_for_a_split_asset(browser, session):
     """Both halves share one path, so matching by path alone would always return
     whichever comes first in the list -- never necessarily the active one -- and its
