@@ -945,7 +945,20 @@ class AppController(QObject):
         active = self.session.repo.get_global_setting("session_active_path")
         self._pending_scanned_file = active if active in paths else paths[0]
         triplets = self.session.repo.get_global_setting("session_triplets", {}) or {}
+        self.state.active_roll_id = self._roll_id_for_restored_paths(paths)
+        self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(self.state.active_roll_id))
         self.request_asset_discovery(paths, auto_open=True, restore_triplets=triplets)
+
+    def _roll_id_for_restored_paths(self, paths: List[str]) -> Optional[str]:
+        """The one roll every restored path agrees on, or None -- the roll a fresh
+        process would otherwise forget it had open, the same "only when unambiguous"
+        rule open_library_folders applies when several folders are opened at once."""
+        candidates = set(rolls.rolls_containing_path(self.session.repo, paths[0]))
+        for path in paths[1:]:
+            candidates &= set(rolls.rolls_containing_path(self.session.repo, path))
+            if not candidates:
+                return None
+        return next(iter(candidates)) if len(candidates) == 1 else None
 
     def request_asset_discovery(
         self,

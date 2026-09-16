@@ -2313,6 +2313,38 @@ class TestSessionRestore(unittest.TestCase):
         self.controller.restore_session()
         self.controller.request_asset_discovery.assert_not_called()
 
+    def _mock_settings_with_rolls(self, files, active, rolls_store):
+        from negpy.services.assets import rolls
+
+        def get(key, default=None):
+            return {"session_files": files, "session_active_path": active, rolls.ROLLS_KEY: rolls_store}.get(key, default)
+
+        self.mock_session_manager.repo.get_global_setting.side_effect = get
+
+    def test_restore_session_recognizes_the_roll_all_restored_paths_belong_to(self):
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as folder:
+            a, b = os.path.join(folder, "a.dng"), os.path.join(folder, "b.dng")
+            open(a, "w").close()
+            open(b, "w").close()
+            self._mock_settings_with_rolls([a, b], b, {"roll1": {"kind": "folder", "folder_path": folder, "extra_paths": []}})
+            self.controller.restore_session()
+            self.assertEqual(self.controller.state.active_roll_id, "roll1")
+
+    def test_restore_session_leaves_active_roll_id_none_when_paths_disagree(self):
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as folder_a, tempfile.TemporaryDirectory() as folder_b:
+            a, b = os.path.join(folder_a, "a.dng"), os.path.join(folder_b, "b.dng")
+            open(a, "w").close()
+            open(b, "w").close()
+            self._mock_settings_with_rolls([a, b], a, {"roll1": {"kind": "folder", "folder_path": folder_a, "extra_paths": []}})
+            self.controller.restore_session()
+            self.assertIsNone(self.controller.state.active_roll_id)
+
 
 class TestRgbScanModeReload(unittest.TestCase):
     def setUp(self):
