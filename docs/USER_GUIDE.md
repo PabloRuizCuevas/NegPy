@@ -38,7 +38,13 @@ While a peek is up the canvas carries a **NEGATIVE**, **EMBEDDED** or **FLAT SCA
 
 ### The workflow (and the order things happen)
 
-The Frame tab's own tab bar follows the order you work in, which mirrors the processing pipeline:
+**Roll** leads: what the whole roll shares, set once rather than edited per frame.
+
+| Tab | Icon | Panels | What it is for |
+|-----|------|--------|---------------|
+| **Roll** | film | Calibration · Demosaic · Roll Analysis · Normalization · Presets | Film type, capture-side color corrections, negative→positive normalization, roll-wide baselines |
+
+Beside Roll sits **Frame**, whose own tab bar follows the order you work in, mirroring the processing pipeline:
 
 | Tab | Icon | Panels | What it is for |
 |-----|------|--------|---------------|
@@ -48,12 +54,6 @@ The Frame tab's own tab bar follows the order you work in, which mirrors the pro
 | **Finish** | brush | Retouch · Finishing | Dust removal, vignette, border, carrier |
 | **Favorites** | star | Your chosen sliders | Quick access to the controls you use most |
 | **History** | clock | Work prints · Edit history | Keep named versions, step back through every change |
-
-Beside Frame sits **Roll**: what the whole roll shares, set once rather than edited per frame.
-
-| Tab | Icon | Panels | What it is for |
-|-----|------|--------|---------------|
-| **Roll** | film | Calibration · Demosaic · Roll Analysis · Normalization · Presets | Film type, capture-side color corrections, negative→positive normalization, roll-wide baselines |
 
 Beside Frame and Roll, the panel's own tab bar holds the tabs that never change the render:
 
