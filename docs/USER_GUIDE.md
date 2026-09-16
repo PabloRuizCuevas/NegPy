@@ -775,7 +775,7 @@ How the negative is measured and normalized into a positive. The film mode that 
 
 *   **Analysis Buffer** (0.0 to 0.25): insets the measurement window from the frame edge so film rebate, sprocket holes and scanner borders do not skew detection. Raise it on scans with wide borders.
 *   **Analysis Region** (square-draw tool): draw a freehand region on the canvas to meter *exactly* that area, overriding the buffer. Double-click inside to confirm; the ✕ button clears it.
-*   **Lock Bounds** (padlock): freezes the analyzed normalization bounds for this frame, so cropping or moving sliders no longer re-analyzes it, and Roll Analysis (§10.3) leaves it out of the roll-wide baseline it writes back, on the first run as well as every re-run. Lock it in once you are happy with the bounds.
+*   **Lock Bounds** (padlock): freezes the analyzed normalization bounds for this frame, so cropping or moving sliders no longer re-analyzes it, and the roll-wide baseline (§10.3) leaves it untouched, on the first run as well as every re-run. Lock it in once you are happy with the bounds.
 
 **Normalization tuning:**
 
