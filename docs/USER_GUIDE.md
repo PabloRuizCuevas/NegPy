@@ -682,7 +682,7 @@ A scrollable list of every edit step, the last 100 kept, newest on top. The curr
 
 ## 10. Roll tab
 
-**Film mode** sits above the panels, because it is the first choice of every edit: **Color** (C-41 color negative), **B&W** (panchromatic negative) or **Slide** (transparency/reversal, E-6 and friends). Each swaps the core conversion math and re-runs the pipeline from scratch. The wand button beside them **auto-detects** the mode when a file loads.
+**Film mode** sits above the panels, because it is the first choice of every edit: **Color** (C-41 color negative), **B&W** (panchromatic negative) or **Slide** (transparency/reversal, E-6 and friends). Each swaps the core conversion math and re-runs the pipeline from scratch. The wand button beside them **auto-detects** the mode when a file loads. Inside a loaded roll, picking a mode takes effect on every frame in it immediately — a roll is one film type, never mixed, so there is no per-frame override and no Apply step for it, unlike Calibration, Demosaic and Normalization below.
 
 **Positive** (default off), beside Film Mode, is for a source that is already a finished positive in any mode — a scanned print, an export from other software, a negative the scanner positivized itself — not a raw scanner or camera capture. NegPy decodes its embedded profile (sRGB if it has none) instead of reading it as literal linear data, and skips metering, negative inversion, the exposure lift and the filmic roll-off a raw capture needs, so the Print/tone controls in Normalization (§10.3) shape the image directly; that card's bounds and clip controls hide, since there is nothing left for them to measure. On Slide, it only applies with Normalize off, since a metered stretch already decodes on the source's own profile.
 

@@ -3561,6 +3561,35 @@ class AppController(QObject):
     def set_roll_override_locked_frames(self, value: bool) -> None:
         self.session.repo.save_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, value)
 
+    def set_process_mode(self, mode: str) -> None:
+        """Switches Film Mode. A roll is one film type -- Color, B&W or Slide -- never
+        mixed, so unlike Calibration/Demosaic/Normalization this cannot diverge per
+        frame: it has no card to lock, and resolve_roll_process_config always overlays
+        it. It takes effect on every member frame the moment it changes, not through
+        Apply to All Roll -- there is nothing left over for that to push."""
+        exp = self.state.config.exposure
+        strength = cast_removal_for_mode(mode, exp.cast_removal_strength)
+        if strength != exp.cast_removal_strength:
+            # Ahead of the mode, and without a render of its own: the process change below
+            # renders once with both in place.
+            self.session.update_config(
+                replace(self.state.config, exposure=replace(exp, cast_removal_strength=strength)), persist=True, render=False
+            )
+        new_process = replace(
+            self.state.config.process,
+            process_mode=mode,
+            **invalidate_local_bounds(self.state.config.process),
+        )
+        self.apply_config(replace(self.state.config, process=new_process), persist=True)
+        roll_id = self.state.active_roll_id
+        if roll_id is not None:
+            rolls.set_roll_defaults(self.session.repo, roll_id, process_mode=mode)
+            active_hash = self.state.current_file_hash
+            for f in self.state.uploaded_files:
+                if f.get("hash") != active_hash:
+                    self.state.stale_thumbnails.add(asset_thumbnail_key(f))
+            self.session.asset_model.refresh()
+
     def set_roll_default(self, card_key: str, persist: bool = True, readback_metrics: bool = True, **changes) -> None:
         """Edits *card_key* for the active frame alone, same as any other control --
         marking it locked away from the roll the instant it changes and was not

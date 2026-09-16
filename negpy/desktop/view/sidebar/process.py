@@ -18,7 +18,7 @@ from negpy.desktop.view.widgets.sliders import CompactSlider
 from negpy.features.exposure.models import EXPOSURE_CONSTANTS
 from negpy.features.hdr.logic import output_scale
 from negpy.features.hdr.models import ANCHOR_EV_UNSET, hdr_active
-from negpy.features.process.models import ProcessMode, cast_removal_for_mode, invalidate_local_bounds
+from negpy.features.process.models import ProcessMode, invalidate_local_bounds
 
 # Luma Range Clip slider mapping: positions 0 to 100 clip the histogram tails, and
 # negative positions map to an outward log-density margin, a gentler-than-zero stretch.
@@ -327,19 +327,7 @@ class ProcessSidebar(BaseSidebar):
         self.sync_ui()
 
     def _on_mode_changed(self, mode: str) -> None:
-        exp = self.state.config.exposure
-        strength = cast_removal_for_mode(mode, exp.cast_removal_strength)
-        if strength != exp.cast_removal_strength:
-            # Ahead of the mode, and without a render of its own: the process change below
-            # renders once with both in place.
-            self.update_config_section("exposure", cast_removal_strength=strength, render=False, persist=True)
-        self.update_config_section(
-            "process",
-            process_mode=mode,
-            render=True,
-            persist=True,
-            **invalidate_local_bounds(self.state.config.process),
-        )
+        self.controller.set_process_mode(mode)
         self.sync_ui()
 
     def _on_normalize_e6_toggled(self, checked: bool) -> None:

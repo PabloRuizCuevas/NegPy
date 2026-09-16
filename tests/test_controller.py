@@ -2462,6 +2462,40 @@ class TestPresetExportSelected(unittest.TestCase):
         self.assertNotIn("h1", saved)  # locked frame keeps its own exposure
         self.assertIn("h3", saved)
 
+    def test_set_process_mode_pushes_the_roll_default_when_a_roll_is_active(self):
+        from negpy.features.process.models import ProcessMode
+
+        self.mock_session_manager.state.active_roll_id = "roll-1"
+
+        with patch.object(rolls, "set_roll_defaults") as mock_set:
+            self.controller.set_process_mode(ProcessMode.BW)
+
+        mock_set.assert_called_once_with(self.mock_session_manager.repo, "roll-1", process_mode=ProcessMode.BW)
+
+    def test_set_process_mode_does_not_touch_the_roll_without_an_active_roll(self):
+        from negpy.features.process.models import ProcessMode
+
+        self.mock_session_manager.state.active_roll_id = None
+
+        with patch.object(rolls, "set_roll_defaults") as mock_set:
+            self.controller.set_process_mode(ProcessMode.BW)
+
+        mock_set.assert_not_called()
+
+    def test_set_process_mode_marks_other_frames_thumbnails_stale(self):
+        from negpy.features.process.models import ProcessMode
+
+        self.mock_session_manager.state.active_roll_id = "roll-1"
+
+        with patch.object(rolls, "set_roll_defaults"):
+            self.controller.set_process_mode(ProcessMode.BW)
+
+        stale = self.mock_session_manager.state.stale_thumbnails
+        h1, h2, h3 = self.mock_session_manager.state.uploaded_files
+        self.assertIn(asset_thumbnail_key(h1), stale)
+        self.assertIn(asset_thumbnail_key(h3), stale)
+        self.assertNotIn(asset_thumbnail_key(h2), stale)  # h2 is the active frame
+
     def test_request_reset_roll_resets_every_visible_frame(self):
         self.controller.request_reset_roll()
 
