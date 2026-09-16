@@ -267,10 +267,8 @@ class SensorSidebar(BaseSidebar):
         # Bake the matrix like crosstalk does. The per-frame bounds were analyzed under the
         # previous mix, so clear them.
         matrix = SensorProfiles.get_matrix(name)
-        self.update_config_section(
-            "process",
-            persist=True,
-            render=True,
+        self.controller.set_roll_default(
+            "sensor",
             sensor_profile=name,
             sensor_matrix=tuple(matrix) if matrix is not None else None,
             **invalidate_local_bounds(self.state.config.process),
@@ -293,10 +291,8 @@ class SensorSidebar(BaseSidebar):
         # matrix, so clear them and the stretch re-derives from the unmixed data. Otherwise the
         # mask redistribution leaks through.
         matrix = CrosstalkProfiles.get_matrix(name)
-        self.update_config_section(
-            "process",
-            persist=True,
-            render=True,
+        self.controller.set_roll_default(
+            "sensor",
             crosstalk_profile=name,
             crosstalk_matrix=matrix,
             # Baked with the matrix so the render can gate on it without disk I/O.
@@ -305,10 +301,9 @@ class SensorSidebar(BaseSidebar):
         )
 
     def _on_crosstalk_strength_changed(self, val: float, persist: bool = True) -> None:
-        self.update_config_section(
-            "process",
+        self.controller.set_roll_default(
+            "sensor",
             persist=persist,
-            render=True,
             readback_metrics=persist,
             crosstalk_strength=val,
             **invalidate_local_bounds(self.state.config.process),
@@ -329,10 +324,9 @@ class SensorSidebar(BaseSidebar):
     def _on_crosstalk_preview(self, matrix: object, strength: float, process: str) -> None:
         # The process rides along: the render gates the unmix on it, so a preview without it shows
         # nothing whenever the edited profile is for another film.
-        self.update_config_section(
-            "process",
+        self.controller.set_roll_default(
+            "sensor",
             persist=False,
-            render=True,
             crosstalk_matrix=tuple(matrix) if matrix is not None else None,
             crosstalk_strength=strength,
             crosstalk_process=process,
@@ -343,10 +337,8 @@ class SensorSidebar(BaseSidebar):
         if result == QDialog.DialogCode.Accepted:
             name = dlg.selected_name() or CrosstalkProfiles.DEFAULT_NAME
             snap_strength = self._crosstalk_snapshot[2]
-            self.update_config_section(
-                "process",
-                persist=True,
-                render=True,
+            self.controller.set_roll_default(
+                "sensor",
                 crosstalk_profile=name,
                 # Default stores no matrix (falls back to the built-in) by convention.
                 crosstalk_matrix=None if name == CrosstalkProfiles.DEFAULT_NAME else tuple(dlg.working_matrix()),
@@ -357,10 +349,8 @@ class SensorSidebar(BaseSidebar):
             )
         else:
             profile, matrix, strength, process = self._crosstalk_snapshot
-            self.update_config_section(
-                "process",
-                persist=True,
-                render=True,
+            self.controller.set_roll_default(
+                "sensor",
                 crosstalk_profile=profile,
                 crosstalk_matrix=matrix,
                 crosstalk_strength=strength,
@@ -371,7 +361,7 @@ class SensorSidebar(BaseSidebar):
 
     def _on_hue_trim_changed(self, val: float, persist: bool = True) -> None:
         # Sticky on commit only, so a drag doesn't write every intermediate value.
-        self.update_config_section("process", hue_trim=val, persist=persist, readback_metrics=persist)
+        self.controller.set_roll_default("sensor", hue_trim=val, persist=persist, readback_metrics=persist)
 
     def sync_ui(self) -> None:
         conf = self.state.config.process

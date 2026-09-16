@@ -317,37 +317,28 @@ class ProcessSidebar(BaseSidebar):
         self.sync_ui()
 
     def _on_normalize_e6_toggled(self, checked: bool) -> None:
-        self.update_config_section(
+        self.controller.set_roll_default(
             "process",
             e6_normalize=checked,
-            render=True,
-            persist=True,
             **invalidate_local_bounds(self.state.config.process),
         )
 
     def _on_positive_source_toggled(self, checked: bool) -> None:
-        from dataclasses import replace
-
-        new_config = replace(
-            self.state.config,
-            process=replace(
-                self.state.config.process,
-                positive_source=checked,
-                **invalidate_local_bounds(self.state.config.process),
-            ),
+        # Changes the decode like Linear RAW does: set_roll_default's apply_config
+        # re-decodes and suppresses the bounds analysis over the stale buffer.
+        self.controller.set_roll_default(
+            "process",
+            positive_source=checked,
+            **invalidate_local_bounds(self.state.config.process),
         )
-        # Changes the decode like Linear RAW does: apply_config re-decodes and suppresses
-        # the bounds analysis over the stale buffer.
-        self.controller.apply_config(new_config, persist=True)
 
     def _on_analysis_region_toggled(self, checked: bool) -> None:
         self.controller.set_active_tool(ToolMode.ANALYSIS_DRAW if checked else ToolMode.NONE)
 
     def _on_buffer_changed(self, val: float, persist: bool = True) -> None:
-        self.update_config_section(
+        self.controller.set_roll_default(
             "process",
             persist=persist,
-            render=True,
             readback_metrics=persist,
             analysis_buffer=val,
             **invalidate_local_bounds(self.state.config.process),
@@ -355,20 +346,18 @@ class ProcessSidebar(BaseSidebar):
         self.controller.analysis_buffer_preview_requested.emit(val)
 
     def _on_luma_range_clip_changed(self, val: float, persist: bool = True) -> None:
-        self.update_config_section(
+        self.controller.set_roll_default(
             "process",
             persist=persist,
-            render=True,
             readback_metrics=persist,
             luma_range_clip=_luma_range_slider_to_value(val),
             **invalidate_local_bounds(self.state.config.process),
         )
 
     def _on_color_range_clip_changed(self, val: float, persist: bool = True) -> None:
-        self.update_config_section(
+        self.controller.set_roll_default(
             "process",
             persist=persist,
-            render=True,
             readback_metrics=persist,
             color_range_clip=_color_slider_to_value(val),
             **invalidate_local_bounds(self.state.config.process),

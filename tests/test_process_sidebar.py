@@ -170,5 +170,6 @@ def test_positive_toggle_reaches_the_controller(qapp):
     sidebar.sync_ui()
 
     sidebar.positive_source_btn.setChecked(True)
-    (new_cfg,), _kw = controller.apply_config.call_args
-    assert new_cfg.process.positive_source is True
+    args, kwargs = controller.set_roll_default.call_args
+    assert args[0] == "process"
+    assert kwargs["positive_source"] is True
