@@ -578,14 +578,14 @@ class ControlsPanel(QWidget):
                 ["color_range_clip_inc", "color_range_clip_dec"],
             )
         )
-        proc.white_point_slider.setToolTip(
+        exp.white_point_slider.setToolTip(
             tooltip_with_shortcut(
                 "Shifts the normalization floor (scan white point). Positive = brighter; negative = pull highlights "
                 "back. In R/G/B mode: this layer's trim — per-layer film-base correction",
                 ["white_point_inc", "white_point_dec"],
             )
         )
-        proc.black_point_slider.setToolTip(
+        exp.black_point_slider.setToolTip(
             tooltip_with_shortcut(
                 "Shifts the normalization ceiling (scan black point). Positive = lifted blacks; negative = deeper "
                 "blacks. In R/G/B mode: this layer's trim — per-layer Dmax correction",

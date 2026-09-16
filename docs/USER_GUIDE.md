@@ -429,6 +429,7 @@ The paper's response. A **Global / R / G / B** selector at the top scopes most c
 
 **Exposure:**
 
+*   **White Point** / **Black Point** (-0.25 to 0.25): manual offsets on top of the auto-detected normalization bounds ([§10.3](#103-normalization-negative--positive)). A positive white point brightens; a positive black point lifts blacks. In R/G/B mode these become per-layer trims: per-dye-layer film-base (Dmin) and Dmax corrections, scanner-style per-channel levels. Unlike everything else on this card, these never join the roll — the same category as Density/Grade below, a per-shot call rather than a rig or baseline fact. Hidden on the Transparency transfer path (Normalize off), where there is no auto-detected bounds to offset; disabled while **Lock Bounds** freezes this frame's own bounds.
 *   **Print Density** (0.0 to 2.0): overall brightness, simulating enlarger exposure time. Lower is brighter, higher is denser.
 *   **ISO-R Grade** (50 to 180): contrast, as a paper ISO-R value. R110 is about classic grade 2; **lower R is harder** (more contrast), higher is softer. In R/G/B mode a **Grade** trim rotates one layer's slope about the midtone.
 *   **Shadows Density** (±0.9 ΔD) / **Highlights Density** (±0.5 ΔD): brighten or darken just the shadow or highlight zone, without reshaping the curve. Bounded by paper black and white, so a burn cannot exceed the print's limits. The ranges differ because density is logarithmic: the same ΔD reads far smaller near paper black than near paper white.
@@ -753,7 +754,7 @@ Bayer and X-Trans RAW only: a scanner TIFF, a Pakon scan or a linear DNG arrives
 <!-- panel:process -->
 ### 10.3 Normalization: negative → positive
 
-How the negative is measured and normalized into a positive. The film mode that decides *which* conversion runs sits above the panels (§10), and how the scan is decoded lives in **Calibration** (§10.1). The Roll Baseline picker below and the per-frame bounds and Point sliders further down are one card: getting a negative to a correctly normalized positive is one job, whether a frame borrows a roll's shared meter or measures its own. Every field here follows the Roll tab's usual **Apply to All Roll** / **Apply to Selected** — see [§10](#10-roll-tab) — so editing one marks this card **This Frame Only** until applied.
+How the negative is measured into a positive's tonal bounds. The film mode that decides *which* conversion runs sits above the panels (§10), and how the scan is decoded lives in **Calibration** (§10.1). The Roll Baseline picker below and the analysis window/tuning further down are one card: getting a negative's bounds right is one job, whether a frame borrows a roll's shared meter or measures its own. Every field here follows the Roll tab's usual **Apply to All Roll** / **Apply to Selected** — see [§10](#10-roll-tab) — so editing one marks this card **This Frame Only** until applied.
 
 *   **Multi-core CPU rendering** (**Preferences → Performance**, beside **GPU acceleration**): spreads the CPU rendering kernels across your cores. It takes effect immediately, with no recompile and no restart.
 
@@ -778,9 +779,7 @@ How the negative is measured and normalized into a positive. The film mode that 
 *   **Luma Range Clip** (-100 to 100): how aggressively the tonal range, the black/white-point span, is set. Neutral already applies a small robust clip. Positive tightens it, which is good for dense or fogged negatives where a few stray pixels would push the bounds to extremes. Negative pushes the bounds *outward*, for lifted blacks and unclipped highlights.
 *   **Color Clip** (-100 to 100): the per-channel color-balance clip (orange-mask removal), independent of the tonal range. Positive tightens channel balance; negative samples nearer the extremes.
 
-**Per-Frame Exposure**, marked off with its own subheader: unlike everything above, these never join the roll, on this frame or applied to any other — the same category as Density/Grade in Exposure, a per-shot call rather than a rig or baseline fact.
-
-*   **Global / R / G / B** selector → **White Point** / **Black Point** (-0.25 to 0.25): manual offsets on top of the auto-detected bounds. A positive white point brightens; a positive black point lifts blacks. In R/G/B mode these become per-layer trims: per-dye-layer film-base (Dmin) and Dmax corrections, which is scanner-style per-channel levels. The selector is hidden in B&W Negative, where per-layer trims are meaningless, and in Transparency with Normalize off, where the sliders it scopes are hidden with the rest of the normalization tuning.
+**White Point** and **Black Point**, the manual offsets on top of these bounds, live in **Exposure → Tone** ([§5.2](#52-tone-density-contrast-and-the-print-curve)) beside Density/Grade — they are this frame's own exposure call, not a roll-shared fact, so they sit with everything else in that category rather than on this card.
 
 **Crosstalk**, **Hue Trim** and the sensor unmix all live in **Calibration** (§10.1). They correct the capture rather than the negative-to-positive conversion.
 

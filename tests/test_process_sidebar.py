@@ -12,89 +12,6 @@ def _sidebar():
     return controller, ProcessSidebar(controller)
 
 
-def test_channel_selector_retargets_and_syncs(qapp):
-    controller, sidebar = _sidebar()
-
-    cfg = controller.state.config
-    controller.state.config = replace(
-        cfg,
-        process=replace(
-            cfg.process,
-            white_point_offset=0.1,
-            black_point_offset=-0.05,
-            white_point_trim_red=0.08,
-            black_point_trim_red=-0.02,
-        ),
-    )
-    sidebar.sync_ui()
-
-    assert sidebar._wp_field() == "white_point_offset"
-    assert sidebar._bp_field() == "black_point_offset"
-    assert abs(sidebar.white_point_slider.value() - 0.1) < 1e-9
-    assert abs(sidebar.black_point_slider.value() - (-0.05)) < 1e-9
-
-    sidebar.ch_r_btn.setChecked(True)
-
-    assert sidebar._wp_field() == "white_point_trim_red"
-    assert sidebar._bp_field() == "black_point_trim_red"
-    assert abs(sidebar.white_point_slider.value() - 0.08) < 1e-9
-    assert abs(sidebar.black_point_slider.value() - (-0.02)) < 1e-9
-    assert sidebar.white_point_slider.label.text() == "White Point R"
-    assert sidebar.black_point_slider.label.text() == "Black Point R"
-
-    sidebar.ch_global_btn.setChecked(True)
-    assert abs(sidebar.white_point_slider.value() - 0.1) < 1e-9
-    assert sidebar.white_point_slider.label.text() == "White Point"
-
-
-def test_channel_selector_hidden_in_bw(qapp):
-    controller, sidebar = _sidebar()
-
-    sidebar.sync_ui()
-    assert not sidebar.ch_r_btn.isHidden()
-    sidebar.ch_r_btn.setChecked(True)
-
-    cfg = controller.state.config
-    controller.state.config = replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.BW))
-    sidebar.sync_ui()
-    for w in (sidebar.ch_global_btn, sidebar.ch_r_btn, sidebar.ch_g_btn, sidebar.ch_b_btn):
-        assert w.isHidden()
-    assert sidebar._channel_index() == 0
-    assert sidebar._wp_field() == "white_point_offset"
-
-
-def test_channel_selector_hidden_on_the_transparency_transfer(qapp):
-    """The transfer normalizes with a fixed window, so the WP/BP sliders are hidden — and
-    the selector that scopes them has nothing left to scope."""
-    controller, sidebar = _sidebar()
-
-    cfg = controller.state.config
-    controller.state.config = replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.E6, e6_normalize=True))
-    sidebar.sync_ui()
-    assert not sidebar.ch_r_btn.isHidden()
-    sidebar.ch_r_btn.setChecked(True)
-
-    cfg = controller.state.config
-    controller.state.config = replace(cfg, process=replace(cfg.process, e6_normalize=False))
-    sidebar.sync_ui()
-
-    for w in (sidebar.ch_global_btn, sidebar.ch_r_btn, sidebar.ch_g_btn, sidebar.ch_b_btn):
-        assert w.isHidden()
-    # Reset to Global, so turning Normalize back on does not land on a channel page.
-    assert sidebar._channel_index() == 0
-    assert sidebar._wp_field() == "white_point_offset"
-
-
-def test_lock_bounds_disables_wp_bp_and_selector(qapp):
-    controller, sidebar = _sidebar()
-
-    cfg = controller.state.config
-    controller.state.config = replace(cfg, process=replace(cfg.process, lock_bounds=True))
-    sidebar.sync_ui()
-    for w in (sidebar.white_point_slider, sidebar.black_point_slider, sidebar.ch_global_btn, sidebar.ch_r_btn):
-        assert not w.isEnabled()
-
-
 def test_analysis_region_dot_reflects_committed_region_not_just_tool_state(qapp):
     """Confirming a freehand region closes the draw tool (button unchecks), so the
     dot is the only remaining cue that a region is active and overriding the
@@ -221,25 +138,6 @@ def test_average_toggles_hide_on_the_transparency_transfer(qapp):
     sidebar.sync_ui()
     assert sidebar.use_luma_avg_btn.isHidden()
     assert sidebar.use_color_avg_btn.isHidden()
-
-
-def test_per_frame_exposure_subheader_sits_above_the_channel_selector(qapp):
-    """White/Black Point never join the roll -- unlike every clip/average field above
-    them -- and the subheader is the only cue, since they are otherwise plain sliders
-    sitting beside roll-shared ones."""
-    _, sidebar = _sidebar()
-    header_i = sidebar.layout.indexOf(sidebar.per_frame_subheader)
-    assert header_i >= 0
-    selector_i = _row_index_containing(sidebar.layout, sidebar.ch_global_btn)
-    assert header_i == selector_i - 1
-
-
-def test_per_frame_exposure_subheader_hides_on_the_transparency_transfer(qapp):
-    controller, sidebar = _sidebar()
-    cfg = controller.state.config
-    controller.state.config = replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.E6, e6_normalize=False))
-    sidebar.sync_ui()
-    assert sidebar.per_frame_subheader.isHidden()
 
 
 def test_use_luma_average_toggle_reaches_the_controller(qapp):

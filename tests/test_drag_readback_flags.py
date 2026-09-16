@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 from negpy.desktop.view.sidebar.process import ProcessSidebar
 from negpy.desktop.view.sidebar.sensor import SensorSidebar
+from negpy.desktop.view.sidebar.tone import ToneSidebar
 
 
 def _readback_kwarg(mock) -> bool:
@@ -16,21 +17,26 @@ def _readback_kwarg(mock) -> bool:
 
 def _process_stub() -> MagicMock:
     panel = MagicMock()
-    panel._wp_field.return_value = "white_point_offset"
-    panel._bp_field.return_value = "black_point_offset"
     panel.state.config.process = MagicMock(lock_bounds=False)
     return panel
 
 
-def test_process_per_frame_sliders_follow_persist() -> None:
+def _tone_stub() -> MagicMock:
+    panel = MagicMock()
+    panel._wp_field.return_value = "white_point_offset"
+    panel._bp_field.return_value = "black_point_offset"
+    return panel
+
+
+def test_tone_per_frame_sliders_follow_persist() -> None:
     """White/Black Point stay plain per-frame edits: update_config_section, not the
     roll-aware path, since they can legitimately vary shot to shot within a roll."""
     for handler in (
-        ProcessSidebar._on_white_point_changed,
-        ProcessSidebar._on_black_point_changed,
+        ToneSidebar._on_white_point_changed,
+        ToneSidebar._on_black_point_changed,
     ):
         for persist in (False, True):
-            panel = _process_stub()
+            panel = _tone_stub()
             handler(panel, 0.1, persist=persist)
             assert _readback_kwarg(panel.update_config_section) is persist, handler.__name__
 

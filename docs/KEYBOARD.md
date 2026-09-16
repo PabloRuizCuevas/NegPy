@@ -93,6 +93,8 @@ Actions with no default key are not listed; every one of them can still be bound
 | `Alt + Y` / `Alt + Shift + Y` | Increase / decrease **Toe width** (default step 0.01) |
 | `Alt + U` / `Alt + Shift + U` | Increase / decrease **Shoulder** (default step 0.01) |
 | `Alt + I` / `Alt + Shift + I` | Increase / decrease **Shoulder width** (default step 0.01) |
+| `Alt + P` / `Alt + Shift + P` | Increase / decrease **White point** (default step 0.01) |
+| `Alt + O` / `Alt + Shift + O` | Increase / decrease **Black point** (default step 0.01) |
 
 ## Actions
 | Key | Action |
@@ -113,8 +115,6 @@ Actions with no default key are not listed; every one of them can still be bound
 | `Alt + B` / `Alt + Shift + B` | Increase / decrease **Analysis buffer** (default step 0.01) |
 | `Alt + N` / `Alt + Shift + N` | Increase / decrease **Luma range clip** (default step 1) |
 | `Alt + E` / `Alt + Shift + E` | Increase / decrease **Color range clip** (default step 1) |
-| `Alt + P` / `Alt + Shift + P` | Increase / decrease **White point** (default step 0.01) |
-| `Alt + O` / `Alt + Shift + O` | Increase / decrease **Black point** (default step 0.01) |
 | `Alt + 1` / `Alt + Shift + 1` | Increase / decrease **Crosstalk** (default step 0.01) |
 
 ## Lab
