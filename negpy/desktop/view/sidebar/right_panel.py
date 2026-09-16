@@ -34,18 +34,18 @@ _ROLL_SECTION_ATTRS = frozenset({"sensor_section", "demosaic_section", "roll_sec
 
 class RightPanel(QWidget):
     """
-    Right sidebar panel: a flat tab switcher across Frame / Roll / Metadata / Gear /
-    Export / Scan. Frame holds a sticky Analysis section pinned above the per-image
-    workflow control groups (Geometry / Tone / Color / Finish), Favorites and History
-    -- every tab that changes what the canvas shows for the one loaded frame. Roll
-    holds what the whole roll shares instead: Calibration and Demosaic decide how the
-    rig's files decode, Roll Analysis and Normalization set one shared exposure
-    baseline, Presets stores reusable field sets -- none of it is a per-frame edit.
-    Metadata pins its own Preview above its per-frame cards the same way Frame pins
-    Analysis. Gear pins its own Items/Presets switcher the same way; Export and Scan
-    are plain pages, with no pinned section. Export sits after Gear, not Scan: every
-    roll ends with an export, but few ever touch Scan at all -- it captures new film,
-    not something already in the session.
+    Right sidebar panel: a flat tab switcher across Roll / Frame / Metadata / Gear /
+    Export / Scan. Roll leads, since it's what you settle before working a frame:
+    Calibration and Demosaic decide how the rig's files decode, Roll Analysis and
+    Normalization set one shared exposure baseline, Presets stores reusable field sets
+    -- none of it is a per-frame edit. Frame holds a sticky Analysis section pinned
+    above the per-image workflow control groups (Geometry / Tone / Color / Finish),
+    Favorites and History -- every tab that changes what the canvas shows for the one
+    loaded frame. Metadata pins its own Preview above its per-frame cards the same way
+    Frame pins Analysis. Gear pins its own Items/Presets switcher the same way; Export
+    and Scan are plain pages, with no pinned section. Export sits after Gear, not Scan:
+    every roll ends with an export, but few ever touch Scan at all -- it captures new
+    film, not something already in the session.
     """
 
     def __init__(self, controller: AppController):
@@ -86,8 +86,8 @@ class RightPanel(QWidget):
 
         # (key, icon_name, tooltip, content_widget)
         group_specs = [
-            ("frame", "fa5s.image", "Frame", frame_page),
             ("roll", "mdi6.film", "Roll", roll_page),
+            ("frame", "fa5s.image", "Frame", frame_page),
             ("metadata", "fa5s.tags", "Metadata", self.metadata_sidebar),
             ("gear", "fa5s.toolbox", "Gear", self.gear_panel),
             ("export", "fa5s.file-export", "Export", self.export_sidebar),

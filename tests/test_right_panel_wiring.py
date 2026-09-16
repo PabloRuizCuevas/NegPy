@@ -1,4 +1,4 @@
-"""Signal wiring of the right panel's analysis refresh, and the outer Frame / Roll /
+"""Signal wiring of the right panel's analysis refresh, and the outer Roll / Frame /
 Metadata / Gear / Export / Scan tab switch.
 
 _paint_negative_peek emits image_updated only, never metrics_available, so the
@@ -45,8 +45,8 @@ def test_update_analysis_skips_mid_gesture_frames() -> None:
 def _group_panel_stub(*, scan_index: int = 5, active_group: int = 0, n_groups: int = 6) -> MagicMock:
     panel = MagicMock()
     panel._group_buttons = [MagicMock() for _ in range(n_groups)]
-    panel._group_icons = ["fa5s.image", "mdi6.film", "fa5s.tags", "fa5s.toolbox", "fa5s.file-export", "fa5s.camera-retro"][:n_groups]
-    panel._group_keys = ["frame", "roll", "metadata", "gear", "export", "scan"][:n_groups]
+    panel._group_icons = ["mdi6.film", "fa5s.image", "fa5s.tags", "fa5s.toolbox", "fa5s.file-export", "fa5s.camera-retro"][:n_groups]
+    panel._group_keys = ["roll", "frame", "metadata", "gear", "export", "scan"][:n_groups]
     panel._scan_group_index = scan_index
     panel._active_group = active_group
     return panel
@@ -93,7 +93,7 @@ def test_show_tab_by_key_dispatches_to_a_frame_tab():
 
     RightPanel.show_tab_by_key(panel, "geometry")
 
-    panel._switch_group.assert_called_once_with(0)
+    panel._switch_group.assert_called_once_with(1)
     panel._switch_tab.assert_called_once_with(1)
 
 
@@ -113,7 +113,7 @@ def test_reveal_section_switches_to_frame_then_the_section_tab():
 
     RightPanel.reveal_section(panel, "retouch_section")
 
-    panel._switch_group.assert_called_once_with(0)
+    panel._switch_group.assert_called_once_with(1)
     panel._switch_tab.assert_called_once_with(3)
 
 
@@ -125,7 +125,7 @@ def test_reveal_section_switches_to_roll_for_a_roll_section():
 
     RightPanel.reveal_section(panel, "sensor_section")
 
-    panel._switch_group.assert_called_once_with(1)
+    panel._switch_group.assert_called_once_with(0)
     panel._switch_tab.assert_not_called()
 
 
