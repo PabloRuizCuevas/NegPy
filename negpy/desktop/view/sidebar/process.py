@@ -125,6 +125,10 @@ class ProcessSidebar(BaseSidebar):
         )
         mode_col.addWidget(self.positive_source_btn)
 
+        # Lock Bounds lives beside the Batch Analysis picker instead, once RollAnalysisSidebar
+        # adopts it (ControlsPanel wires this after both sidebars exist): it is specifically
+        # about this frame's relationship to Batch Analysis, not the buffer/region controls
+        # below, and the roll picker is where that relationship is otherwise decided.
         self.lock_bounds_btn = self._small_toggle(
             "fa5s.lock",
             "",
@@ -143,12 +147,15 @@ class ProcessSidebar(BaseSidebar):
         self.clear_analysis_region_btn = self._icon_action(
             "fa5s.times", "Clear the freehand analysis region (fall back to the Analysis Buffer)", width=None
         )
-        # The slider takes half the row and the three buttons split the other half. Equal stretch,
+        # The slider takes half the row and the two buttons split the other half. Equal stretch,
         # not fixed widths, is what keeps them the same size.
         buf_row.addWidget(self.analysis_buffer_slider, 3)
-        for btn in (self.analysis_region_btn, self.clear_analysis_region_btn, self.lock_bounds_btn):
+        for btn in (self.analysis_region_btn, self.clear_analysis_region_btn):
             buf_row.addWidget(btn, 1)
-        self.layout.addLayout(buf_row)
+        # Lives above the Batch Analysis picker, so ControlsPanel places it outside
+        # self.layout -- the same reason mode_bar sits above every Setup collapsible.
+        self.analysis_buffer_bar = QWidget()
+        self.analysis_buffer_bar.setLayout(buf_row)
 
         # Which baseline each axis' bounds come from: the roll's shared Batch Analysis
         # meter (picked in the Roll Baseline field above) or this frame's own

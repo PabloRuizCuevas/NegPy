@@ -187,12 +187,16 @@ class ControlsPanel(QWidget):
         self.roll_sidebar = RollAnalysisSidebar(self.controller)
         # Roll Analysis (the batch meter) and Normalization (per-frame bounds, White/
         # Black Point) are one feature -- getting a negative to a correctly normalized
-        # positive -- so they share a card. Batch Analysis stays its own explicit
-        # action, a job rather than a value to preview or Apply.
+        # positive -- so they share a card. The buffer/region controls that feed
+        # Batch Analysis come first, then the roll picker they feed; Lock Bounds
+        # moves from the buffer row onto the picker's own row, since it is about
+        # this frame's relationship to Batch Analysis, not the buffer itself.
+        self.roll_sidebar.insert_lock_button(self.process_sidebar.lock_bounds_btn)
         normalization_body = QWidget()
         normalization_layout = QVBoxLayout(normalization_body)
         normalization_layout.setContentsMargins(0, 0, 0, 0)
         normalization_layout.setSpacing(4)
+        normalization_layout.addWidget(self.process_sidebar.analysis_buffer_bar)
         normalization_layout.addWidget(self.roll_sidebar)
         normalization_layout.addWidget(self.process_sidebar)
         self.process_section = self._make_section(

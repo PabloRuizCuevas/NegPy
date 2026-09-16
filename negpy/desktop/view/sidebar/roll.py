@@ -1,5 +1,7 @@
 from typing import Optional
 
+from PyQt6.QtWidgets import QHBoxLayout
+
 from negpy.desktop.view.sidebar.base import BaseSidebar
 from negpy.desktop.view.styles.templates import hint_label, section_subheader, set_hint_kind
 from negpy.desktop.view.widgets.searchable_gear_combo import SearchableGearCombo
@@ -16,15 +18,28 @@ class RollAnalysisSidebar(BaseSidebar):
     Which roll's Batch Analysis baseline this frame's Use Luma/Color Average axes
     borrow: a searchable picker over every roll in your library, ticked once it has
     one. Picking a roll loads its baseline immediately -- there is no separate Apply.
-    Batch Analysis itself (the metering run that fills the tick in) is a Library
-    action on the roll, not a value this card edits.
+    Reanalyze, beside the picker, runs Batch Analysis itself (the metering pass that
+    fills the tick in) -- the same action the Library's own "Analyze Roll…" offers,
+    reachable here too since this is where you notice a roll has never been measured.
+    Enabled only for the loaded roll, since Batch Analysis measures the files
+    currently open, not just whichever one this picker happens to show.
     """
 
     def _init_ui(self) -> None:
         self.layout.addWidget(section_subheader("Batch Analysis"))
+        row = QHBoxLayout()
         self.roll_combo = SearchableGearCombo(placeholder="Search rolls…")
         self.roll_combo.setToolTip("Picking a roll loads its saved Batch Analysis baseline onto the loaded files.")
-        self.layout.addWidget(self.roll_combo)
+        row.addWidget(self.roll_combo, 1)
+        self.reanalyze_btn = self._icon_action(
+            "fa5s.play",
+            "Analyze Roll — measures every loaded frame's exposure and saves the average as this roll's baseline",
+        )
+        row.addWidget(self.reanalyze_btn)
+        self.layout.addLayout(row)
+        # Lock Bounds is adopted into this same row (between the combo and Reanalyze) once
+        # ControlsPanel wires it in -- see insert_lock_button.
+        self._picker_row = row
 
         self.roll_status_hint = hint_label("", "muted")
         self.layout.addWidget(self.roll_status_hint)
@@ -33,8 +48,16 @@ class RollAnalysisSidebar(BaseSidebar):
         self._refresh_rolls(force=True)
         self.layout.addStretch()
 
+    def insert_lock_button(self, lock_bounds_btn) -> None:
+        """Adopts ProcessSidebar's Lock Bounds toggle into this row, between the roll
+        picker and Reanalyze. Lock Bounds is specifically about this frame's
+        relationship to Batch Analysis, so it belongs beside the action it exempts
+        the frame from -- not the Analysis Buffer row it used to share."""
+        self._picker_row.insertWidget(1, lock_bounds_btn)
+
     def _connect_signals(self) -> None:
         self.roll_combo.selection_changed.connect(self._on_roll_picked)
+        self.reanalyze_btn.clicked.connect(self.controller.request_batch_normalization)
         self.sync_ui()
 
     def _on_roll_picked(self, roll_id: str) -> None:
@@ -42,7 +65,9 @@ class RollAnalysisSidebar(BaseSidebar):
         onto the currently loaded files. A no-op if it has never been analyzed."""
         if roll_id:
             self.controller.apply_normalization_roll(roll_id)
-        self._update_roll_status_hint(self.controller.state.active_roll_id, roll_id)
+        active_id = self.controller.state.active_roll_id
+        self._update_roll_status_hint(active_id, roll_id)
+        self._update_reanalyze_btn(active_id, roll_id)
 
     def _name_for_id(self, roll_id: str) -> str:
         entry = rolls.roll_for_id(self.controller.session.repo, roll_id)
@@ -75,6 +100,7 @@ class RollAnalysisSidebar(BaseSidebar):
         entries = [(f"{_TICK}{entry.get('name', '')}" if rid in analyzed else entry.get("name", ""), rid) for rid, entry in ordered]
         self.roll_combo.set_labeled_items(entries, selected, search_fn=lambda _label, item_id: self._name_for_id(item_id))
         self._update_roll_status_hint(active_id, selected)
+        self._update_reanalyze_btn(active_id, selected)
 
     def _update_roll_status_hint(self, active_id: Optional[str], selected_id: str) -> None:
         """Flags a baseline picked from a roll other than the one loaded."""
@@ -83,6 +109,17 @@ class RollAnalysisSidebar(BaseSidebar):
             self.roll_status_hint.setText(f'Using "{self._name_for_id(selected_id)}", a baseline saved for a different roll')
         else:
             self.roll_status_hint.setText("")
+
+    def _update_reanalyze_btn(self, active_id: Optional[str], selected_id: str) -> None:
+        """Reanalyze only ever measures the loaded roll, same as the Library's own
+        "Analyze Roll…" -- grayed out otherwise, with the same explanation."""
+        is_active = bool(selected_id) and selected_id == active_id
+        self.reanalyze_btn.setEnabled(is_active)
+        self.reanalyze_btn.setToolTip(
+            "Analyze Roll — measures every loaded frame's exposure and saves the average as this roll's baseline"
+            if is_active
+            else "Open this roll first — Batch Analysis measures the files currently loaded."
+        )
 
     def sync_ui(self) -> None:
         self.block_signals(True)

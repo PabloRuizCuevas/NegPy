@@ -757,7 +757,7 @@ Bayer and X-Trans RAW only: a scanner TIFF, a Pakon scan or a linear DNG arrives
 <!-- panel:process -->
 ### 10.3 Normalization: negative → positive
 
-How the negative is measured into a positive's tonal bounds. The film mode that decides *which* conversion runs sits above the panels (§10), and how the scan is decoded lives in **Calibration** (§10.1). The Roll Baseline picker below and the analysis window/tuning further down are one card: getting a negative's bounds right is one job, whether a frame borrows a roll's shared meter or measures its own. Every field here follows the Roll tab's usual **Apply to All Roll** / **Apply to Selected** — see [§10](#10-roll-tab) — so editing one marks this card **This Frame Only** until applied.
+How the negative is measured into a positive's tonal bounds. The film mode that decides *which* conversion runs sits above the panels (§10), and how the scan is decoded lives in **Calibration** (§10.1). The analysis window below, the Batch Analysis picker and the tuning further down are one card: getting a negative's bounds right is one job, whether a frame borrows a roll's shared meter or measures its own. Every field here follows the Roll tab's usual **Apply to All Roll** / **Apply to Selected** — see [§10](#10-roll-tab) — so editing one marks this card **This Frame Only** until applied.
 
 *   **Multi-core CPU rendering** (**Preferences → Performance**, beside **GPU acceleration**): spreads the CPU rendering kernels across your cores. It takes effect immediately, with no recompile and no restart.
 
@@ -765,15 +765,16 @@ How the negative is measured into a positive's tonal bounds. The film mode that 
 
     On Windows and Linux this is **on**. On macOS it is **off**, pending more evidence: the underlying threading layer terminates the process outright if two threads enter it at once, and while NegPy serialises every such call behind a lock, that has been proven on one Mac rather than on the range of them. If you turn it on and the app ever closes without warning, NegPy notices on the next launch and offers to turn it back off; that is the failure to expect, and it is recoverable. Setting `cpu_parallel` under `[performance]` in `override.toml` still wins over Preferences, for a machine that cannot start.
 
-**Batch Analysis**: meter the whole roll once and share the baseline, so frames from the same film match. It is a **Library** action, not a value on this card — right-click the loaded roll and choose **Analyze Roll…** ([§2](#2-film-strip-left-panel)). It scans every loaded file and computes a roll-average density and color balance, discarding outliers, and stores the result as that roll's baseline. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)* A frame with **Lock Bounds** on keeps its own exposure and is skipped. The status message afterward names any frame whose own measurement was discarded as an outlier: that frame is still given the roll average like everyone else, but the mismatch is worth a look — usually **Use Luma Average** / **Use Color Average** off for that one frame, below.
-
-*   **Roll Baseline**: type to search every roll in your library, the same list the Library section shows — a roll with a saved baseline is ticked. Defaults to the loaded roll. Picking a roll loads its baseline immediately, no separate Apply step; picking a different, ticked roll shows a hint that its baseline was saved for that roll, not this one. Picking a roll with no saved baseline yet does nothing until it has been analyzed.
-
-**Analysis window**, where NegPy measures the black and white points. The slider takes half the row, the three buttons the other half:
+**Analysis window**, where NegPy measures the black and white points, sits first since it feeds the analysis below it. The slider takes half the row, the two buttons the other half:
 
 *   **Analysis Buffer** (0.0 to 0.25): insets the measurement window from the frame edge so film rebate, sprocket holes and scanner borders do not skew detection. Raise it on scans with wide borders.
 *   **Analysis Region** (square-draw tool): draw a freehand region on the canvas to meter *exactly* that area, overriding the buffer. Double-click inside to confirm; the ✕ button clears it.
-*   **Lock Bounds** (padlock): freezes the analyzed normalization bounds for this frame, so cropping or moving sliders no longer re-analyzes it, and Batch Analysis above leaves it untouched, on the first run as well as every re-run. Lock it in once you are happy with the bounds.
+
+**Batch Analysis**: meter the whole roll once and share the baseline, so frames from the same film match.
+
+*   **Roll Baseline**: type to search every roll in your library, the same list the Library section shows — a roll with a saved baseline is ticked. Defaults to the loaded roll. Picking a roll loads its baseline immediately, no separate Apply step; picking a different, ticked roll shows a hint that its baseline was saved for that roll, not this one.
+*   **Lock Bounds** (padlock): freezes the analyzed normalization bounds for this frame, so cropping or moving the sliders above no longer re-analyzes it, and Batch Analysis leaves it untouched, on the first run as well as every re-run. Lock it in once you are happy with the bounds.
+*   **Reanalyze** (▶): runs Batch Analysis on the loaded roll — the same action as **Analyze Roll…** on the Library's roll list ([§2](#2-film-strip-left-panel)), reachable here since this is where an unanalyzed roll (no tick) is noticed. It scans every loaded file and computes a roll-average density and color balance, discarding outliers, and stores the result as that roll's baseline. *(Tip: if you use Batch Autocrop, run it first, in **Image only** mode, so metering sees consistent crops.)* Grayed out on a roll other than the one loaded, since Batch Analysis measures the files currently open. A frame with Lock Bounds on keeps its own exposure and is skipped. The status message afterward names any frame whose own measurement was discarded as an outlier: that frame is still given the roll average like everyone else, but the mismatch is worth a look — usually **Use Luma Average** / **Use Color Average** off for that one frame, below.
 
 **Normalization tuning:**
 

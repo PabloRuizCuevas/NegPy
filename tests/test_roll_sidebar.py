@@ -1,7 +1,8 @@
 """RollAnalysisSidebar: a plain picker over the library's rolls. Picking one is the
 whole action -- it loads that roll's saved Batch Analysis baseline immediately, no
-separate Apply. Batch Analysis itself (the metering run that fills the tick in) is a
-Library action on the roll, tested in test_library_tree.py, not here."""
+separate Apply. Reanalyze, beside the picker, runs Batch Analysis itself (the metering
+run that fills the tick in) -- the same action the Library's "Analyze Roll…" offers
+(tested in test_library_tree.py), reachable here too, enabled only for the loaded roll."""
 
 from dataclasses import replace
 from unittest.mock import MagicMock
@@ -45,7 +46,8 @@ def test_picker_owns_its_batch_analysis_subheader(qapp):
     Point) isn't Batch Analysis, and labeling it that way would mislead."""
     _, sidebar, _ids = _sidebar()
     assert sidebar.layout.itemAt(0).widget() is not sidebar.roll_combo
-    assert sidebar.layout.itemAt(1).widget() is sidebar.roll_combo
+    picker_row = sidebar.layout.itemAt(1).layout()
+    assert picker_row.itemAt(0).widget() is sidebar.roll_combo
 
 
 def test_picker_defaults_to_the_active_roll_and_lists_every_library_roll(qapp):
@@ -54,6 +56,43 @@ def test_picker_defaults_to_the_active_roll_and_lists_every_library_roll(qapp):
     assert sidebar.roll_combo.line_edit().text() == "Tri-X"
     sidebar.roll_combo.set_selected_id(ids["Portra 400"])
     assert sidebar.roll_combo.line_edit().text() == "Portra 400"
+
+
+def test_reanalyze_button_runs_batch_normalization(qapp):
+    controller, sidebar, _ids = _sidebar(roll_names=["Tri-X"], active_name="Tri-X")
+    sidebar.reanalyze_btn.click()
+    controller.request_batch_normalization.assert_called_once()
+
+
+def test_reanalyze_button_enabled_only_for_the_loaded_roll(qapp):
+    _, sidebar, ids = _sidebar(roll_names=["Portra 400", "Tri-X"], active_name="Tri-X")
+    assert sidebar.reanalyze_btn.isEnabled()
+
+    # set_selected_id alone only updates the display; _on_roll_picked is what
+    # selection_changed actually fires, so drive it directly here.
+    sidebar._on_roll_picked(ids["Portra 400"])
+
+    assert not sidebar.reanalyze_btn.isEnabled()
+    assert "Open this roll first" in sidebar.reanalyze_btn.toolTip()
+
+
+def test_reanalyze_button_disabled_with_no_roll_loaded(qapp):
+    _, sidebar, _ids = _sidebar(roll_names=["Tri-X"])
+    assert not sidebar.reanalyze_btn.isEnabled()
+
+
+def test_insert_lock_button_sits_between_the_combo_and_reanalyze(qapp):
+    from PyQt6.QtWidgets import QPushButton
+
+    _, sidebar, _ids = _sidebar()
+    lock_btn = QPushButton()
+
+    sidebar.insert_lock_button(lock_btn)
+
+    picker_row = sidebar.layout.itemAt(1).layout()
+    assert picker_row.itemAt(0).widget() is sidebar.roll_combo
+    assert picker_row.itemAt(1).widget() is lock_btn
+    assert picker_row.itemAt(2).widget() is sidebar.reanalyze_btn
 
 
 def test_the_loaded_roll_is_pinned_first_in_the_dropdown(qapp):
