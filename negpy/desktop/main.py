@@ -55,7 +55,7 @@ class _AppStyle(QProxyStyle):
     the moment the cursor crosses a toolbar, which reads as noise — and no mnemonic
     underlines on macOS, where they mark a key that does nothing."""
 
-    _TOOLTIP_WAKEUP_MS = 1400
+    _TOOLTIP_WAKEUP_MS = 900
 
     def styleHint(self, hint, option=None, widget=None, returnData=None):
         if hint == QStyle.StyleHint.SH_ToolTip_WakeUpDelay:
