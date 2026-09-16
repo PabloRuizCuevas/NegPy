@@ -334,20 +334,32 @@ class RightPanel(QWidget):
             self.controller.roll_override_locked_frames(),
             "With All Roll, also overwrite and unlock any frame that already has this card set to its own value",
         )
-        self.roll_force_btn.toggled.connect(lambda checked: self.controller.set_roll_override_locked_frames(checked))
+        self.roll_force_btn.toggled.connect(self._on_roll_force_toggled)
         row_layout.addWidget(self.roll_force_btn)
 
         self._set_roll_edit_scope(self.controller.roll_edit_scope(), persist=False)
         return row
 
     def _set_roll_edit_scope(self, key: str, *, persist: bool = True) -> None:
-        _menu_label, btn_label = _ROLL_EDIT_SCOPES[key]
         self._roll_scope_actions[key].setChecked(True)
-        self.roll_scope_btn.setText(btn_label)
-        self.roll_scope_btn.setToolTip(_menu_label)
+        self.roll_scope_btn.setText(_ROLL_EDIT_SCOPES[key][1])
         self.roll_force_btn.setEnabled(key == "all")
         if persist:
             self.controller.set_roll_edit_scope(key)
+        self._sync_roll_apply_enabled()
+
+    def _on_roll_force_toggled(self, checked: bool) -> None:
+        self.controller.set_roll_override_locked_frames(checked)
+        self._sync_roll_apply_enabled()
+
+    def _sync_roll_apply_enabled(self) -> None:
+        """Keeps the Apply button dark whenever its current scope would touch nothing --
+        a lock toggling, a frame switch or Force Settings can each flip this without
+        going through _set_roll_edit_scope, so this is also wired to config_updated."""
+        menu_label, _btn_label = _ROLL_EDIT_SCOPES[self.controller.roll_edit_scope()]
+        can_apply = self.controller.can_apply_roll_cards()
+        self.roll_scope_btn.setEnabled(can_apply)
+        self.roll_scope_btn.setToolTip(menu_label if can_apply else "Nothing to apply — every card already follows the roll")
 
     def _on_roll_apply_clicked(self) -> None:
         if self.controller.roll_edit_scope() == "selected":
@@ -413,12 +425,14 @@ class RightPanel(QWidget):
         self.controller.tone_drag_changed.connect(self.curve_widget.set_active_param)
         self.controls_panel.modified_synced.connect(self._sync_tab_edited)
 
-        # These two sync_ui calls scan gear/template files; never per drag tick.
+        # The sync_ui calls scan gear/template files; never per drag tick. The roll-apply
+        # sync is cheap but rides along rather than getting its own timer.
         self._sync_debounce = QTimer()
         self._sync_debounce.setSingleShot(True)
         self._sync_debounce.setInterval(150)
         self._sync_debounce.timeout.connect(self.export_sidebar.sync_ui)
         self._sync_debounce.timeout.connect(self.metadata_sidebar.sync_ui)
+        self._sync_debounce.timeout.connect(self._sync_roll_apply_enabled)
         self.controller.config_updated.connect(self._sync_debounce.start)
 
     def _sync_tab_edited(self) -> None:

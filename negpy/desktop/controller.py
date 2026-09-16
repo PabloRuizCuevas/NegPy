@@ -3542,6 +3542,31 @@ class AppController(QObject):
         Apply to All Roll / Apply to Selected act on."""
         return [key for key in self._ROLL_CARDS if self.roll_card_locked(key)]
 
+    def can_apply_roll_cards(self) -> bool:
+        """Whether the Roll tab's Apply button, at its current scope, would touch
+        anything right now -- so it can go dark instead of a no-op click needing the
+        status line to explain itself. "Selected" only ever pushes diverged_roll_cards();
+        "All Roll" with Force Settings also counts a stray lock elsewhere in the roll
+        that _reclaim_fields_for can actually reclaim toward something."""
+        roll_id = self.state.active_roll_id
+        if roll_id is None:
+            return False
+        if self.diverged_roll_cards():
+            return True
+        if self.roll_edit_scope() != "all" or not self.roll_override_locked_frames():
+            return False
+        active_hash = self.state.current_file_hash
+        for card_key in self._ROLL_CARDS:
+            if not self._reclaim_fields_for(card_key, roll_id):
+                continue
+            for f_info in self.state.uploaded_files:
+                f_hash = f_info.get("hash")
+                if not f_hash or f_hash == active_hash:
+                    continue
+                if card_key in rolls.frame_override_cards(self.session.repo, roll_id, rolls.unforked_hash(f_hash)):
+                    return True
+        return False
+
     def roll_edit_scope(self) -> str:
         """Which action the Roll tab's split button's main half currently performs:
         "all" (default, Apply to All Roll) or "selected" (Apply to Selected) -- sticky
@@ -3691,24 +3716,28 @@ class AppController(QObject):
             self.session.repo.save_file_settings(f_hash, new_p, file_path=f_info.get("path", ""))
             rolls.set_frame_override(self.session.repo, roll_id, rolls.unforked_hash(f_hash), card_key, True)
 
+    def _reclaim_fields_for(self, card_key: str, roll_id: str) -> dict:
+        """The values Force Settings would freeze *card_key* to: the active frame's own,
+        if it is itself one of diverged_roll_cards() (about to become the new default),
+        else the roll's already-stored default. Empty if neither exists -- a card
+        neither diverged here nor ever given a roll default has nothing to reclaim
+        toward. Shared by _reclaim_locked_frames and can_apply_roll_cards so "would
+        this touch anything" and "does this touch it" can never drift apart."""
+        card_fields = rolls.ROLL_DEFAULT_FIELDS[card_key]
+        if card_key in self.diverged_roll_cards():
+            return {name: getattr(self.state.config.process, name) for name in card_fields}
+        defaults = rolls.roll_defaults(self.session.repo, roll_id)
+        return {name: defaults[name] for name in card_fields if name in defaults}
+
     def _reclaim_locked_frames(self, card_key: str, roll_id: str) -> bool:
         """Backs Force Settings: overwrites every other frame currently locked away
         from *card_key*, anywhere in the roll, and unlocks it, so an "all" apply really
         does make the whole roll uniform again -- not just the frames that happen to
-        share the active frame's own divergence.
-
-        Freezes toward the active frame's value if this card is one of its diverged_roll_cards()
-        (about to become the new default), else toward the roll's already-stored default. A card
-        neither diverged here nor ever given a roll default has nothing to reclaim toward, so this
-        is a no-op. Returns whether anything was actually touched, for the caller's status line."""
-        card_fields = rolls.ROLL_DEFAULT_FIELDS[card_key]
-        if card_key in self.diverged_roll_cards():
-            frozen = {name: getattr(self.state.config.process, name) for name in card_fields}
-        else:
-            defaults = rolls.roll_defaults(self.session.repo, roll_id)
-            frozen = {name: defaults[name] for name in card_fields if name in defaults}
-            if not frozen:
-                return False
+        share the active frame's own divergence. Returns whether anything was actually
+        touched, for the caller's status line."""
+        frozen = self._reclaim_fields_for(card_key, roll_id)
+        if not frozen:
+            return False
         active_hash = self.state.current_file_hash
         touched = False
         for f_info in self.state.uploaded_files:
