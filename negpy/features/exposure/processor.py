@@ -46,6 +46,8 @@ from negpy.features.exposure.transfer import (
     TRANSFER_DENSITY_RANGE,
     apply_transfer_curve,
     is_transfer_path,
+    transfer_assumed_anchor,
+    transfer_auto_terms,
     transfer_bounds,
     transfer_curve_params,
     transfer_widths,
@@ -210,10 +212,13 @@ class NormalizationProcessor:
         Transparency normalization: camera primaries -> working space, then a FIXED
         log-density window.
 
-        No meter runs here. Measured bounds are exactly what makes two exposures of one
-        slide render alike, and a transparency was exposed deliberately — so the window
-        is anchored to the decoder's white level, identical for every frame, and a
-        brighter capture stays brighter.
+        No meter shapes the window itself. Measured bounds are exactly what makes two
+        exposures of one slide render alike, and a raw slide was exposed deliberately
+        — so the window is anchored to the decoder's white level, identical for every
+        frame, and a brighter capture stays brighter. A Positive frame carries no such
+        bracket to protect, so it is metered for Auto Density/Auto Grade exactly like a
+        negative is (PhotometricProcessor._process_transparency reads the metrics
+        stored below).
         """
         epsilon = 1e-6
         # Linear RAW decodes without white balance, which the row-normalized camera matrix
@@ -243,17 +248,37 @@ class NormalizationProcessor:
         bounds = LogNegativeBounds(floors=floors, ceils=ceils)
         res = normalize_log_image(img_log, bounds)
 
+        # Shared prefilter for the neutral axis and, on a Positive frame, Auto Density/
+        # Grade's four meters -- working-space (post camera matrix) and post-unmix, since
+        # that is what this curve itself consumes.
+        needs_axis = self.cast_strength > 0.0 and context.process_mode != ProcessMode.BW
+        prefiltered = None
+        if needs_axis or self.config.positive_source:
+            an_roi, an_buffer = resolve_analysis_region(
+                linear.shape, context.active_roi, self.config.analysis_buffer, self.config.analysis_rect
+            )
+            prefiltered = unmix_log_image(prefilter_log_grid(linear, an_roi, an_buffer), unmix)
+
         # Cast Removal's neutral axis, metered on the working-space log image the curve
         # itself consumes — the camera matrix above is a colour transform, so a meter run
         # ahead of it would read a different space than the GPU's. Pre-trim bounds, like the
         # measured path, so a creative White/Black Point nudge does not perturb it.
-        if self.cast_strength > 0.0 and context.process_mode != ProcessMode.BW:
-            an_roi, an_buffer = resolve_analysis_region(
-                linear.shape, context.active_roi, self.config.analysis_buffer, self.config.analysis_rect
+        if needs_axis:
+            assert prefiltered is not None
+            context.metrics["neutral_axis_refs"] = measure_neutral_axis_from_log(prefiltered, pre_trim_bounds, None, 0.0)
+
+        # Auto Density/Auto Grade: metered the same way as the measured path, against the
+        # fixed pre-trim window so a creative White/Black Point nudge does not perturb
+        # them either. A raw un-normalized slide never reaches here -- is_transfer_path's
+        # bracket-preservation guarantee holds only because these stay unmeasured for it.
+        if self.config.positive_source:
+            assert prefiltered is not None
+            context.metrics["metered_anchor"] = measure_anchor_from_log(
+                prefiltered, pre_trim_bounds, None, 0.0, assumed=transfer_assumed_anchor()
             )
-            context.metrics["neutral_axis_refs"] = measure_neutral_axis_from_log(
-                unmix_log_image(prefilter_log_grid(linear, an_roi, an_buffer), unmix), pre_trim_bounds, None, 0.0
-            )
+            context.metrics["textural_range"] = measure_textural_range_from_log(prefiltered, None, 0.0)
+            context.metrics["shadow_point"] = measure_shadow_point_from_log(prefiltered, pre_trim_bounds, None, 0.0)
+            context.metrics["highlight_point"] = measure_highlight_point_from_log(prefiltered, pre_trim_bounds, None, 0.0)
 
         context.metrics["log_bounds"] = bounds
         context.metrics["log_bounds_base"] = bounds
@@ -465,14 +490,27 @@ class PhotometricProcessor:
     def _process_transparency(self, image: ImageBuffer, context: PipelineContext) -> ImageBuffer:
         """
         Transparency transfer: the exact inverse of the fixed-bounds normalization,
-        deviated only by what the user has actually moved.
+        deviated only by what the user has actually moved -- plus Auto Density/Auto
+        Grade, restated on this curve (transfer_auto_terms).
 
-        Auto density and auto contrast do not run — they read the frame to decide a look,
-        which is the opposite of starting from the capture. Cast Removal does, but starts
-        at 0 on a slide: what it corrects here is a faded original's crossover, and a
-        deliberate colour cast is the photograph.
+        A raw un-normalized slide never reaches here with metered inputs: reading the
+        frame to decide a look is the opposite of starting from the capture, which is
+        why is_transfer_path exists, and transfer_auto_terms is inert on a None input.
+        A Positive frame carries no such bracket to protect, so it runs exactly as it
+        does on a negative. Cast Removal runs either way, starting at 0 on a slide: what
+        it corrects here is a faded original's crossover, and a deliberate colour cast
+        is the photograph.
         """
         exposure_offset, contrast, toe3, sh3 = transfer_curve_params(self.config)
+        exposure_offset, contrast, highlight_auto = transfer_auto_terms(
+            self.config,
+            exposure_offset,
+            contrast,
+            context.metrics.get("textural_range"),
+            context.metrics.get("metered_anchor"),
+            context.metrics.get("shadow_point"),
+            context.metrics.get("highlight_point"),
+        )
         final_bounds = context.metrics.get("final_bounds")
         cmy_offsets = filtration_offsets(
             (self.config.wb_cyan, self.config.wb_magenta, self.config.wb_yellow),
@@ -505,7 +543,7 @@ class PhotometricProcessor:
             tw3,
             sw3,
             shadow_density=self.config.shadow_density,
-            highlight_density=self.config.highlight_density,
+            highlight_density=self.config.highlight_density + highlight_auto,
             cast_gain=cast_gain,
             cast_offset=cast_offset,
             positive_source=self.process_config.positive_source,

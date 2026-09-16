@@ -269,6 +269,31 @@ def test_white_black_point_stay_visible_on_the_transparency_transfer(qapp):
     assert not sidebar.tonal_range_header.isHidden()
 
 
+def test_auto_density_grade_hide_on_a_raw_slide_but_stay_on_a_positive(qapp):
+    """They meter the frame to pick a look, which the transfer path exists to avoid for
+    a deliberate camera exposure -- but a Positive frame carries no such bracket, so
+    they run there exactly as on a negative (transfer_auto_terms)."""
+    controller = MagicMock()
+    controller.state = AppState()
+    sidebar = ToneSidebar(controller)
+
+    cfg = controller.state.config
+    controller.state.config = replace(
+        cfg, process=replace(cfg.process, process_mode=ProcessMode.E6, e6_normalize=False, positive_source=False)
+    )
+    sidebar.sync_ui()
+    assert sidebar.auto_density_btn.isHidden()
+    assert sidebar.auto_grade_btn.isHidden()
+    # The rest of the paper-model controls stay hidden either way.
+    assert sidebar.paper_dmin_btn.isHidden()
+
+    controller.state.config = replace(controller.state.config, process=replace(controller.state.config.process, positive_source=True))
+    sidebar.sync_ui()
+    assert not sidebar.auto_density_btn.isHidden()
+    assert not sidebar.auto_grade_btn.isHidden()
+    assert sidebar.paper_dmin_btn.isHidden()
+
+
 def test_tonal_range_header_sits_directly_above_white_point(qapp):
     """Marks White/Black Point off from the print-curve controls below -- they come
     from a different pipeline stage (Normalization) and only share this card's

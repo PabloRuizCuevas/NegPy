@@ -467,10 +467,9 @@ class ToneSidebar(BaseSidebar):
             self.paper_combo.setVisible(mode != ProcessMode.E6)
 
             # Transfer path (an as-captured Slide, or any mode marked Positive): the render
-            # starts from the capture instead of printing it, so the paper model and the
-            # automatic grading that decides a look have nothing to act on. Density, Grade,
-            # Toe and Shoulder stay, because they drive the transfer curve (see
-            # features/exposure/transfer.py).
+            # starts from the capture instead of printing it, so the paper model has
+            # nothing to act on. Density, Grade, Toe and Shoulder stay, because they drive
+            # the transfer curve (see features/exposure/transfer.py).
             from negpy.features.exposure.transfer import is_transfer_path
 
             proc = self.state.config.process
@@ -480,8 +479,6 @@ class ToneSidebar(BaseSidebar):
             # open shadows without moving the whole scale. Split Grade does not, because it rotates
             # contrast about the same centres and the transfer curve has no per-zone slope to rotate.
             for w in (
-                self.auto_density_btn,
-                self.auto_grade_btn,
                 self.paper_dmin_btn,
                 self.paper_black_btn,
                 self.midtone_gamma_slider,
@@ -495,6 +492,13 @@ class ToneSidebar(BaseSidebar):
                 self.mask_spacer_slider,
             ):
                 w.setVisible(not transfer)
+            # Auto Density/Auto Grade stay on a raw un-normalized slide only: they meter
+            # the frame to pick a look, which is what that path exists to avoid for a
+            # deliberate camera exposure. A Positive frame carries no such bracket to
+            # protect, so they run there exactly as on a negative (transfer_auto_terms).
+            auto_hidden = transfer and not proc.positive_source
+            for w in (self.auto_density_btn, self.auto_grade_btn):
+                w.setVisible(not auto_hidden)
             # Tonal Range stays: White/Black Point deviate the transfer path's fixed
             # window the same way they deviate a measured one (NormalizationProcessor.
             # _process_transparency), so they still have something to act on.
