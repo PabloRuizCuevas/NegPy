@@ -290,6 +290,7 @@ class RightPanel(QWidget):
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(8)
+        page_layout.addWidget(cp.roll_override_summary)
         page_layout.addWidget(self._build_roll_scope_control())
         page_layout.addWidget(cp.process_sidebar.mode_bar)
         for section in (cp.sensor_section, cp.demosaic_section, cp.roll_section, cp.process_section, cp.presets_section):

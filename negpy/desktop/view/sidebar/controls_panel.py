@@ -6,7 +6,7 @@ from PyQt6.QtCore import QTimer, pyqtSignal
 
 from negpy.desktop.controller import AppController
 from negpy.desktop.view.shortcut_registry import tooltip_with_shortcut
-from negpy.desktop.view.styles.templates import wrap_tooltip
+from negpy.desktop.view.styles.templates import hint_label, set_hint_kind, wrap_tooltip
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
 from negpy.desktop.view.widgets.charts import MiniHistogramWidget, MiniRGBHistogramWidget
 from negpy.desktop.view.styles.theme import THEME
@@ -194,6 +194,11 @@ class ControlsPanel(QWidget):
             self.roll_sidebar,
             icon_name="mdi6.film",
         )
+
+        # One-line answer to "roll-wide or this frame's own": which of Calibration,
+        # Demosaic and Normalization (if any) this frame overrides. RightPanel places
+        # it above every Roll-tab card; _sync_roll_locks keeps it current.
+        self.roll_override_summary = hint_label("", "muted")
 
         self.color_sidebar = ColorSidebar(self.controller)
         self.color_histogram = MiniRGBHistogramWidget()
@@ -771,10 +776,14 @@ class ControlsPanel(QWidget):
         self._sync_modified_dots()
         self._sync_roll_locks()
 
+    _ROLL_CARD_LABELS = {"sensor": "Calibration", "demosaic": "Demosaic", "process": "Normalization"}
+
     def _sync_roll_locks(self) -> None:
         """Show each Roll-tab card's lock only once it is actually locked -- the
-        exception worth flagging, not the common case of following the roll, which
-        the roll-scope control above the cards already speaks for."""
+        exception worth flagging, not the common case of following the roll -- and
+        keep roll_override_summary's one-line answer to "roll-wide or this frame's
+        own" current alongside it."""
+        overridden = []
         for card_key, section in (
             ("sensor", self.sensor_section),
             ("demosaic", self.demosaic_section),
@@ -782,6 +791,17 @@ class ControlsPanel(QWidget):
         ):
             locked = self.controller.roll_card_locked(card_key)
             section.set_lock_button(locked, locked)
+            if locked:
+                overridden.append(self._ROLL_CARD_LABELS[card_key])
+
+        if self.controller.state.active_roll_id is None:
+            self.roll_override_summary.setText("")
+        elif overridden:
+            set_hint_kind(self.roll_override_summary, "warning")
+            self.roll_override_summary.setText(f"This frame overrides: {', '.join(overridden)}")
+        else:
+            set_hint_kind(self.roll_override_summary, "muted")
+            self.roll_override_summary.setText("Follows the roll")
 
     def _update_histogram(self) -> None:
         """Repaint only when the render produced a new buffer."""

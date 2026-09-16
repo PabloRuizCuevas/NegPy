@@ -101,6 +101,25 @@ class TestLockButton:
         section.set_lock_button(visible=True, locked=True)
         assert section.lock_btn is first
 
+    def test_locking_marks_the_title_and_the_card_border(self) -> None:
+        section = CollapsibleSection("Calibration")
+
+        section.set_lock_button(visible=True, locked=True)
+        assert section.title_label.text() == "Calibration · This Frame Only"
+        assert section.toggle_button.property("roll_locked") == "true"
+        assert section.content_area.property("roll_locked") == "true"
+
+        section.set_lock_button(visible=False, locked=False)
+        assert section.title_label.text() == "Calibration"
+        assert section.toggle_button.property("roll_locked") == "false"
+        assert section.content_area.property("roll_locked") == "false"
+
+    def test_locked_and_modified_titles_combine(self) -> None:
+        section = CollapsibleSection("Calibration")
+        section.set_modified(2)
+        section.set_lock_button(visible=True, locked=True)
+        assert section.title_label.text() == "Calibration · 2 · This Frame Only"
+
 
 class TestMakeSection:
     def test_collapsible_reads_and_persists_the_setting(self) -> None:

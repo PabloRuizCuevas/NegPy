@@ -175,12 +175,24 @@ class CollapsibleSection(QWidget):
     def set_modified(self, count: int) -> None:
         """Append count to title when non-zero; show reset button."""
         self.modified_count = count
-        visible = count > 0
-        self.reset_btn.setVisible(visible)
-        if visible:
-            self.title_label.setText(f"{self._title_text} · {count}")
-        else:
-            self.title_label.setText(self._title_text)
+        self.reset_btn.setVisible(count > 0)
+        self._refresh_title()
+
+    def _refresh_title(self) -> None:
+        """Composes the header title from whatever state has something to say: the
+        modified count (set_modified), then, for a Roll-tab card, whether this frame
+        overrides it (set_lock_button) -- loud enough that switching frames and seeing
+        a slider jump has an obvious "why" right beside it."""
+        parts = [self._title_text]
+        if getattr(self, "modified_count", 0):
+            parts.append(str(self.modified_count))
+        if self._locked:
+            parts.append("This Frame Only")
+        self.title_label.setText(" · ".join(parts))
+        color = THEME.warn_amber if self._locked else THEME.text_on_accent
+        self.title_label.setStyleSheet(
+            f"font-weight: 600; font-size: {THEME.font_size_header}px; letter-spacing: 0.01em; background: transparent; color: {color};"
+        )
 
     def set_selection_state(self, checked: int, total: int) -> None:
         """Reflect how many of the section's rows are ticked. Emits nothing."""
@@ -252,6 +264,15 @@ class CollapsibleSection(QWidget):
             if locked
             else f"{self._title_text} follows the roll — click to lock this frame to its own value"
         )
+        # An amber stripe down the whole card (QSS [roll_locked] rules), not just the
+        # small lock icon -- switching to a frame with an override should be obvious
+        # before its sliders are even read.
+        for widget in (self.toggle_button, self.content_area):
+            widget.setProperty("roll_locked", "true" if locked else "false")
+            style = widget.style()
+            style.unpolish(widget)
+            style.polish(widget)
+        self._refresh_title()
 
 
 def make_section(
