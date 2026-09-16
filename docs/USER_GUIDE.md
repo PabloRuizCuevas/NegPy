@@ -429,7 +429,7 @@ The paper's response, plus this frame's own tonal window ahead of it. A **Global
 
 **Tonal Range**, marked off with its own subheader: unlike the print-curve controls below, these come from a different pipeline stage (Normalization) and only share this panel's Global/R/G/B selector, not its subject.
 
-*   **White Point** / **Black Point** (-0.25 to 0.25): manual offsets on top of the auto-detected normalization bounds ([§10.3](#103-normalization-negative--positive)). A positive white point brightens; a positive black point lifts blacks. In R/G/B mode these become per-layer trims: per-dye-layer film-base (Dmin) and Dmax corrections, scanner-style per-channel levels. Unlike everything below, these never join the roll — the same category as Density/Grade, a per-shot call rather than a rig or baseline fact. Hidden on the Transparency transfer path (Normalize off), where there is no auto-detected bounds to offset; disabled while **Lock Bounds** freezes this frame's own bounds.
+*   **White Point** / **Black Point** (-0.25 to 0.25): manual offsets on top of the auto-detected normalization bounds ([§10.3](#103-normalization-negative--positive)). A positive white point brightens; a positive black point lifts blacks. In R/G/B mode these become per-layer trims: per-dye-layer film-base (Dmin) and Dmax corrections, scanner-style per-channel levels. Unlike everything below, these never join the roll — the same category as Density/Grade, a per-shot call rather than a rig or baseline fact. On the Transparency transfer path (Normalize off) they deviate that path's fixed window the same way, instead of an auto-detected one; disabled while **Lock Bounds** freezes this frame's own bounds, except there, where Lock Bounds has nothing to freeze.
 
 **Exposure:**
 

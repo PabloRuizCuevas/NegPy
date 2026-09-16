@@ -493,13 +493,11 @@ class ToneSidebar(BaseSidebar):
                 # The transfer curve takes no dodge/burn map, and the mask rides it.
                 self.contrast_mask_slider,
                 self.mask_spacer_slider,
-                # No auto-detected bounds exist on the transfer path, so an offset on top of
-                # them has nothing to act on either.
-                self.tonal_range_header,
-                self.white_point_slider,
-                self.black_point_slider,
             ):
                 w.setVisible(not transfer)
+            # Tonal Range stays: White/Black Point deviate the transfer path's fixed
+            # window the same way they deviate a measured one (NormalizationProcessor.
+            # _process_transparency), so they still have something to act on.
 
             # Per-layer trims are meaningless on a single-emulsion B&W paper.
             is_bw = mode == ProcessMode.BW
@@ -565,9 +563,11 @@ class ToneSidebar(BaseSidebar):
 
             # Trims shift the same frozen bounds Batch Analysis measured, so further nudging
             # is disabled once this frame's own bounds are locked -- unlike Grade/Toe/
-            # Shoulder, which have nothing to do with Normalization's Lock Bounds.
-            self.white_point_slider.setEnabled(not proc.lock_bounds)
-            self.black_point_slider.setEnabled(not proc.lock_bounds)
+            # Shoulder, which have nothing to do with Normalization's Lock Bounds. The
+            # transfer path's window is never measured, so Lock Bounds has nothing there to
+            # freeze and must not gate these.
+            self.white_point_slider.setEnabled(transfer or not proc.lock_bounds)
+            self.black_point_slider.setEnabled(transfer or not proc.lock_bounds)
 
             self.density_slider.setValue(conf.density)
             self.grade_slider.setValue(conf.grade)

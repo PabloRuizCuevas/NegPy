@@ -68,3 +68,30 @@ the symptom recurs after this fix and one of these turns out to matter too.
 - `DarkroomEngine._run_stage`'s per-config-hash cache (CPU) and `GPUEngine`'s own
   config-diff change detection were never read with this race in mind — still open
   if a related symptom shows up that the splash-race fix doesn't cover.
+
+## Open: GPU's transfer-path "final_bounds" metric is the wrong bounds
+
+Found while wiring White/Black Point into the transfer path (`transfer.py`'s fixed
+window). **Confirmed by reading the code:** `GPUEngine.process_to_texture`
+(`negpy/services/rendering/gpu_engine.py`, ~829-833) computes the `final_bounds`
+metric it publishes from `resolve_bounds_detailed()` — the *measured* path's bounds
+— unconditionally, even when `is_transfer_path()` is true and the render itself uses
+`transfer_bounds()` (folded with WP/BP) instead. The CPU engine's equivalent metric
+(`NormalizationProcessor._process_transparency`, `processor.py`) is correct: it
+publishes the bounds actually used. This only affects a diagnostic value read by
+metrics/histogram panels, not a pixel the render draws — the GPU shader itself
+already uses the right window. Not fixed here because it is a metrics-accuracy gap
+on a path this change didn't touch, not a rendering bug; worth a proper look with
+its own test.
+
+## Open: WGSL `is_transfer` flag does not check `positive_source`
+
+**Confirmed by reading the code:** `normalization.wgsl`'s `is_transfer` (line ~43) is
+`is_e6 && params.normalize_flag == 0u` — it takes the transfer path only for
+Slide-without-Normalize, unlike Python's `is_transfer_path()`, which also takes it
+for any mode with `positive_source` true. **Guess, not verified:** likely benign,
+since a positive-source capture has no `cam_xyz` to fold (`camera_to_working_matrix`
+returns `None`), so the shader's camera-matrix step is already an identity for that
+case regardless of which flag gates it. Not confirmed against an actual GPU render
+of a Positive frame in Color or B&W — worth a parity test alongside
+`test_positive_source_matches` if this path is touched again.

@@ -471,6 +471,54 @@ class TestCaptureTogglesAreInert(unittest.TestCase):
                 self.assertTrue(np.allclose(camera_to_working_matrix(CAM_XYZ, bad), base, atol=1e-6))
 
 
+class TestWhiteBlackPointOnTheTransferPath(unittest.TestCase):
+    """White/Black Point deviate the fixed window the same way they deviate a measured
+    one: additive, and inert at zero (NormalizationProcessor._process_transparency)."""
+
+    def test_zero_offsets_leave_the_fixed_window_untouched(self):
+        floors, ceils = transfer_bounds()
+        _, ctx = _run_stages(_ramp(), _e6_config())
+        self.assertEqual(ctx.metrics["final_bounds"].floors, floors)
+        self.assertEqual(ctx.metrics["final_bounds"].ceils, ceils)
+
+    def test_white_point_deviates_the_window_and_the_render(self):
+        cfg = _e6_config()
+        moved = replace(cfg, process=replace(cfg.process, white_point_offset=0.15))
+        base, ctx_base = _run_stages(_ramp(), cfg)
+        out, ctx_moved = _run_stages(_ramp(), moved)
+        self.assertNotEqual(ctx_moved.metrics["final_bounds"].floors, ctx_base.metrics["final_bounds"].floors)
+        self.assertGreater(float(np.abs(out - base).max()), 1e-3)
+
+    def test_black_point_deviates_the_window_and_the_render(self):
+        cfg = _e6_config()
+        moved = replace(cfg, process=replace(cfg.process, black_point_offset=0.15))
+        base, ctx_base = _run_stages(_ramp(), cfg)
+        out, ctx_moved = _run_stages(_ramp(), moved)
+        self.assertNotEqual(ctx_moved.metrics["final_bounds"].ceils, ctx_base.metrics["final_bounds"].ceils)
+        self.assertGreater(float(np.abs(out - base).max()), 1e-3)
+
+    def test_applies_on_a_positive_source_frame_too(self):
+        """Positive frames take the transfer path on every mode, not only a slide."""
+        cfg = _e6_config(positive_source=True)
+        moved = replace(cfg, process=replace(cfg.process, white_point_offset=0.15))
+        base, _ = _run_stages(_ramp(), cfg)
+        out, _ = _run_stages(_ramp(), moved)
+        self.assertGreater(float(np.abs(out - base).max()), 1e-3)
+
+    def test_cast_removals_neutral_axis_ignores_the_creative_offset(self):
+        """Cast Removal meters gray balance against the pre-trim window, so a White/Black
+        Point nudge must not move what it measures."""
+        rng = np.random.default_rng(41)
+        img = (rng.random((16, 16, 3)) * 0.3 + 0.02).astype(np.float32)
+        cfg = _e6_config(cast_removal_strength=1.0)
+        moved = replace(cfg, process=replace(cfg.process, white_point_offset=0.15, black_point_offset=-0.1))
+
+        _, ctx_base = _run_stages(img, cfg)
+        _, ctx_moved = _run_stages(img, moved)
+
+        self.assertEqual(ctx_base.metrics["neutral_axis_refs"], ctx_moved.metrics["neutral_axis_refs"])
+
+
 class TestAutomaticGradingIsOff(unittest.TestCase):
     def test_auto_density_and_auto_grade_do_not_change_the_render(self):
         """They meter the frame to pick a look, which is what this path exists to avoid."""
@@ -700,6 +748,19 @@ class TestGpuTransferParity(unittest.TestCase):
         off_cpu, off_gpu = self._both(_e6_config(density=1.4, toe=0.5))
         self.assertGreater(float(np.abs(cpu - off_cpu).max()), 0.01, "positive_source inert on the CPU")
         self.assertGreater(float(np.abs(gpu - off_gpu).max()), 0.01, "positive_source inert on the GPU")
+
+    def test_white_black_point_matches(self):
+        """White/Black Point deviate the fixed window on both engines, the same
+        technique the measured path already uses -- both bake the offset into the
+        floors/ceils they upload, so the shader needs no lanes of its own."""
+        settings = _e6_config()
+        moved = replace(settings, process=replace(settings.process, white_point_offset=0.12, black_point_offset=-0.08))
+        cpu, gpu = self._both(moved)
+        self._assert_parity(cpu, gpu)
+
+        off_cpu, off_gpu = self._both(settings)
+        self.assertGreater(float(np.abs(cpu - off_cpu).max()), 0.01, "white/black point inert on the CPU")
+        self.assertGreater(float(np.abs(gpu - off_gpu).max()), 0.01, "white/black point inert on the GPU")
 
     def test_zone_density_matches(self):
         """Zone Density rides a uniform lane the transfer shader did not have. Asserted on

@@ -1498,11 +1498,14 @@ class GPUEngine:
         adj_floors = (f[0] + wp3[0], f[1] + wp3[1], f[2] + wp3[2])
         adj_ceils = (c[0] + bp3[0], c[1] + bp3[1], c[2] + bp3[2])
 
-        # Transparency transfer: the fixed window, with no WP/BP trims. Mirrors
-        # NormalizationProcessor._process_transparency, whose identity they would break.
+        # Transparency transfer: the fixed window, deviated by White/Black Point the same
+        # way as the measured path above -- a user-driven nudge, not a meter, so it does
+        # not reopen what the fixed window exists to prevent (identity at wp3=bp3=0).
+        # Mirrors NormalizationProcessor._process_transparency.
         if is_transfer_path(settings.process.process_mode, settings.process.e6_normalize, settings.process.positive_source):
             t_floors, t_ceils = transfer_bounds()
-            adj_floors, adj_ceils = t_floors, t_ceils
+            adj_floors = (t_floors[0] + wp3[0], t_floors[1] + wp3[1], t_floors[2] + wp3[2])
+            adj_ceils = (t_ceils[0] + bp3[0], t_ceils[1] + bp3[1], t_ceils[2] + bp3[2])
 
         # Capture-side dye-unmix rows, resolved once per frame by the caller and shared
         # with NormalizationProcessor. Identity when off.

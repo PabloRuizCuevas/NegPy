@@ -232,18 +232,27 @@ class NormalizationProcessor:
         unmix = effective_crosstalk_matrix(self.config, context.process_mode)
         img_log = unmix_log_image(img_log, unmix)
         floors, ceils = transfer_bounds()
+        pre_trim_bounds = LogNegativeBounds(floors=floors, ceils=ceils)
+        # White/Black Point manually deviate the fixed window, same technique as the measured
+        # path below: a user-driven nudge, not a meter, so it does not reopen what the fixed
+        # window exists to prevent (see is_transfer_path's docstring).
+        wp3, bp3 = per_channel_point_offsets(self.config, context.process_mode == ProcessMode.E6)
+        if any(v != 0.0 for v in wp3 + bp3):
+            floors = (floors[0] + wp3[0], floors[1] + wp3[1], floors[2] + wp3[2])
+            ceils = (ceils[0] + bp3[0], ceils[1] + bp3[1], ceils[2] + bp3[2])
         bounds = LogNegativeBounds(floors=floors, ceils=ceils)
         res = normalize_log_image(img_log, bounds)
 
         # Cast Removal's neutral axis, metered on the working-space log image the curve
         # itself consumes — the camera matrix above is a colour transform, so a meter run
-        # ahead of it would read a different space than the GPU's.
+        # ahead of it would read a different space than the GPU's. Pre-trim bounds, like the
+        # measured path, so a creative White/Black Point nudge does not perturb it.
         if self.cast_strength > 0.0 and context.process_mode != ProcessMode.BW:
             an_roi, an_buffer = resolve_analysis_region(
                 linear.shape, context.active_roi, self.config.analysis_buffer, self.config.analysis_rect
             )
             context.metrics["neutral_axis_refs"] = measure_neutral_axis_from_log(
-                unmix_log_image(prefilter_log_grid(linear, an_roi, an_buffer), unmix), bounds, None, 0.0
+                unmix_log_image(prefilter_log_grid(linear, an_roi, an_buffer), unmix), pre_trim_bounds, None, 0.0
             )
 
         context.metrics["log_bounds"] = bounds

@@ -251,9 +251,11 @@ def test_white_black_point_write_to_process_not_exposure(qapp):
     assert args[0].process.white_point_offset == 0.15
 
 
-def test_white_black_point_hide_on_the_transparency_transfer(qapp):
-    """No auto-detected bounds exist on the transfer path, so an offset on top of them
-    has nothing to act on."""
+def test_white_black_point_stay_visible_on_the_transparency_transfer(qapp):
+    """White/Black Point deviate the transfer path's fixed window the same way they
+    deviate a measured one (NormalizationProcessor._process_transparency), so they
+    still have something to act on and stay visible, unlike the print-curve controls
+    that don't apply there."""
     controller = MagicMock()
     controller.state = AppState()
     sidebar = ToneSidebar(controller)
@@ -262,9 +264,9 @@ def test_white_black_point_hide_on_the_transparency_transfer(qapp):
     controller.state.config = replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.E6, e6_normalize=False))
     sidebar.sync_ui()
 
-    assert sidebar.white_point_slider.isHidden()
-    assert sidebar.black_point_slider.isHidden()
-    assert sidebar.tonal_range_header.isHidden()
+    assert not sidebar.white_point_slider.isHidden()
+    assert not sidebar.black_point_slider.isHidden()
+    assert not sidebar.tonal_range_header.isHidden()
 
 
 def test_tonal_range_header_sits_directly_above_white_point(qapp):
@@ -295,3 +297,18 @@ def test_white_black_point_disabled_when_bounds_are_locked(qapp):
     assert not sidebar.white_point_slider.isEnabled()
     assert not sidebar.black_point_slider.isEnabled()
     assert sidebar.grade_slider.isEnabled()
+
+
+def test_white_black_point_ignore_the_lock_on_the_transparency_transfer(qapp):
+    """The transfer path's window is fixed, never measured, so a Lock Bounds left on
+    from another frame or mode has nothing there to freeze."""
+    controller = MagicMock()
+    controller.state = AppState()
+    sidebar = ToneSidebar(controller)
+
+    cfg = controller.state.config
+    controller.state.config = replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.E6, e6_normalize=False, lock_bounds=True))
+    sidebar.sync_ui()
+
+    assert sidebar.white_point_slider.isEnabled()
+    assert sidebar.black_point_slider.isEnabled()
