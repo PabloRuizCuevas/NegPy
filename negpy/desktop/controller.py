@@ -1988,6 +1988,22 @@ class AppController(QObject):
     def _on_splash_preview(self, file_path: str, raw: Any, dims: Any) -> None:
         if self._requested_file_path != file_path:
             return
+        # A backlogged splash-decode worker can land after the real render for this
+        # same file already has -- e.g. a prefetched neighbour whose full pipeline
+        # finishes before its own splash request even reaches the front of the
+        # queue. Painting it now would stomp the correct positive with the raw,
+        # un-inverted embedded thumbnail: on a negative that reads as a strong
+        # orange-masked cast, glaringly wrong, since that literally is what an
+        # un-inverted negative looks like. Splash only ever bridges the gap before
+        # the real render arrives, never replaces it once it has.
+        target_hash = self._file_hash_for_path(file_path)
+        with self.state.metrics_lock:
+            if (
+                target_hash is not None
+                and self.state.last_metrics.get("splash") is False
+                and self.state.last_metrics.get("source_hash") == target_hash
+            ):
+                return
         raw, dims = self._split_active_half(raw, dims)
         self.state.original_res = dims
         # Paint the embedded sRGB thumbnail directly, with no pipeline. The real render

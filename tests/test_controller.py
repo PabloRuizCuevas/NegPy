@@ -4440,3 +4440,58 @@ class TestLibrarySearch(unittest.TestCase):
 
         self.assertEqual(roll_ids, [])
         self.assertEqual(self.controller.library_roots(), [])
+
+
+class TestSplashPreviewRaceGuard(unittest.TestCase):
+    """A backlogged splash-decode worker can land after the real render for the same
+    file already has -- e.g. a prefetched neighbour whose full pipeline finishes
+    before its own splash request reaches the front of the queue. Painting a late
+    splash then would stomp the correct positive with the raw, un-inverted embedded
+    thumbnail (glaringly wrong on a negative)."""
+
+    def _panel(self, *, requested_path="a.dng", hash_for_path="h1"):
+        panel = MagicMock()
+        panel._requested_file_path = requested_path
+        panel._file_hash_for_path.return_value = hash_for_path
+        panel._split_active_half.return_value = ("RAW", (100, 100))
+        panel.state = AppState()
+        return panel
+
+    def test_splash_skipped_once_the_real_render_for_this_file_already_landed(self):
+        panel = self._panel(hash_for_path="h1")
+        panel.state.last_metrics["splash"] = False
+        panel.state.last_metrics["source_hash"] = "h1"
+
+        AppController._on_splash_preview(panel, "a.dng", "RAW", (100, 100))
+
+        self.assertNotIn("base_positive", panel.state.last_metrics)
+        panel.image_updated.emit.assert_not_called()
+
+    def test_splash_paints_normally_before_any_real_render_has_landed(self):
+        panel = self._panel(hash_for_path="h1")
+
+        AppController._on_splash_preview(panel, "a.dng", "RAW", (100, 100))
+
+        self.assertEqual(panel.state.last_metrics["base_positive"], "RAW")
+        self.assertTrue(panel.state.last_metrics["splash"])
+        panel.image_updated.emit.assert_called_once()
+
+    def test_splash_not_suppressed_by_a_different_files_render(self):
+        """The guard must key off the file splash is arriving for, not just whether
+        *any* render recently landed -- else a legitimate splash for a fresh frame
+        would wrongly be swallowed by the frame just left."""
+        panel = self._panel(requested_path="b.dng", hash_for_path="h2")
+        panel.state.last_metrics["splash"] = False
+        panel.state.last_metrics["source_hash"] = "h1"  # a different file's render
+
+        AppController._on_splash_preview(panel, "b.dng", "RAW", (100, 100))
+
+        self.assertEqual(panel.state.last_metrics["base_positive"], "RAW")
+
+    def test_splash_ignored_for_a_stale_navigation_request(self):
+        panel = self._panel(requested_path="b.dng")
+
+        AppController._on_splash_preview(panel, "a.dng", "RAW", (100, 100))
+
+        self.assertNotIn("base_positive", panel.state.last_metrics)
+        panel.image_updated.emit.assert_not_called()
