@@ -1137,6 +1137,23 @@ class AppController(QObject):
         self.set_status(f'Saved as roll "{name}"', 3000)
         return roll_id
 
+    def request_rename_roll(self, roll_id: str, new_name: str, rename_folder: bool) -> bool:
+        """Rename a roll's display name, and -- only if asked -- its backing folder on
+        disk too. All-or-nothing: if the disk rename fails (missing folder, a sibling
+        already named that, no permission), the display name is left alone as well,
+        so the two names can never end up telling different stories.
+        """
+        if rename_folder:
+            entry = rolls.roll_for_id(self.session.repo, roll_id)
+            old_path = entry.get("folder_path", "") if entry else ""
+            new_path = rolls.rename_folder_roll_disk(self.session.repo, roll_id, new_name)
+            if new_path is None:
+                return False
+            if old_path and roll_id == self.state.active_roll_id:
+                self.session.rehome_folder_paths(old_path, new_path)
+        rolls.rename_roll(self.session.repo, roll_id, new_name)
+        return True
+
     def invalidate_library_walk(self) -> None:
         """Drop the cached traversal so the next search re-reads the folders."""
         QMetaObject.invokeMethod(self.library_worker, "invalidate", Qt.ConnectionType.QueuedConnection)

@@ -3,6 +3,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
 )
 
 from negpy.desktop.view.confirm import confirm_delete_named, confirm_delete_several, confirm_load_roll
+from negpy.desktop.view.widgets.rename_roll_dialog import RenameRollDialog
 from negpy.desktop.view.styles.templates import hint_label
 from negpy.desktop.view.styles.theme import THEME
 from negpy.services.assets import rolls
@@ -264,14 +266,38 @@ class LibraryTree(QWidget):
         menu.exec(self.tree.viewport().mapToGlobal(pos))
 
     def _rename_roll(self, roll_id: str, current_name: str) -> None:
-        name, ok = QInputDialog.getText(self, "Rename Roll", "Name:", text=current_name)
-        name = name.strip()
-        if not ok or not name or name == current_name:
+        entry = rolls.roll_for_id(self.repo, roll_id)
+        is_folder = bool(entry) and entry.get("kind") == "folder"
+
+        if is_folder:
+            dlg = RenameRollDialog(current_name, self)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            name, rename_folder = dlg.name(), dlg.rename_folder()
+        else:
+            name, ok = QInputDialog.getText(self, "Rename Roll", "Name:", text=current_name)
+            name, rename_folder = name.strip(), False
+            if not ok:
+                return
+
+        if not name or (name == current_name and not rename_folder):
             return
         if not is_valid_preset_name(name):
             QMessageBox.warning(self, "Roll Name", 'A roll name cannot contain / \\ : * ? " < > | or start or end with a dot.')
             return
-        rolls.rename_roll(self.repo, roll_id, name)
+
+        if rename_folder:
+            if not self.controller.request_rename_roll(roll_id, name, True):
+                QMessageBox.warning(
+                    self,
+                    "Rename Roll",
+                    "Could not rename the folder on disk — check that no other folder already has that name, "
+                    "and that you have permission to rename it here.",
+                )
+                return
+        else:
+            rolls.rename_roll(self.repo, roll_id, name)
+
         self.reload()
         self.rolls_changed.emit()
 

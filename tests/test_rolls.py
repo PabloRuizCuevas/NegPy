@@ -18,6 +18,7 @@ from negpy.services.assets.rolls import (
     import_subfolders_as_rolls,
     is_forked,
     recognize_folder,
+    rename_folder_roll_disk,
     rename_roll,
     resolve_roll_process_config,
     roll_defaults,
@@ -115,6 +116,55 @@ def test_rename_and_delete_roll():
     delete_roll(repo, roll_id)
     assert roll_for_id(repo, roll_id) is None
     assert saved_rolls(repo) == {}
+
+
+def test_rename_folder_roll_disk_renames_and_updates_folder_path(tmp_path):
+    repo = _repo()
+    old = tmp_path / "roll_a"
+    old.mkdir()
+    (old / "frame001.tif").write_bytes(b"x")
+    roll_id = recognize_folder(repo, str(old))
+
+    new_path = rename_folder_roll_disk(repo, roll_id, "roll_b")
+
+    assert new_path == str(tmp_path / "roll_b")
+    assert not old.exists()
+    assert (tmp_path / "roll_b" / "frame001.tif").exists()
+    assert roll_for_id(repo, roll_id)["folder_path"] == new_path
+
+
+def test_rename_folder_roll_disk_refuses_a_sibling_collision(tmp_path):
+    repo = _repo()
+    old = tmp_path / "roll_a"
+    old.mkdir()
+    (tmp_path / "roll_b").mkdir()
+    roll_id = recognize_folder(repo, str(old))
+
+    assert rename_folder_roll_disk(repo, roll_id, "roll_b") is None
+    assert old.exists()
+    assert roll_for_id(repo, roll_id)["folder_path"] == str(old)
+
+
+def test_rename_folder_roll_disk_same_name_is_a_noop_success(tmp_path):
+    repo = _repo()
+    old = tmp_path / "roll_a"
+    old.mkdir()
+    roll_id = recognize_folder(repo, str(old))
+
+    assert rename_folder_roll_disk(repo, roll_id, "roll_a") == str(old)
+    assert old.exists()
+
+
+def test_rename_folder_roll_disk_on_a_virtual_roll_is_a_noop(tmp_path):
+    repo = _repo()
+    roll_id = create_virtual_roll(repo, "Portra", [])
+    assert rename_folder_roll_disk(repo, roll_id, "anything") is None
+
+
+def test_rename_folder_roll_disk_missing_folder_is_a_noop(tmp_path):
+    repo = _repo()
+    roll_id = recognize_folder(repo, str(tmp_path / "gone"))
+    assert rename_folder_roll_disk(repo, roll_id, "roll_b") is None
 
 
 def test_virtual_rolls_lists_only_virtual_ones_sorted_by_name():

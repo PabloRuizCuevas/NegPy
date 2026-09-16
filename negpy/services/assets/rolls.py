@@ -197,6 +197,36 @@ def rename_roll(repo: Any, roll_id: str, name: str) -> None:
         _write(repo, store)
 
 
+def rename_folder_roll_disk(repo: Any, roll_id: str, new_name: str) -> Optional[str]:
+    """Rename a folder roll's actual folder on disk to *new_name*, in its current
+    parent directory, and update the roll's own folder_path to match. Returns the
+    new path, or None (and nothing is touched) when the roll is not a folder roll,
+    its folder is missing, a sibling is already named that, or the OS rename fails
+    (no permission, a mount that refuses it). *new_name* equal to the folder's
+    current basename is a no-op success, not a collision.
+    """
+    store = _read(repo)
+    entry = store.get(roll_id)
+    if entry is None or entry.get("kind") != "folder":
+        return None
+    old_path = entry.get("folder_path", "")
+    if not old_path or not os.path.isdir(old_path):
+        return None
+    parent = os.path.dirname(old_path.rstrip("/\\"))
+    new_path = os.path.join(parent, new_name)
+    if os.path.normcase(os.path.abspath(new_path)) == os.path.normcase(os.path.abspath(old_path)):
+        return old_path
+    if os.path.exists(new_path):
+        return None
+    try:
+        os.rename(old_path, new_path)
+    except OSError:
+        return None
+    entry["folder_path"] = new_path
+    _write(repo, store)
+    return new_path
+
+
 def delete_roll(repo: Any, roll_id: str) -> None:
     store = _read(repo)
     if roll_id in store:

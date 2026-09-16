@@ -1700,6 +1700,44 @@ class DesktopSessionManager(QObject):
         self.state_changed.emit()
         self._persist_session()
 
+    def rehome_folder_paths(self, old_prefix: str, new_prefix: str) -> None:
+        """After a folder roll's own folder is renamed on disk, repoint every loaded
+        asset (and the active file) that lived under *old_prefix* to *new_prefix* --
+        content hashes are unchanged, so edits and history still find their frame by
+        hash alone; only the session's own path bookkeeping needs to catch up.
+        """
+        old_prefix = old_prefix.rstrip("/\\")
+
+        def rehome(path: str) -> str:
+            if path and (path == old_prefix or path.startswith(old_prefix + os.sep)):
+                return new_prefix + path[len(old_prefix) :]
+            return path
+
+        changed = False
+        for f in self.state.uploaded_files:
+            for key in ("path", "green_path", "blue_path"):
+                if f.get(key):
+                    new_val = rehome(f[key])
+                    if new_val != f[key]:
+                        f[key] = new_val
+                        changed = True
+            for key in ("stitch_paths", "hdr_paths"):
+                if f.get(key):
+                    new_list = [rehome(p) for p in f[key]]
+                    if new_list != f[key]:
+                        f[key] = new_list
+                        changed = True
+
+        if self.state.current_file_path:
+            new_current = rehome(self.state.current_file_path)
+            if new_current != self.state.current_file_path:
+                self.state.current_file_path = new_current
+                changed = True
+
+        if changed:
+            self.asset_model.refresh()
+            self._persist_session()
+
     def remove_current_file(self) -> None:
         """
         Removes the currently selected file from the session.

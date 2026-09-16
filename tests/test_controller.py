@@ -4286,6 +4286,71 @@ class TestLibrarySearch(unittest.TestCase):
         self.assertEqual(entry["member_paths"], ["/a.nef", "/b.nef"])
         self.assertEqual(self.controller.state.active_roll_id, roll_id)
 
+    def test_request_rename_roll_display_name_only(self):
+        self._dict_repo()
+        from negpy.services.assets.rolls import create_virtual_roll, roll_for_id
+
+        roll_id = create_virtual_roll(self.controller.session.repo, "Portra", [])
+
+        result = self.controller.request_rename_roll(roll_id, "Portra 400", False)
+
+        self.assertTrue(result)
+        self.assertEqual(roll_for_id(self.controller.session.repo, roll_id)["name"], "Portra 400")
+        self.controller.session.rehome_folder_paths.assert_not_called()
+
+    def test_request_rename_roll_also_renames_the_folder_when_not_active(self):
+        self._dict_repo()
+        from negpy.services.assets.rolls import recognize_folder, roll_for_id
+
+        with tempfile.TemporaryDirectory() as d:
+            old_path = os.path.join(d, "roll_a")
+            os.mkdir(old_path)
+            roll_id = recognize_folder(self.controller.session.repo, old_path)
+            self.controller.state.active_roll_id = None
+
+            result = self.controller.request_rename_roll(roll_id, "roll_b", True)
+
+            self.assertTrue(result)
+            new_path = os.path.join(d, "roll_b")
+            self.assertTrue(os.path.isdir(new_path))
+            self.assertEqual(roll_for_id(self.controller.session.repo, roll_id)["folder_path"], new_path)
+            self.assertEqual(roll_for_id(self.controller.session.repo, roll_id)["name"], "roll_b")
+            self.controller.session.rehome_folder_paths.assert_not_called()
+
+    def test_request_rename_roll_rehomes_the_active_rolls_paths(self):
+        self._dict_repo()
+        from negpy.services.assets.rolls import recognize_folder
+
+        with tempfile.TemporaryDirectory() as d:
+            old_path = os.path.join(d, "roll_a")
+            os.mkdir(old_path)
+            roll_id = recognize_folder(self.controller.session.repo, old_path)
+            self.controller.state.active_roll_id = roll_id
+
+            result = self.controller.request_rename_roll(roll_id, "roll_b", True)
+
+            self.assertTrue(result)
+            new_path = os.path.join(d, "roll_b")
+            self.controller.session.rehome_folder_paths.assert_called_once_with(old_path, new_path)
+
+    def test_request_rename_roll_disk_failure_leaves_the_display_name_alone(self):
+        self._dict_repo()
+        from negpy.services.assets.rolls import recognize_folder, roll_for_id
+
+        with tempfile.TemporaryDirectory() as d:
+            old_path = os.path.join(d, "roll_a")
+            os.mkdir(old_path)
+            os.mkdir(os.path.join(d, "roll_b"))  # collides with the requested new name
+            roll_id = recognize_folder(self.controller.session.repo, old_path)
+
+            result = self.controller.request_rename_roll(roll_id, "roll_b", True)
+
+            self.assertFalse(result)
+            entry = roll_for_id(self.controller.session.repo, roll_id)
+            self.assertEqual(entry["name"], "roll_a")
+            self.assertEqual(entry["folder_path"], old_path)
+            self.controller.session.rehome_folder_paths.assert_not_called()
+
     def test_create_roll_from_session_with_nothing_loaded(self):
         self._dict_repo()
         self.controller.state.uploaded_files = []

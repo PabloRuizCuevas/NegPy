@@ -277,6 +277,22 @@ def test_analyze_action_reaches_the_controller(widget, monkeypatch):
     actions["Analyze Roll…"].triggered.connect.assert_called_once_with(widget.controller.request_batch_normalization)
 
 
+def test_rename_roll_dialog_checkbox_defaults_off(qapp):
+    from negpy.desktop.view.widgets.rename_roll_dialog import RenameRollDialog
+
+    dlg = RenameRollDialog("roll_a")
+    assert dlg.rename_folder() is False
+    assert dlg.name() == "roll_a"
+
+
+def test_rename_roll_dialog_name_is_trimmed(qapp):
+    from negpy.desktop.view.widgets.rename_roll_dialog import RenameRollDialog
+
+    dlg = RenameRollDialog("roll_a")
+    dlg.name_edit.setText("  new name  ")
+    assert dlg.name() == "new name"
+
+
 def test_deleting_a_multi_selection_removes_every_selected_roll(widget, monkeypatch):
     id_a = create_virtual_roll(widget.repo, "apple", [])
     id_b = create_virtual_roll(widget.repo, "banana", [])
@@ -297,6 +313,91 @@ def test_deleting_a_folder_roll_only_forgets_the_record(widget, tree_dirs, monke
 
     assert roll_for_id(widget.repo, roll_id) is None
     assert (tree_dirs / "roll_a" / "a1.NEF").exists()
+
+
+class _FakeRenameDialog:
+    """Stands in for RenameRollDialog: exec() reports the outcome an earlier call to
+    accept_as()/cancelled() set up, without opening a real modal dialog."""
+
+    _outcome = None  # ("name", rename_folder) or None for rejected, set per test
+
+    def __init__(self, *_a, **_k):
+        pass
+
+    def exec(self):
+        from PyQt6.QtWidgets import QDialog
+
+        return QDialog.DialogCode.Accepted if self._outcome is not None else QDialog.DialogCode.Rejected
+
+    def name(self):
+        return self._outcome[0]
+
+    def rename_folder(self):
+        return self._outcome[1]
+
+
+def test_renaming_a_folder_roll_shows_the_rename_dialog_not_the_plain_one(widget, tree_dirs, monkeypatch):
+    roll_id = recognize_folder(widget.repo, str(tree_dirs / "roll_a"))
+    _FakeRenameDialog._outcome = ("roll_a_renamed", True)
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.RenameRollDialog", _FakeRenameDialog)
+    widget.controller.request_rename_roll.return_value = True
+
+    widget._rename_roll(roll_id, "roll_a")
+
+    widget.controller.request_rename_roll.assert_called_once_with(roll_id, "roll_a_renamed", True)
+
+
+def test_renaming_a_folder_roll_without_the_checkbox_never_touches_disk(widget, tree_dirs, monkeypatch):
+    roll_id = recognize_folder(widget.repo, str(tree_dirs / "roll_a"))
+    _FakeRenameDialog._outcome = ("roll_a_renamed", False)
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.RenameRollDialog", _FakeRenameDialog)
+
+    widget._rename_roll(roll_id, "roll_a")
+
+    widget.controller.request_rename_roll.assert_not_called()
+    assert roll_for_id(widget.repo, roll_id)["name"] == "roll_a_renamed"
+    assert roll_for_id(widget.repo, roll_id)["folder_path"] == str(tree_dirs / "roll_a")
+    assert (tree_dirs / "roll_a").exists()  # nothing on disk moved
+
+
+def test_renaming_a_folder_roll_cancelled_calls_nothing(widget, tree_dirs, monkeypatch):
+    roll_id = recognize_folder(widget.repo, str(tree_dirs / "roll_a"))
+    _FakeRenameDialog._outcome = None
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.RenameRollDialog", _FakeRenameDialog)
+
+    widget._rename_roll(roll_id, "roll_a")
+
+    widget.controller.request_rename_roll.assert_not_called()
+
+
+def test_renaming_a_folder_roll_disk_failure_warns_and_does_not_reload(widget, tree_dirs, monkeypatch):
+    roll_id = recognize_folder(widget.repo, str(tree_dirs / "roll_a"))
+    _FakeRenameDialog._outcome = ("roll_b", True)  # already taken, per tree_dirs
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.RenameRollDialog", _FakeRenameDialog)
+    widget.controller.request_rename_roll.return_value = False
+    warned = []
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: warned.append(a)))
+    reloaded = []
+    monkeypatch.setattr(widget, "reload", lambda: reloaded.append(True))
+
+    widget._rename_roll(roll_id, "roll_a")
+
+    assert len(warned) == 1
+    assert reloaded == []
+
+
+def test_renaming_a_virtual_roll_never_shows_the_folder_dialog(widget, monkeypatch):
+    roll_id = create_virtual_roll(widget.repo, "Portra", [])
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("Portra 400", True)))
+
+    def _boom(*_a, **_k):
+        raise AssertionError("RenameRollDialog must not be used for a virtual roll")
+
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.RenameRollDialog", _boom)
+
+    widget._rename_roll(roll_id, "Portra")
+
+    assert roll_for_id(widget.repo, roll_id)["name"] == "Portra 400"
 
 
 # --- importing ------------------------------------------------------------------
