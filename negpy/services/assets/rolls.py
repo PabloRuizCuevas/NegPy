@@ -3,17 +3,24 @@ library folder recognized as a roll, or a virtual roll built by hand from whatev
 Film Strip currently holds (a search result, a hand-picked selection, extras added to a
 folder roll that are not physically in that folder).
 
-Edits are not stored here and are not scoped by roll: they stay in the edits DB under
-each frame's own content hash, exactly as if no Roll existed. A Roll only decides which
-files show up when you open it.
+Edits are not stored here and are not scoped by roll by default: they stay in the edits
+DB under each frame's own content hash, exactly as if no Roll existed. A Roll only
+decides which files show up when you open it -- with one opt-in exception: a path a
+user has explicitly forked (``forked_hashes``) gets its own edit identity for that roll
+alone, suffixed onto the frame's content hash (``roll_edit_hash``), the same convention
+half-frame scans already use for their two halves.
 """
 
 import os
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from negpy.domain.models import WorkspaceConfig
 
 ROLLS_KEY = "rolls_by_id"
+_FORK_SEP = "#roll:"
 
 
 def _read(repo: Any) -> Dict[str, dict]:
@@ -99,6 +106,66 @@ def add_extra_member(repo: Any, roll_id: str, path: str) -> None:
     if path not in entry[key]:
         entry[key] = [*entry[key], path]
         _write(repo, store)
+
+
+def roll_edit_hash(from_hash: str, roll_id: str) -> str:
+    """The independent edit identity a fork of *from_hash* uses under *roll_id*.
+
+    *from_hash* is whatever hash the asset currently resolves to -- the plain content
+    hash for a whole frame, or an already-suffixed one (``#1``/``#2``) for a half-frame
+    scan -- so each half forks to its own identity rather than collapsing together.
+    """
+    return f"{from_hash}{_FORK_SEP}{roll_id}"
+
+
+def unforked_hash(file_hash: str) -> str:
+    """*file_hash* with only a trailing ``#roll:<id>`` suffix removed, if present.
+
+    Half-frame (``#1``/``#2``) and composite (``#stitch``/``#hdr``) hashes are left
+    untouched -- those already carry their own independently-scoped edits and marks, and
+    only a roll-fork is meant to share marks with whatever it was forked from.
+    """
+    idx = file_hash.find(_FORK_SEP)
+    return file_hash[:idx] if idx != -1 else file_hash
+
+
+def is_forked(repo: Any, roll_id: str, from_hash: str) -> bool:
+    """Whether *from_hash* has its own edit under *roll_id*, rather than the shared one.
+
+    Keyed on the asset's exact pre-fork hash, not its path: a half-frame scan's two
+    halves have different hashes, so forking one never silently drags the other along.
+    """
+    entry = _read(repo).get(roll_id)
+    return bool(entry) and from_hash in entry.get("forked_hashes", [])
+
+
+def fork_edit(repo: Any, roll_id: str, from_hash: str, source_path: str, config: "WorkspaceConfig") -> str:
+    """Give *from_hash* its own edit under *roll_id*, seeded from *config* (the shared
+    edit at fork time). Returns the forked hash. Idempotent: re-forking an
+    already-forked hash only re-seeds it -- callers fork once and edit the result from
+    then on, so this never runs twice for the same hash in practice."""
+    store = _read(repo)
+    entry = store.get(roll_id)
+    if entry is None:
+        return from_hash
+    forked = roll_edit_hash(from_hash, roll_id)
+    if from_hash not in entry.get("forked_hashes", []):
+        entry["forked_hashes"] = [*entry.get("forked_hashes", []), from_hash]
+        _write(repo, store)
+    repo.save_file_settings(forked, config, file_path=source_path)
+    return forked
+
+
+def unfork_edit(repo: Any, roll_id: str, from_hash: str) -> None:
+    """Undo `fork_edit`: drop *from_hash* from *roll_id*'s forked hashes and delete the
+    forked edit, its history and its work prints. The shared edit under *from_hash*
+    itself is untouched."""
+    store = _read(repo)
+    entry = store.get(roll_id)
+    if entry is not None and from_hash in entry.get("forked_hashes", []):
+        entry["forked_hashes"] = [h for h in entry["forked_hashes"] if h != from_hash]
+        _write(repo, store)
+    repo.delete_file_settings(roll_edit_hash(from_hash, roll_id))
 
 
 def rename_roll(repo: Any, roll_id: str, name: str) -> None:

@@ -1496,6 +1496,21 @@ class AppController(QObject):
         for a in whole:
             a["diptych"] = half_hash(a["hash"], 1) in found or half_hash(a["hash"], 2) in found
 
+    def _apply_roll_forks(self, assets: List[Dict]) -> None:
+        """Rewrite an asset's hash to its roll-forked identity when the active roll has
+        one for it, so every hash-keyed store (edits, history, thumbnails) resolves the
+        fork automatically from here on -- the same trick half-frame splitting uses.
+
+        Checked against the asset's own (pre-fork) hash, not its path: a half-frame
+        scan's two halves have different hashes, so forking one never drags the other.
+        """
+        roll_id = self.state.active_roll_id
+        if not roll_id:
+            return
+        for a in assets:
+            if a.get("hash") and rolls.is_forked(self.session.repo, roll_id, a["hash"]):
+                a["hash"] = rolls.roll_edit_hash(a["hash"], roll_id)
+
     def _on_rgb_grouped(self, summary: dict) -> None:
         """Report what RGB Scan did with a folder it could not fully assemble.
 
@@ -1538,6 +1553,7 @@ class AppController(QObject):
         """
         remember_split_scans(self.session.repo, {base_hash(a["hash"]) for a in valid_assets if a.get("half")})
         self._mark_diptychs(valid_assets)
+        self._apply_roll_forks(valid_assets)
         self._active_diptych_memo = ("", None)
         ended_batch = self._end_batch("discovery")
         if not ended_batch and self._active_batch is None:
@@ -3881,6 +3897,44 @@ class AppController(QObject):
         if file_hash == self.state.current_file_hash and asset.get("path"):
             self.load_file(asset["path"])
         self.set_status("Diptych unsplit — the halves' edits are deleted", 4000)
+
+    def request_fork_edit_for_roll(self) -> None:
+        """Give the active frame its own edit under the active roll, seeded from the
+        shared edit as it stands right now, including any unsaved change on this frame.
+        """
+        idx = self.state.selected_file_idx
+        if not (0 <= idx < len(self.state.uploaded_files)):
+            return
+        asset = self.state.uploaded_files[idx]
+        roll_id, path, from_hash = self.state.active_roll_id, asset.get("path"), asset.get("hash")
+        if not roll_id or not path or not from_hash:
+            return
+        is_active = from_hash == self.state.current_file_hash
+        seed = self.state.config if is_active else self.session.config_for_asset(asset)
+        asset["hash"] = rolls.fork_edit(self.session.repo, roll_id, from_hash, path, seed)
+        self.session.asset_model.refresh()
+        if is_active:
+            self.load_file(path)
+        self.set_status("This roll now has its own edit for this frame", 3000)
+
+    def request_unfork_edit_for_roll(self) -> None:
+        """Undo `request_fork_edit_for_roll`: delete the active frame's roll-specific
+        edit and go back to the shared one."""
+        idx = self.state.selected_file_idx
+        if not (0 <= idx < len(self.state.uploaded_files)):
+            return
+        asset = self.state.uploaded_files[idx]
+        roll_id, path = self.state.active_roll_id, asset.get("path")
+        forked_hash = asset.get("hash") or ""
+        from_hash = rolls.unforked_hash(forked_hash)
+        if not roll_id or not path or from_hash == forked_hash:
+            return
+        rolls.unfork_edit(self.session.repo, roll_id, from_hash)
+        asset["hash"] = from_hash
+        self.session.asset_model.refresh()
+        if forked_hash == self.state.current_file_hash:
+            self.load_file(path)
+        self.set_status("Reverted to this roll's shared edit", 3000)
 
     def _select_file_by_path(self, path: str) -> bool:
         """Find a file by path in uploaded_files and select it."""

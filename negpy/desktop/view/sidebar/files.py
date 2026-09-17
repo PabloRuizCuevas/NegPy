@@ -1396,6 +1396,13 @@ class FileBrowser(QWidget):
                 )
                 if base and self.controller.half_frame_override(base) is not None:
                     menu.addAction("Reset Split to Roll Default").triggered.connect(lambda: self._on_reset_half_frame_split(base))
+            if state.active_roll_id and active.get("path"):
+                if rolls.is_forked(self.session.repo, state.active_roll_id, active.get("hash") or ""):
+                    menu.addAction("Use the Shared Edit Again").triggered.connect(self.prompt_unfork_edit)
+                elif len(rolls.rolls_containing_path(self.session.repo, active["path"])) >= 2:
+                    menu.addAction("Edit Independently in This Roll").triggered.connect(
+                        lambda: self.controller.request_fork_edit_for_roll()
+                    )
         menu.addSeparator()
         unload_label = "Unload Selected…" if multi else "Unload…"
         menu.addAction(unload_label).triggered.connect(self._on_remove_from_menu)
@@ -1413,6 +1420,20 @@ class FileBrowser(QWidget):
         box.exec()
         if box.clickedButton() is unsplit:
             self.controller.request_undiptych()
+
+    def prompt_unfork_edit(self) -> None:
+        """Confirm before this roll's own edit goes, then hand the frame back to the
+        shared edit every other roll it belongs to already uses."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Use the Shared Edit Again")
+        box.setText("Drop this roll's own edit for this frame?")
+        box.setInformativeText("Its independent edit is deleted. The frame goes back to the edit shared with every other roll.")
+        use_shared = box.addButton("Use Shared Edit", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is use_shared:
+            self.controller.request_unfork_edit_for_roll()
 
     def _add_hdr_merge_action(self, menu, state) -> None:
         """Merging is for transparencies, so the action follows the film process.
