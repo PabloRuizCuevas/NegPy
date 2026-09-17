@@ -73,6 +73,9 @@ class AppState:
     # Keys whose thumbnail came from a canvas render, so it is correctly inverted. The batch
     # generator must not overwrite these with its cheaper source-decode placeholder.
     rendered_thumbnails: Set[str] = field(default_factory=set)
+    # Keys whose cached bitmap predates a settings write that reached the file without a
+    # render (a bulk apply, not the active canvas). Cleared once a render refreshes it.
+    stale_thumbnails: Set[str] = field(default_factory=set)
     source_exif: Dict[str, Any] = field(default_factory=dict)  # file_hash -> piexif dict
     selected_file_idx: int = -1
     selected_indices: List[int] = field(default_factory=list)
@@ -465,8 +468,13 @@ class AssetListModel(QAbstractListModel):
             failed = file_info.get("decode_failed")
             if failed:
                 return f"{file_info['path']}\nFailed to load: {failed}\nClick to retry."
+            lines = [file_info["path"]]
             summary = composite_summary(file_info)
-            return f"{file_info['path']}\n{summary}" if summary else file_info["path"]
+            if summary:
+                lines.append(summary)
+            if asset_thumbnail_key(file_info) in self._state.stale_thumbnails:
+                lines.append("Thumbnail predates a settings change; open the frame to refresh it.")
+            return "\n".join(lines)
 
         if role == Qt.ItemDataRole.UserRole:
             return file_info
@@ -748,6 +756,7 @@ class DesktopSessionManager(QObject):
         key = asset_thumbnail_key(asset)
         self.state.thumbnails.pop(key, None)
         self.state.rendered_thumbnails.discard(key)
+        self.state.stale_thumbnails.discard(key)
 
     def search_facts(self) -> Dict[str, Dict[str, Any]]:
         """Searchable facts per asset hash, rebuilt on first use after any change.
@@ -1264,6 +1273,11 @@ class DesktopSessionManager(QObject):
         self.repo.save_history_step(file_hash, first, old_config)
         self.repo.save_history_step(file_hash, first + 1, new_config)
 
+        asset = next((f for f in self.state.uploaded_files if f.get("hash") == file_hash), None)
+        if asset is not None:
+            # Written without a render; the filmstrip flags the cell until one lands.
+            self.state.stale_thumbnails.add(asset_thumbnail_key(asset))
+
     def undo(self) -> None:
         if self.state.undo_index > 0 and self.state.current_file_hash:
             if self.state.undo_index == self.state.max_history_index:
@@ -1631,6 +1645,7 @@ class DesktopSessionManager(QObject):
         self.state.uploaded_files.clear()
         self.state.thumbnails.clear()
         self.state.rendered_thumbnails.clear()
+        self.state.stale_thumbnails.clear()
         self.state.active_roll_id = None
         self._reset_active_image_state()
 
