@@ -114,7 +114,7 @@ The **Library** section lists every **roll** you have imported: a named, openabl
 
 **+** (or the list's right-click menu) offers two actions:
 
-*   **Import Folder as a Roll…** — pick one folder; it becomes one roll and opens.
+*   **Import Folder as a Roll…** — pick one folder; it becomes one roll and opens. If its name matches a camera or film stock already in your Gear library (a word, or a run like "penf" for "Pen F"), Roll Settings opens pre-filled and ticked for the match — Apply to keep it, Cancel to skip it. Never guesses at gear you have not added.
 *   **Import Subfolders as Rolls…** — pick a parent folder, for example the one your scanner saves into; every folder directly inside it becomes its own roll in one pass, without opening any of them. One level only: a roll's own subfolders are not walked, so a deeper structure needs a second, more specific import.
 
 Either way NegPy reads the folder from disk and never creates, renames, moves or deletes anything in it: reorganize in Finder or Explorer, then re-import (or **↻**) to pick up the new arrangement. Every edit is stored against the image's content, so moving a file between folders keeps its edit, its history and its keep/reject mark.
@@ -150,7 +150,7 @@ The Film Strip section has its own row of buttons above the frames, for actions 
 
     Half Frame does not apply to a frame assembled from more than one file: a Trichrome triplet, a stitch, or an HDR merge. Those are never split, and they never come back as a diptych, even when the file they are built around was worked on as two halves earlier.
 *   **Apply (clone)**: copy the current frame's settings to selected frames or the whole roll. You choose which aspects in a dialog; crop and rotation are always per-image.
-*   **Roll Settings** (tag icon): tag gear, capture, place, process and scanning metadata for the current frame, a selection or the whole roll in one dialog. Fields start filled from the active frame; type or pick new values directly, or **Load** a metadata preset to fill and tick its fields, then tick which groups to write. Defaults to the whole roll when one is loaded.
+*   **Roll Settings** (tag icon): tag gear, capture, place, process and scanning metadata for the current frame, a selection or the whole roll in one dialog. Fields start filled from the active frame; type or pick new values directly, or **Load** a metadata preset to fill and tick its fields, then tick which groups to write. Defaults to the whole roll when one is loaded. If Gear is not already set, opening it also checks the roll's folder name against your Gear library and pre-fills a match the same way the import-time suggestion does — it never overwrites a camera or film stock you have already tagged.
 *   **Save as Roll…** (red folder icon): name and keep the frames currently loaded as a roll, whether or not they came from a folder. See [Rolls that are not folders](#rolls-that-are-not-folders).
 *   **Unload…**: drop the active frame, or the whole selection when more than one is selected. Never the rest of the roll — for that, see *Clear All…* below.
 *   **Sheet filter** (funnel): show *All Frames*, *Keepers Only*, or *Hide Rejected*. The choice is remembered between sessions and applies to every roll you open.
