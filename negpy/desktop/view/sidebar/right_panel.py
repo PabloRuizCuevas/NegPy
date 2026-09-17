@@ -281,30 +281,30 @@ class RightPanel(QWidget):
         return page
 
     def _build_roll_page(self) -> QWidget:
-        """Facts the whole roll shares, not one frame's own edit: what rig scanned it and
-        how (Calibration, Demosaic), the roll's shared exposure baseline (Normalization),
-        Roll Analysis's batch meter, and reusable edit presets. Film mode leads, same as
-        it always has, since it decides which of the others even apply."""
+        """Facts the whole roll shares, not one frame's own edit: what film it is (Film
+        Mode), what rig scanned it and how (Calibration, Demosaic), the roll's shared
+        exposure baseline (Normalization), Roll Analysis's batch meter, and reusable
+        edit presets. Film Mode leads, since it decides which of the others even apply
+        -- an always-expanded card like the rest, not an exception."""
         cp = self.controls_panel
         page = QWidget()
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(8)
         page_layout.addWidget(self._build_roll_scope_control())
-        page_layout.addWidget(cp.process_sidebar.mode_bar)
-        for section in (cp.sensor_section, cp.demosaic_section, cp.process_section, cp.roll_section, cp.presets_section):
+        for section in (cp.film_section, cp.sensor_section, cp.demosaic_section, cp.process_section, cp.roll_section, cp.presets_section):
             page_layout.addWidget(section)
         page_layout.addStretch(1)
         return page
 
     def _build_roll_scope_control(self) -> QWidget:
-        """Apply to All Roll / Apply to Selected: pushes whatever Calibration, Demosaic
-        or Normalization cards the active frame has diverged (editing a card locks it
-        the instant it changes -- see set_roll_default) out to the roll or a chosen
-        set of frames. The chevron picks which one the button's main half does next,
-        the same split-button convention Export's own button uses; clicking the main
-        half runs it now. Force Settings sits beside it, not below -- it only modifies
-        what All Roll does, not a separate choice of its own."""
+        """Apply to All Roll / Apply to Selected: pushes whatever Film Mode, Calibration,
+        Demosaic or Normalization cards the active frame has diverged (editing a card
+        locks it the instant it changes -- see set_roll_default) out to the roll or a
+        chosen set of frames. The chevron picks which one the button's main half does
+        next, the same split-button convention Export's own button uses; clicking the
+        main half runs it now. Force Settings sits beside it, not below -- it only
+        modifies what All Roll does, not a separate choice of its own."""
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)

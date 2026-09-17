@@ -15,7 +15,7 @@ from negpy.features.lab.models import LabConfig
 from negpy.features.altprocess.models import AltProcessConfig
 from negpy.features.toning.models import ToningConfig
 from negpy.features.geometry.models import GeometryConfig
-from negpy.features.process.models import ProcessConfig
+from negpy.features.process.models import ProcessConfig, auto_meter_for_positive_source
 from negpy.features.finish.models import FinishConfig
 from negpy.features.flatfield.models import FlatFieldConfig
 
@@ -119,6 +119,17 @@ _DEFAULT_PROCESS = ProcessConfig()
 _DEFAULT_FINISH = FinishConfig()
 _DEFAULT_FLATFIELD = FlatFieldConfig()
 
+_AUTO_METER_FIELDS = ("auto_exposure", "auto_normalize_contrast")
+
+
+def _default_exposure_field(field: str, positive_source: bool):
+    """The value *field* defaults to, given the frame's own positive_source. Auto
+    Density/Auto Grade default differently on a Positive frame (auto_meter_for_
+    positive_source); every other ExposureConfig field has one flat default."""
+    if field in _AUTO_METER_FIELDS:
+        return auto_meter_for_positive_source(positive_source, getattr(_DEFAULT_EXPOSURE, field))
+    return getattr(_DEFAULT_EXPOSURE, field)
+
 
 class ControlsPanel(QWidget):
     """
@@ -162,6 +173,15 @@ class ControlsPanel(QWidget):
         )
 
         self.process_sidebar = ProcessSidebar(self.controller)
+        # Always expanded (no chevron): the first choice of every edit, and the one
+        # every other Roll-tab card's fields assume is already settled.
+        self.film_section = self._make_section(
+            "Film Mode",
+            "film",
+            self.process_sidebar.mode_bar,
+            icon_name="mdi6.film",
+            collapsible=False,
+        )
         self.process_section = self._make_section(
             "Normalization",
             "process",
@@ -326,6 +346,7 @@ class ControlsPanel(QWidget):
         widget: QWidget,
         icon_name: str,
         background_widget=None,
+        collapsible: bool = True,
     ) -> CollapsibleSection:
         return make_section(
             self.controller.session.repo,
@@ -335,6 +356,7 @@ class ControlsPanel(QWidget):
             icon_name,
             default_expanded=THEME.sidebar_expanded_defaults.get(key, False),
             background_widget=background_widget,
+            collapsible=collapsible,
         )
 
     def _connect_signals(self) -> None:
@@ -362,6 +384,7 @@ class ControlsPanel(QWidget):
         self.demosaic_section.reset_requested.connect(lambda: self._reset_process_fields(_DEMOSAIC_FIELDS))
         self.flatfield_section.reset_requested.connect(self._reset_flatfield)
 
+        self.film_section.lock_toggled.connect(lambda locked: self.controller.set_roll_card_locked("film", locked))
         self.sensor_section.lock_toggled.connect(lambda locked: self.controller.set_roll_card_locked("sensor", locked))
         self.demosaic_section.lock_toggled.connect(lambda locked: self.controller.set_roll_card_locked("demosaic", locked))
         self.process_section.lock_toggled.connect(lambda locked: self.controller.set_roll_card_locked("process", locked))
@@ -777,6 +800,7 @@ class ControlsPanel(QWidget):
         away from; reflect whether the active frame currently has it locked."""
         active = self.controller.state.active_roll_id is not None
         for card_key, section in (
+            ("film", self.film_section),
             ("sensor", self.sensor_section),
             ("demosaic", self.demosaic_section),
             ("process", self.process_section),
@@ -811,11 +835,16 @@ class ControlsPanel(QWidget):
         self.controller.apply_config(replace(cfg, flatfield=FlatFieldConfig()), persist=True)
 
     def _reset_exposure_fields(self, fields) -> None:
-        """Reset only the given ExposureConfig fields to defaults (scoped section reset)."""
+        """Reset only the given ExposureConfig fields to defaults (scoped section reset).
+        auto_exposure/auto_normalize_contrast default differently on a Positive frame
+        (auto_meter_for_positive_source) -- resetting them means the value that rule
+        would carry, not the flat ExposureConfig default, which is always the negative
+        one."""
         from dataclasses import replace
 
         exp = self.controller.state.config.exposure
-        new_exp = replace(exp, **{f: getattr(_DEFAULT_EXPOSURE, f) for f in fields})
+        defaults = {f: _default_exposure_field(f, self.controller.state.config.process.positive_source) for f in fields}
+        new_exp = replace(exp, **defaults)
         new_config = replace(self.controller.state.config, exposure=new_exp)
         self.controller.session.update_config(new_config, persist=True)
 
@@ -830,8 +859,9 @@ class ControlsPanel(QWidget):
         _proc = _DEFAULT_PROCESS
 
         exp = cfg.exposure
+        positive_source = cfg.process.positive_source
         color_count = sum(getattr(exp, f) != getattr(_exp, f) for f in _COLOR_FIELDS)
-        tone_count = sum(getattr(exp, f) != getattr(_exp, f) for f in _TONE_FIELDS)
+        tone_count = sum(getattr(exp, f) != _default_exposure_field(f, positive_source) for f in _TONE_FIELDS)
 
         lab = cfg.lab
         lab_count = sum(

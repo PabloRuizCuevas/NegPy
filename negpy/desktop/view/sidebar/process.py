@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
 from negpy.desktop.session import ToolMode
 from negpy.desktop.view.sidebar.base import BaseSidebar
 from negpy.desktop.view.sidebar.tone import _CH_COLORS, _CH_LABEL, _CH_SUFFIX
-from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, hint_label, section_subheader, wrap_tooltip
+from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, hint_label, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.sliders import CompactSlider
 from negpy.features.exposure.models import EXPOSURE_CONSTANTS
@@ -79,8 +79,9 @@ class ProcessSidebar(BaseSidebar):
     def _init_ui(self) -> None:
         conf = self.state.config.process
 
-        # Lives above every Setup collapsible. ControlsPanel adds it to the page, so it is
-        # deliberately not in self.layout.
+        # The "Film Mode" Roll-tab card's content -- ControlsPanel wraps it in a section
+        # with that title, so it carries no header of its own; deliberately not in
+        # self.layout, the same reason analysis_buffer_bar below is not.
         self.mode_bar = QWidget()
         mode_col = QVBoxLayout(self.mode_bar)
         mode_col.setContentsMargins(0, 0, 0, 0)
@@ -89,7 +90,6 @@ class ProcessSidebar(BaseSidebar):
         self.autodetect_btn = self._small_toggle("mdi6.auto-fix", "", False, "Auto-detect the film process on load")
         self.autodetect_btn.setFixedWidth(ICON_BUTTON_WIDTH)
         header_row = QHBoxLayout()
-        header_row.addWidget(section_subheader("PROCESS"))
         header_row.addStretch(1)
         header_row.addWidget(self.autodetect_btn)
         mode_col.addLayout(header_row)

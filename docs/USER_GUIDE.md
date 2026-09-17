@@ -407,7 +407,7 @@ Color timing, like the dichroic filters on an enlarger head. A **Global / Shadow
 *   **Cyan / Magenta / Yellow** (-1 to 1): the three filtration axes, Cyan↔Red, Magenta↔Green and Yellow↔Blue.
 *   **Cast Removal** (0.0 to 1.0, **color only**): balances each color layer against the frame's own grays, so neutrals stay neutral from deep shadows through highlights. The applied strength scales with how many clean near-neutrals the frame has. On Color Negative it defeats the orange mask and starts at about 0.5. On Transparency it starts at 0 and corrects a faded slide's crossover, since a slide's cast can be the photograph, so you ask for it. Hidden for B&W Negative.
 
-    It is hidden in Transparency and B&W Negative, because the render ignores it there. What it defeats is the **orange mask**, a cast the manufacturer built into the film rather than part of the picture. A slide has no mask and its cast *is* the photograph, so solving for a neutral axis would strip out the light you shot in; a B&W negative has one emulsion and no channels to balance. For a slide's color, use **Temperature** and the CMY sliders above, or **Hue Trim** (§10.1) if an unusual scanning light has rotated the hues.
+    It is hidden in Transparency and B&W Negative, because the render ignores it there. What it defeats is the **orange mask**, a cast the manufacturer built into the film rather than part of the picture. A slide has no mask and its cast *is* the photograph, so solving for a neutral axis would strip out the light you shot in; a B&W negative has one emulsion and no channels to balance. For a slide's color, use **Temperature** and the CMY sliders above, or **Hue Trim** (§10.2) if an unusual scanning light has rotated the hues.
 *   **Ring-around** (target icon, or `Shift+F`): prints the frame as a 5×5 mosaic stepping 2cc at a time out to ±4cc on the magenta and yellow axes, so the direction of a color cast is visible instead of guessed. Each patch is a real render of the part of the frame it covers; click one to keep its filtration. The ladder is absolute and centered on neutral, so a ring printed off one frame compares to the next. `Escape` or a second press clears it, and any edit drops it. See **Rotating a proof** below.
 
 <!-- panel:tone -->
@@ -680,14 +680,17 @@ A scrollable list of every edit step, the last 100 kept, newest on top. The curr
 
 ## 10. Roll tab
 
-**Film mode** sits above the panels, because it is the first choice of every edit: **Color** (C-41 color negative), **B&W** (panchromatic negative) or **Slide** (transparency/reversal, E-6 and friends). Each swaps the core conversion math and re-runs the pipeline from scratch. The wand button beside them **auto-detects** the mode when a file loads. Inside a loaded roll, picking a mode takes effect on every frame in it immediately — a roll is one film type, never mixed, so there is no per-frame override and no Apply step for it, unlike Calibration, Demosaic and Normalization below.
+**Film Mode, Calibration, Demosaic and Normalization are shared by every frame in the roll** — but only once applied. A slider or toggle edits the current frame alone, like any other control, and marks that card **This Frame Only** (amber lock icon on its header) the moment it stops matching the roll — and clears the mark again on its own if you edit it back to what the roll already says, without needing Apply for that. **Apply to All Roll**, above the cards, pushes every marked card out to the roll and clears the mark; its chevron switches it to **Apply to Selected**, which pushes the same cards onto the film strip's selection instead. **Force Settings** (Apply to All Roll only) also reclaims every *other* frame marked This Frame Only, on any card — not just the one(s) marked on the frame you're looking at, since a stray mark elsewhere in the roll is otherwise reachable only by opening that exact frame. A card reclaimed this way, that isn't itself marked here, takes the roll's existing value for it rather than this frame's. Click the lock icon to unlock a card and rejoin the roll's current value immediately. **Apply grays out** whenever its current scope and Force Settings state would touch nothing — no need to click it to find out. A frame outside any roll edits every card per frame, exactly as before this existed, and Apply has nothing to do.
 
-**Positive** (default off), beside Film Mode, is for a source that is already a finished positive in any mode — a scanned print, an export from other software, a negative the scanner positivized itself — not a raw scanner or camera capture. NegPy decodes its embedded profile (sRGB if it has none) instead of reading it as literal linear data, and skips metering, negative inversion, the exposure lift and the filmic roll-off a raw capture needs, so the Print sliders in Normalization (§10.3) shape the image directly. On Slide, it only applies with Normalize off, since a metered stretch already decodes on the source's own profile. Switching it also rewrites Auto Density and Auto Grade to the mode being switched to, the same way Film Mode rewrites Cast Removal: a raw negative starts metered, a finished positive starts unmetered, since there is no exposure bracket left to protect. Inside a loaded roll it propagates like Film Mode: instant on every frame, with no per-frame override and no Apply step, since how a roll was scanned is one fact about the whole roll, not a per-shot choice.
+<!-- panel:film -->
+### 10.1 Film Mode
 
-**Calibration, Demosaic and Normalization are shared by every frame in the roll** — but only once applied. A slider edits the current frame alone, like any other control, and marks that card **This Frame Only** (amber lock icon on its header) the moment it stops matching the roll. **Apply to All Roll**, above the cards, pushes every marked card out to the roll and clears the mark; its chevron switches it to **Apply to Selected**, which pushes the same cards onto the film strip's selection instead. **Force Settings** (Apply to All Roll only) also reclaims every *other* frame marked This Frame Only, on any card — not just the one(s) marked on the frame you're looking at, since a stray mark elsewhere in the roll is otherwise reachable only by opening that exact frame. A card reclaimed this way, that isn't itself marked here, takes the roll's existing value for it rather than this frame's. Click the lock icon to unlock a card and rejoin the roll's current value immediately. **Apply grays out** whenever its current scope and Force Settings state would touch nothing — no need to click it to find out. A frame outside any roll edits every card per frame, exactly as before this existed, and Apply has nothing to do.
+Leads the other cards, always expanded, because it decides which of them even apply: **Color** (C-41 color negative), **B&W** (panchromatic negative) or **Slide** (transparency/reversal, E-6 and friends). Each swaps the core conversion math and re-runs the pipeline from scratch. The wand button beside them **auto-detects** the mode when a file loads.
+
+**Positive** (default off), beside Film Mode, is for a source that is already a finished positive in any mode — a scanned print, an export from other software, a negative the scanner positivized itself — not a raw scanner or camera capture. NegPy decodes its embedded profile (sRGB if it has none) instead of reading it as literal linear data, and skips metering, negative inversion, the exposure lift and the filmic roll-off a raw capture needs, so the Print sliders in Normalization (§10.4) shape the image directly. On Slide, it only applies with Normalize off, since a metered stretch already decodes on the source's own profile. Also turns Auto Density/Auto Grade (§5.2) off if they were still at their negative default, and restores them on the way out — the same rule Cast Removal already follows on a mode switch, so a toggle you chose yourself survives either way.
 
 <!-- panel:sensor -->
-### 10.1 Calibration: what your rig does to the colors
+### 10.2 Calibration: what your rig does to the colors
 
 Everything here corrects the *capture*, not the look. Three different things sit between the scene and your file: the camera's color filters, the film's dyes, and the light source. Each gets its own control. They are not interchangeable, and none substitutes for another.
 
@@ -740,7 +743,7 @@ The film's dyes each absorb outside their own band, but they are not the only ca
 *   **Hue Trim** (-30° to 30°, default 0): rotates every hue by a fixed angle, to undo the rotation an unusual scanning light imposes. Narrowband LED and odd-phosphor panels sample the dyes away from where the film expects, which turns *every* color by roughly the same angle, so yellows read orange and greens go olive, while neutrals are left alone. That is why white balance cannot fix it: the error is a rotation, not a cast, so there is no gray to correct. Judge it on a subject whose color you know (foliage, a clear blue sky, skin), and leave it at 0 for an ordinary broadband light. The setting is **sticky**, because a light source is a property of your rig, so it carries to the next file until you change it. Neutrals are untouched, so it never disturbs the color-balance clip in **Normalization**.
 
 <!-- panel:demosaic -->
-### 10.2 Demosaic: turning the sensor mosaic into pixels
+### 10.3 Demosaic: turning the sensor mosaic into pixels
 
 A color sensor records one color per photosite behind a mosaic filter, and an algorithm fills in the other two. Which one you pick decides how sharp the result looks and how it treats film grain. Preview and export are chosen separately, and both are sticky.
 
@@ -749,9 +752,9 @@ Bayer and X-Trans RAW only: a scanner TIFF, a Pakon scan or a linear DNG arrives
 *   **Preview** / **Export** (default **Auto** for both): *Auto* keeps NegPy's own choice, a fast half-size decode on screen and AHD for export. For the preview, Auto and Linear are the fastest; the others decode at full size. **AHD** is LibRaw's balanced default, **VNG** the smooth one, **PPG** fast with clean edges, **DCB** and **DHT** chase fine detail, and **AAHD** softens edges to suppress artifacts.
 
 <!-- panel:process -->
-### 10.3 Normalization: negative → positive
+### 10.4 Normalization: negative → positive
 
-How the negative is measured and normalized into a positive. The film mode that decides *which* conversion runs sits above the panels (§10), and how the scan is decoded lives in **Calibration** (§10.1).
+How the negative is measured and normalized into a positive. The film mode that decides *which* conversion runs sits above the panels (§10.1), and how the scan is decoded lives in **Calibration** (§10.2).
 
 *   **Multi-core CPU rendering** (**Preferences → Performance**, beside **GPU acceleration**): spreads the CPU rendering kernels across your cores. It takes effect immediately, with no recompile and no restart.
 
@@ -771,7 +774,7 @@ How the negative is measured and normalized into a positive. The film mode that 
 *   **Color Clip** (-100 to 100): the per-channel color-balance clip (orange-mask removal), independent of the tonal range. Positive tightens channel balance; negative samples nearer the extremes.
 *   **Global / R / G / B** selector → **White Point** / **Black Point** (-0.25 to 0.25): manual offsets on top of the auto-detected bounds. A positive white point brightens; a positive black point lifts blacks. In R/G/B mode these become per-layer trims: per-dye-layer film-base (Dmin) and Dmax corrections, which is scanner-style per-channel levels. The selector is hidden in B&W Negative, where per-layer trims are meaningless, and in Transparency with Normalize off, where the sliders it scopes are hidden with the rest of the normalization tuning.
 
-**Crosstalk**, **Hue Trim** and the sensor unmix all live in **Calibration** (§10.1). They correct the capture rather than the negative-to-positive conversion.
+**Crosstalk**, **Hue Trim** and the sensor unmix all live in **Calibration** (§10.2). They correct the capture rather than the negative-to-positive conversion.
 
 > **No Transparency matrix ships with NegPy.** On slides the Matrix dropdown starts empty, and it and Strength are disabled until a matrix exists. The editor button stays live, so you can build your own: press **+**, and it is created for the process you are in. A `.toml` marked `process = "Transparency"` dropped into your crosstalk folder works too (the pre-rename `process = "E-6"` still loads). It means something different there: on a negative the dyes' unwanted absorptions are an error to remove before inversion, so unmixing moves the render *toward* the scene, but a transparency **is** the finished image, and what you see on a lightbox already includes those absorptions, so unmixing moves it *away* from the slide's own look. In Transparency, treat it as a color-separation control, not a fidelity correction. **Hue Trim** is unaffected: it corrects the light source, so it applies to slides exactly as it does to negatives.
 
@@ -794,10 +797,10 @@ How the negative is measured and normalized into a positive. The film mode that 
 
     **Narrowband** and **Single-Shot Narrowband Calibration** are grayed out for *any* transparency, Normalize or not; see [Narrowband and slides](#narrowband-and-slides). Reproducing a slide's appearance is a colorimetric problem, and narrowband illumination samples the spectrum at three isolated wavelengths, so the inter-band overlap the eye integrates is never measured, which is the same reason narrowband scans render oversaturated and hue-rotated. No input profile recovers what was never sampled, and the bundled one describes negative dyes besides.
 
-    **Positive**, beside Film Mode (§10), is slide-only in the same way and live only with Normalize off — see there for what it does.
+    **Positive** (§10.1), beside Film Mode, is slide-only in the same way and live only with Normalize off — see there for what it does.
 
 <!-- panel:roll -->
-### 10.4 Roll Analysis: a consistent look across the roll
+### 10.5 Roll Analysis: a consistent look across the roll
 
 Meter the whole roll once and share the baseline, so frames from the same film match.
 
@@ -812,7 +815,7 @@ Meter the whole roll once and share the baseline, so frames from the same film m
 *   **Delete**: remove the selected roll (it asks first). The frames keep their current look; only the saved baseline goes.
 
 <!-- panel:presets -->
-### 10.5 Presets
+### 10.6 Presets
 
 Save and recall a complete edit, the full workspace, by name.
 
@@ -916,7 +919,7 @@ A searchable, user-extendable library shared by Metadata (§11), Roll Settings a
 *   **Linear**: bypass the entire darkroom pipeline and dump the scanner's or camera's decoded buffer as a linear 16-bit file. The output format is selectable: **TIFF** (default, zlib-compressed, genuinely untagged) or **JPEG XL** (lossless). JPEG XL has no untagged state, so it comes out asserting sRGB primaries and a linear transfer regardless, which is not true for camera or scanner-native primaries; use TIFF if an unasserted file matters. An **Effort** slider (1–9, default 7) controls JPEG XL encoder speed against compression. No normalization, exposure, color management, flatfield or sensor correction, just the raw data with lossless geometry (rotation and flip) applied. Supported sources:
     *   **Pakon RAW**: 4× expansion by default (14-bit sensor range scaled into 16-bit). F335 files (16-bit sensor) default to no expansion.
     *   **LinearRaw DNG**: SilverFast HDRi (3-channel) and VueScan (4-channel RGB+IR). IR is written as a separate grayscale file with an `_ir` suffix, in the same Format you chose for the main output.
-    *   **Camera RAW**: demosaiced with unity white balance (1,1,1,1), using the algorithm chosen for Export in the Demosaic panel (§10.2); the resolved algorithm is recorded in the description. The camera's as-shot WB is written into XMP (`RAW-WB: R G B`) so downstream tools can apply it. Source device and timestamp are preserved. Trichrome triplets (narrowband R/G/B exposures) are merged into a single combined TIFF. Stitch composites are assembled with flatfield and sensor correction applied per-part for clean seams; stitch and triplet combinations are also supported.
+    *   **Camera RAW**: demosaiced with unity white balance (1,1,1,1), using the algorithm chosen for Export in the Demosaic panel (§10.3); the resolved algorithm is recorded in the description. The camera's as-shot WB is written into XMP (`RAW-WB: R G B`) so downstream tools can apply it. Source device and timestamp are preserved. Trichrome triplets (narrowband R/G/B exposures) are merged into a single combined TIFF. Stitch composites are assembled with flatfield and sensor correction applied per-part for clean seams; stitch and triplet combinations are also supported.
     *   **Coolscan NEF**: Nikon Coolscan scanner files. Despite the name, these are not raw sensor data: the content depends on the Nikon Scan settings used at scan time, so linear, unprocessed output needs the right settings before scanning. The full-res RGB SubIFD is read directly, and any extra channels beyond RGB are dropped, since Coolscan has no separate IR channel. No expansion.
     *   **Flextight FFF**: Imacon/Hasselblad Flextight scanner files, including both standard uncompressed 16-bit RGB exports and SGI LogLuv compressed raw files (`.3fr`/`.fff`). LogLuv files are decoded through a LogLuv → XYZ → linear sRGB pipeline with per-channel percentile normalization; LogLuv is HDR, so normalization is part of the decode, and without it the data would be truncated, not raw. The largest image IFD is selected by pixel count. Data is linear scanner transmittance. Embedded FlexColor metadata (film stock, film type, scan date, scanner serial) from the proprietary plist (tag 50457) and the firmware blob (tag 46279) is carried through to the output TIFF headers. No expansion.
     *   **Noritsu RAW**: headerless BGR 16-bit scanner dumps. Frame dimensions are auto-detected from file size against known Noritsu scan dimensions. 16× expansion by default (12-bit sensor data in 16-bit range).
@@ -1072,7 +1075,7 @@ Settings for the whole application, not for one photo. Open them from the canvas
 ### Performance
 
 *   **GPU acceleration**: render the pipeline on the GPU. The active backend is named below the row. Off falls back to the CPU pipeline, which is slower but produces the same image. If the GPU viewport itself fails to start, a warning toast says so at launch and an amber line here repeats it; the display then runs on the CPU.
-*   **Multi-core CPU rendering**: see §10.3. It takes effect at once, with no restart.
+*   **Multi-core CPU rendering**: see §10.4. It takes effect at once, with no restart.
 *   **Preview size** (512 to 8192 px): long edge of the interactive canvas. Higher is sharper at 100% zoom, and costs proportionally more VRAM and CPU per frame, so lower the cache limit and the rendered-frame count to match. RAW files decode at half sensor size for the preview, so there is nothing to gain past half the long edge of your scan.
 *   **Preview cache** and **Preview cache limit**: how many recently-viewed photos stay decoded in memory, and the memory ceiling for them. Lower both on a machine with little RAM.
 *   **HQ buffers**: full-resolution HQ preview buffers kept in memory. Each is large (a 60 MP scan is about 700 MB), and keeping the previous frame makes going back instant.
