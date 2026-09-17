@@ -124,6 +124,7 @@ from negpy.features.local.models import LocalAdjustmentsConfig
 from negpy.features.process.models import (
     ProcessConfig,
     ProcessMode,
+    auto_meter_for_positive_source,
     cast_removal_for_mode,
     invalidate_local_bounds,
     scan_setup_values,
@@ -3465,6 +3466,291 @@ class AppController(QObject):
         )
         self.session.update_config(replace(self.state.config, process=new_process), persist=True)
         self.request_render()
+
+    _ROLL_EDIT_SCOPE_KEY = "roll_edit_scope"
+    _ROLL_OVERRIDE_LOCKED_KEY = "roll_override_locked_frames"
+    _ROLL_CARDS = ("sensor", "demosaic", "process")
+    _ROLL_CARD_LABELS = {"sensor": "Calibration", "demosaic": "Demosaic", "process": "Normalization"}
+
+    def roll_card_locked(self, card_key: str) -> bool:
+        """True when the active frame has locked *card_key* to its own value, within
+        the active roll. Always false with no active roll."""
+        roll_id = self.state.active_roll_id
+        if roll_id is None or not self.state.current_file_hash:
+            return False
+        return card_key in rolls.frame_override_cards(self.session.repo, roll_id, self.state.current_file_hash)
+
+    def diverged_roll_cards(self) -> List[str]:
+        """Every Roll-tab card locked away from the roll on the active frame -- what
+        Apply to All Roll / Apply to Selected act on."""
+        return [key for key in self._ROLL_CARDS if self.roll_card_locked(key)]
+
+    def can_apply_roll_cards(self) -> bool:
+        """Whether the Roll tab's Apply button, at its current scope, would touch
+        anything right now -- so it can go dark instead of a no-op click needing the
+        status line to explain itself. "Selected" only ever pushes diverged_roll_cards();
+        "All Roll" with Force Settings also counts a stray lock elsewhere in the roll
+        that _reclaim_fields_for can actually reclaim toward something."""
+        roll_id = self.state.active_roll_id
+        if roll_id is None:
+            return False
+        if self.diverged_roll_cards():
+            return True
+        if self.roll_edit_scope() != "all" or not self.roll_override_locked_frames():
+            return False
+        active_hash = self.state.current_file_hash
+        for card_key in self._ROLL_CARDS:
+            if not self._reclaim_fields_for(card_key, roll_id):
+                continue
+            for f_info in self.state.uploaded_files:
+                f_hash = f_info.get("hash")
+                if not f_hash or f_hash == active_hash:
+                    continue
+                if card_key in rolls.frame_override_cards(self.session.repo, roll_id, f_hash):
+                    return True
+        return False
+
+    def roll_edit_scope(self) -> str:
+        """Which action the Roll tab's split button's main half currently performs:
+        "all" (default, Apply to All Roll) or "selected" (Apply to Selected) -- sticky
+        across sessions, the same convention export_scope already uses. Picking one
+        only decides what the next click does; editing a card never reads this."""
+        scope = self.session.repo.get_global_setting(self._ROLL_EDIT_SCOPE_KEY, "all")
+        return scope if scope in ("all", "selected") else "all"
+
+    def set_roll_edit_scope(self, scope: str) -> None:
+        self.session.repo.save_global_setting(self._ROLL_EDIT_SCOPE_KEY, scope)
+
+    def roll_override_locked_frames(self) -> bool:
+        """Whether Apply to All Roll also reclaims frames already locked away from the
+        card it touches, instead of leaving them on their own value."""
+        return bool(self.session.repo.get_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, False))
+
+    def set_roll_override_locked_frames(self, value: bool) -> None:
+        self.session.repo.save_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, value)
+
+    def _push_unlockable_roll_field(self, roll_id: str, label: str, **field) -> None:
+        """Shared by set_process_mode/set_positive_source: writes one roll-wide fact
+        that has no lock possible (rolls._UNLOCKABLE_FIELDS), and marks every other
+        member frame's thumbnail stale so its badge reflects the change without an
+        eager per-file rewrite -- resolve_roll_process_config picks it up next time
+        each frame is hydrated. Status-messages like Apply to All Roll does: there is
+        no button click here for the user to already read as "it happened"."""
+        rolls.set_roll_defaults(self.session.repo, roll_id, **field)
+        active_hash = self.state.current_file_hash
+        others = [f for f in self.state.uploaded_files if f.get("hash") != active_hash]
+        for f in others:
+            self.state.stale_thumbnails.add(asset_thumbnail_key(f))
+        self.session.asset_model.refresh()
+        if others:
+            self.set_status(f"Applied to the roll: {label}", 3000)
+
+    def set_process_mode(self, mode: str) -> None:
+        """Switches Film Mode. A roll is one film type -- Color, B&W or Slide -- never
+        mixed, so unlike Calibration/Demosaic/Normalization this cannot diverge per
+        frame: it has no card to lock, and resolve_roll_process_config always overlays
+        it. It takes effect on every member frame the moment it changes, not through
+        Apply to All Roll -- there is nothing left over for that to push."""
+        exp = self.state.config.exposure
+        strength = cast_removal_for_mode(mode, exp.cast_removal_strength)
+        if strength != exp.cast_removal_strength:
+            # Ahead of the mode, and without a render of its own: the process change below
+            # renders once with both in place.
+            self.session.update_config(
+                replace(self.state.config, exposure=replace(exp, cast_removal_strength=strength)), persist=True, render=False
+            )
+        new_process = replace(
+            self.state.config.process,
+            process_mode=mode,
+            **invalidate_local_bounds(self.state.config.process),
+        )
+        self.apply_config(replace(self.state.config, process=new_process), persist=True)
+        if self.state.active_roll_id is not None:
+            self._push_unlockable_roll_field(self.state.active_roll_id, "Film Mode", process_mode=mode)
+
+    def set_positive_source(self, checked: bool) -> None:
+        """Toggles Positive. Whether the source is already a finished positive
+        describes how the whole roll was scanned, not a per-shot choice -- a roll is
+        scanned one way, not some frames pre-positivized and others not -- so like
+        Film Mode this propagates to every member frame immediately, with no lock
+        possible and no Apply needed.
+
+        Also rewrites Auto Density/Auto Grade to the mode being switched to
+        (auto_meter_for_positive_source), same as Film Mode already rewrites Cast
+        Removal -- untouched, they carry whichever mode's default they last matched,
+        so this only moves them when the user never touched them."""
+        proc = self.state.config.process
+        new_process = replace(
+            proc,
+            positive_source=checked,
+            **invalidate_local_bounds(proc),
+        )
+        new_exposure = replace(
+            self.state.config.exposure,
+            auto_exposure=auto_meter_for_positive_source(checked, self.state.config.exposure.auto_exposure),
+            auto_normalize_contrast=auto_meter_for_positive_source(checked, self.state.config.exposure.auto_normalize_contrast),
+        )
+        self.apply_config(replace(self.state.config, process=new_process, exposure=new_exposure), persist=True)
+        if self.state.active_roll_id is not None:
+            self._push_unlockable_roll_field(self.state.active_roll_id, "Positive", positive_source=checked)
+
+    def set_roll_default(self, card_key: str, persist: bool = True, readback_metrics: bool = True, **changes) -> None:
+        """Edits *card_key* for the active frame alone, same as any other control --
+        marking it locked away from the roll the instant it changes and was not
+        already, since the frame no longer matches whatever the roll currently says.
+        Apply to All Roll / Apply to Selected (apply_roll_cards_to_roll /
+        apply_roll_cards_to_selected) are the only things that push a value back out;
+        editing alone never does, here or on an already-locked card.
+
+        persist=False (a slider mid-drag) previews on the active frame only, same as
+        any other live preview -- the lock only follows the settled value, not every
+        intermediate tick.
+        """
+        new_config = replace(self.state.config, process=replace(self.state.config.process, **changes))
+        self.apply_config(new_config, persist=persist, readback_metrics=readback_metrics)
+        if not persist:
+            return
+        roll_id = self.state.active_roll_id
+        if roll_id is None or self.roll_card_locked(card_key):
+            return
+        rolls.set_frame_override(self.session.repo, roll_id, self.state.current_file_hash, card_key, True)
+
+    def apply_roll_cards_to_roll(self) -> int:
+        """Apply to All Roll: pushes every card diverged_roll_cards() names out to the
+        roll's shared default and clears its lock, so the active frame rejoins the
+        roll on each.
+
+        Force Settings widens this beyond the active frame: roll_card_locked() (and so
+        diverged_roll_cards()) only ever sees this one frame's own lock, so a stray lock
+        on a *different* frame, on a card this frame never touched, was otherwise
+        unreachable from any frame but that one. With Force Settings on, every card is
+        swept for other locked frames roll-wide, not just the ones diverged here --
+        pushed cards reclaim toward the active frame's value (about to become the new
+        default), the rest toward the roll's existing default.
+
+        Returns how many cards it touched, pushed or swept, and status-messages either
+        way -- clicking Apply with nothing to do anywhere is a no-op worth saying so."""
+        roll_id = self.state.active_roll_id
+        if roll_id is None:
+            self.set_status("Nothing to apply — every card already follows the roll", 2500)
+            return 0
+        pushed = self.diverged_roll_cards()
+        active_hash = self.state.current_file_hash
+        for card_key in pushed:
+            fields = {name: getattr(self.state.config.process, name) for name in rolls.ROLL_DEFAULT_FIELDS[card_key]}
+            rolls.set_roll_defaults(self.session.repo, roll_id, **fields)
+            rolls.set_frame_override(self.session.repo, roll_id, active_hash, card_key, False)
+
+        touched = set(pushed)
+        if self.roll_override_locked_frames():
+            for card_key in self._ROLL_CARDS:
+                if self._reclaim_locked_frames(card_key, roll_id):
+                    touched.add(card_key)
+
+        if not touched:
+            self.set_status("Nothing to apply — every card already follows the roll", 2500)
+            return 0
+        for f in self.state.uploaded_files:
+            if f.get("hash") != active_hash:
+                self.state.stale_thumbnails.add(asset_thumbnail_key(f))
+        self.session.asset_model.refresh()
+        self.config_updated.emit()
+        names = ", ".join(self._ROLL_CARD_LABELS[k] for k in self._ROLL_CARDS if k in touched)
+        self.set_status(f"Applied to the roll: {names}", 3000)
+        return len(touched)
+
+    def apply_roll_cards_to_selected(self) -> int:
+        """Apply to Selected: pushes every card diverged_roll_cards() names onto every
+        film strip selected frame, locking each to it -- the roll's own default is
+        untouched. Returns how many cards it touched."""
+        cards = self.diverged_roll_cards() if self.state.active_roll_id else []
+        if not cards:
+            self.set_status("Nothing to apply — every card already follows the roll", 2500)
+            return 0
+        for card_key in cards:
+            self._apply_roll_card_to_selected(card_key)
+        self.config_updated.emit()
+        names = ", ".join(self._ROLL_CARD_LABELS[k] for k in cards)
+        self.set_status(f"Applied to the selected frames: {names}", 3000)
+        return len(cards)
+
+    def _apply_roll_card_to_selected(self, card_key: str) -> None:
+        """Freezes *card_key*'s current value onto every film strip selected frame
+        other than the active one (already locked, by definition, for the card to be
+        in diverged_roll_cards()) and locks each to it."""
+        roll_id = self.state.active_roll_id
+        card_fields = rolls.ROLL_DEFAULT_FIELDS[card_key]
+        frozen = {name: getattr(self.state.config.process, name) for name in card_fields}
+        active_hash = self.state.current_file_hash
+        for i in sorted(set(self.state.selected_indices)):
+            if not (0 <= i < len(self.state.uploaded_files)):
+                continue
+            f_info = self.state.uploaded_files[i]
+            f_hash = f_info.get("hash")
+            if not f_hash or f_hash == active_hash:
+                continue
+            p = self.session.repo.load_file_settings(f_hash) or self.session.config_for_asset(f_info)
+            new_p = replace(p, process=replace(p.process, **frozen))
+            self.session.push_external_history(f_hash, p, new_p)
+            self.session.repo.save_file_settings(f_hash, new_p, file_path=f_info.get("path", ""))
+            rolls.set_frame_override(self.session.repo, roll_id, f_hash, card_key, True)
+
+    def _reclaim_fields_for(self, card_key: str, roll_id: str) -> dict:
+        """The values Force Settings would freeze *card_key* to: the active frame's own,
+        if it is itself one of diverged_roll_cards() (about to become the new default),
+        else the roll's already-stored default. Empty if neither exists -- a card
+        neither diverged here nor ever given a roll default has nothing to reclaim
+        toward. Shared by _reclaim_locked_frames and can_apply_roll_cards so "would
+        this touch anything" and "does this touch it" can never drift apart."""
+        card_fields = rolls.ROLL_DEFAULT_FIELDS[card_key]
+        if card_key in self.diverged_roll_cards():
+            return {name: getattr(self.state.config.process, name) for name in card_fields}
+        defaults = rolls.roll_defaults(self.session.repo, roll_id)
+        return {name: defaults[name] for name in card_fields if name in defaults}
+
+    def _reclaim_locked_frames(self, card_key: str, roll_id: str) -> bool:
+        """Backs Force Settings: overwrites every other frame currently locked away
+        from *card_key*, anywhere in the roll, and unlocks it, so an "all" apply really
+        does make the whole roll uniform again -- not just the frames that happen to
+        share the active frame's own divergence. Returns whether anything was actually
+        touched, for the caller's status line."""
+        frozen = self._reclaim_fields_for(card_key, roll_id)
+        if not frozen:
+            return False
+        active_hash = self.state.current_file_hash
+        touched = False
+        for f_info in self.state.uploaded_files:
+            f_hash = f_info.get("hash")
+            if not f_hash or f_hash == active_hash:
+                continue
+            if card_key not in rolls.frame_override_cards(self.session.repo, roll_id, f_hash):
+                continue
+            p = self.session.repo.load_file_settings(f_hash) or self.session.config_for_asset(f_info)
+            new_p = replace(p, process=replace(p.process, **frozen))
+            self.session.push_external_history(f_hash, p, new_p)
+            self.session.repo.save_file_settings(f_hash, new_p, file_path=f_info.get("path", ""))
+            rolls.set_frame_override(self.session.repo, roll_id, f_hash, card_key, False)
+            touched = True
+        return touched
+
+    def set_roll_card_locked(self, card_key: str, locked: bool) -> None:
+        """Lock or unlock one Roll-tab card for the active frame, within the active
+        roll. Locking seeds the frame's own saved row with whatever is currently in
+        effect (the roll's default, most likely), so nothing appears to jump the
+        moment it stops following the roll; unlocking drops the flag and the roll's
+        current value takes over immediately. No-op with no active roll."""
+        roll_id = self.state.active_roll_id
+        if roll_id is None or not self.state.current_file_hash:
+            return
+        if locked:
+            card_fields = rolls.ROLL_DEFAULT_FIELDS[card_key]
+            frozen = {name: getattr(self.state.config.process, name) for name in card_fields}
+            new_config = replace(self.state.config, process=replace(self.state.config.process, **frozen))
+            self.session.update_config(new_config, persist=True, render=False)
+        rolls.set_frame_override(self.session.repo, roll_id, self.state.current_file_hash, card_key, locked)
+        if not locked:
+            asset = self.state.uploaded_files[self.state.selected_file_idx]
+            self.apply_config(self.session.config_for_asset(asset), persist=False)
 
     def reanalyze_current_file(self) -> None:
         """

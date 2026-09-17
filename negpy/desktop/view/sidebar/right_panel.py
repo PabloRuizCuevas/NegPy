@@ -3,7 +3,10 @@ from typing import Any, Dict
 import numpy as np
 import qtawesome as qta
 from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtGui import QActionGroup
 from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSplitter,
@@ -19,13 +22,23 @@ from negpy.desktop.view.sidebar.export import ExportSidebar
 from negpy.desktop.view.sidebar.favourites import FavouritesSidebar
 from negpy.desktop.view.sidebar.history import HistoryPanel
 from negpy.desktop.view.sidebar.metadata import MetadataSidebar
-from negpy.desktop.view.styles.templates import EditedDot
+from negpy.desktop.view.styles.templates import EditedDot, labeled_toggle
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.charts import PhotometricCurveWidget, StepWedgeWidget, ZoneStripWidget
 from negpy.desktop.view.widgets.collapsible import make_section
 from negpy.desktop.view.widgets.gear_library_panel import GearLibraryPanel
+from negpy.desktop.view.widgets.split_button import make_split_button
 from negpy.desktop.view.widgets.stats import DensitometerRow, NegativeStatsWidget, ZonePlacementRows
 from negpy.desktop.view.widgets.overflow_bar import OverflowBar
+
+# key -> (menu label, split-button label) -- current/all, the same vocabulary Export's
+# own scope button uses minus "current": editing a Calibration/Demosaic/Normalization
+# card already makes it current-frame-only the instant it changes, so there is nothing
+# left for a separate "apply to current" action to do.
+_ROLL_EDIT_SCOPES = {
+    "all": ("Apply to all frames in the roll", " Apply to All Roll"),
+    "selected": ("Apply to the selected frames", " Apply to Selected"),
+}
 
 # ControlsPanel sections built into the Roll tab (_build_roll_page), not a Frame sub-tab --
 # reveal_section routes these to the Roll group instead of Frame's inner tab switcher.
@@ -277,11 +290,79 @@ class RightPanel(QWidget):
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(8)
+        page_layout.addWidget(self._build_roll_scope_control())
         page_layout.addWidget(cp.process_sidebar.mode_bar)
         for section in (cp.sensor_section, cp.demosaic_section, cp.process_section, cp.roll_section, cp.presets_section):
             page_layout.addWidget(section)
         page_layout.addStretch(1)
         return page
+
+    def _build_roll_scope_control(self) -> QWidget:
+        """Apply to All Roll / Apply to Selected: pushes whatever Calibration, Demosaic
+        or Normalization cards the active frame has diverged (editing a card locks it
+        the instant it changes -- see set_roll_default) out to the roll or a chosen
+        set of frames. The chevron picks which one the button's main half does next,
+        the same split-button convention Export's own button uses; clicking the main
+        half runs it now. Force Settings sits beside it, not below -- it only modifies
+        what All Roll does, not a separate choice of its own."""
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(8)
+
+        menu = QMenu(self)
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+        self._roll_scope_actions: Dict[str, Any] = {}
+        for key, (menu_label, _btn_label) in _ROLL_EDIT_SCOPES.items():
+            action = menu.addAction(menu_label)
+            action.setCheckable(True)
+            action.triggered.connect(lambda _checked=False, k=key: self._set_roll_edit_scope(k))
+            group.addAction(action)
+            self._roll_scope_actions[key] = action
+
+        container, self.roll_scope_btn, _roll_scope_menu_btn = make_split_button("", "fa5s.crosshairs", menu, primary=True)
+        self.roll_scope_btn.clicked.connect(self._on_roll_apply_clicked)
+        row_layout.addWidget(container, 1)
+
+        self.roll_force_btn = labeled_toggle(
+            "fa5s.eraser",
+            " Force Settings",
+            self.controller.roll_override_locked_frames(),
+            "With All Roll, also overwrite and unlock any frame that already has this card set to its own value",
+        )
+        self.roll_force_btn.toggled.connect(self._on_roll_force_toggled)
+        row_layout.addWidget(self.roll_force_btn)
+
+        self._set_roll_edit_scope(self.controller.roll_edit_scope(), persist=False)
+        return row
+
+    def _set_roll_edit_scope(self, key: str, *, persist: bool = True) -> None:
+        self._roll_scope_actions[key].setChecked(True)
+        self.roll_scope_btn.setText(_ROLL_EDIT_SCOPES[key][1])
+        self.roll_force_btn.setEnabled(key == "all")
+        if persist:
+            self.controller.set_roll_edit_scope(key)
+        self._sync_roll_apply_enabled()
+
+    def _on_roll_force_toggled(self, checked: bool) -> None:
+        self.controller.set_roll_override_locked_frames(checked)
+        self._sync_roll_apply_enabled()
+
+    def _sync_roll_apply_enabled(self) -> None:
+        """Keeps the Apply button dark whenever its current scope would touch nothing --
+        a lock toggling, a frame switch or Force Settings can each flip this without
+        going through _set_roll_edit_scope, so this is also wired to config_updated."""
+        menu_label, _btn_label = _ROLL_EDIT_SCOPES[self.controller.roll_edit_scope()]
+        can_apply = self.controller.can_apply_roll_cards()
+        self.roll_scope_btn.setEnabled(can_apply)
+        self.roll_scope_btn.setToolTip(menu_label if can_apply else "Nothing to apply — every card already follows the roll")
+
+    def _on_roll_apply_clicked(self) -> None:
+        if self.controller.roll_edit_scope() == "selected":
+            self.controller.apply_roll_cards_to_selected()
+        else:
+            self.controller.apply_roll_cards_to_roll()
 
     def _build_scan_page(self) -> QWidget:
         """The 'Scan' tab hosts two collapsible sections (like Frame's Color tab): the
@@ -341,12 +422,14 @@ class RightPanel(QWidget):
         self.controller.tone_drag_changed.connect(self.curve_widget.set_active_param)
         self.controls_panel.modified_synced.connect(self._sync_tab_edited)
 
-        # These two sync_ui calls scan gear/template files; never per drag tick.
+        # The sync_ui calls scan gear/template files; never per drag tick. The roll-apply
+        # sync is cheap but rides along rather than getting its own timer.
         self._sync_debounce = QTimer()
         self._sync_debounce.setSingleShot(True)
         self._sync_debounce.setInterval(150)
         self._sync_debounce.timeout.connect(self.export_sidebar.sync_ui)
         self._sync_debounce.timeout.connect(self.metadata_sidebar.sync_ui)
+        self._sync_debounce.timeout.connect(self._sync_roll_apply_enabled)
         self.controller.config_updated.connect(self._sync_debounce.start)
 
     def _sync_tab_edited(self) -> None:
