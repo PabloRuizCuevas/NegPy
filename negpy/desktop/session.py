@@ -32,6 +32,7 @@ from negpy.kernel.system.config import APP_CONFIG
 from negpy.kernel.system.text import count_of
 from negpy.services.assets.composites import remember_composites
 from negpy.services.assets.flatfield import FlatFieldProfiles
+from negpy.services.assets import rolls
 from negpy.services.assets.search import facts_for, match, parse_query
 from negpy.services.assets.sidecar import load_or_promote
 from negpy.services.assets.thumbnails import asset_thumbnail_key
@@ -980,6 +981,17 @@ class DesktopSessionManager(QObject):
         config = resolve_asset_hdr_seed(config, asset)
         return resolve_asset_hdr(resolve_asset_stitch(resolve_asset_rgbscan(config, asset), asset), asset)
 
+    def _overlay_roll_defaults(self, config: WorkspaceConfig, asset: dict) -> WorkspaceConfig:
+        """Roll-wide Calibration/Demosaic/Normalization facts win over this frame's own
+        saved value, on every card it has not locked away from the roll within this
+        roll. Applied before the asset-identity overlays below, so a composite's own
+        required wiring (a trichrome triplet's forced narrowband decode, a merge's
+        process mode) always has the last word over a roll preference."""
+        roll_id = self.state.active_roll_id
+        if roll_id is None:
+            return config
+        return replace(config, process=rolls.resolve_roll_process_config(self.repo, roll_id, asset["hash"], config.process))
+
     def _hydrate_asset_config(self, asset: dict) -> tuple[WorkspaceConfig, bool]:
         """Build an asset's effective config and report whether it had saved edits."""
         saved_config = load_or_promote(
@@ -992,11 +1004,12 @@ class DesktopSessionManager(QObject):
         if saved_config is not None:
             # A saved edit keeps its own process mode and shadow lift, which are the user's
             # now, so only the wiring overlays apply.
-            config = self._apply_sticky_settings(saved_config, only_global=True)
+            config = self._overlay_roll_defaults(self._apply_sticky_settings(saved_config, only_global=True), asset)
             return resolve_asset_hdr(resolve_asset_stitch(resolve_asset_rgbscan(config, asset), asset), asset), False
         # Sticky settings include the global process mode, which a composite must not take over
         # the mode of the frames it was built from. _asset_defaults applies after.
-        return self._asset_defaults(self._apply_sticky_settings(WorkspaceConfig(), only_global=False), asset), True
+        config = self._overlay_roll_defaults(self._apply_sticky_settings(WorkspaceConfig(), only_global=False), asset)
+        return self._asset_defaults(config, asset), True
 
     def config_for_asset(self, asset: dict) -> WorkspaceConfig:
         """Return an asset's hydrated config without changing the active session state.

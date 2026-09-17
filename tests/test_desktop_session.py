@@ -156,6 +156,50 @@ class TestDesktopSessionSync(unittest.TestCase):
         self.assertEqual(plain_config.rgbscan, RgbScanConfig())
         self.assertIs(self.session.state.config, leaked)
 
+    def test_config_for_asset_applies_the_active_rolls_defaults(self):
+        rolls_store = {"r1": {"kind": "virtual", "name": "Portra", "defaults": {"linear_raw": True}}}
+        globals_ = {"rolls_by_id": rolls_store}
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: globals_.get(key, default)
+        self.session.state.active_roll_id = "r1"
+        asset = {"name": "a.dng", "path": "/roll/a.dng", "hash": "a-hash"}
+
+        with patch("negpy.desktop.session.load_or_promote", return_value=None):
+            config = self.session.config_for_asset(asset)
+
+        self.assertTrue(config.process.linear_raw)
+
+    def test_config_for_asset_ignores_roll_defaults_with_no_active_roll(self):
+        rolls_store = {"r1": {"kind": "virtual", "name": "Portra", "defaults": {"linear_raw": True}}}
+        globals_ = {"rolls_by_id": rolls_store}
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: globals_.get(key, default)
+        self.session.state.active_roll_id = None
+        asset = {"name": "a.dng", "path": "/roll/a.dng", "hash": "a-hash"}
+
+        with patch("negpy.desktop.session.load_or_promote", return_value=None):
+            config = self.session.config_for_asset(asset)
+
+        self.assertFalse(config.process.linear_raw)
+
+    def test_config_for_asset_respects_a_frames_locked_card(self):
+        rolls_store = {
+            "r1": {
+                "kind": "virtual",
+                "name": "Portra",
+                "defaults": {"linear_raw": True},
+                "frame_overrides": {"a-hash": ["sensor"]},
+            }
+        }
+        globals_ = {"rolls_by_id": rolls_store}
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: globals_.get(key, default)
+        self.session.state.active_roll_id = "r1"
+        asset = {"name": "a.dng", "path": "/roll/a.dng", "hash": "a-hash"}
+        saved = replace(WorkspaceConfig(), process=replace(WorkspaceConfig().process, linear_raw=False))
+
+        with patch("negpy.desktop.session.load_or_promote", return_value=saved):
+            config = self.session.config_for_asset(asset)
+
+        self.assertFalse(config.process.linear_raw)
+
     def test_set_autodetect_enabled_persists(self):
         self.assertFalse(self.session.state.autodetect_enabled)
         self.session.set_autodetect_enabled(True)
