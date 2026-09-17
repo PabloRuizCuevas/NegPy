@@ -455,11 +455,17 @@ class TestAppController(unittest.TestCase):
 
     def _wire_repo_store(self) -> dict:
         """Backs the mocked repo's global settings with a real dict, so a roll write
-        is readable back through rolls.py's own read/write helpers."""
+        is readable back through rolls.py's own read/write helpers. Also makes
+        update_config actually write state.config, like the real session does
+        (session.py's own update_config sets it synchronously) -- needed by anything
+        that reads state.config right back after applying an edit, such as
+        _lock_roll_card's own divergence check."""
         store: dict = {}
         self.controller.session.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
         self.controller.session.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
         self.mock_session_manager.asset_model = MagicMock()
+        state = self.mock_session_manager.state
+        self.mock_session_manager.update_config.side_effect = lambda cfg, **kwargs: setattr(state, "config", cfg)
         return store
 
     def test_set_roll_default_with_no_active_roll_falls_back_to_a_per_frame_edit(self):
@@ -530,6 +536,75 @@ class TestAppController(unittest.TestCase):
         cfg, kwargs = self.mock_session_manager.update_config.call_args
         self.assertEqual(cfg[0].process.hue_trim, 2.5)
         self.assertTrue(kwargs["persist"])
+
+    def test_set_roll_default_unlocks_when_edited_back_to_the_rolls_own_value(self):
+        """Editing a value away and then back to what the roll already says is not a
+        divergence -- the card must not stay marked This Frame Only just because it
+        was touched in between. "film" (2 fields) rather than "sensor" (9): every
+        field in the card needs its own roll default before a match is possible, and
+        this keeps the fixture to exactly the fields under test."""
+        from negpy.features.process.models import ProcessMode
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        rolls.set_roll_defaults(self.controller.session.repo, roll_id, process_mode=ProcessMode.C41, positive_source=False)
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h1", "film", locked=True)
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.uploaded_files = [{"name": "a.dng", "path": "/a.dng", "hash": "h1"}]
+        state.current_file_hash = "h1"
+
+        self.controller.set_roll_default("film", process_mode=ProcessMode.C41, positive_source=False)
+
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h1"), set())
+
+    def test_set_roll_default_stays_locked_while_still_diverged(self):
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        rolls.set_roll_defaults(self.controller.session.repo, roll_id, hue_trim=1.0)
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.uploaded_files = [{"name": "a.dng", "path": "/a.dng", "hash": "h1"}]
+        state.current_file_hash = "h1"
+
+        self.controller.set_roll_default("sensor", hue_trim=2.5)
+
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h1"), {"sensor"})
+
+    def test_set_process_mode_unlocks_when_switched_back_to_the_rolls_own_mode(self):
+        from negpy.features.process.models import ProcessMode
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        rolls.set_roll_defaults(self.controller.session.repo, roll_id, process_mode=ProcessMode.C41, positive_source=False)
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h2", "film", locked=True)
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.current_file_hash = "h2"
+
+        self.controller.set_process_mode(ProcessMode.C41)
+
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h2"), set())
+
+    def test_set_positive_source_unlocks_when_switched_back_to_the_rolls_own_value(self):
+        from negpy.features.process.models import ProcessMode
+        from negpy.services.assets import rolls
+
+        self._wire_repo_store()
+        roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
+        rolls.set_roll_defaults(self.controller.session.repo, roll_id, process_mode=ProcessMode.C41, positive_source=True)
+        rolls.set_frame_override(self.controller.session.repo, roll_id, "h2", "film", locked=True)
+        state = self.mock_session_manager.state
+        state.active_roll_id = roll_id
+        state.current_file_hash = "h2"
+
+        self.controller.set_positive_source(True)
+
+        self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h2"), set())
 
     def test_roll_edit_scope_defaults_to_all_and_round_trips(self):
         self._wire_repo_store()

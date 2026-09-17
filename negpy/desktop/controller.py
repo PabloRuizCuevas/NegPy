@@ -3621,15 +3621,25 @@ class AppController(QObject):
         self.session.repo.save_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, value)
 
     def _lock_roll_card(self, card_key: str) -> None:
-        """Marks *card_key* locked away from the roll to the active frame's own
-        already-applied value, unless it was already locked or there is no active
-        roll. Shared tail of set_roll_default and set_process_mode/set_positive_source
-        (the "film" card): both apply the edit to the active frame first, then call
-        this to diverge it, exactly the same as any other Roll-tab card."""
+        """Locks or unlocks *card_key* to match whether the active frame's own
+        already-applied value actually differs from the roll's -- editing a value and
+        then editing it back to what the roll already says is not a divergence, so the
+        card must not stay marked This Frame Only just because it was touched. Shared
+        tail of set_roll_default and set_process_mode/set_positive_source (the "film"
+        card). No-op with no active roll."""
         roll_id = self.state.active_roll_id
-        if roll_id is None or self.roll_card_locked(card_key):
+        if roll_id is None:
             return
-        rolls.set_frame_override(self.session.repo, roll_id, rolls.unforked_hash(self.state.current_file_hash), card_key, True)
+        defaults = rolls.roll_defaults(self.session.repo, roll_id)
+        proc = self.state.config.process
+        # A field the roll has never set at all cannot "match" -- there is nothing yet
+        # to differ from, and treating that as a match would hide a card's first-ever
+        # edit from Apply until every one of its fields happened to get a roll default.
+        matches_roll = all(name in defaults and getattr(proc, name) == defaults[name] for name in rolls.ROLL_DEFAULT_FIELDS[card_key])
+        diverged = not matches_roll
+        if diverged == self.roll_card_locked(card_key):
+            return
+        rolls.set_frame_override(self.session.repo, roll_id, rolls.unforked_hash(self.state.current_file_hash), card_key, diverged)
 
     def set_process_mode(self, mode: str) -> None:
         """Switches Film Mode for the active frame, locking the "film" card away from
