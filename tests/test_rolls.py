@@ -3,6 +3,7 @@ scopes or duplicates the edits themselves."""
 
 from unittest.mock import MagicMock
 
+from negpy.domain.models import WorkspaceConfig
 from negpy.infrastructure.storage.repository import StorageRepository
 from negpy.services.assets.rolls import (
     add_extra_member,
@@ -264,7 +265,7 @@ def test_unforked_hash_strips_only_the_roll_suffix():
 def test_fork_edit_seeds_the_forked_hash_and_marks_it_forked():
     repo = _repo()
     roll_id = create_virtual_roll(repo, "Portra", ["/a.nef"])
-    config = object()
+    config = WorkspaceConfig()
 
     forked = fork_edit(repo, roll_id, "abc123", "/a.nef", config)
 
@@ -275,7 +276,7 @@ def test_fork_edit_seeds_the_forked_hash_and_marks_it_forked():
 
 def test_fork_edit_on_an_unknown_roll_is_a_noop():
     repo = _repo()
-    forked = fork_edit(repo, "not-a-real-id", "abc123", "/a.nef", object())
+    forked = fork_edit(repo, "not-a-real-id", "abc123", "/a.nef", WorkspaceConfig())
     assert forked == "abc123"
     repo.save_file_settings.assert_not_called()
 
@@ -289,7 +290,7 @@ def test_is_forked_is_false_before_forking():
 def test_unfork_edit_reverses_fork_edit():
     repo = _repo()
     roll_id = create_virtual_roll(repo, "Portra", ["/a.nef"])
-    forked = fork_edit(repo, roll_id, "abc123", "/a.nef", object())
+    forked = fork_edit(repo, roll_id, "abc123", "/a.nef", WorkspaceConfig())
 
     unfork_edit(repo, roll_id, "abc123")
 
