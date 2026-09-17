@@ -16,6 +16,7 @@ from negpy.services.assets.flatfield_migration import migrate_legacy_flatfield_p
 from negpy.services.assets.gear import GearProfiles
 from negpy.services.assets.gear_preset_migration import migrate_gear_presets
 from negpy.services.assets.normalization_roll_migration import migrate_legacy_normalization_rolls
+from negpy.services.assets.positive_auto_migration import migrate_auto_meter_for_positive_frames
 from negpy.kernel.system.config import APP_CONFIG, BASE_USER_DIR
 from negpy.kernel.system.logging import get_logger, setup_logging
 from negpy.kernel.system.override import apply as apply_override
@@ -253,6 +254,7 @@ def main() -> None:
         migrate_legacy_flatfield_profiles(repo)
         migrate_gear_presets(repo)
         migrate_legacy_normalization_rolls(repo)
+        migrate_auto_meter_for_positive_frames(repo)
 
         scale = float(repo.get_global_setting("ui_scale", 1.0) or 1.0)
         scale = max(0.8, min(1.2, scale))
