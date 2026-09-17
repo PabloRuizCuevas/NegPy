@@ -57,7 +57,7 @@ class DemosaicSidebar(BaseSidebar):
     def _on_changed(self, field: str, name: str) -> None:
         # apply_config (inside set_roll_default): source_token carries the preview
         # choice, so changing it decodes again.
-        self.controller.set_roll_default("demosaic", **{field: DemosaicMode(name)})
+        self.controller.set_roll_default("demosaic", persist=True, **{field: DemosaicMode(name)})
 
     def sync_ui(self) -> None:
         conf = self.state.config.process

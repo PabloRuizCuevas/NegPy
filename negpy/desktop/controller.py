@@ -3611,7 +3611,7 @@ class AppController(QObject):
         if not persist:
             return
         roll_id = self.state.active_roll_id
-        if roll_id is None or self.roll_card_locked(card_key):
+        if roll_id is None or not self.state.current_file_hash or self.roll_card_locked(card_key):
             return
         rolls.set_frame_override(self.session.repo, roll_id, self.state.current_file_hash, card_key, True)
 
@@ -3639,7 +3639,7 @@ class AppController(QObject):
         for card_key in pushed:
             fields = {name: getattr(self.state.config.process, name) for name in rolls.ROLL_DEFAULT_FIELDS[card_key]}
             rolls.set_roll_defaults(self.session.repo, roll_id, **fields)
-            rolls.set_frame_override(self.session.repo, roll_id, active_hash, card_key, False)
+            rolls.set_frame_override(self.session.repo, roll_id, active_hash or "", card_key, False)
 
         touched = set(pushed)
         if self.roll_override_locked_frames():
@@ -3678,7 +3678,7 @@ class AppController(QObject):
         """Freezes *card_key*'s current value onto every film strip selected frame
         other than the active one (already locked, by definition, for the card to be
         in diverged_roll_cards()) and locks each to it."""
-        roll_id = self.state.active_roll_id
+        roll_id = self.state.active_roll_id or ""
         card_fields = rolls.ROLL_DEFAULT_FIELDS[card_key]
         frozen = {name: getattr(self.state.config.process, name) for name in card_fields}
         active_hash = self.state.current_file_hash
