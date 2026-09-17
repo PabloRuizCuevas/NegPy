@@ -84,7 +84,7 @@ def test_positive_is_visible_for_any_mode_but_grays_out_with_normalize_on(qapp):
 def test_positive_lives_in_mode_bar_not_the_normalization_body(qapp):
     """Whether the source is already a finished positive is a fact about the file,
     true for any mode, not a Normalization setting -- it lives beside Film Mode in
-    mode_bar, which ControlsPanel places above the collapsible card, not inside it."""
+    mode_bar, the "Film Mode" card's own content, not inside Normalization's."""
     _, sidebar = _sidebar()
     assert sidebar.positive_source_btn.parentWidget() is sidebar.mode_bar
 

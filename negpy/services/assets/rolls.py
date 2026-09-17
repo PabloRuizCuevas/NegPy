@@ -252,6 +252,11 @@ def virtual_rolls(repo: Any) -> List[tuple]:
 # exposure choices that can legitimately vary shot to shot within a roll, unlike these,
 # which describe the rig or the roll's own shared baseline.
 ROLL_DEFAULT_FIELDS: Dict[str, tuple] = {
+    # Which film type the roll is, and whether it is already a finished positive --
+    # edited and locked away from the roll exactly like every other card here, even
+    # though a roll being one film type, scanned one way, means the common case is
+    # every frame following it.
+    "film": ("process_mode", "positive_source"),
     "sensor": (
         "linear_raw",
         "narrowband_scan",
@@ -280,11 +285,6 @@ ROLL_DEFAULT_FIELDS: Dict[str, tuple] = {
         "use_color_average",
     ),
 }
-# Roll defaults too, but with no card of their own to unlock, so neither ever appears
-# in a frame_overrides set: Film Mode and Positive both describe how the whole roll
-# was shot or scanned, not a per-shot choice -- a roll is one film type, and scanned
-# one way, not some frames pre-positivized and others not.
-_UNLOCKABLE_FIELDS = ("process_mode", "positive_source")
 
 
 def roll_defaults(repo: Any, roll_id: str) -> Dict[str, Any]:
@@ -352,7 +352,7 @@ def resolve_roll_process_config(repo: Any, roll_id: Optional[str], file_hash: st
     if not defaults:
         return process_config
     locked_cards = frame_override_cards(repo, roll_id, file_hash)
-    updates = {name: defaults[name] for name in _UNLOCKABLE_FIELDS if name in defaults}
+    updates: Dict[str, Any] = {}
     for card_key, field_names in ROLL_DEFAULT_FIELDS.items():
         if card_key in locked_cards:
             continue

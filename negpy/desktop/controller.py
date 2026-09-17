@@ -3558,8 +3558,8 @@ class AppController(QObject):
 
     _ROLL_EDIT_SCOPE_KEY = "roll_edit_scope"
     _ROLL_OVERRIDE_LOCKED_KEY = "roll_override_locked_frames"
-    _ROLL_CARDS = ("sensor", "demosaic", "process")
-    _ROLL_CARD_LABELS = {"sensor": "Calibration", "demosaic": "Demosaic", "process": "Normalization"}
+    _ROLL_CARDS = ("film", "sensor", "demosaic", "process")
+    _ROLL_CARD_LABELS = {"film": "Film Mode", "sensor": "Calibration", "demosaic": "Demosaic", "process": "Normalization"}
 
     def roll_card_locked(self, card_key: str) -> bool:
         """True when the active frame has locked *card_key* to its own value, within
@@ -3620,70 +3620,56 @@ class AppController(QObject):
     def set_roll_override_locked_frames(self, value: bool) -> None:
         self.session.repo.save_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, value)
 
-    def _push_unlockable_roll_field(self, roll_id: str, label: str, **field) -> None:
-        """Shared by set_process_mode/set_positive_source: writes one roll-wide fact
-        that has no lock possible (rolls._UNLOCKABLE_FIELDS), and marks every other
-        member frame's thumbnail stale so its badge reflects the change without an
-        eager per-file rewrite -- resolve_roll_process_config picks it up next time
-        each frame is hydrated. Status-messages like Apply to All Roll does: there is
-        no button click here for the user to already read as "it happened"."""
-        rolls.set_roll_defaults(self.session.repo, roll_id, **field)
-        active_hash = self.state.current_file_hash
-        others = [f for f in self.state.uploaded_files if f.get("hash") != active_hash]
-        for f in others:
-            self.state.stale_thumbnails.add(asset_thumbnail_key(f))
-        self.session.asset_model.refresh()
-        if others:
-            self.set_status(f"Applied to the roll: {label}", 3000)
+    def _lock_roll_card(self, card_key: str) -> None:
+        """Marks *card_key* locked away from the roll to the active frame's own
+        already-applied value, unless it was already locked or there is no active
+        roll. Shared tail of set_roll_default and set_process_mode/set_positive_source
+        (the "film" card): both apply the edit to the active frame first, then call
+        this to diverge it, exactly the same as any other Roll-tab card."""
+        roll_id = self.state.active_roll_id
+        if roll_id is None or self.roll_card_locked(card_key):
+            return
+        rolls.set_frame_override(self.session.repo, roll_id, rolls.unforked_hash(self.state.current_file_hash), card_key, True)
 
     def set_process_mode(self, mode: str) -> None:
-        """Switches Film Mode. A roll is one film type -- Color, B&W or Slide -- never
-        mixed, so unlike Calibration/Demosaic/Normalization this cannot diverge per
-        frame: it has no card to lock, and resolve_roll_process_config always overlays
-        it. It takes effect on every member frame the moment it changes, not through
-        Apply to All Roll -- there is nothing left over for that to push."""
+        """Switches Film Mode for the active frame, locking the "film" card away from
+        the roll the instant it changes and was not already -- same as any other
+        Roll-tab card (set_roll_default). Apply to All Roll pushes it out."""
         exp = self.state.config.exposure
         strength = cast_removal_for_mode(mode, exp.cast_removal_strength)
-        if strength != exp.cast_removal_strength:
-            # Ahead of the mode, and without a render of its own: the process change below
-            # renders once with both in place.
-            self.session.update_config(
-                replace(self.state.config, exposure=replace(exp, cast_removal_strength=strength)), persist=True, render=False
-            )
+        new_exposure = replace(exp, cast_removal_strength=strength) if strength != exp.cast_removal_strength else exp
+        proc = self.state.config.process
         new_process = replace(
-            self.state.config.process,
+            proc,
             process_mode=mode,
-            **invalidate_local_bounds(self.state.config.process),
+            **invalidate_local_bounds(proc),
         )
-        self.apply_config(replace(self.state.config, process=new_process), persist=True)
-        if self.state.active_roll_id is not None:
-            self._push_unlockable_roll_field(self.state.active_roll_id, "Film Mode", process_mode=mode)
+        self.apply_config(replace(self.state.config, process=new_process, exposure=new_exposure), persist=True)
+        self._lock_roll_card("film")
 
     def set_positive_source(self, checked: bool) -> None:
-        """Toggles Positive. Whether the source is already a finished positive
-        describes how the whole roll was scanned, not a per-shot choice -- a roll is
-        scanned one way, not some frames pre-positivized and others not -- so like
-        Film Mode this propagates to every member frame immediately, with no lock
-        possible and no Apply needed.
+        """Toggles Positive for the active frame, locking the "film" card away from
+        the roll the instant it changes and was not already -- same treatment as
+        Film Mode, since both live on that one card.
 
         Also rewrites Auto Density/Auto Grade to the mode being switched to
-        (auto_meter_for_positive_source), same as Film Mode already rewrites Cast
-        Removal -- untouched, they carry whichever mode's default they last matched,
-        so this only moves them when the user never touched them."""
+        (auto_meter_for_positive_source): untouched, they carry whichever mode's
+        default they last matched, so this only moves them when the user never
+        touched them."""
         proc = self.state.config.process
         new_process = replace(
             proc,
             positive_source=checked,
             **invalidate_local_bounds(proc),
         )
+        exp = self.state.config.exposure
         new_exposure = replace(
-            self.state.config.exposure,
-            auto_exposure=auto_meter_for_positive_source(checked, self.state.config.exposure.auto_exposure),
-            auto_normalize_contrast=auto_meter_for_positive_source(checked, self.state.config.exposure.auto_normalize_contrast),
+            exp,
+            auto_exposure=auto_meter_for_positive_source(checked, exp.auto_exposure),
+            auto_normalize_contrast=auto_meter_for_positive_source(checked, exp.auto_normalize_contrast),
         )
         self.apply_config(replace(self.state.config, process=new_process, exposure=new_exposure), persist=True)
-        if self.state.active_roll_id is not None:
-            self._push_unlockable_roll_field(self.state.active_roll_id, "Positive", positive_source=checked)
+        self._lock_roll_card("film")
 
     def set_roll_default(self, card_key: str, persist: bool = True, readback_metrics: bool = True, **changes) -> None:
         """Edits *card_key* for the active frame alone, same as any other control --
@@ -3699,12 +3685,8 @@ class AppController(QObject):
         """
         new_config = replace(self.state.config, process=replace(self.state.config.process, **changes))
         self.apply_config(new_config, persist=persist, readback_metrics=readback_metrics)
-        if not persist:
-            return
-        roll_id = self.state.active_roll_id
-        if roll_id is None or self.roll_card_locked(card_key):
-            return
-        rolls.set_frame_override(self.session.repo, roll_id, rolls.unforked_hash(self.state.current_file_hash), card_key, True)
+        if persist:
+            self._lock_roll_card(card_key)
 
     def apply_roll_cards_to_roll(self) -> int:
         """Apply to All Roll: pushes every card diverged_roll_cards() names out to the

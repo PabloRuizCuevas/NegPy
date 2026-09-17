@@ -2647,94 +2647,62 @@ class TestPresetExportSelected(unittest.TestCase):
         self.assertNotIn("h1", saved)  # locked frame keeps its own exposure
         self.assertIn("h3", saved)
 
-    def test_set_process_mode_pushes_the_roll_default_when_a_roll_is_active(self):
+    def test_set_process_mode_locks_the_film_card_when_a_roll_is_active(self):
+        """Editing is a plain per-frame write now, same as any other Roll-tab card
+        (set_roll_default) -- Apply to All Roll is the only thing that pushes it out."""
         from negpy.features.process.models import ProcessMode
 
         self.mock_session_manager.state.active_roll_id = "roll-1"
 
-        with patch.object(rolls, "set_roll_defaults") as mock_set:
+        with (
+            patch.object(rolls, "set_frame_override") as mock_lock,
+            patch.object(rolls, "frame_override_cards", return_value=set()),
+        ):
             self.controller.set_process_mode(ProcessMode.BW)
 
-        mock_set.assert_called_once_with(self.mock_session_manager.repo, "roll-1", process_mode=ProcessMode.BW)
+        mock_lock.assert_called_once_with(self.mock_session_manager.repo, "roll-1", "h2", "film", True)
 
     def test_set_process_mode_does_not_touch_the_roll_without_an_active_roll(self):
         from negpy.features.process.models import ProcessMode
 
         self.mock_session_manager.state.active_roll_id = None
 
-        with patch.object(rolls, "set_roll_defaults") as mock_set:
+        with patch.object(rolls, "set_frame_override") as mock_lock:
             self.controller.set_process_mode(ProcessMode.BW)
 
-        mock_set.assert_not_called()
+        mock_lock.assert_not_called()
 
-    def test_set_process_mode_marks_other_frames_thumbnails_stale(self):
+    def test_set_process_mode_does_not_relock_an_already_locked_film_card(self):
         from negpy.features.process.models import ProcessMode
 
         self.mock_session_manager.state.active_roll_id = "roll-1"
 
-        with patch.object(rolls, "set_roll_defaults"):
+        with (
+            patch.object(rolls, "set_frame_override") as mock_lock,
+            patch.object(rolls, "frame_override_cards", return_value={"film"}),
+        ):
             self.controller.set_process_mode(ProcessMode.BW)
 
-        stale = self.mock_session_manager.state.stale_thumbnails
-        h1, h2, h3 = self.mock_session_manager.state.uploaded_files
-        self.assertIn(asset_thumbnail_key(h1), stale)
-        self.assertIn(asset_thumbnail_key(h3), stale)
-        self.assertNotIn(asset_thumbnail_key(h2), stale)  # h2 is the active frame
+        mock_lock.assert_not_called()
 
-    def test_set_process_mode_reports_status_when_a_roll_is_active(self):
-        """No button click here for the user to already read as "it happened" --
-        unlike Apply to All Roll, so this needs its own confirmation."""
-        from negpy.features.process.models import ProcessMode
-
-        self.mock_session_manager.state.active_roll_id = "roll-1"
-        msgs = []
-        self.controller.status_message_requested.connect(lambda text, *_: msgs.append(text))
-
-        with patch.object(rolls, "set_roll_defaults"):
-            self.controller.set_process_mode(ProcessMode.BW)
-
-        self.assertIn("Applied to the roll: Film Mode", msgs)
-
-    def test_set_process_mode_is_silent_with_no_other_frames_in_the_roll(self):
-        from negpy.features.process.models import ProcessMode
-
-        self.mock_session_manager.state.active_roll_id = "roll-1"
-        self.mock_session_manager.state.uploaded_files = [self.mock_session_manager.state.uploaded_files[1]]
-        msgs = []
-        self.controller.status_message_requested.connect(lambda text, *_: msgs.append(text))
-
-        with patch.object(rolls, "set_roll_defaults"):
-            self.controller.set_process_mode(ProcessMode.BW)
-
-        self.assertEqual(msgs, [])
-
-    def test_set_positive_source_pushes_the_roll_default_when_a_roll_is_active(self):
+    def test_set_positive_source_locks_the_film_card_when_a_roll_is_active(self):
         self.mock_session_manager.state.active_roll_id = "roll-1"
 
-        with patch.object(rolls, "set_roll_defaults") as mock_set:
+        with (
+            patch.object(rolls, "set_frame_override") as mock_lock,
+            patch.object(rolls, "frame_override_cards", return_value=set()),
+        ):
             self.controller.set_positive_source(True)
 
-        mock_set.assert_called_once_with(self.mock_session_manager.repo, "roll-1", positive_source=True)
+        mock_lock.assert_called_once_with(self.mock_session_manager.repo, "roll-1", "h2", "film", True)
 
     def test_set_positive_source_does_not_touch_the_roll_without_an_active_roll(self):
         self.mock_session_manager.state.active_roll_id = None
 
-        with patch.object(rolls, "set_roll_defaults") as mock_set:
+        with patch.object(rolls, "set_frame_override") as mock_lock:
             self.controller.set_positive_source(True)
 
-        mock_set.assert_not_called()
-
-    def test_set_positive_source_marks_other_frames_thumbnails_stale(self):
-        self.mock_session_manager.state.active_roll_id = "roll-1"
-
-        with patch.object(rolls, "set_roll_defaults"):
-            self.controller.set_positive_source(True)
-
-        stale = self.mock_session_manager.state.stale_thumbnails
-        h1, h2, h3 = self.mock_session_manager.state.uploaded_files
-        self.assertIn(asset_thumbnail_key(h1), stale)
-        self.assertIn(asset_thumbnail_key(h3), stale)
-        self.assertNotIn(asset_thumbnail_key(h2), stale)  # h2 is the active frame
+        mock_lock.assert_not_called()
 
     def test_set_positive_source_turns_off_auto_density_grade_when_untouched(self):
         """A raw negative starts metered; a finished positive starts unmetered, same
@@ -2777,16 +2745,6 @@ class TestPresetExportSelected(unittest.TestCase):
         passed = self.mock_session_manager.update_config.call_args.args[0]
         self.assertTrue(passed.exposure.auto_exposure)
         self.assertTrue(passed.exposure.auto_normalize_contrast)
-
-    def test_set_positive_source_reports_status_when_a_roll_is_active(self):
-        self.mock_session_manager.state.active_roll_id = "roll-1"
-        msgs = []
-        self.controller.status_message_requested.connect(lambda text, *_: msgs.append(text))
-
-        with patch.object(rolls, "set_roll_defaults"):
-            self.controller.set_positive_source(True)
-
-        self.assertIn("Applied to the roll: Positive", msgs)
 
     def test_request_reset_roll_resets_every_visible_frame(self):
         self.controller.request_reset_roll()

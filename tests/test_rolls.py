@@ -386,9 +386,9 @@ class TestRollDefaults:
 
         assert roll_defaults(repo, roll_id) == {"linear_raw": True, "hue_trim": 2.5}
 
-    def test_process_mode_has_no_card_and_cannot_be_locked_away(self):
-        """process_mode is a roll default like the rest, but sits on the mode bar above
-        every card -- there is nothing to lock it to, so it always takes the roll's value."""
+    def test_process_mode_follows_the_roll_unless_the_film_card_is_locked(self):
+        """process_mode is a roll default on the "film" card, like everything else --
+        locking a different card leaves it following the roll."""
         repo = _repo()
         roll_id = create_virtual_roll(repo, "Portra", [])
         set_roll_defaults(repo, roll_id, process_mode=ProcessMode.BW)
@@ -400,10 +400,18 @@ class TestRollDefaults:
 
         assert resolved.process_mode == ProcessMode.BW
 
-    def test_positive_source_has_no_card_and_cannot_be_locked_away(self):
-        """Positive is a roll default like process_mode: a fact about how the whole
-        roll was scanned, not a per-shot choice, so it always takes the roll's value
-        regardless of any card's lock."""
+    def test_process_mode_can_be_locked_away_on_the_film_card(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_defaults(repo, roll_id, process_mode=ProcessMode.BW)
+        set_frame_override(repo, roll_id, "h1", "film", locked=True)
+
+        resolved = resolve_roll_process_config(repo, roll_id, "h1", ProcessConfig(process_mode=ProcessMode.C41))
+
+        assert resolved.process_mode == ProcessMode.C41
+
+    def test_positive_source_follows_the_roll_unless_the_film_card_is_locked(self):
+        """Positive is a roll default on the same "film" card as process_mode."""
         repo = _repo()
         roll_id = create_virtual_roll(repo, "Portra", [])
         set_roll_defaults(repo, roll_id, positive_source=True)
@@ -414,6 +422,16 @@ class TestRollDefaults:
         resolved = resolve_roll_process_config(repo, roll_id, "h1", ProcessConfig(positive_source=False))
 
         assert resolved.positive_source is True
+
+    def test_positive_source_can_be_locked_away_on_the_film_card(self):
+        repo = _repo()
+        roll_id = create_virtual_roll(repo, "Portra", [])
+        set_roll_defaults(repo, roll_id, positive_source=True)
+        set_frame_override(repo, roll_id, "h1", "film", locked=True)
+
+        resolved = resolve_roll_process_config(repo, roll_id, "h1", ProcessConfig(positive_source=False))
+
+        assert resolved.positive_source is False
 
 
 class TestRollNormalization:
