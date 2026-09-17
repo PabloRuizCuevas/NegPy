@@ -137,3 +137,99 @@ def test_reveal_section_ignores_an_unknown_section():
 
     panel._switch_group.assert_not_called()
     panel._switch_tab.assert_not_called()
+
+
+def _roll_scope_panel_stub() -> MagicMock:
+    panel = MagicMock()
+    panel._roll_scope_actions = {k: MagicMock() for k in ("all", "selected")}
+    return panel
+
+
+def test_set_roll_edit_scope_checks_the_matching_action_and_labels_the_button():
+    panel = _roll_scope_panel_stub()
+
+    RightPanel._set_roll_edit_scope(panel, "selected")
+
+    panel._roll_scope_actions["selected"].setChecked.assert_called_once_with(True)
+    panel.roll_scope_btn.setText.assert_called_once_with(" Apply to Selected")
+    panel.controller.set_roll_edit_scope.assert_called_once_with("selected")
+
+
+def test_set_roll_edit_scope_enables_force_settings_only_for_all():
+    panel = _roll_scope_panel_stub()
+
+    RightPanel._set_roll_edit_scope(panel, "all")
+    panel.roll_force_btn.setEnabled.assert_called_once_with(True)
+
+    panel.roll_force_btn.reset_mock()
+    RightPanel._set_roll_edit_scope(panel, "selected")
+    panel.roll_force_btn.setEnabled.assert_called_once_with(False)
+
+
+def test_set_roll_edit_scope_with_persist_false_does_not_write_the_setting():
+    panel = _roll_scope_panel_stub()
+
+    RightPanel._set_roll_edit_scope(panel, "all", persist=False)
+
+    panel.controller.set_roll_edit_scope.assert_not_called()
+
+
+def test_apply_clicked_runs_apply_to_roll_by_default():
+    panel = _roll_scope_panel_stub()
+    panel.controller.roll_edit_scope.return_value = "all"
+
+    RightPanel._on_roll_apply_clicked(panel)
+
+    panel.controller.apply_roll_cards_to_roll.assert_called_once()
+    panel.controller.apply_roll_cards_to_selected.assert_not_called()
+
+
+def test_apply_clicked_runs_apply_to_selected_when_that_is_the_current_scope():
+    panel = _roll_scope_panel_stub()
+    panel.controller.roll_edit_scope.return_value = "selected"
+
+    RightPanel._on_roll_apply_clicked(panel)
+
+    panel.controller.apply_roll_cards_to_selected.assert_called_once()
+    panel.controller.apply_roll_cards_to_roll.assert_not_called()
+
+
+def test_set_roll_edit_scope_refreshes_the_apply_buttons_enabled_state():
+    """A scope switch can change whether the current scope has anything to apply, so
+    it must re-check, not just relabel the button."""
+    panel = _roll_scope_panel_stub()
+
+    RightPanel._set_roll_edit_scope(panel, "selected")
+
+    panel._sync_roll_apply_enabled.assert_called_once()
+
+
+def test_force_toggled_sets_the_override_and_refreshes_apply_enabled():
+    panel = _roll_scope_panel_stub()
+
+    RightPanel._on_roll_force_toggled(panel, True)
+
+    panel.controller.set_roll_override_locked_frames.assert_called_once_with(True)
+    panel._sync_roll_apply_enabled.assert_called_once()
+
+
+def test_sync_roll_apply_enabled_enables_the_button_when_something_can_apply():
+    panel = _roll_scope_panel_stub()
+    panel.controller.roll_edit_scope.return_value = "all"
+    panel.controller.can_apply_roll_cards.return_value = True
+
+    RightPanel._sync_roll_apply_enabled(panel)
+
+    panel.roll_scope_btn.setEnabled.assert_called_once_with(True)
+    panel.roll_scope_btn.setToolTip.assert_called_once_with("Apply to all frames in the roll")
+
+
+def test_sync_roll_apply_enabled_disables_and_explains_when_nothing_can_apply():
+    panel = _roll_scope_panel_stub()
+    panel.controller.roll_edit_scope.return_value = "selected"
+    panel.controller.can_apply_roll_cards.return_value = False
+
+    RightPanel._sync_roll_apply_enabled(panel)
+
+    panel.roll_scope_btn.setEnabled.assert_called_once_with(False)
+    panel.roll_scope_btn.setToolTip.assert_called_once_with("Nothing to apply — every card already follows the roll")
