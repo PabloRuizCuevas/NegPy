@@ -124,6 +124,7 @@ from negpy.features.local.models import LocalAdjustmentsConfig
 from negpy.features.process.models import (
     ProcessConfig,
     ProcessMode,
+    auto_meter_for_positive_source,
     cast_removal_for_mode,
     invalidate_local_bounds,
     scan_setup_values,
@@ -3619,18 +3620,21 @@ class AppController(QObject):
     def set_roll_override_locked_frames(self, value: bool) -> None:
         self.session.repo.save_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, value)
 
-    def _push_unlockable_roll_field(self, roll_id: str, **field) -> None:
+    def _push_unlockable_roll_field(self, roll_id: str, label: str, **field) -> None:
         """Shared by set_process_mode/set_positive_source: writes one roll-wide fact
         that has no lock possible (rolls._UNLOCKABLE_FIELDS), and marks every other
         member frame's thumbnail stale so its badge reflects the change without an
         eager per-file rewrite -- resolve_roll_process_config picks it up next time
-        each frame is hydrated."""
+        each frame is hydrated. Status-messages like Apply to All Roll does: there is
+        no button click here for the user to already read as "it happened"."""
         rolls.set_roll_defaults(self.session.repo, roll_id, **field)
         active_hash = self.state.current_file_hash
-        for f in self.state.uploaded_files:
-            if f.get("hash") != active_hash:
-                self.state.stale_thumbnails.add(asset_thumbnail_key(f))
+        others = [f for f in self.state.uploaded_files if f.get("hash") != active_hash]
+        for f in others:
+            self.state.stale_thumbnails.add(asset_thumbnail_key(f))
         self.session.asset_model.refresh()
+        if others:
+            self.set_status(f"Applied to the roll: {label}", 3000)
 
     def set_process_mode(self, mode: str) -> None:
         """Switches Film Mode. A roll is one film type -- Color, B&W or Slide -- never
@@ -3653,22 +3657,33 @@ class AppController(QObject):
         )
         self.apply_config(replace(self.state.config, process=new_process), persist=True)
         if self.state.active_roll_id is not None:
-            self._push_unlockable_roll_field(self.state.active_roll_id, process_mode=mode)
+            self._push_unlockable_roll_field(self.state.active_roll_id, "Film Mode", process_mode=mode)
 
     def set_positive_source(self, checked: bool) -> None:
         """Toggles Positive. Whether the source is already a finished positive
         describes how the whole roll was scanned, not a per-shot choice -- a roll is
         scanned one way, not some frames pre-positivized and others not -- so like
         Film Mode this propagates to every member frame immediately, with no lock
-        possible and no Apply needed."""
+        possible and no Apply needed.
+
+        Also rewrites Auto Density/Auto Grade to the mode being switched to
+        (auto_meter_for_positive_source), same as Film Mode already rewrites Cast
+        Removal -- untouched, they carry whichever mode's default they last matched,
+        so this only moves them when the user never touched them."""
+        proc = self.state.config.process
         new_process = replace(
-            self.state.config.process,
+            proc,
             positive_source=checked,
-            **invalidate_local_bounds(self.state.config.process),
+            **invalidate_local_bounds(proc),
         )
-        self.apply_config(replace(self.state.config, process=new_process), persist=True)
+        new_exposure = replace(
+            self.state.config.exposure,
+            auto_exposure=auto_meter_for_positive_source(checked, self.state.config.exposure.auto_exposure),
+            auto_normalize_contrast=auto_meter_for_positive_source(checked, self.state.config.exposure.auto_normalize_contrast),
+        )
+        self.apply_config(replace(self.state.config, process=new_process, exposure=new_exposure), persist=True)
         if self.state.active_roll_id is not None:
-            self._push_unlockable_roll_field(self.state.active_roll_id, positive_source=checked)
+            self._push_unlockable_roll_field(self.state.active_roll_id, "Positive", positive_source=checked)
 
     def set_roll_default(self, card_key: str, persist: bool = True, readback_metrics: bool = True, **changes) -> None:
         """Edits *card_key* for the active frame alone, same as any other control --

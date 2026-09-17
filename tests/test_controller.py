@@ -2681,6 +2681,33 @@ class TestPresetExportSelected(unittest.TestCase):
         self.assertIn(asset_thumbnail_key(h3), stale)
         self.assertNotIn(asset_thumbnail_key(h2), stale)  # h2 is the active frame
 
+    def test_set_process_mode_reports_status_when_a_roll_is_active(self):
+        """No button click here for the user to already read as "it happened" --
+        unlike Apply to All Roll, so this needs its own confirmation."""
+        from negpy.features.process.models import ProcessMode
+
+        self.mock_session_manager.state.active_roll_id = "roll-1"
+        msgs = []
+        self.controller.status_message_requested.connect(lambda text, *_: msgs.append(text))
+
+        with patch.object(rolls, "set_roll_defaults"):
+            self.controller.set_process_mode(ProcessMode.BW)
+
+        self.assertIn("Applied to the roll: Film Mode", msgs)
+
+    def test_set_process_mode_is_silent_with_no_other_frames_in_the_roll(self):
+        from negpy.features.process.models import ProcessMode
+
+        self.mock_session_manager.state.active_roll_id = "roll-1"
+        self.mock_session_manager.state.uploaded_files = [self.mock_session_manager.state.uploaded_files[1]]
+        msgs = []
+        self.controller.status_message_requested.connect(lambda text, *_: msgs.append(text))
+
+        with patch.object(rolls, "set_roll_defaults"):
+            self.controller.set_process_mode(ProcessMode.BW)
+
+        self.assertEqual(msgs, [])
+
     def test_set_positive_source_pushes_the_roll_default_when_a_roll_is_active(self):
         self.mock_session_manager.state.active_roll_id = "roll-1"
 
@@ -2708,6 +2735,58 @@ class TestPresetExportSelected(unittest.TestCase):
         self.assertIn(asset_thumbnail_key(h1), stale)
         self.assertIn(asset_thumbnail_key(h3), stale)
         self.assertNotIn(asset_thumbnail_key(h2), stale)  # h2 is the active frame
+
+    def test_set_positive_source_turns_off_auto_density_grade_when_untouched(self):
+        """A raw negative starts metered; a finished positive starts unmetered, same
+        as White/Black Point and every other per-shot control (auto_meter_for_positive_source)."""
+        self.mock_session_manager.state.active_roll_id = None
+        cfg = self.mock_session_manager.state.config
+        self.assertTrue(cfg.exposure.auto_exposure)
+        self.assertTrue(cfg.exposure.auto_normalize_contrast)
+
+        self.controller.set_positive_source(True)
+
+        passed = self.mock_session_manager.update_config.call_args.args[0]
+        self.assertFalse(passed.exposure.auto_exposure)
+        self.assertFalse(passed.exposure.auto_normalize_contrast)
+
+    def test_set_positive_source_leaves_a_deliberate_auto_choice_alone(self):
+        self.mock_session_manager.state.active_roll_id = None
+        cfg = self.mock_session_manager.state.config
+        self.mock_session_manager.state.config = replace(
+            cfg, exposure=replace(cfg.exposure, auto_exposure=False, auto_normalize_contrast=False)
+        )
+
+        self.controller.set_positive_source(True)
+
+        passed = self.mock_session_manager.update_config.call_args.args[0]
+        self.assertFalse(passed.exposure.auto_exposure)
+        self.assertFalse(passed.exposure.auto_normalize_contrast)
+
+    def test_set_positive_source_off_restores_auto_density_grade_when_untouched(self):
+        self.mock_session_manager.state.active_roll_id = None
+        cfg = self.mock_session_manager.state.config
+        self.mock_session_manager.state.config = replace(
+            cfg,
+            process=replace(cfg.process, positive_source=True),
+            exposure=replace(cfg.exposure, auto_exposure=False, auto_normalize_contrast=False),
+        )
+
+        self.controller.set_positive_source(False)
+
+        passed = self.mock_session_manager.update_config.call_args.args[0]
+        self.assertTrue(passed.exposure.auto_exposure)
+        self.assertTrue(passed.exposure.auto_normalize_contrast)
+
+    def test_set_positive_source_reports_status_when_a_roll_is_active(self):
+        self.mock_session_manager.state.active_roll_id = "roll-1"
+        msgs = []
+        self.controller.status_message_requested.connect(lambda text, *_: msgs.append(text))
+
+        with patch.object(rolls, "set_roll_defaults"):
+            self.controller.set_positive_source(True)
+
+        self.assertIn("Applied to the roll: Positive", msgs)
 
     def test_request_reset_roll_resets_every_visible_frame(self):
         self.controller.request_reset_roll()
