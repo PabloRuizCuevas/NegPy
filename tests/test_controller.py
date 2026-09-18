@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from dataclasses import replace
 from types import SimpleNamespace
 
+import numpy as np
 from PyQt6.QtWidgets import QApplication
 
 from negpy.desktop.controller import AppController
@@ -4365,10 +4366,19 @@ class TestSemanticIndexing(unittest.TestCase):
 
     def test_apply_embeddings_updates_state_and_refreshes_the_model(self):
         vector = object()
+        self.controller.state.uploaded_files = [{"name": "a", "path": "/a.dng", "hash": "h1"}]
+
         self.controller._apply_embeddings({"h1": vector})
 
         self.assertEqual(self.controller.state.embeddings["h1"], vector)
         self.mock_session_manager.asset_model.refresh.assert_called_once_with()
+
+    def test_apply_embeddings_ignores_a_file_not_in_the_live_session(self):
+        """A library-wide indexing pass's results belong in the DB, already saved per
+        file as they land -- not in the current session's in-memory cache."""
+        self.controller._apply_embeddings({"not_loaded": object()})
+
+        self.assertNotIn("not_loaded", self.controller.state.embeddings)
 
     def test_finished_releases_the_batch_lane(self):
         self.controller._begin_batch("embeddings", "Indexing for search by meaning", abortable=False)
@@ -4383,6 +4393,227 @@ class TestSemanticIndexing(unittest.TestCase):
         self.controller._on_embedding_batch_error("boom")
 
         self.assertIsNone(self.controller._active_batch)
+
+
+class TestLibraryIndexing(unittest.TestCase):
+    """index_library / _on_library_index_scanned / request_library_semantic_search --
+    the whole-library counterpart to the in-session embedding pass and search."""
+
+    def setUp(self):
+        self.mock_session_manager = MagicMock(spec=DesktopSessionManager)
+        self.mock_session_manager.state = AppState()
+        self.mock_session_manager.state.semantic_search_enabled = True
+        self.mock_session_manager.repo = MagicMock()
+
+        with (
+            patch("negpy.desktop.controller.RenderWorker") as mock_rw_class,
+            patch("negpy.desktop.controller.PreviewManager") as mock_pm_class,
+        ):
+            mock_rw_class.return_value = MagicMock()
+            mock_pm_class.return_value = MagicMock(spec=PreviewManager)
+            self.controller = AppController(self.mock_session_manager)
+
+        self.scan_requests = []
+        self.controller.library_index_scan_requested.connect(self.scan_requests.append)
+        self.controller.embedding_requested = MagicMock()
+        self._ready_patch = patch("negpy.desktop.controller.semantic_model.clip_model_ready", return_value=True)
+        self._ready_patch.start()
+
+    def tearDown(self):
+        import gc
+
+        self._ready_patch.stop()
+        for thread in [
+            self.controller.render_thread,
+            self.controller.export_thread,
+            self.controller.thumb_thread,
+            self.controller.norm_thread,
+            self.controller.discovery_thread,
+            self.controller.preview_load_thread,
+            self.controller.scan_thread,
+        ]:
+            if thread is not None and thread.isRunning():
+                thread.quit()
+                thread.wait()
+        del self.controller
+        gc.collect()
+
+    def _set_roots(self, roots):
+        self.mock_session_manager.repo.get_global_setting.side_effect = lambda key, default=None: (
+            roots if key == "library_roots" else default
+        )
+
+    def test_noop_when_the_feature_is_off(self):
+        self.mock_session_manager.state.semantic_search_enabled = False
+        self._set_roots(["/photos"])
+
+        self.controller.index_library()
+
+        self.assertEqual(self.scan_requests, [])
+        self.assertIsNone(self.controller._active_batch)
+
+    def test_noop_without_library_roots(self):
+        self._set_roots([])
+
+        self.controller.index_library()
+
+        self.assertEqual(self.scan_requests, [])
+        self.assertIsNone(self.controller._active_batch)
+
+    def test_claims_the_batch_lane_and_requests_a_scan(self):
+        self._set_roots(["/photos"])
+
+        self.controller.index_library()
+
+        self.assertEqual(self.controller._active_batch, "library_index")
+        self.assertEqual(self.scan_requests, [["/photos"]])
+        self.assertEqual(self.controller._embedding_batch_owner, "library_index")
+
+    def test_scanned_files_missing_from_the_db_are_requested(self):
+        self._set_roots(["/photos"])
+        self.controller.index_library()
+        self.mock_session_manager.repo.load_embeddings_for.return_value = {"h1": object()}
+
+        self.controller._on_library_index_scanned(
+            [{"name": "a", "path": "/photos/a.nef", "hash": "h1"}, {"name": "b", "path": "/photos/b.nef", "hash": "h2"}]
+        )
+
+        (requested,), _ = self.controller.embedding_requested.emit.call_args
+        self.assertEqual([f["hash"] for f in requested], ["h2"])
+        self.assertEqual(self.controller._active_batch, "library_index")  # released only once embedding finishes
+
+    def test_nothing_missing_ends_the_batch_without_embedding(self):
+        self._set_roots(["/photos"])
+        self.controller.index_library()
+        self.mock_session_manager.repo.load_embeddings_for.return_value = {"h1": object()}
+
+        self.controller._on_library_index_scanned([{"name": "a", "path": "/photos/a.nef", "hash": "h1"}])
+
+        self.controller.embedding_requested.emit.assert_not_called()
+        self.assertIsNone(self.controller._active_batch)
+
+    def test_a_stray_scan_result_with_no_active_batch_is_ignored(self):
+        """Defends against the scan signal firing when nothing claimed the lane --
+        it shouldn't be reachable, but must not crash or start an embedding batch."""
+        self.controller._on_library_index_scanned([{"name": "a", "path": "/a.nef", "hash": "h1"}])
+        self.controller.embedding_requested.emit.assert_not_called()
+
+    def test_cancelling_during_the_scan_skips_the_embedding_batch(self):
+        self._set_roots(["/photos"])
+        self.controller.index_library()
+
+        self.controller.abort_active_batch()
+        self.controller._on_library_index_scanned([{"name": "a", "path": "/photos/a.nef", "hash": "h1"}])
+
+        self.controller.embedding_requested.emit.assert_not_called()
+        self.assertIsNone(self.controller._active_batch)
+
+    def test_abort_cancels_the_shared_embedding_worker(self):
+        self._set_roots(["/photos"])
+        self.controller.index_library()
+        self.controller.embedding_worker.cancel = MagicMock()
+
+        self.controller.abort_active_batch()
+
+        self.controller.embedding_worker.cancel.assert_called_once_with()
+
+    def test_walk_progress_is_labeled_as_scanning_while_indexing(self):
+        self._set_roots(["/photos"])
+        self.controller.index_library()
+
+        with patch.object(self.controller, "set_status") as status:
+            self.controller._on_library_walk_progress(5)
+
+        status.assert_called_once_with("Scanning library… 5 files")
+
+    def test_walk_progress_is_labeled_as_searching_otherwise(self):
+        with patch.object(self.controller, "set_status") as status:
+            self.controller._on_library_walk_progress(5)
+
+        status.assert_called_once_with("Searching library… 5 files")
+
+    def test_a_scan_error_ends_the_batch_and_is_labeled_as_indexing(self):
+        self._set_roots(["/photos"])
+        self.controller.index_library()
+
+        with patch.object(self.controller, "_report_worker_error") as report:
+            self.controller._on_library_search_error("disk unplugged")
+
+        report.assert_called_once_with("Library indexing", "disk unplugged")
+        self.assertIsNone(self.controller._active_batch)
+
+    def test_a_plain_search_error_is_still_labeled_as_search(self):
+        with patch.object(self.controller, "_report_worker_error") as report:
+            self.controller._on_library_search_error("disk unplugged")
+
+        report.assert_called_once_with("Library search", "disk unplugged")
+
+    def test_semantic_search_ranks_and_opens_matches(self):
+        query = np.array([0.0, 1.0], dtype=np.float32)
+        self.mock_session_manager.repo.load_all_embeddings.return_value = {
+            "h1": ("/photos/close.nef", np.array([0.1, 0.9], dtype=np.float32) / np.linalg.norm([0.1, 0.9])),
+            "h2": ("/photos/far.nef", np.array([1.0, 0.0], dtype=np.float32)),  # orthogonal, below threshold
+        }
+        with (
+            patch.object(self.controller, "embed_search_query", return_value=query),
+            patch.object(self.controller, "request_asset_discovery") as discovery,
+        ):
+            self.controller.request_library_semantic_search("a sunset")
+
+        discovery.assert_called_once_with(["/photos/close.nef"], auto_open=True, replace_existing=True)
+
+    def test_semantic_search_excludes_a_row_with_no_path(self):
+        """A vector saved before the file_path column existed can't be opened from a
+        library-wide match -- excluded rather than crashing on an empty path."""
+        query = np.array([0.0, 1.0], dtype=np.float32)
+        self.mock_session_manager.repo.load_all_embeddings.return_value = {"h1": ("", query)}
+        with (
+            patch.object(self.controller, "embed_search_query", return_value=query),
+            patch.object(self.controller, "request_asset_discovery") as discovery,
+        ):
+            self.controller.request_library_semantic_search("a sunset")
+
+        discovery.assert_not_called()
+
+    def test_semantic_search_with_no_matches_does_not_open_anything(self):
+        with (
+            patch.object(self.controller, "embed_search_query", return_value=np.zeros(2, dtype=np.float32)),
+            patch.object(self.controller, "request_asset_discovery") as discovery,
+        ):
+            self.mock_session_manager.repo.load_all_embeddings.return_value = {}
+            self.controller.request_library_semantic_search("a sunset")
+
+        discovery.assert_not_called()
+
+    def test_semantic_search_with_no_embedding_is_a_noop(self):
+        with (
+            patch.object(self.controller, "embed_search_query", return_value=None),
+            patch.object(self.controller, "request_asset_discovery") as discovery,
+        ):
+            self.controller.request_library_semantic_search("a sunset")
+
+        discovery.assert_not_called()
+        self.mock_session_manager.repo.load_all_embeddings.assert_not_called()
+
+    def test_semantic_search_with_no_model_reports_not_ready(self):
+        """Non-empty text but still no embedding means the model isn't ready --
+        distinct from an empty box, which asks for a search instead."""
+        with (
+            patch.object(self.controller, "embed_search_query", return_value=None),
+            patch.object(self.controller, "set_status") as status,
+        ):
+            self.controller.request_library_semantic_search("a sunset")
+
+        self.assertEqual(status.call_args[0][0], "Search by meaning is not ready yet")
+
+    def test_semantic_search_with_empty_text_asks_for_a_query(self):
+        with (
+            patch.object(self.controller, "embed_search_query", return_value=None),
+            patch.object(self.controller, "set_status") as status,
+        ):
+            self.controller.request_library_semantic_search("   ")
+
+        self.assertEqual(status.call_args[0][0], "Type a search first")
 
 
 class TestLibrarySearch(unittest.TestCase):

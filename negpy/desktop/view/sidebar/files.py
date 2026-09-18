@@ -858,7 +858,10 @@ class FileBrowser(QWidget):
 
     def search_library(self) -> None:
         """Run the box's query against the library folders instead of the loaded roll."""
-        self.controller.request_library_search(self.search_input.text())
+        if self.semantic_btn.isChecked():
+            self.controller.request_library_semantic_search(self.search_input.text())
+        else:
+            self.controller.request_library_search(self.search_input.text())
 
     def focus_search(self) -> None:
         self.search_input.setFocus()
@@ -924,6 +927,7 @@ class FileBrowser(QWidget):
         self.semantic_btn.setVisible(self.session.state.semantic_search_enabled)
         if not self.session.state.semantic_search_enabled and self.semantic_btn.isChecked():
             self.semantic_btn.setChecked(False)  # reverts to the plain filter via _on_semantic_toggled
+        self.library_tree.sync_ui()
         self._update_unload_button()
         self._update_tally()
         self._update_empty_state()

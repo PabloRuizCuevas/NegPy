@@ -94,3 +94,22 @@ def test_unchecking_reverts_to_the_structured_filter(browser, session):
     browser._apply_filter()
 
     assert session.asset_model.semantic_query_active is False
+
+
+def test_search_library_runs_the_semantic_variant_when_checked(browser):
+    browser.semantic_btn.setChecked(True)
+    browser.search_input.setText("a sunset")
+
+    browser.search_library()
+
+    browser.controller.request_library_semantic_search.assert_called_once_with("a sunset")
+    browser.controller.request_library_search.assert_not_called()
+
+
+def test_search_library_runs_the_keyword_variant_when_unchecked(browser):
+    browser.search_input.setText("film:portra")
+
+    browser.search_library()
+
+    browser.controller.request_library_search.assert_called_once_with("film:portra")
+    browser.controller.request_library_semantic_search.assert_not_called()

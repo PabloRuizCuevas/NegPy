@@ -323,6 +323,7 @@ class AppController(QObject):
     asset_discovery_requested = pyqtSignal(AssetDiscoveryTask)
     auto_detect_all_splits_requested = pyqtSignal(AutoDetectAllSplitsTask)
     library_search_requested = pyqtSignal(LibrarySearchTask)
+    library_index_scan_requested = pyqtSignal(list)  # library_roots(), for whole-library indexing
     library_search_finished = pyqtSignal(int)  # frames found (0 = nothing matched)
     library_cleared = pyqtSignal()  # roots forgotten elsewhere — the panel must re-read them
     stitch_requested = pyqtSignal(object)
@@ -440,6 +441,14 @@ class AppController(QObject):
         self._autocrop_preflight_skipped = 0
         self._autocrop_cancel_requested = False
         self.flush_export_settings: Optional[Callable[[], None]] = None
+
+        # Which caller owns the embedding batch currently running on the shared
+        # EmbeddingWorker -- "embeddings" (in-session) or "library_index" (whole
+        # library). Set right before each embedding_requested.emit.
+        self._embedding_batch_owner = "embeddings"
+        # Requested while index_library() was still walking/hashing -- before there is
+        # any embedding batch for EmbeddingWorker.cancel() to actually stop.
+        self._library_index_cancelled = False
 
         self.preview_service = PreviewManager()
         self.batch_autocrop_preview_service = PreviewManager()
@@ -720,6 +729,8 @@ class AppController(QObject):
         self.library_worker.progress.connect(self._on_library_walk_progress)
         self.library_worker.finished.connect(self._on_library_search_finished)
         self.library_worker.error.connect(self._on_library_search_error)
+        self.library_index_scan_requested.connect(self.library_worker.scan_for_indexing)
+        self.library_worker.indexing_scanned.connect(self._on_library_index_scanned)
 
         self.preview_load_requested.connect(self.preview_load_worker.process)
         self.preview_load_worker.splash.connect(self._on_splash_preview)
@@ -876,8 +887,67 @@ class AppController(QObject):
             return
         if self._begin_batch("embeddings", "Indexing for search by meaning", abortable=False) is None:
             return
+        self._embedding_batch_owner = "embeddings"
         self.set_status("Indexing for search by meaning…")
         self.embedding_requested.emit([{**f, "process_mode": self.session.stored_process_mode(f)} for f in missing])
+
+    def index_library(self) -> None:
+        """Indexes every file under library_roots() for search by meaning, not just
+        the currently open roll -- an explicit, cancellable action (never automatic),
+        since it means decoding and embedding every photo in the library once."""
+        if not self.state.semantic_search_enabled or not semantic_model.clip_model_ready():
+            self.set_status("Turn on Search by meaning in Preferences first", 4000, kind="warning")
+            return
+        roots = self.library_roots()
+        if not roots:
+            self.set_status("Add a library folder first", 4000)
+            return
+        if self._begin_batch("library_index", "Indexing library for search by meaning", abortable=True) is None:
+            return
+        self._embedding_batch_owner = "library_index"
+        self._library_index_cancelled = False
+        self.set_status("Scanning library…")
+        self.library_index_scan_requested.emit(roots)
+
+    def _on_library_index_scanned(self, files: List[Dict[str, Any]]) -> None:
+        """Every library file, hashed. Only the ones missing from image_embeddings
+        under the current model go on to the expensive decode+embed pass -- indexing
+        again after a cancel or a later import redoes none of the finished work."""
+        if self._active_batch != "library_index":
+            return  # a keyword search's own walk landed here; nothing to index
+        if self._library_index_cancelled:
+            self._end_batch("library_index")
+            self.set_status("Indexing cancelled", 3000)
+            return
+        hashes = [f["hash"] for f in files]
+        cached = self.session.repo.load_embeddings_for(hashes, semantic_model.MODEL_VERSION)
+        missing = [f for f in files if f["hash"] not in cached]
+        if not missing:
+            self._end_batch("library_index")
+            self.set_status("Library already indexed for search by meaning", 4000)
+            return
+        self.embedding_requested.emit(missing)
+
+    def request_library_semantic_search(self, query: str) -> None:
+        """The whole-library counterpart to request_library_search: ranks every
+        indexed file (image_embeddings, not just the open session) by meaning and
+        opens the matches, exactly like the keyword search's own hand-off."""
+        embedding = self.embed_search_query(query)
+        if embedding is None:
+            self.set_status("Type a search first" if not query.strip() else "Search by meaning is not ready yet", 3000)
+            return
+        candidates = self.session.repo.load_all_embeddings(semantic_model.MODEL_VERSION)
+        vectors = {file_hash: vec for file_hash, (path, vec) in candidates.items() if path}
+        ranked_hashes = semantic_model.rank_by_similarity(embedding, vectors)
+        paths = [candidates[file_hash][0] for file_hash in ranked_hashes]
+        self.library_search_finished.emit(len(paths))
+        if not paths:
+            self.set_status("No frames in the library match that search", 4000)
+            return
+        self.set_status(f"{len(paths)} frame{'s' if len(paths) != 1 else ''} found", 3000)
+        self.state.active_roll_id = None
+        self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(None))
+        self.request_asset_discovery(paths, auto_open=True, replace_existing=True)
 
     def _on_embedding_progress(self, current: int, total: int, name: str) -> None:
         self.set_status(f"Indexing {current}/{total}: {name}")
@@ -886,17 +956,21 @@ class AppController(QObject):
 
     def _apply_embeddings(self, new_embeddings: Dict[str, Any]) -> None:
         """Commit a batch (or a chunk of a running one) so an active search-by-meaning
-        ranking improves mid-batch instead of waiting for the whole session to finish."""
-        self.state.embeddings.update(new_embeddings)
+        ranking improves mid-batch instead of waiting for the whole session to finish.
+        Only writes into the live session cache for files actually loaded right now --
+        a library-wide pass's results belong in the DB (already saved per file as they
+        land), not in this in-memory dict."""
+        live_hashes = {f["hash"] for f in self.state.uploaded_files}
+        self.state.embeddings.update({h: v for h, v in new_embeddings.items() if h in live_hashes})
         self.session.asset_model.refresh()
 
     def _on_embeddings_finished(self, new_embeddings: Dict[str, Any]) -> None:
         self.status_progress_requested.emit(0, 0)
-        self._end_batch("embeddings")
+        self._end_batch(self._embedding_batch_owner)
         self._apply_embeddings(new_embeddings)
 
     def _on_embedding_batch_error(self, message: str) -> None:
-        self._end_batch("embeddings")
+        self._end_batch(self._embedding_batch_owner)
         self.status_progress_requested.emit(0, 0)
         logger.error(f"Embedding batch failed: {message}")
         self.set_status("Indexing for search by meaning failed", 4000, kind="warning")
@@ -996,6 +1070,9 @@ class AppController(QObject):
             self.stitch_worker.cancel()
         elif self._active_batch == "hdr":
             self.hdr_worker.cancel()
+        elif self._active_batch == "library_index":
+            self._library_index_cancelled = True
+            self.embedding_worker.cancel()
 
     def saved_session_paths(self) -> List[str]:
         """Returns last session's file paths that still exist on disk."""
@@ -1249,7 +1326,8 @@ class AppController(QObject):
         )
 
     def _on_library_walk_progress(self, walked: int) -> None:
-        self.set_status(f"Searching library… {walked} files")
+        verb = "Scanning" if self._active_batch == "library_index" else "Searching"
+        self.set_status(f"{verb} library… {walked} files")
 
     def _on_library_search_finished(self, paths: List[str]) -> None:
         self.library_search_finished.emit(len(paths))
@@ -6103,7 +6181,11 @@ class AppController(QObject):
         self.set_status(f"{source} failed: {message}", 6000, kind="error")
 
     def _on_library_search_error(self, message: str) -> None:
-        self._report_worker_error("Library search", message)
+        if self._active_batch == "library_index":
+            self._end_batch("library_index")
+            self._report_worker_error("Library indexing", message)
+        else:
+            self._report_worker_error("Library search", message)
 
     def _on_export_finished(self) -> None:
         elapsed = time.time() - self._export_start_time

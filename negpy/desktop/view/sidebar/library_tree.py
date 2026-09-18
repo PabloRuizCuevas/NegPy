@@ -84,8 +84,19 @@ class LibraryTree(QWidget):
         self.refresh_btn.setFixedSize(20, 20)
         self.refresh_btn.clicked.connect(self.reload)
 
+        # Opt-in (Preferences); hidden until then. Decodes and embeds every photo
+        # under library_roots once, so search by meaning can rank the whole library,
+        # not just the open roll -- an explicit action, never automatic.
+        self.index_btn = QToolButton()
+        self.index_btn.setIcon(qta.icon("fa5s.database", color=THEME.text_primary))
+        self.index_btn.setToolTip("Index Library for Search by Meaning…")
+        self.index_btn.setFixedSize(20, 20)
+        self.index_btn.setVisible(False)
+        self.index_btn.clicked.connect(self.controller.index_library)
+
         header.addWidget(self.import_btn)
         header.addWidget(self.refresh_btn)
+        header.addWidget(self.index_btn)
         layout.addLayout(header)
 
         self.tree = QTreeWidget()
@@ -178,6 +189,15 @@ class LibraryTree(QWidget):
         if self._sort_order == "date":
             return sorted(entries, key=lambda pair: pair[1].get("created_at", 0.0), reverse=self._sort_descending)
         return sorted(entries, key=lambda pair: pair[1].get("name", "").casefold(), reverse=self._sort_descending)
+
+    def sync_ui(self) -> None:
+        """Shows Index Library only once the feature is on, and only once the model
+        is actually downloaded -- clicking it before that would have nothing to run."""
+        from negpy.services.assets import semantic_model
+
+        enabled = self.controller.state.semantic_search_enabled
+        self.index_btn.setVisible(enabled)
+        self.index_btn.setEnabled(enabled and semantic_model.clip_model_ready())
 
     def reload(self) -> None:
         selected = self._selected_roll_id()

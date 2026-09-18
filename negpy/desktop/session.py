@@ -35,6 +35,7 @@ from negpy.kernel.system.text import count_of
 from negpy.services.assets.composites import remember_composites
 from negpy.services.assets.flatfield import FlatFieldProfiles
 from negpy.services.assets import rolls
+from negpy.services.assets import semantic_model
 from negpy.services.assets.rolls import unforked_hash
 from negpy.services.assets.search import facts_for, match, parse_query
 from negpy.services.assets.sidecar import load_or_promote
@@ -345,11 +346,6 @@ def composite_summary(asset: Dict[str, Any]) -> str:
     return ""
 
 
-# CLIP cosine similarities run low even for a good match (unlike embeddings normalized
-# for other domains) -- below this a result reads as noise rather than a match.
-_SEMANTIC_MIN_SCORE = 0.2
-
-
 class AssetListModel(QAbstractListModel):
     """
     Model for the uploaded files list with thumbnail support.
@@ -404,18 +400,12 @@ class AssetListModel(QAbstractListModel):
         """Cosine similarity against the query, most relevant first. A file with no
         cached embedding yet is excluded rather than scored zero, so it drops out of
         the strip until indexing catches up instead of landing at the bottom as a
-        false "no match"."""
-        query = self._semantic_query
-        scored = []
-        for i in indices:
-            vec = self._state.embeddings.get(files[i]["hash"])
-            if vec is None:
-                continue
-            score = float(np.dot(query, vec))
-            if score >= _SEMANTIC_MIN_SCORE:
-                scored.append((score, i))
-        scored.sort(key=lambda pair: pair[0], reverse=True)
-        return [i for _, i in scored]
+        false "no match". Shares its threshold/ranking rule with the whole-library
+        search via semantic_model.rank_by_similarity, keyed by index rather than hash
+        so two entries that happen to share a hash (a fork, a half-frame split) each
+        keep their own slot."""
+        candidates = {i: vec for i in indices if (vec := self._state.embeddings.get(files[i]["hash"])) is not None}
+        return semantic_model.rank_by_similarity(self._semantic_query, candidates)
 
     def set_semantic_query(self, embedding: Optional[np.ndarray]) -> None:
         """Switches to (embedding given) or out of (None) search-by-meaning ranking.

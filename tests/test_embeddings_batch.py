@@ -39,7 +39,7 @@ def test_embeds_every_file_and_persists_each_vector(_fake_thumbnail_and_model):
     assert set(out) == {"h1", "h2"}
     assert np.array_equal(out["h1"], vector)
     assert repo.save_embedding.call_count == 2
-    repo.save_embedding.assert_any_call("h1", vector, embed_service.MODEL_VERSION)
+    repo.save_embedding.assert_any_call("h1", vector, embed_service.MODEL_VERSION, "/roll/a.nef")
 
 
 def test_a_file_with_no_decodable_thumbnail_is_skipped(_fake_thumbnail_and_model):
@@ -67,3 +67,16 @@ def test_progress_callback_reaches_the_final_count(_fake_thumbnail_and_model):
 
 def test_empty_batch_returns_empty(_fake_thumbnail_and_model):
     assert _run([]) == {}
+
+
+def test_is_cancelled_skips_files_but_keeps_the_batch_shape(_fake_thumbnail_and_model):
+    """A file is only ever skipped before its own decode/embed step starts -- nothing
+    raises, and files that already ran (none here, is_cancelled() is True from the
+    start) are simply absent from the result rather than erroring the whole batch."""
+    out = _run([_file("h1"), _file("h2")], is_cancelled=lambda: True)
+    assert out == {}
+
+
+def test_is_cancelled_none_runs_the_whole_batch(_fake_thumbnail_and_model):
+    out = _run([_file("h1")], is_cancelled=lambda: False)
+    assert set(out) == {"h1"}

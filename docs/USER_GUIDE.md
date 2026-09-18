@@ -181,13 +181,17 @@ Terms combine with AND, so `film:portra iso:>=400 -rejected:` applies all three 
 
 #### Searching by meaning
 
-Turn on **Search by meaning** in Preferences → Performance to search by what is in the photo instead of `field:value` terms — the first time, it downloads a small model. Once on, a fourth toggle appears beside the filter box; with it checked, typing a plain-language description (for example "a photo of a dog") ranks the currently loaded frames by how well they match instead of filtering by name, and is mutually exclusive with regex mode. It only ranks frames already loaded in this session, indexing them the first time they are opened — a fresh roll's frames join the ranking as their thumbnails finish generating.
+Turn on **Search by meaning** in Preferences → Performance to search by what is in the photo instead of `field:value` terms — the first time, it downloads a small model. Once on, a fourth toggle appears beside the filter box; with it checked, typing a plain-language description (for example "a photo of a dog") ranks the currently loaded frames by how well they match instead of filtering by name, and is mutually exclusive with regex mode. On its own it only ranks frames already loaded in this session, indexing them the first time they are opened — a fresh roll's frames join the ranking as their thumbnails finish generating. To rank your whole library this way, see **Indexing the library** below.
 
 #### Searching the whole library
 
-The filter box narrows what is already open. The **magnifier-over-folder** button beside it (or **Enter** in the box) runs the same search across every library folder and loads what it finds, so `film:portra` finds your Portra frames in folders you have not opened this month. The status bar counts files as it goes.
+The filter box narrows what is already open. The **magnifier-over-folder** button beside it (or **Enter** in the box) runs the same search across every library folder and loads what it finds, so `film:portra` finds your Portra frames in folders you have not opened this month. With **Search by meaning** on, the same button runs a plain-language query against every indexed file instead — see below.
 
-This works without opening anything, because NegPy already knows which edit belongs to which file. Film stock, camera and the rest come from frames you have filled in. The folders are only read, never indexed in the background and never modified.
+The keyword search works without opening anything, because NegPy already knows which edit belongs to which file. Film stock, camera and the rest come from frames you have filled in. The folders are only read, never indexed in the background and never modified.
+
+#### Indexing the library
+
+A **database** button appears beside the Library panel's refresh button once Search by meaning is on and its model is downloaded. Click it to decode and embed every photo under your library folders once, so search by meaning (above) can rank matches from anywhere in your library, not just the frames already open. This is the one thing in NegPy that does read and process every file up front, so it runs only when you ask: nothing changes for a folder you never index. It shows progress and an Abort button like any other batch; cancelling (or closing NegPy) loses no finished work — indexing again only processes what's left.
 
 Right-click **empty space** in the film strip for **Add Files**, **Add Folder** and **Clear All…**, so those tools stay in reach part-way down a long roll. Here **Clear All…** always means the whole session, never just the selection.
 

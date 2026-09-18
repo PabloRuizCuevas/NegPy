@@ -100,6 +100,14 @@ class StorageRepository(IRepository):
             # Migration: index on file_path for path-based fallback queries
             conn.execute("CREATE INDEX IF NOT EXISTS idx_file_settings_path ON file_settings(file_path)")
 
+            # Migration: add file_path so a whole-library semantic search can open a match
+            # it has never hashed before -- image_embeddings otherwise only round-trips
+            # through a hash a caller already holds.
+            try:
+                conn.execute("ALTER TABLE image_embeddings ADD COLUMN file_path TEXT")
+            except sqlite3.OperationalError:
+                pass  # already exists
+
         with self._connect(self.settings_db_path) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("""
@@ -162,11 +170,11 @@ class StorageRepository(IRepository):
             for table in ("file_settings", "edit_history", "work_prints", "image_embeddings"):
                 conn.execute(f"DELETE FROM {table} WHERE file_hash = ?", (file_hash,))
 
-    def save_embedding(self, file_hash: str, vector: np.ndarray, model_version: str) -> None:
+    def save_embedding(self, file_hash: str, vector: np.ndarray, model_version: str, file_path: str = "") -> None:
         with self._connect(self.edits_db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO image_embeddings (file_hash, embedding, model_version) VALUES (?, ?, ?)",
-                (file_hash, np.asarray(vector, dtype=np.float32).tobytes(), model_version),
+                "INSERT OR REPLACE INTO image_embeddings (file_hash, embedding, model_version, file_path) VALUES (?, ?, ?, ?)",
+                (file_hash, np.asarray(vector, dtype=np.float32).tobytes(), model_version, file_path),
             )
 
     def load_embeddings_for(self, hashes: List[str], model_version: str) -> dict[str, np.ndarray]:
@@ -187,6 +195,21 @@ class StorageRepository(IRepository):
                 for file_hash, blob in cursor.fetchall():
                     out[str(file_hash)] = np.frombuffer(blob, dtype=np.float32)
         return out
+
+    def load_all_embeddings(self, model_version: str) -> dict[str, tuple[str, np.ndarray]]:
+        """Every cached vector under `model_version`, as {file_hash: (file_path, vector)} --
+        the whole-library semantic search's candidate set, not scoped to any hash list the
+        caller already holds. A row saved before the file_path column existed contributes
+        no path and is simply unopenable from a library-wide match."""
+        with self._connect(self.edits_db_path) as conn:
+            cursor = conn.execute(
+                "SELECT file_hash, file_path, embedding FROM image_embeddings WHERE model_version = ?",
+                (model_version,),
+            )
+            return {
+                str(file_hash): (str(file_path or ""), np.frombuffer(blob, dtype=np.float32))
+                for file_hash, file_path, blob in cursor.fetchall()
+            }
 
     def load_file_settings_many(self, hashes: List[str]) -> dict[str, WorkspaceConfig]:
         """Saved edits for many hashes in one connection — the search facts for a whole

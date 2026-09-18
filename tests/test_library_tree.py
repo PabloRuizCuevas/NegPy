@@ -478,3 +478,41 @@ def test_import_subfolders_with_none_found_reports_status(widget, tree_dirs, mon
 
     assert imported is False
     widget.controller.set_status.assert_called_once()
+
+
+# --- Index Library ----------------------------------------------------------
+
+
+def test_index_button_hidden_by_default(widget):
+    widget.controller.state.semantic_search_enabled = False
+    widget.sync_ui()
+    assert widget.index_btn.isHidden()
+
+
+def test_sync_ui_shows_the_button_once_the_model_is_ready(widget, monkeypatch):
+    widget.controller.state.semantic_search_enabled = True
+    monkeypatch.setattr("negpy.services.assets.semantic_model.clip_model_ready", lambda: True)
+
+    widget.sync_ui()
+
+    assert not widget.index_btn.isHidden()
+    assert widget.index_btn.isEnabled()
+
+
+def test_sync_ui_disables_the_button_before_the_model_is_downloaded(widget, monkeypatch):
+    widget.controller.state.semantic_search_enabled = True
+    monkeypatch.setattr("negpy.services.assets.semantic_model.clip_model_ready", lambda: False)
+
+    widget.sync_ui()
+
+    assert not widget.index_btn.isHidden()
+    assert not widget.index_btn.isEnabled()
+
+
+def test_clicking_index_calls_the_controller(widget):
+    # A MagicMock slot can't be introspected for arity the way a real bound method
+    # can, so clicked's bool argument passes through here where it wouldn't in
+    # production (confirmed separately against a real bound method) -- only whether
+    # it fired is the point of this test.
+    widget.index_btn.click()
+    widget.controller.index_library.assert_called_once()

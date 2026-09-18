@@ -27,11 +27,17 @@ async def generate_batch_embeddings(
     repo: Any,
     progress_callback: Optional[Any] = None,
     ready_callback: Optional[Any] = None,
+    is_cancelled: Optional[Any] = None,
 ) -> Dict[str, np.ndarray]:
     """Embeds every file in `files`, persisting each vector as it lands.
 
     `ready_callback(file_hash, vector)` fires per file so the filmstrip's ranking can
     improve as the batch runs rather than waiting for the whole batch to finish.
+
+    `is_cancelled()` is checked once per file, right before its (expensive) decode and
+    embed step -- a library-wide batch can run long enough to need stopping mid-way. A
+    file already past that check finishes normally; only files still queued are skipped,
+    same granularity download_clip_model's own is_cancelled already uses.
     """
     model = ClipModel()
     semaphore = asyncio.Semaphore(APP_CONFIG.max_workers)
@@ -57,6 +63,8 @@ async def generate_batch_embeddings(
     async def _worker(f_info: Dict[str, Any]) -> Tuple[str, Optional[np.ndarray]]:
         nonlocal completed
         async with semaphore:
+            if is_cancelled is not None and is_cancelled():
+                return f_info["hash"], None
             vector = await asyncio.to_thread(_embed_one, f_info)
             completed += 1
             if progress_callback:
@@ -65,7 +73,7 @@ async def generate_batch_embeddings(
                 else:
                     progress_callback(completed, f_info["name"])
             if vector is not None:
-                repo.save_embedding(f_info["hash"], vector, MODEL_VERSION)
+                repo.save_embedding(f_info["hash"], vector, MODEL_VERSION, f_info["path"])
                 if ready_callback:
                     ready_callback(f_info["hash"], vector)
             return f_info["hash"], vector

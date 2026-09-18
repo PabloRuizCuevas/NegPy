@@ -159,6 +159,43 @@ def test_delete_file_settings_also_takes_the_embedding(tmp_path):
     assert repo.load_embeddings_for(["h1"], "v1") == {}
 
 
+def test_load_all_embeddings_returns_path_and_vector_for_every_row(tmp_path):
+    repo = _repo(tmp_path)
+    repo.save_embedding("h1", np.array([1.0, 0.0], dtype=np.float32), "v1", "/a/1.nef")
+    repo.save_embedding("h2", np.array([0.0, 1.0], dtype=np.float32), "v1", "/a/2.nef")
+
+    loaded = repo.load_all_embeddings("v1")
+
+    assert set(loaded) == {"h1", "h2"}
+    path, vec = loaded["h1"]
+    assert path == "/a/1.nef"
+    assert np.array_equal(vec, np.array([1.0, 0.0], dtype=np.float32))
+
+
+def test_load_all_embeddings_excludes_other_model_versions(tmp_path):
+    repo = _repo(tmp_path)
+    repo.save_embedding("h1", np.array([1.0, 0.0], dtype=np.float32), "v1", "/a/1.nef")
+    repo.save_embedding("h2", np.array([0.0, 1.0], dtype=np.float32), "v2", "/a/2.nef")
+
+    assert set(repo.load_all_embeddings("v1")) == {"h1"}
+
+
+def test_load_all_embeddings_is_empty_for_an_unknown_version(tmp_path):
+    repo = _repo(tmp_path)
+    assert repo.load_all_embeddings("v1") == {}
+
+
+def test_save_embedding_without_a_path_still_round_trips(tmp_path):
+    """Callers that predate the file_path column (or the in-session path, which never
+    needs one back) can still just not pass it."""
+    repo = _repo(tmp_path)
+    repo.save_embedding("h1", np.array([1.0, 0.0], dtype=np.float32), "v1")
+
+    path, vec = repo.load_all_embeddings("v1")["h1"]
+    assert path == ""
+    assert np.array_equal(vec, np.array([1.0, 0.0], dtype=np.float32))
+
+
 def test_initialize_enables_wal(tmp_path):
     repo = _repo(tmp_path)
     for path in (repo.edits_db_path, repo.settings_db_path):

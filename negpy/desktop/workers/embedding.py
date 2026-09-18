@@ -26,6 +26,12 @@ class EmbeddingWorker(QObject):
         super().__init__()
         self._store = asset_store
         self._repo = repo
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """Stops the running batch before its next unstarted file -- a file already
+        mid-decode finishes normally. Reset at the start of the next generate()."""
+        self._cancelled = True
 
     @pyqtSlot(list)
     def generate(self, files: list) -> None:
@@ -34,6 +40,7 @@ class EmbeddingWorker(QObject):
 
         from negpy.services.assets import embeddings as embedding_service
 
+        self._cancelled = False
         try:
             total = len(files)
 
@@ -58,6 +65,7 @@ class EmbeddingWorker(QObject):
                         self._repo,
                         progress_callback=_progress_callback,
                         ready_callback=_ready_callback,
+                        is_cancelled=lambda: self._cancelled,
                     )
                 )
             finally:
