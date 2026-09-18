@@ -4248,6 +4248,143 @@ class TestClearThumbnailCache(unittest.TestCase):
         self.assertEqual(seen, [{}])
 
 
+class TestSemanticIndexing(unittest.TestCase):
+    """generate_missing_embeddings: the CLIP indexing pass that follows a thumbnail
+    batch, and the handlers that apply its results."""
+
+    def setUp(self):
+        self.mock_session_manager = MagicMock(spec=DesktopSessionManager)
+        self.mock_session_manager.state = AppState()
+        self.mock_session_manager.repo = MagicMock()
+        self.mock_session_manager.asset_model = MagicMock()
+
+        with (
+            patch("negpy.desktop.controller.RenderWorker") as mock_rw_class,
+            patch("negpy.desktop.controller.PreviewManager") as mock_pm_class,
+        ):
+            mock_rw_class.return_value = MagicMock()
+            mock_pm_class.return_value = MagicMock(spec=PreviewManager)
+            self.controller = AppController(self.mock_session_manager)
+
+    def tearDown(self):
+        import gc
+
+        for thread in [
+            self.controller.render_thread,
+            self.controller.export_thread,
+            self.controller.thumb_thread,
+            self.controller.norm_thread,
+            self.controller.discovery_thread,
+            self.controller.preview_load_thread,
+            self.controller.scan_thread,
+        ]:
+            if thread is not None and thread.isRunning():
+                thread.quit()
+                thread.wait()
+        del self.controller
+        gc.collect()
+
+    def test_embed_search_query_returns_none_without_a_downloaded_model(self):
+        with patch("negpy.desktop.controller.semantic_model.clip_model_ready", return_value=False):
+            self.assertIsNone(self.controller.embed_search_query("cats"))
+
+    def test_embed_search_query_returns_none_for_empty_text(self):
+        self.assertIsNone(self.controller.embed_search_query(""))
+
+    def test_embed_search_query_reuses_one_model_instance(self):
+        vector = object()
+        with (
+            patch("negpy.desktop.controller.semantic_model.clip_model_ready", return_value=True),
+            patch("negpy.desktop.controller.semantic_model.ClipModel") as model_cls,
+        ):
+            model_cls.return_value.embed_text.return_value = vector
+            first = self.controller.embed_search_query("cats")
+            second = self.controller.embed_search_query("dogs")
+
+        self.assertIs(first, vector)
+        self.assertIs(second, vector)
+        model_cls.assert_called_once_with()
+
+    def test_noop_when_the_feature_is_off(self):
+        state = self.mock_session_manager.state
+        state.uploaded_files = [{"name": "a", "path": "/a.dng", "hash": "h1"}]
+        state.semantic_search_enabled = False
+
+        self.controller.generate_missing_embeddings()
+
+        self.mock_session_manager.repo.load_embeddings_for.assert_not_called()
+
+    def test_noop_when_the_model_is_not_downloaded(self):
+        state = self.mock_session_manager.state
+        state.uploaded_files = [{"name": "a", "path": "/a.dng", "hash": "h1"}]
+        state.semantic_search_enabled = True
+
+        with patch("negpy.desktop.controller.semantic_model.clip_model_ready", return_value=False):
+            self.controller.generate_missing_embeddings()
+
+        self.mock_session_manager.repo.load_embeddings_for.assert_not_called()
+
+    def test_only_files_missing_from_the_db_are_requested(self):
+        state = self.mock_session_manager.state
+        state.semantic_search_enabled = True
+        state.uploaded_files = [
+            {"name": "a", "path": "/a.dng", "hash": "h1"},
+            {"name": "b", "path": "/b.dng", "hash": "h2"},
+        ]
+        self.mock_session_manager.repo.load_embeddings_for.return_value = {"h1": object()}
+        self.controller.embedding_requested = MagicMock()
+
+        with patch("negpy.desktop.controller.semantic_model.clip_model_ready", return_value=True):
+            self.controller.generate_missing_embeddings()
+
+        self.assertIn("h1", state.embeddings)
+        (requested,), _ = self.controller.embedding_requested.emit.call_args
+        self.assertEqual([f["hash"] for f in requested], ["h2"])
+
+    def test_nothing_missing_is_a_noop_after_the_db_check(self):
+        state = self.mock_session_manager.state
+        state.semantic_search_enabled = True
+        state.uploaded_files = [{"name": "a", "path": "/a.dng", "hash": "h1"}]
+        self.mock_session_manager.repo.load_embeddings_for.return_value = {"h1": object()}
+        self.controller.embedding_requested = MagicMock()
+
+        with patch("negpy.desktop.controller.semantic_model.clip_model_ready", return_value=True):
+            self.controller.generate_missing_embeddings()
+
+        self.controller.embedding_requested.emit.assert_not_called()
+
+    def test_a_thumbnail_batch_finishing_triggers_indexing(self):
+        state = self.mock_session_manager.state
+        state.semantic_search_enabled = True
+        state.uploaded_files = [{"name": "a", "path": "/a.dng", "hash": "h1"}]
+        self.controller.generate_missing_embeddings = MagicMock()
+
+        self.controller._on_thumbnails_finished({})
+
+        self.controller.generate_missing_embeddings.assert_called_once_with()
+
+    def test_apply_embeddings_updates_state_and_refreshes_the_model(self):
+        vector = object()
+        self.controller._apply_embeddings({"h1": vector})
+
+        self.assertEqual(self.controller.state.embeddings["h1"], vector)
+        self.mock_session_manager.asset_model.refresh.assert_called_once_with()
+
+    def test_finished_releases_the_batch_lane(self):
+        self.controller._begin_batch("embeddings", "Indexing for search by meaning", abortable=False)
+
+        self.controller._on_embeddings_finished({"h1": object()})
+
+        self.assertIsNone(self.controller._active_batch)
+
+    def test_batch_error_releases_the_lane_without_raising(self):
+        self.controller._begin_batch("embeddings", "Indexing for search by meaning", abortable=False)
+
+        self.controller._on_embedding_batch_error("boom")
+
+        self.assertIsNone(self.controller._active_batch)
+
+
 class TestLibrarySearch(unittest.TestCase):
     """The library search runs the film-strip query against folders on disk and opens
     what it finds. It must never hash: identity stays the loader's job."""

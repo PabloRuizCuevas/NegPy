@@ -1263,6 +1263,13 @@ class TestSessionEmptied(unittest.TestCase):
         self.assertEqual(self.emptied_count, 1)
         self._assert_active_image_reset()
 
+    def test_clear_files_drops_cached_embeddings(self):
+        import numpy as np
+
+        self.session.state.embeddings["h1"] = np.zeros(2, dtype=np.float32)
+        self.session.clear_files()
+        self.assertEqual(self.session.state.embeddings, {})
+
     def test_remove_selected_last_files_emits_and_resets(self):
         self.session.remove_selected_files()
         self.assertEqual(self.emptied_count, 1)

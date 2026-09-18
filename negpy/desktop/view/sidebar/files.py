@@ -630,8 +630,17 @@ class FileBrowser(QWidget):
         self.library_search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.library_search_btn.setToolTip("Search the whole library — runs this search across your library folders and loads the matches")
 
+        # Opt-in (Preferences); hidden until then. Mutually exclusive with regex/the
+        # structured query language -- ranks this session's frames by meaning instead.
+        self.semantic_btn = tool_toggle(
+            "mdi.image-search-outline", "", "Search by meaning — describe what you're looking for instead of using field:value terms"
+        )
+        self.semantic_btn.setFixedWidth(ICON_BUTTON_WIDTH)
+        self.semantic_btn.setVisible(False)
+
         search_row.addWidget(self.search_input)
         search_row.addWidget(self.regex_btn)
+        search_row.addWidget(self.semantic_btn)
         search_row.addWidget(self.library_search_btn)
 
         # Built here (Film Strip's thumbnail grid needs a starting value below) but added to
@@ -834,6 +843,7 @@ class FileBrowser(QWidget):
         self.search_input.textChanged.connect(lambda _: self.filter_timer.start())
         self.search_input.returnPressed.connect(self.search_library)
         self.regex_btn.toggled.connect(lambda _: self.filter_timer.start())
+        self.semantic_btn.toggled.connect(self._on_semantic_toggled)
         self.library_search_btn.clicked.connect(self.search_library)
         # Relayout live while dragging, but write the setting only on release: a drag crosses
         # dozens of values and each save is a DB round-trip.
@@ -911,6 +921,9 @@ class FileBrowser(QWidget):
         """Updates list selection to match session state."""
         model = self.session.asset_model
         selection_model = self.list_view.selectionModel()
+        self.semantic_btn.setVisible(self.session.state.semantic_search_enabled)
+        if not self.session.state.semantic_search_enabled and self.semantic_btn.isChecked():
+            self.semantic_btn.setChecked(False)  # reverts to the plain filter via _on_semantic_toggled
         self._update_unload_button()
         self._update_tally()
         self._update_empty_state()
@@ -957,12 +970,27 @@ class FileBrowser(QWidget):
 
     def _apply_filter(self) -> None:
         text = self.search_input.text().strip()
+        if self.semantic_btn.isChecked():
+            embedding = self.controller.embed_search_query(text)
+            self.session.asset_model.set_semantic_query(embedding)
+            self._set_search_error(bool(text) and embedding is None)
+            self._prune_selection_to_visible()
+            self.sync_ui()
+            return
+
+        if self.session.asset_model.semantic_query_active:
+            self.session.asset_model.set_semantic_query(None)
         regex = self.regex_btn.isChecked()
         ok = self.session.asset_model.set_filter(text, regex)
         self._set_search_error(not ok)
         if ok:
             self._prune_selection_to_visible()
             self.sync_ui()
+
+    def _on_semantic_toggled(self, checked: bool) -> None:
+        self.regex_btn.setEnabled(not checked)
+        self.search_input.setPlaceholderText("Describe what you're looking for…" if checked else "Filter — name, film:portra, iso:>=400…")
+        self.filter_timer.start()
 
     def _set_search_error(self, error: bool) -> None:
         if error:

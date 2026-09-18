@@ -45,6 +45,7 @@ from negpy.desktop.workers.render import (
     ThumbnailUpdateTask,
     ThumbnailWorker,
 )
+from negpy.desktop.workers.embedding import EmbeddingWorker
 from negpy.desktop.workers.scan_worker import BatchRequest, PrescanRequest, RollPreviewRequest, ScanRequest, ScanWorker
 from negpy.desktop.workers.library import LibrarySearchTask, LibrarySearchWorker
 from negpy.desktop.workers.hdr import HdrTask, HdrWorker
@@ -130,6 +131,7 @@ from negpy.features.process.models import (
     scan_setup_values,
 )
 from negpy.services.assets.thumbnails import asset_thumbnail_key
+from negpy.services.assets import semantic_model
 from negpy.kernel.system.paths import get_default_user_dir, get_resource_path
 from negpy.features.retouch.logic import downsample_ir, trace_scratch
 from negpy.features.retouch.models import RetouchConfig
@@ -327,6 +329,7 @@ class AppController(QObject):
     hdr_requested = pyqtSignal(object)
     thumbnail_requested = pyqtSignal(list)
     thumbnail_update_requested = pyqtSignal(ThumbnailUpdateTask)
+    embedding_requested = pyqtSignal(list)
     tool_sync_requested = pyqtSignal()
     config_updated = pyqtSignal()
     monitor_profile_changed = pyqtSignal()
@@ -443,6 +446,9 @@ class AppController(QObject):
         self.watcher = FolderWatchService()
         self.asset_store = LocalAssetStore(APP_CONFIG.cache_dir, APP_CONFIG.user_icc_dir)
         self.asset_store.initialize()
+        # Lazy, UI-thread-only CLIP text tower for embedding search queries -- a
+        # separate instance from EmbeddingWorker's, which runs on its own thread.
+        self._search_clip_model: Optional[semantic_model.ClipModel] = None
 
         # Thread management
         self.render_thread = QThread()
@@ -463,6 +469,10 @@ class AppController(QObject):
         self.thumb_thread = QThread()
         self.thumb_worker = ThumbnailWorker(self.asset_store)
         self.thumb_worker.moveToThread(self.thumb_thread)
+        # Shares the thumbnail thread: same I/O/CPU profile, and embedding indexing
+        # runs right after a thumbnail batch finishes, never alongside it.
+        self.embedding_worker = EmbeddingWorker(self.asset_store, self.session.repo)
+        self.embedding_worker.moveToThread(self.thumb_thread)
         self.thumb_thread.start()
 
         self.norm_thread = QThread()
@@ -681,6 +691,12 @@ class AppController(QObject):
         self.thumb_worker.rendered_finished.connect(self._on_rendered_thumbnail)
         self.thumb_worker.error.connect(self._on_thumbnail_batch_error)
 
+        self.embedding_requested.connect(self.embedding_worker.generate)
+        self.embedding_worker.progress.connect(self._on_embedding_progress)
+        self.embedding_worker.partial.connect(self._apply_embeddings)
+        self.embedding_worker.finished.connect(self._on_embeddings_finished)
+        self.embedding_worker.error.connect(self._on_embedding_batch_error)
+
         self.normalization_requested.connect(self.norm_worker.process)
         self.norm_worker.progress.connect(self._on_normalization_progress)
         self.norm_worker.finished.connect(self._on_normalization_finished)
@@ -836,6 +852,54 @@ class AppController(QObject):
             elif key in new_thumbs and f.get("decode_failed") == _THUMB_FAILED_MSG:
                 del f["decode_failed"]
         self.session.asset_model.refresh()
+        self.generate_missing_embeddings()
+
+    def embed_search_query(self, text: str) -> Optional[np.ndarray]:
+        """Embeds free text for search-by-meaning ranking. None if the model is not
+        downloaded yet, so the caller falls back to the plain filter."""
+        if not text or not semantic_model.clip_model_ready():
+            return None
+        if self._search_clip_model is None:
+            self._search_clip_model = semantic_model.ClipModel()
+        return self._search_clip_model.embed_text(text)
+
+    def generate_missing_embeddings(self) -> None:
+        """Indexes uploaded_files for search by meaning. Runs after thumbnails so each
+        file's preview is already on disk (get_thumbnail_worker's own cache), avoiding a
+        second RAW decode. No-op with the feature off or the model not yet downloaded."""
+        if not self.state.semantic_search_enabled or not semantic_model.clip_model_ready():
+            return
+        hashes = [f["hash"] for f in self.state.uploaded_files]
+        self.state.embeddings.update(self.session.repo.load_embeddings_for(hashes, semantic_model.MODEL_VERSION))
+        missing = [f for f in self.state.uploaded_files if f["hash"] not in self.state.embeddings]
+        if not missing:
+            return
+        if self._begin_batch("embeddings", "Indexing for search by meaning", abortable=False) is None:
+            return
+        self.set_status("Indexing for search by meaning…")
+        self.embedding_requested.emit([{**f, "process_mode": self.session.stored_process_mode(f)} for f in missing])
+
+    def _on_embedding_progress(self, current: int, total: int, name: str) -> None:
+        self.set_status(f"Indexing {current}/{total}: {name}")
+        self.status_progress_requested.emit(current, total)
+        self.batch_progress.emit(current, total, name)
+
+    def _apply_embeddings(self, new_embeddings: Dict[str, Any]) -> None:
+        """Commit a batch (or a chunk of a running one) so an active search-by-meaning
+        ranking improves mid-batch instead of waiting for the whole session to finish."""
+        self.state.embeddings.update(new_embeddings)
+        self.session.asset_model.refresh()
+
+    def _on_embeddings_finished(self, new_embeddings: Dict[str, Any]) -> None:
+        self.status_progress_requested.emit(0, 0)
+        self._end_batch("embeddings")
+        self._apply_embeddings(new_embeddings)
+
+    def _on_embedding_batch_error(self, message: str) -> None:
+        self._end_batch("embeddings")
+        self.status_progress_requested.emit(0, 0)
+        logger.error(f"Embedding batch failed: {message}")
+        self.set_status("Indexing for search by meaning failed", 4000, kind="warning")
 
     def _on_rendered_thumbnail(self, new_thumbs: Dict[str, Any]) -> None:
         """A canvas render produced a thumbnail — it supersedes any batch placeholder."""

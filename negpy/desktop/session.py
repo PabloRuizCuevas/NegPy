@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum, auto
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import numpy as np
 from PyQt6.QtCore import QAbstractListModel, QModelIndex, QObject, Qt, pyqtSignal
 
 from negpy.desktop.settings_catalog import GLOBAL_TIER_SECTIONS, apply_selected_fields
@@ -147,6 +148,13 @@ class AppState:
     # The viewport's own GPU surface failed to start (reason). The pipeline may still run on
     # the GPU; the display then reads every frame back to the CPU.
     gpu_viewport_failed: str = ""
+
+    # Search by meaning (CLIP). Off by default: the model is a few hundred MB and
+    # downloads on first opt-in, not bundled.
+    semantic_search_enabled: bool = False
+    # In-session cache of cached vectors already loaded from the DB or just computed,
+    # file_hash -> L2-normalized embedding. Scoped to uploaded_files, like thumbnails.
+    embeddings: Dict[str, Any] = field(default_factory=dict)
 
     # High Quality / Full Resoluiton Preview Toggle
     hq_preview: bool = False
@@ -337,6 +345,11 @@ def composite_summary(asset: Dict[str, Any]) -> str:
     return ""
 
 
+# CLIP cosine similarities run low even for a good match (unlike embeddings normalized
+# for other domains) -- below this a result reads as noise rather than a match.
+_SEMANTIC_MIN_SCORE = 0.2
+
+
 class AssetListModel(QAbstractListModel):
     """
     Model for the uploaded files list with thumbnail support.
@@ -355,12 +368,23 @@ class AssetListModel(QAbstractListModel):
         self._filter_pattern: Optional[re.Pattern] = None
         self._filter_terms: list = []
         self._sheet_filter: str = "all"  # "all" | "keepers" | "unrejected"
+        self._semantic_query: Optional[np.ndarray] = None
         self._sorted_indices: list[int] = []
         self._rebuild_indices()
 
     def _rebuild_indices(self) -> None:
         files = self._state.uploaded_files
         indices = list(range(len(files)))
+
+        if self._sheet_filter == "keepers":
+            indices = [i for i in indices if files[i].get("keeper")]
+        elif self._sheet_filter == "unrejected":
+            indices = [i for i in indices if not files[i].get("excluded")]
+
+        if self._semantic_query is not None:
+            self._sorted_indices = self._rank_by_similarity(indices, files)
+            return
+
         if self._sort_order == "name":
             indices.sort(key=lambda i: files[i]["name"].lower(), reverse=self._sort_descending)
         else:
@@ -374,12 +398,36 @@ class AssetListModel(QAbstractListModel):
                 facts = self._facts_provider() if self._facts_provider else {}
                 indices = [i for i in indices if match(self._filter_terms, facts.get(files[i]["hash"]) or facts_for(files[i]))]
 
-        if self._sheet_filter == "keepers":
-            indices = [i for i in indices if files[i].get("keeper")]
-        elif self._sheet_filter == "unrejected":
-            indices = [i for i in indices if not files[i].get("excluded")]
-
         self._sorted_indices = indices
+
+    def _rank_by_similarity(self, indices: list[int], files: list) -> list[int]:
+        """Cosine similarity against the query, most relevant first. A file with no
+        cached embedding yet is excluded rather than scored zero, so it drops out of
+        the strip until indexing catches up instead of landing at the bottom as a
+        false "no match"."""
+        query = self._semantic_query
+        scored = []
+        for i in indices:
+            vec = self._state.embeddings.get(files[i]["hash"])
+            if vec is None:
+                continue
+            score = float(np.dot(query, vec))
+            if score >= _SEMANTIC_MIN_SCORE:
+                scored.append((score, i))
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        return [i for _, i in scored]
+
+    def set_semantic_query(self, embedding: Optional[np.ndarray]) -> None:
+        """Switches to (embedding given) or out of (None) search-by-meaning ranking.
+        Mutually exclusive with the structured query language -- the two are never
+        blended in the same result set."""
+        self._semantic_query = embedding
+        self._rebuild_indices()
+        self.layoutChanged.emit()
+
+    @property
+    def semantic_query_active(self) -> bool:
+        return self._semantic_query is not None
 
     def set_sheet_filter(self, mode: str) -> None:
         if mode not in ("all", "keepers", "unrejected"):
@@ -661,6 +709,10 @@ class DesktopSessionManager(QObject):
         if saved_gpu is not None:
             self.state.gpu_enabled = bool(saved_gpu)
 
+        saved_semantic = self.repo.get_global_setting("semantic_search_enabled")
+        if saved_semantic is not None:
+            self.state.semantic_search_enabled = bool(saved_semantic)
+
         saved_hq = self.repo.get_global_setting("hq_preview")
         if saved_hq is not None:
             self.state.hq_preview = bool(saved_hq)
@@ -770,6 +822,7 @@ class DesktopSessionManager(QObject):
         self.state.thumbnails.pop(key, None)
         self.state.rendered_thumbnails.discard(key)
         self.state.stale_thumbnails.discard(key)
+        self.state.embeddings.pop(asset.get("hash"), None)
 
     def search_facts(self) -> Dict[str, Dict[str, Any]]:
         """Searchable facts per asset hash, rebuilt on first use after any change.
@@ -788,6 +841,13 @@ class DesktopSessionManager(QObject):
         if self.state.gpu_enabled != enabled:
             self.state.gpu_enabled = enabled
             self.repo.save_global_setting("gpu_enabled", enabled)
+            self.state_changed.emit()
+
+    def set_semantic_search_enabled(self, enabled: bool) -> None:
+        """Updates and persists the search-by-meaning opt-in."""
+        if self.state.semantic_search_enabled != enabled:
+            self.state.semantic_search_enabled = enabled
+            self.repo.save_global_setting("semantic_search_enabled", enabled)
             self.state_changed.emit()
 
     def set_hq_preview(self, enabled: bool) -> None:
@@ -1694,6 +1754,7 @@ class DesktopSessionManager(QObject):
         self.state.rendered_thumbnails.clear()
         self.state.active_roll_id = None
         self.state.stale_thumbnails.clear()
+        self.state.embeddings.clear()
         self._reset_active_image_state()
 
         self.asset_model.refresh()

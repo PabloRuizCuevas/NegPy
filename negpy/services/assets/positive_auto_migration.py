@@ -48,7 +48,9 @@ def migrate_auto_meter_for_positive_frames(repo) -> None:
                         data[field] = False
                         changed = True
                 if changed:
-                    conn.execute("UPDATE file_settings SET settings_json = ? WHERE file_hash = ?", (json.dumps(data, default=str), file_hash))
+                    conn.execute(
+                        "UPDATE file_settings SET settings_json = ? WHERE file_hash = ?", (json.dumps(data, default=str), file_hash)
+                    )
     except Exception:
         logger.exception("Auto Density/Grade Positive-frame migration failed; continuing without it")
     repo.save_global_setting(_DONE_FLAG, True)

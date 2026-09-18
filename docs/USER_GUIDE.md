@@ -157,7 +157,7 @@ The Film Strip section has its own row of buttons above the frames, for actions 
 *   **Unload…**: drop the active frame, or the whole selection when more than one is selected. Never the rest of the roll — for that, see *Clear All…* below.
 *   **Sheet filter** (funnel): show *All Frames*, *Keepers Only*, or *Hide Rejected*. The choice is remembered between sessions and applies to every roll you open.
 
-Above both sections sit a **filter box**, a **`.*`** regex toggle and a **search-library** button, shared by the Library tree and the Film Strip alike. Inside the Film Strip section, beside its **tally** (for example "36 frames · 12 keepers · 3 rejected"), a **thumbnail size** slider resizes its grid — smaller fits more columns in the panel. While a filter hides frames the tally counts both sets and names the filter, for example "3 of 36 frames · Keepers filter". When a filter hides every frame, the strip carries a message with a **Show all frames** link that clears the filter box and the funnel together. When the loaded frames came from a roll, its name leads the tally, for example "Portra 400 — 36 frames"; a batch loaded by Add or drag-drop with no roll behind it shows the count alone.
+Above both sections sit a **filter box**, a **`.*`** regex toggle and a **search-library** button, shared by the Library tree and the Film Strip alike. A fourth, **search-by-meaning** toggle joins them once turned on in Preferences (see below). Inside the Film Strip section, beside its **tally** (for example "36 frames · 12 keepers · 3 rejected"), a **thumbnail size** slider resizes its grid — smaller fits more columns in the panel. While a filter hides frames the tally counts both sets and names the filter, for example "3 of 36 frames · Keepers filter". When a filter hides every frame, the strip carries a message with a **Show all frames** link that clears the filter box and the funnel together. When the loaded frames came from a roll, its name leads the tally, for example "Portra 400 — 36 frames"; a batch loaded by Add or drag-drop with no roll behind it shows the count alone.
 
 #### Filtering the sheet
 
@@ -178,6 +178,10 @@ Type a plain word and it matches the filename. Beyond that the box takes `field:
 | `-rejected:` `-film:velvia` | a leading `-` negates any term |
 
 Terms combine with AND, so `film:portra iso:>=400 -rejected:` applies all three at once. Metadata comes from each frame's own **Metadata** panel, so it is searchable once you have filled it in; a frame you have never edited is findable by name, extension, date and mark. The **`.*`** toggle switches the box back to a plain regex over filenames, ignoring the field syntax.
+
+#### Searching by meaning
+
+Turn on **Search by meaning** in Preferences → Performance to search by what is in the photo instead of `field:value` terms — the first time, it downloads a small model. Once on, a fourth toggle appears beside the filter box; with it checked, typing a plain-language description (for example "a photo of a dog") ranks the currently loaded frames by how well they match instead of filtering by name, and is mutually exclusive with regex mode. It only ranks frames already loaded in this session, indexing them the first time they are opened — a fresh roll's frames join the ranking as their thumbnails finish generating.
 
 #### Searching the whole library
 

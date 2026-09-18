@@ -22,6 +22,7 @@ from negpy.desktop.controller import AppController
 from negpy.desktop.view.styles.templates import default_button_height, field_label, hint_label, pin_dialog_default
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection
+from negpy.desktop.view.widgets.semantic_download_dialog import ClipDownloadDialog
 from negpy.desktop.view.widgets.sliders import apply_slider_value_visibility
 from negpy.domain.types import AppConfig
 from negpy.infrastructure.gpu.device import GPUDevice
@@ -34,6 +35,7 @@ from negpy.kernel.system.override import (
     toml_pinned_keys,
 )
 from negpy.kernel.system.parallel import parallel_enabled, set_parallel_enabled
+from negpy.services.assets import semantic_model
 
 UI_SCALES: tuple[int, ...] = (80, 90, 100, 110, 120)
 
@@ -307,6 +309,19 @@ class PreferencesDialog(QDialog):
             grid.addWidget(hint_label("No GPU available on this hardware — the CPU pipeline is in use."), row, 0, 1, 2)
         row += 1
 
+        self.semantic_box = self._add_checkbox(
+            grid,
+            row,
+            "Search by meaning",
+            self.session.state.semantic_search_enabled,
+            "Type a plain-language description in the Files search box to find frames, instead of field:value terms.",
+        )
+        self.semantic_box.toggled.connect(self._on_semantic_search_changed)
+        row += 1
+        if not semantic_model.clip_model_ready():
+            grid.addWidget(hint_label("Downloads a small model (about 150 MB) the first time this is turned on."), row, 0, 1, 2)
+            row += 1
+
         self.parallel_box = self._add_checkbox(
             grid,
             row,
@@ -436,6 +451,14 @@ class PreferencesDialog(QDialog):
     def _on_gpu_changed(self, checked: bool) -> None:
         if checked != self.session.state.gpu_enabled:
             self.session.set_gpu_enabled(checked)
+
+    def _on_semantic_search_changed(self, checked: bool) -> None:
+        if checked and not semantic_model.clip_model_ready():
+            if ClipDownloadDialog(self).exec() != QDialog.DialogCode.Accepted:
+                self.semantic_box.setChecked(False)  # cancelled or failed -- stays off
+                return
+        if checked != self.session.state.semantic_search_enabled:
+            self.session.set_semantic_search_enabled(checked)
 
     def _on_parallel_changed(self, checked: bool) -> None:
         """Takes effect at once: every kernel is compiled both ways and dispatched per
