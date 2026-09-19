@@ -195,6 +195,9 @@ class _SpyRaw:
     sizes = None
     camera_whitebalance = (1.9, 1.0, 1.55, 1.0)
     rgb_xyz_matrix = None
+    white_level = 16383
+    camera_white_level_per_channel = None
+    black_level_per_channel = [0, 0, 0, 0]
 
     def __init__(self) -> None:
         self.seen: dict = {}

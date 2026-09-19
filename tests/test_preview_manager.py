@@ -157,6 +157,9 @@ def test_load_linear_preview_fast_path_line_and_half() -> None:
     rgb_u16[..., 0] = 1000
 
     raw = MagicMock()
+    raw.white_level = 16383
+    raw.camera_white_level_per_channel = None
+    raw.black_level_per_channel = [0, 0, 0, 0]
     raw.raw_type = rawpy.RawType.Flat
     raw.raw_pattern = np.zeros((2, 2), dtype=np.uint8)
     raw.sizes = SimpleNamespace(raw_height=32, raw_width=24, iheight=32, iwidth=24)
@@ -203,6 +206,9 @@ def test_cancelled_preview_releases_native_raw_before_conversion() -> None:
             self.raw_pattern = np.zeros((2, 2), dtype=np.uint8)
             self.sizes = SimpleNamespace(raw_height=32, raw_width=24, iheight=32, iwidth=24)
             self.closed = False
+            self.white_level = 16383
+            self.camera_white_level_per_channel = None
+            self.black_level_per_channel = [0, 0, 0, 0]
 
         def postprocess(self, **_kwargs):
             nonlocal cancelled
@@ -242,6 +248,9 @@ def test_load_linear_preview_hq_uses_best_demosaic_no_half() -> None:
     """full_resolution: AHD (Bayer) and no half_size."""
     rgb_u16 = np.zeros((64, 48, 3), dtype=np.uint16)
     raw = MagicMock()
+    raw.white_level = 16383
+    raw.camera_white_level_per_channel = None
+    raw.black_level_per_channel = [0, 0, 0, 0]
     raw.raw_type = rawpy.RawType.Flat
     raw.raw_pattern = np.zeros((2, 2), dtype=np.uint8)
     raw.sizes = SimpleNamespace(raw_height=64, raw_width=48, iheight=64, iwidth=48)
@@ -270,6 +279,9 @@ def test_load_linear_preview_hq_demosaic_xtrans_vs_bayer(cfa_block: int) -> None
     rgb_u16 = np.ones((32, 32, 3), dtype=np.uint16) * 128
 
     raw = MagicMock()
+    raw.white_level = 16383
+    raw.camera_white_level_per_channel = None
+    raw.black_level_per_channel = [0, 0, 0, 0]
     raw.raw_type = rawpy.RawType.Flat
     raw.raw_pattern = np.zeros((cfa_block, cfa_block), dtype=np.uint8)
     raw.sizes = SimpleNamespace(raw_height=32, raw_width=32, iheight=32, iwidth=32)
@@ -311,6 +323,9 @@ def test_load_linear_preview_fast_half_size_gated_on_xtrans_linear(
     rgb_u16 = np.ones((32, 32, 3), dtype=np.uint16) * 128
 
     raw = MagicMock()
+    raw.white_level = 16383
+    raw.camera_white_level_per_channel = None
+    raw.black_level_per_channel = [0, 0, 0, 0]
     raw.raw_type = rawpy.RawType.Flat
     raw.raw_pattern = np.zeros((cfa_block, cfa_block), dtype=np.uint8)
     raw.sizes = SimpleNamespace(raw_height=32, raw_width=32, iheight=32, iwidth=32)
@@ -340,6 +355,9 @@ def test_load_linear_preview_decodes_in_raw_colorspace() -> None:
     """
     rgb_u16 = np.zeros((32, 24, 3), dtype=np.uint16)
     raw = MagicMock()
+    raw.white_level = 16383
+    raw.camera_white_level_per_channel = None
+    raw.black_level_per_channel = [0, 0, 0, 0]
     raw.raw_type = rawpy.RawType.Flat
     raw.raw_pattern = np.zeros((2, 2), dtype=np.uint8)
     raw.sizes = SimpleNamespace(raw_height=32, raw_width=24, iheight=32, iwidth=24)
@@ -440,6 +458,9 @@ def test_ir_preview_survives_the_stacked_dng_fast_path() -> None:
     ir = np.full((120, 160), 0.9, dtype=np.float32)
 
     raw = MagicMock()
+    raw.white_level = 16383
+    raw.camera_white_level_per_channel = None
+    raw.black_level_per_channel = [0, 0, 0, 0]
     raw.raw_type = rawpy.RawType.Stack
     raw.raw_pattern = np.zeros((2, 2), dtype=np.uint8)
     raw.sizes = SimpleNamespace(raw_height=120, raw_width=160, iheight=120, iwidth=160)
@@ -501,6 +522,9 @@ def test_output_dimensions_from_raw_sizes_not_postprocessed_shape() -> None:
     # Simulated half decode output 16x12 but full image is 32x24
     rgb_u16 = np.ones((16, 12, 3), dtype=np.uint16) * 1000
     raw = MagicMock()
+    raw.white_level = 16383
+    raw.camera_white_level_per_channel = None
+    raw.black_level_per_channel = [0, 0, 0, 0]
     raw.raw_type = rawpy.RawType.Flat
     raw.raw_pattern = np.zeros((2, 2), dtype=np.uint8)
     raw.sizes = SimpleNamespace(raw_height=32, raw_width=24, iheight=32, iwidth=24)
@@ -527,6 +551,9 @@ def test_half_preview_reports_sliced_full_resolution_dimensions() -> None:
     raw.raw_type = rawpy.RawType.Flat
     raw.raw_pattern = np.zeros((2, 2), dtype=np.uint8)
     raw.sizes = SimpleNamespace(raw_height=100, raw_width=200, iheight=100, iwidth=200)
+    raw.white_level = 16383
+    raw.camera_white_level_per_channel = None
+    raw.black_level_per_channel = [0, 0, 0, 0]
     raw.postprocess = MagicMock(return_value=rgb_u16)
 
     class _Ctx:
@@ -570,6 +597,9 @@ def test_explicit_demosaic_drops_half_size() -> None:
     rgb_u16 = np.zeros((32, 24, 3), dtype=np.uint16)
 
     raw = MagicMock()
+    raw.white_level = 16383
+    raw.camera_white_level_per_channel = None
+    raw.black_level_per_channel = [0, 0, 0, 0]
     raw.raw_type = rawpy.RawType.Flat
     raw.raw_pattern = np.zeros((2, 2), dtype=np.uint8)
     raw.sizes = SimpleNamespace(raw_height=32, raw_width=24, iheight=32, iwidth=24)
