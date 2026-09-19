@@ -148,20 +148,28 @@ def _l2_normalize(vec: np.ndarray) -> np.ndarray:
     return vec / norm if norm > 1e-12 else vec
 
 
-# CLIP cosine similarities run low even for a good match (unlike embeddings normalized
-# for other domains) -- below this a result reads as noise rather than a match.
-MIN_SIMILARITY = 0.2
+# CLIP cosine similarities run low even for a good match, and cluster tightly around a
+# baseline that shifts with the query and the library -- a fixed cutoff either lets
+# almost everything through or excludes everything, never a real match from noise. A
+# genuine match stands out from that baseline rather than sitting at a fixed score, so
+# the cutoff is relative: how many standard deviations above this query's own mean score
+# a candidate sits.
+SIMILARITY_Z_SCORE = 2.5
 
 
 def rank_by_similarity(query: np.ndarray, candidates: dict) -> list:
     """Keys of `candidates` (key -> L2-normalized vector) ranked by cosine similarity
-    to `query`, most relevant first. A candidate below MIN_SIMILARITY is excluded
-    rather than kept at the bottom, so a search narrows instead of just reordering --
-    the one rule both the in-session and whole-library rankings share."""
-    scored = [(float(np.dot(query, vector)), key) for key, vector in candidates.items()]
-    scored = [(score, key) for score, key in scored if score >= MIN_SIMILARITY]
-    scored.sort(key=lambda pair: pair[0], reverse=True)
-    return [key for _, key in scored]
+    to `query`, most relevant first. A candidate scoring less than SIMILARITY_Z_SCORE
+    standard deviations above this query's own mean score is excluded rather than kept
+    at the bottom, so a search narrows instead of just reordering -- the one rule both
+    the in-session and whole-library rankings share."""
+    if not candidates:
+        return []
+    keys = list(candidates.keys())
+    scores = np.stack([candidates[key] for key in keys]) @ query
+    threshold = scores.mean() + SIMILARITY_Z_SCORE * scores.std()
+    order = np.argsort(-scores)
+    return [keys[i] for i in order if scores[i] >= threshold]
 
 
 def _preprocess_image(image: Image.Image) -> np.ndarray:

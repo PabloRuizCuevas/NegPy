@@ -4549,10 +4549,18 @@ class TestLibraryIndexing(unittest.TestCase):
         report.assert_called_once_with("Library search", "disk unplugged")
 
     def test_semantic_search_ranks_and_opens_matches(self):
+        """The threshold is relative to the whole candidate pool's own score spread, so
+        it needs a real background of unrelated scores to separate a match from -- one
+        match against one lone unrelated file can't stand out from each other the way a
+        real search's rare match stands out from its library's own baseline."""
         query = np.array([0.0, 1.0], dtype=np.float32)
+        background = {
+            f"far{i}": (f"/photos/far{i}.nef", np.array([np.sqrt(1.0 - c**2), c], dtype=np.float32))
+            for i, c in enumerate(np.linspace(0.05, 0.15, 9))
+        }
         self.mock_session_manager.repo.load_all_embeddings.return_value = {
+            **background,
             "h1": ("/photos/close.nef", np.array([0.1, 0.9], dtype=np.float32) / np.linalg.norm([0.1, 0.9])),
-            "h2": ("/photos/far.nef", np.array([1.0, 0.0], dtype=np.float32)),  # orthogonal, below threshold
         }
         with (
             patch.object(self.controller, "embed_search_query", return_value=query),
