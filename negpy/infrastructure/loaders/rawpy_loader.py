@@ -83,6 +83,7 @@ def _stream_linearraw_preview(
     max_edge: int,
     *,
     normalize_tags: bool,
+    min_preserve_ir: bool = False,
     should_cancel: Optional[Callable[[], bool]] = None,
 ) -> Optional[Tuple[np.ndarray, Tuple[int, int]]]:
     """Decode LinearRaw segments into a preview-size float32 buffer."""
@@ -106,6 +107,11 @@ def _stream_linearraw_preview(
     linearization = np.asarray(linearization_tag.value, dtype=np.float32) if linearization_tag is not None else None
     black = _broadcast3(_tag_floats(tag("BlackLevel")), 0.0).astype(np.float32).reshape(1, 1, 3)
     white = _broadcast3(_tag_floats(tag("WhiteLevel")), dtype_max).astype(np.float32).reshape(1, 1, 3)
+    ir_kernel = None
+    if min_preserve_ir and samples == 4 and scale < 1.0:
+        size = max(1, int(round(1.0 / scale)) | 1)
+        if size > 1:
+            ir_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
 
     for decoded, position, _shape in page.segments(maxworkers=1):
         if should_cancel is not None and should_cancel():
@@ -138,11 +144,16 @@ def _stream_linearraw_preview(
         bottom = int(round((y + valid_height) * out_height / height))
         if right <= left or bottom <= top:
             continue
-        output[top:bottom, left:right] = cv2.resize(
-            data,
-            (right - left, bottom - top),
-            interpolation=cv2.INTER_AREA,
-        )
+        target = (right - left, bottom - top)
+        if min_preserve_ir and samples == 4:
+            output[top:bottom, left:right, :3] = cv2.resize(data[:, :, :3], target, interpolation=cv2.INTER_AREA)
+            ir = data[:, :, 3]
+            if ir_kernel is not None:
+                # A boundary defect needs its inward footprint without decoding adjacent segments.
+                ir = cv2.erode(ir, ir_kernel, borderType=cv2.BORDER_REPLICATE)
+            output[top:bottom, left:right, 3] = cv2.resize(ir, target, interpolation=cv2.INTER_AREA)
+        else:
+            output[top:bottom, left:right] = cv2.resize(data, target, interpolation=cv2.INTER_AREA)
 
     full_dims = (height, width)
     if normalize_tags:
@@ -271,6 +282,7 @@ def _peek_linearraw_4ch_preview(
                 page0,
                 max_edge,
                 normalize_tags=False,
+                min_preserve_ir=True,
                 should_cancel=should_cancel,
             )
     except InterruptedError:

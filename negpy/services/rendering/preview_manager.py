@@ -192,20 +192,20 @@ class PreviewManager:
         except Exception:
             return None
         arr = np.ascontiguousarray(np.array(img, dtype=np.float32) / 255.0)
+        full_dims = _output_dimensions_from_raw(raw, *arr.shape[:2])
         # Half-frame slice before the splash downsample, so the splash shows the active half
         # rather than the whole scan, at the same pixels the linear load slices.
         if half_slice is not None:
             half, split_x, crop_rect, gutter_thickness = half_slice
-            from negpy.services.assets.half_frame import slice_half
+            from negpy.services.assets.half_frame import slice_half, slice_half_dimensions
 
+            full_dims = slice_half_dimensions(full_dims, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness)
             arr = np.ascontiguousarray(slice_half(arr, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness))
         h, w = arr.shape[:2]
         if max(h, w) > APP_CONFIG.preview_render_size:
             scale = APP_CONFIG.preview_render_size / max(h, w)
             tw, th = int(w * scale), int(h * scale)
             arr = ensure_image(cv2.resize(arr, (tw, th), interpolation=cv2.INTER_AREA).astype(np.float32))
-        dh, dw = arr.shape[:2]
-        full_dims = _output_dimensions_from_raw(raw, dh, dw)
         logger.debug("preview _try_splash_from_open_raw ok %.3fs for %s", time.perf_counter() - t0, file_path)
         return ensure_image(arr), full_dims
 
@@ -355,15 +355,15 @@ class PreviewManager:
         # the export analyses. The other order averages whole-scan pixels across the gutter.
         if half_slice is not None:
             half, split_x, crop_rect, gutter_thickness = half_slice
-            from negpy.services.assets.half_frame import slice_half
+            from negpy.services.assets.half_frame import slice_half, slice_half_dimensions
 
+            h_orig, w_orig = slice_half_dimensions((h_orig, w_orig), half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness)
             full_linear = np.ascontiguousarray(
                 slice_half(full_linear, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness)
             )
             if ir_full is not None:
                 ir_full = np.ascontiguousarray(slice_half(ir_full, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness))
             h_p, w_p = full_linear.shape[:2]
-            h_orig, w_orig = (h_p, w_p)
         t_resize0 = time.perf_counter()
         max_res = APP_CONFIG.preview_render_size
         # A full-resolution (HQ) load skips the preview_render_size cap above, but the decoded

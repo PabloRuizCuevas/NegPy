@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import cv2
 import numpy as np
 import pytest
 import rawpy
@@ -296,6 +297,27 @@ def test_large_non_segmented_linearraw_has_no_bounded_memory_estimate():
     )
 
     assert _streaming_linearraw_memory_estimate(page, page, 1600, normalize_tags=True) is None
+
+
+def test_streamed_rgbi_preview_preserves_ir_hair_across_strips(tmp_path):
+    from negpy.features.retouch.logic import downsample_ir
+
+    h, w = 40, 80
+    rgbi = np.full((h, w, 4), 60000, dtype=np.uint16)
+    rgbi[:, :, :3] = 30000
+    rgbi[7:9, 8:72, 3] = 6000
+    path = tmp_path / "rgbi.dng"
+    tifffile.imwrite(path, rgbi, photometric=34892, planarconfig="contig", rowsperstrip=8)
+
+    context, metadata = LoaderFactory().get_loader(str(path), preview_max_edge=20)
+
+    assert context.data.shape == (10, 20, 3)
+    assert metadata["ir"].shape == (10, 20)
+    ir = rgbi[:, :, 3].astype(np.float32) / 65535.0
+    expected = downsample_ir(ir, 20)
+    np.testing.assert_allclose(metadata["ir"], expected, atol=1e-6)
+    area_only = cv2.resize(ir, (20, 10), interpolation=cv2.INTER_AREA)
+    assert float(metadata["ir"].min()) < float(area_only.min())
 
 
 def test_jxl_linear_dng_preview_does_not_fall_back_when_a_segment_is_too_large():
