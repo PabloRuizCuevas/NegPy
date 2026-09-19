@@ -4648,13 +4648,17 @@ class TestLibraryIndexing(unittest.TestCase):
 
         discovery.assert_called_once_with(["/photos/close.nef"], auto_open=True, replace_existing=True)
 
-    def test_semantic_search_clears_a_stale_in_session_query_before_the_hand_off(self):
+    def test_semantic_search_clears_both_filters_before_the_hand_off(self):
         """A search box left in search-by-meaning mode from before this run already
         applied its own in-session query (set_semantic_query, via the sidebar's live
         filter) to whatever was loaded previously. Left active, it would re-run the same
         outlier check against just the hand-off's own already-selected matches -- a small,
         mutually similar set with no background left to stand out from -- and could
-        exclude the lot. The hand-off's own ranking already is the filtered result."""
+        exclude the lot. A stale plain-text filter from an earlier, unrelated search is
+        just as capable of zeroing this batch (its filenames are never going to contain
+        the query text) once clearing the semantic query stops masking it -- clear_filters
+        clears both in one rebuild rather than just the one that happened to be active.
+        The hand-off's own ranking already is the filtered result."""
         query = np.array([0.0, 1.0], dtype=np.float32)
         background = {
             f"far{i}": (f"/photos/far{i}.nef", np.array([np.sqrt(1.0 - c**2), c], dtype=np.float32))
@@ -4664,14 +4668,13 @@ class TestLibraryIndexing(unittest.TestCase):
             **background,
             "h1": ("/photos/close.nef", np.array([0.1, 0.9], dtype=np.float32) / np.linalg.norm([0.1, 0.9])),
         }
-        self.mock_session_manager.asset_model.semantic_query_active = True
         with (
             patch.object(self.controller, "embed_search_query", return_value=query),
             patch.object(self.controller, "request_asset_discovery"),
         ):
             self.controller.request_library_semantic_search("a sunset")
 
-        self.mock_session_manager.asset_model.set_semantic_query.assert_called_once_with(None)
+        self.mock_session_manager.asset_model.clear_filters.assert_called_once_with()
 
     def test_semantic_search_excludes_a_row_with_no_path(self):
         """A vector saved before the file_path column existed can't be opened from a
@@ -4763,6 +4766,7 @@ class TestLibrarySearch(unittest.TestCase):
         self.mock_session_manager.repo = MagicMock()
         self.mock_session_manager.repo.load_settings_by_path.return_value = {}
         self.mock_session_manager.repo.load_file_marks_by_path.return_value = {}
+        self.mock_session_manager.asset_model = MagicMock()
 
         with (
             patch("negpy.desktop.controller.RenderWorker") as mock_rw_class,
@@ -4827,6 +4831,17 @@ class TestLibrarySearch(unittest.TestCase):
             self.controller._on_library_search_finished(["/photos/a.nef", "/photos/b.nef"])
 
         discovery.assert_called_once_with(["/photos/a.nef", "/photos/b.nef"], auto_open=True, replace_existing=True)
+
+    def test_results_clear_a_stale_semantic_query_before_the_hand_off(self):
+        """A semantic query left over from an earlier, unrelated search-by-meaning run
+        would otherwise re-rank this plain keyword search's own matches by an embedding
+        that has nothing to do with them, dropping every file with no cached vector yet
+        -- the mirror image of the semantic hand-off's own stale-filter problem. The
+        hand-off's own match list already is the filtered result."""
+        with patch.object(self.controller, "request_asset_discovery"):
+            self.controller._on_library_search_finished(["/photos/a.nef", "/photos/b.nef"])
+
+        self.mock_session_manager.asset_model.clear_filters.assert_called_once_with()
 
     def test_no_results_leaves_the_session_alone(self):
         with patch.object(self.controller, "request_asset_discovery") as discovery:

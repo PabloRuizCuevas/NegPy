@@ -415,6 +415,19 @@ class AssetListModel(QAbstractListModel):
         self._rebuild_indices()
         self.layoutChanged.emit()
 
+    def clear_filters(self) -> None:
+        """Clears both the plain/structured filter and the semantic query in one
+        rebuild -- for a hand-off (a library-wide search's own result set) that
+        already IS the filtered result and must not be filtered again by whatever
+        was left over from an earlier, unrelated search in the same box."""
+        self._semantic_query = None
+        self._filter_text = ""
+        self._filter_regex = False
+        self._filter_pattern = None
+        self._filter_terms = []
+        self._rebuild_indices()
+        self.layoutChanged.emit()
+
     @property
     def semantic_query_active(self) -> bool:
         return self._semantic_query is not None

@@ -1207,6 +1207,27 @@ class TestAssetListModelFilter(unittest.TestCase):
         self.model.set_filter("", regex=False)
         self.assertEqual(len(self.model._sorted_indices), 5)
 
+    def test_a_stale_plain_filter_survives_switching_to_a_semantic_query(self):
+        """A plain filter set before search-by-meaning was ever turned on stays live
+        in _filter_text; set_semantic_query only ever touches _semantic_query. Dormant
+        while the semantic query is active (_rebuild_indices returns on it first), it
+        resurfaces the moment the semantic query is cleared -- which is exactly what a
+        library-wide search hand-off does to avoid re-running its own outlier check on
+        an already-curated set. clear_filters is the fix: it clears both in one go."""
+        import numpy as np
+
+        self.model.set_filter("img", regex=False)
+        self.model.set_semantic_query(np.zeros(2, dtype=np.float32))
+        self.assertEqual(len(self.model._sorted_indices), 0)  # no cached embeddings -- dormant filter, not this
+
+        self.model.set_semantic_query(None)
+        self.assertEqual(set(self._names()), {"IMG_0001.cr2", "IMG_0002.cr2"})  # the stale filter resurfaces
+
+        self.model.set_filter("img", regex=False)
+        self.model.set_semantic_query(np.zeros(2, dtype=np.float32))
+        self.model.clear_filters()
+        self.assertEqual(len(self.model._sorted_indices), 5)  # both cleared -- the full hand-off shows through
+
 
 class TestNavButtonBoundaries(unittest.TestCase):
     """Regression for #407: Next/Prev enable must be computed in display space

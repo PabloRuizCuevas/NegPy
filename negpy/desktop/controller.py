@@ -965,9 +965,10 @@ class AppController(QObject):
         # rank_by_similarity already picked these out as the standouts against the whole
         # library; re-running the same outlier check in-session, against just this small,
         # now mutually-similar set, has no background left to stand out from and can
-        # exclude the lot. The hand-off already is the filtered result.
-        if self.session.asset_model.semantic_query_active:
-            self.session.asset_model.set_semantic_query(None)
+        # exclude the lot. A stale plain-text filter left over from an earlier, unrelated
+        # search is just as capable of zeroing this batch once the semantic query above
+        # is no longer masking it. The hand-off already is the filtered result.
+        self.session.asset_model.clear_filters()
         self.request_asset_discovery(paths, auto_open=True, replace_existing=True)
 
     def _on_embedding_progress(self, current: int, total: int, name: str) -> None:
@@ -1367,6 +1368,10 @@ class AppController(QObject):
         # into one.
         self.state.active_roll_id = None
         self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(None))
+        # The hand-off already is the filtered result -- a semantic query left over from
+        # an earlier, unrelated search would otherwise re-rank this batch by an embedding
+        # that has nothing to do with it, dropping every file with no cached vector yet.
+        self.session.asset_model.clear_filters()
         self.request_asset_discovery(paths, auto_open=True, replace_existing=True)
 
     def set_rgb_scan_mode(self, enabled: bool) -> None:
