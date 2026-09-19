@@ -119,3 +119,22 @@ def test_direct_jxl_does_not_fall_back_to_a_full_decode():
 
     assert result is None
     codec.jpegxl_decode.assert_not_called()
+
+
+def test_small_non_libraw_loaders_allow_neighbor_prefetch(tmp_path):
+    jpeg_path = str(tmp_path / "small.jpg")
+    tiff_path = str(tmp_path / "small.tif")
+    Image.fromarray(np.zeros((20, 30, 3), dtype=np.uint8)).save(jpeg_path)
+    tifffile.imwrite(tiff_path, np.zeros((20, 30, 3), dtype=np.uint16), photometric="rgb")
+    factory = LoaderFactory()
+
+    for path in (jpeg_path, tiff_path):
+        assert factory.estimate_linear_preview_prefetch_memory(path, 1600) is not None
+
+
+def test_large_non_cooperative_loader_does_not_allow_neighbor_prefetch():
+    factory = LoaderFactory()
+
+    with patch.object(factory, "estimate_preview_memory") as estimate:
+        estimate.return_value.temporary_bytes = 256 * 1024 * 1024 + 1
+        assert factory.estimate_linear_preview_prefetch_memory("large.tif", 1600) is None

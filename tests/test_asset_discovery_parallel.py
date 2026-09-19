@@ -5,13 +5,20 @@ regression, not a win.
 """
 
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
 from PIL import Image
-from PyQt6.QtCore import QEventLoop, QObject, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QEventLoop, QObject, QThread, QTimer, pyqtSignal
 
 from negpy.desktop.workers.render import AssetDiscoveryWorker, ThumbnailWorker
+from negpy.desktop.workers import render as render_workers
+
+
+class _ThumbnailEmitter(QObject):
+    generate = pyqtSignal(list)
+    requested = pyqtSignal(list)
 
 
 class _Recorder:
@@ -22,10 +29,6 @@ class _Recorder:
 
     def emit(self, *args) -> None:
         self.calls.append(args)
-
-
-class _ThumbnailEmitter(QObject):
-    requested = pyqtSignal(list)
 
 
 def _worker() -> AssetDiscoveryWorker:
@@ -199,6 +202,57 @@ class TestThumbnailStreaming(unittest.TestCase):
                 ("/tmp/f1.dng", False),
             ],
         )
+
+    def test_scheduler_is_created_in_the_worker_thread(self):
+        app = QCoreApplication.instance() or QCoreApplication([])
+        worker = ThumbnailWorker(None)
+        thread = QThread()
+        emitter = _ThumbnailEmitter()
+        worker.moveToThread(thread)
+        emitter.generate.connect(worker.generate)
+        thread.start()
+        try:
+            files = [{"name": "f", "path": "/tmp/f.arw", "hash": "h"}]
+            with patch(
+                "negpy.services.assets.thumbnails.get_thumbnail_worker",
+                return_value=Image.new("RGB", (4, 4)),
+            ):
+                emitter.generate.emit(files)
+                deadline = time.monotonic() + 5
+                while worker._next_timer is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+            self.assertIsNotNone(worker._next_timer)
+            self.assertIs(worker._next_timer.thread(), thread)
+            self.assertIsNotNone(app)
+        finally:
+            thread.quit()
+            thread.wait()
+
+    def test_thumbnail_decode_waits_for_foreground_memory_gate(self):
+        worker = ThumbnailWorker(None)
+        worker._files = [{"name": "f", "path": "/tmp/f.arw", "hash": "h"}]
+        worker._total = 1
+        worker._active = True
+        entered = threading.Event()
+
+        def thumbnail(*_args, **_kwargs):
+            entered.set()
+            worker._cancel_requested.set()
+            return Image.new("RGB", (4, 4))
+
+        render_workers._DECODE_MEMORY_GATE.acquire()
+        try:
+            with patch("negpy.services.assets.thumbnails.get_thumbnail_worker", side_effect=thumbnail):
+                thread = threading.Thread(target=worker._process_next)
+                thread.start()
+                self.assertFalse(entered.wait(0.1), "thumbnail decode crossed the foreground gate")
+                render_workers._DECODE_MEMORY_GATE.release()
+                self.assertTrue(entered.wait(5))
+                thread.join(5)
+                self.assertFalse(thread.is_alive())
+        finally:
+            if render_workers._DECODE_MEMORY_GATE.locked():
+                render_workers._DECODE_MEMORY_GATE.release()
 
 
 if __name__ == "__main__":

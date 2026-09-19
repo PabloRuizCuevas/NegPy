@@ -192,6 +192,51 @@ def test_load_linear_preview_fast_path_line_and_half() -> None:
     assert buf.dtype == np.float32
 
 
+def test_cancelled_preview_releases_native_raw_before_conversion() -> None:
+    rgb_u16 = np.zeros((32, 24, 3), dtype=np.uint16)
+    cancelled = False
+
+    class _Raw:
+        def __init__(self) -> None:
+            self.raw_type = rawpy.RawType.Flat
+            self.raw_pattern = np.zeros((2, 2), dtype=np.uint8)
+            self.sizes = SimpleNamespace(raw_height=32, raw_width=24, iheight=32, iwidth=24)
+            self.closed = False
+
+        def postprocess(self, **_kwargs):
+            nonlocal cancelled
+            cancelled = True
+            return rgb_u16
+
+        def close(self) -> None:
+            self.closed = True
+
+    raw = _Raw()
+
+    class _Ctx:
+        def __enter__(self):
+            return raw
+
+        def __exit__(self, *_args: object) -> None:
+            raw.close()
+
+    with (
+        patch("negpy.services.rendering.preview_manager.loader_factory") as loader,
+        patch("negpy.services.rendering.preview_manager.rawpy.RawPy", _Raw),
+        patch("negpy.services.rendering.preview_manager.uint16_to_float32") as convert,
+        pytest.raises(InterruptedError),
+    ):
+        loader.get_loader.return_value = (_Ctx(), {"color_space": "Adobe RGB"})
+        PreviewManager().load_linear_preview(
+            "/fake/path.dng",
+            color_space="Adobe RGB",
+            should_cancel=lambda: cancelled,
+        )
+
+    assert raw.closed
+    convert.assert_not_called()
+
+
 def test_load_linear_preview_hq_uses_best_demosaic_no_half() -> None:
     """full_resolution: AHD (Bayer) and no half_size."""
     rgb_u16 = np.zeros((64, 48, 3), dtype=np.uint16)

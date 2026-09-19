@@ -134,7 +134,7 @@ def test_preview_merge_decodes_every_exposure_neutral(tmp_path):
     pm = PreviewManager()
     calls: list = []
 
-    def fake_preview(path, color_space=None, use_camera_wb=False, full_resolution=False, file_hash=None, demosaic="Auto"):
+    def fake_preview(path, color_space=None, use_camera_wb=False, full_resolution=False, file_hash=None, demosaic="Auto", **_kwargs):
         calls.append((path, use_camera_wb))
         return np.zeros((4, 4, 3), dtype=np.float32), (4, 4), {"camera_wb": [1.9, 1.0, 1.55]}
 

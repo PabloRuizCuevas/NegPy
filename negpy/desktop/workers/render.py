@@ -28,6 +28,10 @@ from negpy.services.rendering.image_processor import ImageProcessor
 
 logger = get_logger(__name__)
 
+# Native codec buffers for the selected frame and filmstrip must not overlap.
+# The automatic thumbnail path stays bounded inside this gate.
+_DECODE_MEMORY_GATE = threading.Lock()
+
 
 @dataclass(frozen=True)
 class RenderTask:
@@ -187,6 +191,7 @@ class PreviewLoadTask:
     file_path: str
     workspace_color_space: str
     use_camera_wb: bool
+    generation: int = 0
     positive_source: bool = False
     highlight_mode: int = 0
     bake_camera_wb: bool = False
@@ -194,6 +199,8 @@ class PreviewLoadTask:
     file_hash: str | None = None
     use_splash: bool = True
     for_cache_warm: bool = False
+    integrated_gpu: bool = False
+    protected_file_hashes: tuple[str, ...] = ()
     detect_mode: bool = False  # run process-mode autodetect (new files only)
     # The assembly configs travel whole rather than flattened into loose fields. They are
     # frozen and hashable, the worker rebuilt them from the pieces anyway, and a new field on
@@ -415,9 +422,15 @@ class ThumbnailWorker(QObject):
         self._active = False
         self._slow_phase = False
         self._cancel_requested = threading.Event()
-        self._next_timer = QTimer(self)
-        self._next_timer.setSingleShot(True)
-        self._next_timer.timeout.connect(self._process_next)
+        self._next_timer: Optional[QTimer] = None
+
+    def _timer(self) -> QTimer:
+        """Create the scheduler in the worker's current Qt thread."""
+        if self._next_timer is None:
+            self._next_timer = QTimer(self)
+            self._next_timer.setSingleShot(True)
+            self._next_timer.timeout.connect(self._process_next)
+        return self._next_timer
 
     def cancel_pending(self) -> None:
         """Stop after the native call in progress returns."""
@@ -431,8 +444,9 @@ class ThumbnailWorker(QObject):
 
     @pyqtSlot(list)
     def generate(self, files: list) -> None:
-        """Replace the pending queue and yield between every source file."""
-        self._next_timer.stop()
+        """Replace the low-priority queue and yield between every source file."""
+        timer = self._timer()
+        timer.stop()
         self._cancel_requested.clear()
         self._files = list(files)
         self._slow_files = []
@@ -442,7 +456,7 @@ class ThumbnailWorker(QObject):
         if not self._active:
             self.activity.emit("")
             return
-        self._next_timer.start(0)
+        timer.start(0)
 
     @pyqtSlot()
     def _process_next(self) -> None:
@@ -456,20 +470,21 @@ class ThumbnailWorker(QObject):
         key = asset_thumbnail_key(f_info)
         self.activity.emit(key)
         try:
-            thumb = get_thumbnail_worker(
-                f_info["path"],
-                f_info["hash"],
-                self._store,
-                int(f_info.get("half") or 0),
-                float(f_info.get("split_x") or 0.5),
-                f_info.get("green_path") or "",
-                f_info.get("blue_path") or "",
-                tuple(f_info["crop_rect"]) if f_info.get("crop_rect") else None,
-                float(f_info.get("gutter_thickness") or 0.0),
-                str(f_info.get("process_mode") or ""),
-                fast_only=not self._slow_phase,
-                should_cancel=self._cancel_requested.is_set,
-            )
+            with _DECODE_MEMORY_GATE:
+                thumb = get_thumbnail_worker(
+                    f_info["path"],
+                    f_info["hash"],
+                    self._store,
+                    int(f_info.get("half") or 0),
+                    float(f_info.get("split_x") or 0.5),
+                    f_info.get("green_path") or "",
+                    f_info.get("blue_path") or "",
+                    tuple(f_info["crop_rect"]) if f_info.get("crop_rect") else None,
+                    float(f_info.get("gutter_thickness") or 0.0),
+                    str(f_info.get("process_mode") or ""),
+                    fast_only=not self._slow_phase,
+                    should_cancel=self._cancel_requested.is_set,
+                )
             if thumb is not None:
                 self.partial.emit({key: thumb})
             elif not self._slow_phase:
@@ -486,17 +501,18 @@ class ThumbnailWorker(QObject):
             self._slow_files = []
             self._current = 0
             self._slow_phase = True
-            self._next_timer.start(0)
+            self._timer().start(0)
             return
         if self._current >= len(self._files):
             self._finish()
             return
-        self._next_timer.start(0)
+        self._timer().start(0)
 
     def _finish(self) -> None:
         if not self._active:
             return
-        self._next_timer.stop()
+        if self._next_timer is not None:
+            self._next_timer.stop()
         self._active = False
         self._files = []
         self._slow_files = []
@@ -967,30 +983,82 @@ class PreviewLoadWorker(QObject):
     vram_capped = pyqtSignal(str, int)
     # (file_path, message): the error carries no path, so badge attribution needs this
     load_failed = pyqtSignal(str, str)
+    prefetch_finished = pyqtSignal(int, str)
 
     def __init__(self, preview_service) -> None:
         super().__init__()
         self._preview_service = preview_service
+        self._generation_lock = threading.Lock()
+        self._latest_generation = 0
+        self._cancelled_prefetch_generations: set[int] = set()
+
+    def expect_generation(self, generation: int) -> None:
+        """Make older queued and segment-based preview work obsolete."""
+        with self._generation_lock:
+            self._latest_generation = generation
+            self._cancelled_prefetch_generations = {
+                cancelled for cancelled in self._cancelled_prefetch_generations if cancelled >= generation
+            }
+
+    def cancel_prefetch(self, generation: int) -> None:
+        """Cancel low-priority work without invalidating the selected frame."""
+        with self._generation_lock:
+            self._cancelled_prefetch_generations.add(generation)
+
+    def _is_current(self, task: PreviewLoadTask) -> bool:
+        with self._generation_lock:
+            return task.generation == self._latest_generation
+
+    def _prefetch_is_current(self, task: PreviewLoadTask) -> bool:
+        with self._generation_lock:
+            return task.generation == self._latest_generation and task.generation not in self._cancelled_prefetch_generations
 
     @pyqtSlot(PreviewLoadTask)
     def process(self, task: PreviewLoadTask) -> None:
         if task.for_cache_warm:
-            try:
-                self._preview_service.load_linear_preview(
+            self._process_prefetch(task)
+            return
+        if not self._is_current(task):
+            return
+        with _DECODE_MEMORY_GATE:
+            if self._is_current(task):
+                self._process_locked(task)
+
+    def _process_prefetch(self, task: PreviewLoadTask) -> None:
+        try:
+            if not self._prefetch_is_current(task):
+                return
+            with _DECODE_MEMORY_GATE:
+                if not self._prefetch_is_current(task):
+                    return
+                self._preview_service.prefetch_linear_preview(
                     task.file_path,
                     task.workspace_color_space,
                     use_camera_wb=task.use_camera_wb,
-                    full_resolution=task.full_resolution,
                     file_hash=task.file_hash,
                     half_slice=task.half_slice,
                     demosaic=task.demosaic,
                     positive_source=task.positive_source,
+                    integrated_gpu=task.integrated_gpu,
+                    protected_file_hashes=task.protected_file_hashes,
+                    should_cancel=lambda: not self._prefetch_is_current(task),
                     highlight_mode=task.highlight_mode,
                     bake_camera_wb=task.bake_camera_wb,
                 )
-            except Exception as e:
-                logger.debug("Preview cache warm failed for %s: %s", task.file_path, e)
+        except InterruptedError:
+            pass
+        except Exception as error:
+            logger.debug("Preview cache warm failed for %s: %s", task.file_path, error)
+        finally:
+            self.prefetch_finished.emit(task.generation, task.file_path)
+
+    def _process_locked(self, task: PreviewLoadTask) -> None:
+        if not self._is_current(task):
             return
+
+        def cancelled() -> bool:
+            return not self._is_current(task)
+
         t0 = time.perf_counter()
         try:
             if stitch_active(task.stitch):
@@ -1005,9 +1073,12 @@ class PreviewLoadWorker(QObject):
                     file_hash=task.file_hash,
                     flatfield_profile_id=task.flatfield_profile_id,
                     demosaic=task.demosaic,
+                    should_cancel=cancelled,
                     highlight_mode=task.highlight_mode,
                     bake_camera_wb=task.bake_camera_wb,
                 )
+                if not self._is_current(task):
+                    return
                 source_cs = metadata.get("color_space") or WORKING_COLOR_SPACE
                 ir_preview = metadata.get("ir_preview")
                 detected_mode = self._detect_mode(task, raw) if task.detect_mode else ""
@@ -1041,9 +1112,12 @@ class PreviewLoadWorker(QObject):
                     full_resolution=task.full_resolution,
                     file_hash=task.file_hash,
                     demosaic=task.demosaic,
+                    should_cancel=cancelled,
                     highlight_mode=task.highlight_mode,
                     bake_camera_wb=task.bake_camera_wb,
                 )
+                if not self._is_current(task):
+                    return
                 source_cs = metadata.get("color_space") or WORKING_COLOR_SPACE
                 ir_preview = metadata.get("ir_preview")
                 detected_mode = self._detect_mode(task, raw) if task.detect_mode else ""
@@ -1077,7 +1151,10 @@ class PreviewLoadWorker(QObject):
                     full_resolution=task.full_resolution,
                     file_hash=task.file_hash,
                     demosaic=task.demosaic,
+                    should_cancel=cancelled,
                 )
+                if not self._is_current(task):
+                    return
                 source_cs = metadata.get("color_space") or WORKING_COLOR_SPACE
                 ir_preview = metadata.get("ir_preview")
                 detected_mode = self._detect_mode(task, raw) if task.detect_mode else ""
@@ -1112,9 +1189,12 @@ class PreviewLoadWorker(QObject):
                     half_slice=task.half_slice,
                     demosaic=task.demosaic,
                     positive_source=task.positive_source,
+                    should_cancel=cancelled,
                     highlight_mode=task.highlight_mode,
                     bake_camera_wb=task.bake_camera_wb,
                 )
+                if not self._is_current(task):
+                    return
                 if sp is not None:
                     sbuf, sdims = sp
                     self.splash.emit(task.file_path, sbuf, sdims)
@@ -1129,9 +1209,12 @@ class PreviewLoadWorker(QObject):
                     half_slice=task.half_slice,
                     demosaic=task.demosaic,
                     positive_source=task.positive_source,
+                    should_cancel=cancelled,
                     highlight_mode=task.highlight_mode,
                     bake_camera_wb=task.bake_camera_wb,
                 )
+                if not self._is_current(task):
+                    return
             source_cs = metadata.get("color_space") or WORKING_COLOR_SPACE
             ir_preview = metadata.get("ir_preview")
             detected_mode = self._detect_mode(task, raw) if task.detect_mode else ""
@@ -1153,7 +1236,11 @@ class PreviewLoadWorker(QObject):
                 (metadata.get("cam_xyz"), metadata.get("camera_wb")),
                 metadata.get("detect_preview"),
             )
+        except InterruptedError:
+            return
         except Exception as e:
+            if not self._is_current(task):
+                return
             logger.exception(f"Asset load failed: {task.file_path}")
             # libraw reports "Unsupported file format or not RAW file" for a file whose tags it
             # parsed perfectly and whose payload it cannot decode, which reads as "your NEF is

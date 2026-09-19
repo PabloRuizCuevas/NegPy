@@ -80,6 +80,21 @@ def read_orientation(file_path: str) -> int:
     """Read the EXIF orientation tag (1-8) from a file. Returns 1 (normal) when absent."""
     import piexif
 
+    # piexif reads entire TIFF files; orientation needs only the first IFD.
+    try:
+        with open(file_path, "rb") as source:
+            marker = source.read(4)
+            if marker in (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+"):
+                import tifffile
+
+                source.seek(0)
+                with tifffile.TiffFile(source) as tif:
+                    tag = tif.pages[0].tags.get("Orientation")
+                    value = int(tag.value) if tag is not None else 1
+                    return value if 1 <= value <= 8 else 1
+    except (OSError, ValueError, IndexError, TypeError):
+        return 1
+
     exif = read_exif_from_file(file_path)
     if not exif:
         return 1

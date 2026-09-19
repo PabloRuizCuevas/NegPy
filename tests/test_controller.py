@@ -287,22 +287,97 @@ class TestAppController(unittest.TestCase):
         mock_slot.assert_called_once_with(1.0)
         self.assertFalse(self.controller.state.hq_preview)
 
-    def test_prefetch_neighbors_no_selection_is_noop(self):
-        """With no current selection the scheduled prefetch must fire harmlessly:
-        no load requested, and crucially no exception out of the QTimer slot (PyQt6
-        aborts the process on one). Regression: it used to reach the asset model
-        before checking for an empty state."""
-        from PyQt6.QtTest import QTest
+    def test_load_file_tags_the_decode_with_the_current_generation(self):
+        tasks = []
+        self.controller.preview_load_requested.connect(tasks.append)
 
-        self.controller.state.uploaded_files = []
-        self.controller.state.selected_file_idx = -1
-        mock_slot = MagicMock()
-        self.controller.preview_load_requested.connect(mock_slot)
+        self.controller.load_file("dummy.dng")
 
-        self.controller._schedule_prefetch_neighbors()
-        QTest.qWait(120)  # let the 50ms singleShot fire
+        self.assertEqual(tasks[-1].generation, self.controller._prefetch_gen)
 
-        mock_slot.assert_not_called()
+    def test_preview_load_defers_neighbor_prefetch_until_render_finishes(self):
+        self.controller._requested_file_path = "/tmp/a.dng"
+        self.controller.request_render = MagicMock()
+        self.controller._schedule_prefetch_neighbors = MagicMock()
+
+        self.controller._on_preview_loaded("/tmp/a.dng", object(), (10, 20), "", None, "")
+
+        self.controller.request_render.assert_called_once_with()
+        self.controller._schedule_prefetch_neighbors.assert_not_called()
+        self.assertEqual(self.controller._neighbor_prefetch_generation, self.controller._prefetch_gen)
+
+    def test_foreground_render_queue_blocks_neighbor_prefetch(self):
+        self.controller._foreground_preview_generation = None
+        self.controller._neighbor_prefetch_generation = self.controller._prefetch_gen
+        self.controller._is_rendering = True
+        self.controller._pending_render_task = object()
+        self.controller._schedule_prefetch_neighbors = MagicMock()
+
+        self.controller._continue_background_work()
+
+        self.controller._schedule_prefetch_neighbors.assert_not_called()
+
+    def test_only_one_neighbor_prefetch_is_dispatched_at_a_time(self):
+        first = MagicMock(generation=4)
+        second = MagicMock(generation=4)
+        controller = MagicMock()
+        controller._foreground_work_active.return_value = False
+        controller._prefetch_in_flight_generation = None
+        controller._neighbor_prefetch_queue = [first, second]
+
+        AppController._start_next_neighbor_prefetch(controller)
+        AppController._start_next_neighbor_prefetch(controller)
+
+        controller.preview_load_requested.emit.assert_called_once_with(first)
+        self.assertEqual(controller._neighbor_prefetch_queue, [second])
+
+    def test_neighbor_prefetch_protects_the_selected_frame_cache_entry(self):
+        self.controller.session.repo.load_file_settings.return_value = None
+        self.controller._half_slice_for_asset = MagicMock(return_value=None)
+        asset = {"path": "/tmp/neighbor.dng", "hash": "neighbor"}
+
+        task = self.controller._neighbor_prefetch_task(asset, generation=4, protected_file_hashes=("selected",))
+
+        self.assertIsNotNone(task)
+        self.assertEqual(task.protected_file_hashes, ("selected",))
+
+    def test_second_neighbor_prefetch_protects_the_first_neighbor(self):
+        state = self.controller.state
+        state.uploaded_files = [
+            {"path": "/tmp/previous.dng", "hash": "previous"},
+            {"path": "/tmp/selected.dng", "hash": "selected"},
+            {"path": "/tmp/next.dng", "hash": "next"},
+        ]
+        state.selected_file_idx = 1
+        self.controller._prefetch_gen = 4
+        self.controller.session.repo.load_file_settings.return_value = None
+        self.controller.session.asset_model = MagicMock()
+        self.controller.session.asset_model.visible_actual_indices_ordered.return_value = [0, 1, 2]
+        self.controller._half_slice_for_asset = MagicMock(return_value=None)
+        self.controller._start_next_neighbor_prefetch = MagicMock()
+
+        with patch("negpy.desktop.controller.GPUDevice.get", return_value=SimpleNamespace(is_integrated=False)):
+            self.controller._prepare_neighbor_prefetch(4)
+
+        first, second = self.controller._neighbor_prefetch_queue
+        self.assertEqual(first.protected_file_hashes, ("selected",))
+        self.assertEqual(second.protected_file_hashes, ("selected", "previous"))
+
+    def test_render_waits_for_running_neighbor_prefetch_to_stop(self):
+        import numpy as np
+
+        emitted = []
+        self.controller.render_requested.connect(emitted.append)
+        self.controller.state.preview_raw = np.zeros((4, 4, 3), dtype=np.float32)
+        self.controller._prefetch_in_flight_generation = self.controller._prefetch_gen
+
+        self.controller.request_render()
+
+        self.assertEqual(emitted, [])
+        self.assertIsNotNone(self.controller._pending_render_task)
+        self.controller._on_neighbor_prefetch_finished(self.controller._prefetch_gen, "/neighbor.dng")
+        self.assertEqual(len(emitted), 1)
+        self.assertTrue(self.controller._is_rendering)
 
     def test_decode_failure_badges_file_and_success_clears_it(self):
         self.mock_session_manager.asset_model = MagicMock()
