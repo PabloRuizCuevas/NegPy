@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 import cv2
 import numpy as np
 from PyQt6.QtCore import Q_ARG, QMetaObject, QObject, Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtGui import QIcon, QPixmap, QTransform
 from PyQt6.QtWidgets import QCheckBox, QMessageBox
 
 from negpy.kernel.system.memory import available_system_memory_bytes
@@ -466,6 +466,12 @@ class AppController(QObject):
         # cancelled handler discards the backlog instead of resuming it.
         self._thumbnail_render_user_cancelled = False
         self.flush_export_settings: Optional[Callable[[], None]] = None
+        # A rotate/flip on a frame with no cached thumbnail yet (generate_missing_thumbnails
+        # is still decoding it) has nothing to turn; the pending turn recorded here is applied
+        # to that decode's own result instead, once it lands — the disk cache it writes is
+        # otherwise permanent, since get_thumbnail_worker serves it straight back on every
+        # later request without re-deriving orientation.
+        self._thumbnail_pending_correction: Dict[str, List[Any]] = {}
 
         self.preview_service = PreviewManager()
         self.batch_autocrop_preview_service = PreviewManager()
@@ -825,6 +831,53 @@ class AppController(QObject):
             # worker thread and uploaded_files must not grow a stale mode.
             self.thumbnail_requested.emit([{**f, "process_mode": self.session.stored_process_mode(f)} for f in missing])
 
+    def _turn_thumbnails(self, keys: list, qt_transform: QTransform, pil_transpose: Any) -> bool:
+        """Turns each cached thumbnail in place by one step. Memory and disk turn from
+        their OWN current content, never from each other: a frame that rendered on
+        the canvas has a memory icon ahead of its disk JPEG (persisted lazily), and
+        deriving one from the other would clobber whichever is more current. A frame
+        with no disk-cached thumbnail yet is still mid-decode in generate_missing_
+        thumbnails, so the turn is queued instead and replayed onto that decode's own
+        result in _apply_thumbnails."""
+        changed = False
+        for key in keys:
+            icon = self.state.thumbnails.get(key)
+            sizes = icon.availableSizes() if icon is not None else []
+            if sizes:
+                self.state.thumbnails[key] = QIcon(icon.pixmap(sizes[0]).transformed(qt_transform))
+                changed = True
+            cached = self.asset_store.get_thumbnail(key)
+            if cached is not None:
+                self.asset_store.save_thumbnail(key, cached.transpose(pil_transpose))
+            else:
+                self._thumbnail_pending_correction.setdefault(key, []).append(pil_transpose)
+        return changed
+
+    def rotate_thumbnails(self, keys: list, direction: int) -> None:
+        """Turns each cached thumbnail in place by a quarter-turn, for a batch
+        rotate on frames that are not the active one."""
+        from PIL import Image
+
+        turns = direction % 4
+        if not turns or not keys:
+            return
+        pil_transpose = {1: Image.Transpose.ROTATE_90, 2: Image.Transpose.ROTATE_180, 3: Image.Transpose.ROTATE_270}[turns]
+        qt_transform = QTransform().rotate(-90 * direction)
+        if self._turn_thumbnails(keys, qt_transform, pil_transpose):
+            self.session.asset_model.refresh()
+
+    def flip_thumbnails(self, keys: list, horizontal: bool) -> None:
+        """Mirrors each cached thumbnail in place. See _turn_thumbnails for why
+        memory and disk turn independently rather than one deriving from the other."""
+        from PIL import Image
+
+        if not keys:
+            return
+        pil_transpose = Image.Transpose.FLIP_LEFT_RIGHT if horizontal else Image.Transpose.FLIP_TOP_BOTTOM
+        qt_transform = QTransform().scale(-1, 1) if horizontal else QTransform().scale(1, -1)
+        if self._turn_thumbnails(keys, qt_transform, pil_transpose):
+            self.session.asset_model.refresh()
+
     def clear_thumbnail_cache(self) -> None:
         """Drops cached thumbnails on disk and in memory, then regenerates loaded ones."""
         self.thumb_worker.cancel_pending()
@@ -852,10 +905,22 @@ class AppController(QObject):
         keys whose image would not decode."""
         broken = set()
         loaded = {asset_thumbnail_key(f) for f in self.state.uploaded_files}
+        # Stale beyond this roll's own lifetime: drop it rather than replay it onto an
+        # unrelated future frame that happens to share the same content hash.
+        for key in set(self._thumbnail_pending_correction) - loaded:
+            del self._thumbnail_pending_correction[key]
         for key, pil_img in new_thumbs.items():
             # A frame that already rendered on the canvas has the correct inverted
             # thumbnail, so keep this batch from overwriting it with the placeholder.
             if pil_img and key in loaded and key not in self.state.rendered_thumbnails:
+                pending = self._thumbnail_pending_correction.pop(key, None)
+                if pending:
+                    for pil_transpose in pending:
+                        pil_img = pil_img.transpose(pil_transpose)
+                    # This decode's own disk write (inside get_thumbnail_worker) already
+                    # landed in the old orientation and is served back verbatim from then
+                    # on, so it needs the same correction, not just the in-memory icon.
+                    self.asset_store.save_thumbnail(key, pil_img)
                 if not self._set_thumbnail(key, pil_img):
                     broken.add(key)
         self.session.asset_model.refresh()
