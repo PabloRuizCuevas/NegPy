@@ -1057,6 +1057,29 @@ class DesktopSessionManager(QObject):
         config = resolve_asset_hdr_seed(config, asset)
         return resolve_asset_hdr(resolve_asset_stitch(resolve_asset_rgbscan(config, asset), asset), asset)
 
+    def _roll_id_for_orphan_asset(self, asset: dict) -> Optional[str]:
+        """The roll to read defaults from when nothing is active for the session -- a
+        library-wide search's mixed results, a restored session with no single shared
+        roll. Falls back to whichever real roll this one file's own path belongs to,
+        so it still gets its own roll's film process instead of the sticky settings'
+        "last used anywhere" guess, which has nothing to do with this specific frame.
+
+        A folder roll is the file's actual physical home and the most likely place its
+        capture facts were ever set; a virtual roll is a curated collection that may or
+        may not carry them, so a folder roll wins when a path is in both.
+        """
+        path = asset.get("path")
+        if not path:
+            return None
+        containing = rolls.rolls_containing_path(self.repo, path)
+        if not containing:
+            return None
+        for roll_id in containing:
+            entry = rolls.roll_for_id(self.repo, roll_id)
+            if entry and entry.get("kind") == "folder":
+                return roll_id
+        return containing[0]
+
     def _overlay_roll_defaults(self, config: WorkspaceConfig, asset: dict) -> WorkspaceConfig:
         """Roll-wide Calibration/Demosaic/Normalization facts win over this frame's own
         saved value, on every card it has not locked away from the roll within this
@@ -1067,7 +1090,7 @@ class DesktopSessionManager(QObject):
         Keyed on the unforked hash: a lock is about this physical frame's relationship
         to the roll, and must survive forking or unforking its edit identity.
         """
-        roll_id = self.state.active_roll_id
+        roll_id = self.state.active_roll_id or self._roll_id_for_orphan_asset(asset)
         if roll_id is None:
             return config
         file_hash = unforked_hash(asset["hash"])

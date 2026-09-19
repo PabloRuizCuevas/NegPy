@@ -171,7 +171,7 @@ class TestDesktopSessionSync(unittest.TestCase):
 
         self.assertTrue(config.process.linear_raw)
 
-    def test_config_for_asset_ignores_roll_defaults_with_no_active_roll(self):
+    def test_config_for_asset_ignores_roll_defaults_when_the_file_belongs_to_no_roll(self):
         rolls_store = {"r1": {"kind": "virtual", "name": "Portra", "defaults": {"linear_raw": True}}}
         globals_ = {"rolls_by_id": rolls_store}
         self.mock_repo.get_global_setting.side_effect = lambda key, default=None: globals_.get(key, default)
@@ -182,6 +182,39 @@ class TestDesktopSessionSync(unittest.TestCase):
             config = self.session.config_for_asset(asset)
 
         self.assertFalse(config.process.linear_raw)
+
+    def test_config_for_asset_falls_back_to_the_files_own_roll_with_no_active_roll(self):
+        """A library-wide search's mixed results (or a restored session with no single
+        shared roll) leave nothing active for the session, but each file still belongs
+        to a real roll on disk -- that roll's own settings, not the sticky "last used
+        anywhere" guess, are what actually describe this specific frame."""
+        rolls_store = {"r1": {"kind": "folder", "name": "Portra", "folder_path": "/roll", "defaults": {"linear_raw": True}}}
+        globals_ = {"rolls_by_id": rolls_store}
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: globals_.get(key, default)
+        self.session.state.active_roll_id = None
+        asset = {"name": "a.dng", "path": "/roll/a.dng", "hash": "a-hash"}
+
+        with patch("negpy.desktop.session.load_or_promote", return_value=None):
+            config = self.session.config_for_asset(asset)
+
+        self.assertTrue(config.process.linear_raw)
+
+    def test_config_for_asset_prefers_a_folder_roll_over_a_virtual_one_for_the_same_path(self):
+        """A folder roll is the file's actual physical home; a virtual roll is a curated
+        collection that may not carry its capture facts at all."""
+        rolls_store = {
+            "folder1": {"kind": "folder", "name": "Portra", "folder_path": "/roll", "defaults": {"linear_raw": True}},
+            "virtual1": {"kind": "virtual", "name": "Favorites", "member_paths": ["/roll/a.dng"], "defaults": {"linear_raw": False}},
+        }
+        globals_ = {"rolls_by_id": rolls_store}
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: globals_.get(key, default)
+        self.session.state.active_roll_id = None
+        asset = {"name": "a.dng", "path": "/roll/a.dng", "hash": "a-hash"}
+
+        with patch("negpy.desktop.session.load_or_promote", return_value=None):
+            config = self.session.config_for_asset(asset)
+
+        self.assertTrue(config.process.linear_raw)
 
     def test_config_for_asset_respects_a_frames_locked_card(self):
         rolls_store = {

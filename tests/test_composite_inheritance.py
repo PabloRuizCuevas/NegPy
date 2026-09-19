@@ -37,7 +37,7 @@ class TestHydration(unittest.TestCase):
         session = DesktopSessionManager.__new__(DesktopSessionManager)
         session.state = AppState()
         session.repo = MagicMock()
-        session.repo.get_global_setting.side_effect = lambda k, d=None: {"last_process_mode": sticky_mode}.get(k, d)
+        session.repo.get_global_setting.side_effect = lambda k, default=None: {"last_process_mode": sticky_mode}.get(k, default)
         session._apply_sticky_settings = lambda c, only_global=False: (
             c if only_global else replace(c, process=replace(c.process, process_mode=sticky_mode))
         )
@@ -247,7 +247,7 @@ class TestHdrSeedHydration(unittest.TestCase):
         session = DesktopSessionManager.__new__(DesktopSessionManager)
         session.state = AppState()
         session.repo = MagicMock()
-        session.repo.get_global_setting.side_effect = lambda k, d=None: d
+        session.repo.get_global_setting.side_effect = lambda k, default=None: default
         session._apply_sticky_settings = lambda c, only_global=False: c
         import negpy.desktop.session as mod
 
@@ -299,7 +299,7 @@ class TestResetSettingsOnAComposite(unittest.TestCase):
 
         s = DesktopSessionManager.__new__(DesktopSessionManager)
         s.repo = MagicMock()
-        s.repo.get_global_setting.side_effect = lambda k, d=None: d
+        s.repo.get_global_setting.side_effect = lambda k, default=None: default
         s.state = MagicMock()
         s.state.active_roll_id = None  # no roll here; a MagicMock default reads as truthy
         s.state.selected_file_idx = 0
@@ -435,7 +435,7 @@ class TestStitchGetsTheSameTreatment(unittest.TestCase):
         session = DesktopSessionManager.__new__(DesktopSessionManager)
         session.state = AppState()
         session.repo = MagicMock()
-        session.repo.get_global_setting.side_effect = lambda k, d=None: d
+        session.repo.get_global_setting.side_effect = lambda k, default=None: default
         session._apply_sticky_settings = lambda c, only_global=False: (
             c if only_global else replace(c, process=replace(c.process, process_mode=sticky_mode))
         )
