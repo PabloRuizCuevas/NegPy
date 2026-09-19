@@ -3036,6 +3036,35 @@ class TestRgbScanModeReload(unittest.TestCase):
         self.assertEqual(state.uploaded_files, merged)
         self.mock_session_manager.select_file.assert_called_once_with(0)
 
+    def test_discovery_finished_indexes_files_whose_thumbnails_are_already_cached(self):
+        """A whole-library search's own matches already have their thumbnails cached
+        (that's how CLIP embedded them to begin with), so generate_missing_thumbnails
+        claims no batch and _on_thumbnails_finished -- the only other caller of
+        generate_missing_embeddings -- never arrives to refresh the model. Discovery
+        must run it directly whenever no thumbnail batch was claimed, not only release
+        the hot-folder flag."""
+        state = self.mock_session_manager.state
+        state.uploaded_files = []
+        state.semantic_search_enabled = True
+
+        def add_files(_paths, validated_info=None):
+            state.uploaded_files.extend(validated_info or [])
+
+        self.mock_session_manager.add_files.side_effect = add_files
+        self.mock_session_manager.asset_model = MagicMock()
+        self.mock_session_manager.repo.load_embeddings_for.return_value = {"h1": object()}
+        # Nothing missing to thumbnail -- generate_missing_thumbnails claims no batch,
+        # exactly as it would when every match's thumbnail is already cached.
+        self.controller.generate_missing_thumbnails = MagicMock()
+        self.controller._replace_after_discovery = True
+        self.controller._reselect_after_discovery = None
+
+        discovered = [{"name": "cat", "path": "/cat.tif", "hash": "h1"}]
+        with patch("negpy.desktop.controller.semantic_model.clip_model_ready", return_value=True):
+            self.controller._on_discovery_finished(discovered)
+
+        self.mock_session_manager.asset_model.refresh.assert_called()
+
     def test_replace_fresh_open_selects_first_in_sorted_order(self):
         # Library double-click loads via replace_existing=True with no frame to reselect;
         # the fallback must land on the sorted-first frame, not discovery index 0.

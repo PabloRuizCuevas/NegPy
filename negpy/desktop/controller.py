@@ -1776,8 +1776,11 @@ class AppController(QObject):
             self.generate_missing_thumbnails()
             if self._active_batch != "thumbnails":
                 # Nothing to thumbnail — no batch claimed, so no _on_thumbnails_finished
-                # will arrive later to release a hot-folder sequence. End it here.
+                # will arrive later to release a hot-folder sequence, or to run the
+                # embeddings pass that normally follows it (already-cached thumbnails are
+                # exactly what a whole-library search's own matches already have).
                 self._hot_folder_sequence_active = False
+                self.generate_missing_embeddings()
             idx = None
             if reselect_path:
                 # Guard on a set path: `None in (path, green_path, blue_path)` matches any
@@ -1806,8 +1809,11 @@ class AppController(QObject):
             self.generate_missing_thumbnails()
             if self._active_batch != "thumbnails":
                 # Nothing to thumbnail — no batch claimed, so no _on_thumbnails_finished
-                # will arrive later to release a hot-folder sequence. End it here.
+                # will arrive later to release a hot-folder sequence, or to run the
+                # embeddings pass that normally follows it (already-cached thumbnails are
+                # exactly what a whole-library search's own matches already have).
                 self._hot_folder_sequence_active = False
+                self.generate_missing_embeddings()
             if pending_scan and self._select_file_by_path(pending_scan):
                 selected_pending_scan = True
             elif auto_open and not self.state.current_file_path and len(self.session.state.uploaded_files) > first_new_idx:
