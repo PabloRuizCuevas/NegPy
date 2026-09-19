@@ -39,6 +39,7 @@ class PreviewCacheKey:
     positive_source: bool = False
     highlight_mode: int = 0
     bake_camera_wb: bool = False
+    lens_token: str = ""
 
     def as_tuple(self) -> Hashable:
         return (
@@ -54,6 +55,7 @@ class PreviewCacheKey:
             self.positive_source,
             self.highlight_mode,
             self.bake_camera_wb,
+            self.lens_token,
         )
 
 

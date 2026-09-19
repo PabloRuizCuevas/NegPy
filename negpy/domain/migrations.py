@@ -114,6 +114,11 @@ def migrate_flat_config(data: Dict[str, Any]) -> Dict[str, Any]:
         data.setdefault("use_luma_average", legacy)
         data.setdefault("use_color_average", legacy)
 
+    if "lens_from_metadata" in data:
+        legacy = bool(data.pop("lens_from_metadata"))
+        data.setdefault("lens_distortion_from_metadata", legacy)
+        data.setdefault("lens_ca_from_metadata", legacy)
+
     # Lab "Separation" moved to ProcessConfig crosstalk: the 1.0-2.0 slider maps to
     # strength 0-1. crosstalk_matrix/crosstalk_profile keep their names and re-route
     # by field membership; the old serialized DEFAULT_MATRIX field is dropped.

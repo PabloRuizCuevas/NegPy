@@ -152,6 +152,7 @@ from negpy.kernel.system.logging import get_logger
 from negpy.services.rendering.prefetch_policy import MIN_RAM_RESERVE_BYTES
 from negpy.services.rendering.preview_manager import PreviewManager
 from negpy.services.rendering.source_identity import source_token
+from negpy.services.rendering.lens import lens_decode_token, metadata_lens_corrections
 from negpy.services.view.coordinate_mapping import CoordinateMapping
 
 logger = get_logger(__name__)
@@ -236,6 +237,8 @@ def _autocrop_fingerprint(config: WorkspaceConfig, workspace_color_space: str) -
         int(geometry.autocrop_offset),
         round(float(geometry.autocrop_rebate_trim), 4),
         round(float(geometry.distortion_k1), 9),
+        bool(geometry.lens_distortion_from_metadata),
+        bool(geometry.lens_ca_from_metadata),
         bool(flatfield.apply),
         str(flatfield.profile_id),
         bool(config.process.linear_raw),
@@ -543,12 +546,12 @@ class AppController(QObject):
         self._busy_toast = False
         self._pending_render_task: Any = None
 
-        # Last displayed render per frame, so navigate-back paints instantly while the
-        # authoritative render refreshes underneath.
-        self._render_memo = RenderMemo()
+        # Correction states share the bounded cache, so toggling back can paint immediately.
+        self._render_memo = RenderMemo(keep_variants=True)
         # (source_hash, memo_key, content_rect) of the on-screen GPU render; load_file
         # files its texture under this on the way out.
         self._last_render_identity: Optional[tuple] = None
+        self._expected_render_key = ""
         self._render_memo.large_entries = self.state.hq_preview
         # Test strips, keyed density/grade-blind (see _strip_memo_key). Four mosaics per
         # entry, hence the conservative budget.
@@ -1847,6 +1850,7 @@ class AppController(QObject):
         self._foreground_preview_generation = self._prefetch_gen
         self._pause_background_thumbnails()
         self._preview_load_t0 = time.perf_counter()
+        keep_preview = preserve_zoom and self._requested_file_path == file_path
         self._requested_file_path = file_path
         # A strip belongs to one frame, and the memo fast path below repaints without
         # going through request_render, so drop it here too. Zone pins froze their sample
@@ -1860,11 +1864,12 @@ class AppController(QObject):
         # shaped it has changed, since select_file already hydrated its config. Paint it
         # now, with no spinner and no toasts, and let the real render refresh the metrics.
         target_hash = self._file_hash_for_path(file_path)
-        memo = self._render_memo.get(target_hash, self._render_memo_key()) if target_hash else None
+        self._expected_render_key = self._render_memo_key()
+        memo = self._render_memo.get(target_hash, self._expected_render_key) if target_hash else None
 
         if not preserve_zoom:
             self.zoom_requested.emit(1.0)
-        if memo is None:
+        if memo is None and not keep_preview:
             self.loading_started.emit()
         self._thumb_config = None
 
@@ -1953,9 +1958,8 @@ class AppController(QObject):
                 # The half suffix distinguishes the two halves' preview caches now
                 # that the slice happens pre-downsample (each half is its own buffer).
                 file_hash=self._file_hash_for_path(file_path),
-                # A memoized frame is already painted, so the embedded-JPEG splash would
-                # repaint stale pixels over it.
-                use_splash=memo is None,
+                # A reload or memo hit keeps the rendered frame until its replacement is ready.
+                use_splash=memo is None and not keep_preview,
                 detect_mode=(
                     pending_import.detect_mode
                     if pending_import is not None
@@ -1969,6 +1973,8 @@ class AppController(QObject):
                 flatfield_profile_id=flatfield.profile_id if (stitch.stitch_enabled and flatfield.apply) else "",
                 half_slice=half_info,
                 demosaic=self.state.config.process.demosaic_preview,
+                lens_corrections=metadata_lens_corrections(self.state.config),
+                lens_flatfield=self.state.config.flatfield,
             )
         )
 
@@ -2028,6 +2034,9 @@ class AppController(QObject):
         if self._requested_file_path != file_path:
             return
         self._foreground_preview_generation = None
+        decoded_lens_token = cam_matrix[3] if cam_matrix and len(cam_matrix) > 3 else ""
+        if decoded_lens_token != lens_decode_token(metadata_lens_corrections(self.state.config), self.state.config.flatfield):
+            return
         logger.info(
             "load-timing preview_e2e %.0fms (load request -> decoded buffer) %s",
             (time.perf_counter() - self._preview_load_t0) * 1000,
@@ -2037,7 +2046,10 @@ class AppController(QObject):
         if ir_preview is not None:
             ir_preview, _ = self._split_active_half(ir_preview, None)
         self.state.preview_raw = raw
-        self.state.preview_cam_xyz, self.state.preview_camera_wb = cam_matrix or (None, None)
+        self.state.preview_cam_xyz, self.state.preview_camera_wb = cam_matrix[:2] if cam_matrix else (None, None)
+        self.state.preview_lens = cam_matrix[2] if cam_matrix and len(cam_matrix) > 2 else None
+        self.state.preview_lens_path = file_path
+        self.state.preview_lens_token = decoded_lens_token
         self.state.preview_proxy = _interactive_proxy(raw)
         self.state.preview_ir = ir_preview
         self.state.preview_ir_proxy = _interactive_ir_proxy(ir_preview, self.state.preview_proxy)
@@ -2118,6 +2130,8 @@ class AppController(QObject):
             protected_file_hashes=protected_file_hashes,
             half_slice=self._half_slice_for_asset(asset["path"], file_hash),
             demosaic=saved.process.demosaic_preview if saved else self.state.config.process.demosaic_preview,
+            lens_corrections=metadata_lens_corrections(saved or self.state.config),
+            lens_flatfield=(saved or self.state.config).flatfield,
         )
 
     def _start_next_neighbor_prefetch(self) -> None:
@@ -4480,6 +4494,10 @@ class AppController(QObject):
         before/after split instead of being displayed.
         """
         self._render_debounce.stop()
+        lens_token = lens_decode_token(metadata_lens_corrections(self.state.config), self.state.config.flatfield)
+        if not ephemeral and self.state.current_file_path and lens_token != self.state.preview_lens_token:
+            self.load_file(self.state.current_file_path, preserve_zoom=True)
+            return
 
         # Any direct render exits the flat preview-peek.
         if config_override is None and self.state.flat_peek:
@@ -4530,6 +4548,7 @@ class AppController(QObject):
         memo_key = ""
         if config_override is None and not ephemeral and not crop_preview_full and not interactive:
             memo_key = self._render_memo_key()
+        self._expected_render_key = memo_key
 
         dip = self.active_diptych()
         cam_xyz, camera_wb = self._effective_cam_xyz()
@@ -5653,16 +5672,12 @@ class AppController(QObject):
             self.set_status("")
 
     def _renders_another_frame(self, metrics: Dict[str, Any]) -> bool:
-        """True when a render belongs to a frame that is no longer selected.
-
-        A render carries the hash it was dispatched for, and nothing cancels one that is
-        already in flight — click the next frame mid-render and it still lands. Its pixels
-        and its measurements describe the frame the user has left, so they must not reach
-        the canvas or ``last_metrics``. A task dispatched before the file had a hash
-        carries the same ``"preview"`` placeholder ``request_render`` gives it.
-        """
+        """Reject pixels and measurements for a different file or superseded edit."""
         src = metrics.get("source_hash")
-        return src is not None and src != (self.state.current_file_hash or "preview")
+        key = metrics.get("memo_key")
+        return (src is not None and src != (self.state.current_file_hash or "preview")) or bool(
+            key and self._expected_render_key and key != self._expected_render_key
+        )
 
     def _on_render_finished(self, _result: Any, metrics: Dict[str, Any]) -> None:
         self._is_rendering = False
@@ -5843,7 +5858,9 @@ class AppController(QObject):
                 # Move the frame's memo entry to the updated config's key so the first
                 # navigate-back after an initial render still hits. A GPU render is not filed
                 # until navigate-away, so its identity follows too.
-                self._render_memo.rekey(src or self.state.current_file_hash or "", self._render_memo_key())
+                self._render_memo.rekey(
+                    src or self.state.current_file_hash or "", self._render_memo_key(), old_key=metrics.get("memo_key", "")
+                )
                 if self._last_render_identity is not None:
                     self._last_render_identity = (
                         self._last_render_identity[0],

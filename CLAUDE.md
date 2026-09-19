@@ -47,6 +47,7 @@ Migrations that rewrite *rows* rather than a config payload need a repository, s
 - **CPU**: `DarkroomEngine.process()` (`negpy/services/rendering/engine.py`) — base (geometry + normalization) → exposure (incl. dodge/burn) → clahe → lab → alt process → toning → crop → finish. The first four stages are cached per config-hash via `_run_stage()`; the rest run unconditionally. The alt-process stage (lith or cyanotype, never both) is B&W-only and off by default; when off, both engines skip it rather than run an identity pass.
 - **GPU**: `GPUEngine` (`negpy/services/rendering/gpu_engine.py`) — the same logical stages as WGSL compute shaders from `negpy/features/<name>/shaders/`, with its own config-diff change detection.
 - **Orchestration**: `ImageProcessor` (`image_processor.py`) tries GPU first and falls back to CPU. Export always runs full-res, with CPU stage caching off (`PipelineContext.cache_stages`). Linear DNG decode, CPU saturation and unsharp masking use row blocks to bound temporary storage. `PipelineContext` carries `scale_factor`, `process_mode`, `active_roi` and a `metrics` dict between stages.
+- **Embedded lens correction** (`features/lens`) is a single-file decode step shared by preview and export: flat-field, lens warp, then sensor unmix and user geometry. Its independent distortion and CA settings and flat-field token belong to the source identity. It is disabled for composite setup, composite assembly and RGB+IR sources.
 - **Source bakes** run before either engine, on the linear source: flat-field, sensor unmix and every defect repair (IR, detected specks, painted heal strokes). Both engines re-upload that source per frame, so a bake reaches them parity-free and needs no shader. Each bake folds a token into `source_hash` to invalidate the engine cache.
 - **Working space**: scene-linear internally; the working OETF (Adobe RGB 1998 TRC — a pure 563/256 power, no linear segment) is the final engine step. Lab/toning compute CIELAB directly from linear, D65. Adobe RGB rather than a wide gamut because ProPhoto's imaginary primaries inflate chroma in the saturation and toning stages.
 
@@ -62,6 +63,10 @@ Every feature lives in `negpy/features/<name>/`:
 - `shaders/<name>.wgsl` — optional GPU compute shader
 
 One exception: `features/altprocess/` holds only `models.py`. Lith and cyanotype are mutually exclusive, so they share the Alternative Processes panel and one `AltProcessConfig`; their logic and shaders stay in `features/lith/` and `features/cyanotype/`.
+
+`features/lens/warps.py` holds frozen lens models with `has_distortion`, `has_ca`, and
+`remap(...)`, as defined by `LensWarp` in `models.py`. `logic.py` applies their maps in
+row blocks. File readers are registered in `infrastructure/loaders/lens_metadata.py`.
 
 ### Desktop (MVC)
 

@@ -511,6 +511,8 @@ Where the frame gets its final shape: what is inside the print, and whether it s
     Both replicate a wedge along the squeezed edge, as Fine Rotation does; crop it off. Crop before correcting if you can, because the meters read the corrected frame: on an uncropped scan a big correction pulls rebate and surround into the metered area and the print darkens.
 
 *   **Distortion Correction** (-0.100 to 0.100, in steps of 0.001): radial lens distortion. Positive corrects barrel, negative pincushion. Use the film rebate as a straight-edge reference. Corrected before Tilt and Swing.
+*   **Metadata Distortion**: straighten curved lines with lens correction data stored in the file. Replaces manual distortion correction. Set before cropping or retouching. Available when the file contains supported distortion data.
+*   **Metadata CA**: reduce color fringes along edges with lens correction data stored in the file. Works independently of Metadata Distortion and can be used with manual distortion correction. Available when the file contains supported CA data.
 
 <!-- panel:flatfield -->
 ### 5.2 Flat Field: even out the light

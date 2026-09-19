@@ -11,6 +11,9 @@ from negpy.domain.interfaces import PipelineContext
 from negpy.domain.models import WorkspaceConfig
 from negpy.features.exposure.analysis import color_histogram, output_histogram, proof_grid, rotate_grid, strip_mosaic
 from negpy.features.flatfield.logic import apply_flatfield
+from negpy.features.flatfield.models import FlatFieldConfig
+from negpy.features.lens.models import LensCorrections
+from negpy.services.rendering.lens import lens_decode_token, metadata_lens_corrections
 from negpy.features.hdr.models import HdrConfig, hdr_active
 from negpy.features.geometry.batch_autocrop import CropEvidence, detect_crop_candidate, resolve_roll_crops
 from negpy.features.process.capture_color import wb_only_cam_xyz
@@ -232,6 +235,8 @@ class PreviewLoadTask:
     stitch: StitchConfig = StitchConfig()  # composite: non-primary parts + stored registration
     hdr: HdrConfig = HdrConfig()  # bracket: the other exposures, merged with file_path (the reference)
     flatfield_profile_id: str = ""  # per-part flat-field profile for stitch previews
+    lens_corrections: LensCorrections = LensCorrections()
+    lens_flatfield: FlatFieldConfig = FlatFieldConfig()
     demosaic: str = DemosaicMode.AUTO  # CFA interpolation for the preview decode
     half_slice: tuple[int, float, tuple[float, float, float, float] | None, float] | None = (
         None  # (half, split_x, crop_rect, gutter_thickness)
@@ -1067,6 +1072,8 @@ class PreviewLoadWorker(QObject):
                     should_cancel=lambda: not self._prefetch_is_current(task),
                     highlight_mode=task.highlight_mode,
                     bake_camera_wb=task.bake_camera_wb,
+                    lens_corrections=task.lens_corrections,
+                    lens_flatfield=task.lens_flatfield,
                 )
         except InterruptedError:
             pass
@@ -1120,7 +1127,12 @@ class PreviewLoadWorker(QObject):
                     source_cs,
                     ir_preview,
                     detected_mode,
-                    (metadata.get("cam_xyz"), metadata.get("camera_wb")),
+                    (
+                        metadata.get("cam_xyz"),
+                        metadata.get("camera_wb"),
+                        metadata.get("lens_correction"),
+                        lens_decode_token(task.lens_corrections, task.lens_flatfield),
+                    ),
                     metadata.get("detect_preview"),
                 )
                 return
@@ -1159,7 +1171,12 @@ class PreviewLoadWorker(QObject):
                     source_cs,
                     ir_preview,
                     detected_mode,
-                    (metadata.get("cam_xyz"), metadata.get("camera_wb")),
+                    (
+                        metadata.get("cam_xyz"),
+                        metadata.get("camera_wb"),
+                        metadata.get("lens_correction"),
+                        lens_decode_token(task.lens_corrections, task.lens_flatfield),
+                    ),
                     metadata.get("detect_preview"),
                 )
                 return
@@ -1196,7 +1213,12 @@ class PreviewLoadWorker(QObject):
                     source_cs,
                     ir_preview,
                     detected_mode,
-                    (metadata.get("cam_xyz"), metadata.get("camera_wb")),
+                    (
+                        metadata.get("cam_xyz"),
+                        metadata.get("camera_wb"),
+                        metadata.get("lens_correction"),
+                        lens_decode_token(task.lens_corrections, task.lens_flatfield),
+                    ),
                     metadata.get("detect_preview"),
                 )
                 return
@@ -1215,6 +1237,8 @@ class PreviewLoadWorker(QObject):
                     should_cancel=cancelled,
                     highlight_mode=task.highlight_mode,
                     bake_camera_wb=task.bake_camera_wb,
+                    lens_corrections=task.lens_corrections,
+                    lens_flatfield=task.lens_flatfield,
                 )
                 if not self._is_current(task):
                     return
@@ -1235,6 +1259,8 @@ class PreviewLoadWorker(QObject):
                     should_cancel=cancelled,
                     highlight_mode=task.highlight_mode,
                     bake_camera_wb=task.bake_camera_wb,
+                    lens_corrections=task.lens_corrections,
+                    lens_flatfield=task.lens_flatfield,
                 )
                 if not self._is_current(task):
                     return
@@ -1256,7 +1282,12 @@ class PreviewLoadWorker(QObject):
                 source_cs,
                 ir_preview,
                 detected_mode,
-                (metadata.get("cam_xyz"), metadata.get("camera_wb")),
+                (
+                    metadata.get("cam_xyz"),
+                    metadata.get("camera_wb"),
+                    metadata.get("lens_correction"),
+                    lens_decode_token(task.lens_corrections, task.lens_flatfield),
+                ),
                 metadata.get("detect_preview"),
             )
         except InterruptedError:
@@ -1361,6 +1392,8 @@ def _decode_asset_preview_with_meta(
             positive_source=config.process.positive_source,
             highlight_mode=effective_highlight_reconstruction(config.process),
             bake_camera_wb=highlight_reconstruction_bakes_wb(config.process, config.exposure.render_intent),
+            lens_corrections=metadata_lens_corrections(config),
+            lens_flatfield=config.flatfield,
             **common,
         )
     return slice_for_asset(raw, file_info), meta
@@ -1433,7 +1466,7 @@ class BatchAutoCropWorker(QObject):
                 return None
 
             config = frame.config
-            corrected = apply_flatfield(raw, config.flatfield)
+            corrected = raw if metadata_lens_corrections(config) else apply_flatfield(raw, config.flatfield)
             detection_geometry = replace(
                 config.geometry,
                 crop_rect=None,

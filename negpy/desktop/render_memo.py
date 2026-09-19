@@ -22,13 +22,17 @@ from negpy.kernel.system.config import APP_CONFIG
 
 
 class RenderMemo:
-    """LRU of the last render per file: file_hash -> (memo_key, payload)."""
+    """Bounded render LRU, optionally retaining multiple settings per file."""
 
-    def __init__(self, app_config: Any = None) -> None:
+    def __init__(self, app_config: Any = None, *, keep_variants: bool = False) -> None:
         self._app = app_config or APP_CONFIG
-        self._entries: "OrderedDict[str, tuple[str, dict]]" = OrderedDict()
+        self._keep_variants = keep_variants
+        self._entries: "OrderedDict[tuple[str, str], tuple[str, dict]]" = OrderedDict()
         # Hundreds of MB an entry (HQ renders, strip mosaics): use the full-res knob.
         self.large_entries = False
+
+    def _entry_key(self, file_hash: str, memo_key: str) -> tuple[str, str]:
+        return file_hash, memo_key if self._keep_variants else ""
 
     def _budget(self) -> int:
         if self.large_entries:
@@ -50,28 +54,33 @@ class RenderMemo:
     def store(self, file_hash: str, memo_key: str, payload: dict) -> None:
         if not file_hash or not memo_key:
             return
-        self._dispose(self._entries.pop(file_hash, None), keep=payload)
-        self._entries[file_hash] = (memo_key, payload)
+        key = self._entry_key(file_hash, memo_key)
+        self._dispose(self._entries.pop(key, None), keep=payload)
+        self._entries[key] = (memo_key, payload)
         while len(self._entries) > self._budget():
             self._dispose(self._entries.popitem(last=False)[1], keep=payload)
 
     def get(self, file_hash: str, memo_key: str) -> Optional[dict]:
-        entry = self._entries.get(file_hash)
+        key = self._entry_key(file_hash, memo_key)
+        entry = self._entries.get(key)
         if entry is None or entry[0] != memo_key:
             return None
-        self._entries.move_to_end(file_hash)
+        self._entries.move_to_end(key)
         return entry[1]
 
-    def rekey(self, file_hash: str, new_key: str) -> None:
+    def rekey(self, file_hash: str, new_key: str, *, old_key: str = "") -> None:
         """Follow a render-neutral config change (e.g. measured bounds persisted
         after the render, with render=False): the stored pixels are still valid,
         only their identity moved."""
-        entry = self._entries.get(file_hash)
-        if entry is not None and new_key:
-            self._entries[file_hash] = (new_key, entry[1])
+        if not new_key or (self._keep_variants and not old_key):
+            return
+        entry = self._entries.pop(self._entry_key(file_hash, old_key), None)
+        if entry is not None:
+            self.store(file_hash, new_key, entry[1])
 
     def invalidate(self, file_hash: str) -> None:
-        self._dispose(self._entries.pop(file_hash, None))
+        for key in [key for key in self._entries if key[0] == file_hash]:
+            self._dispose(self._entries.pop(key))
 
     def clear(self) -> None:
         for entry in self._entries.values():

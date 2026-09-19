@@ -158,3 +158,37 @@ def test_array_payloads_are_left_alone() -> None:
     m.store("A", "k", _payload())
     m.store("A", "k2", _payload())
     m.clear()  # must not raise: ndarray has no destroy()
+
+
+def test_variants_share_the_budget_and_keep_the_selected_texture_alive() -> None:
+    m = RenderMemo(_cfg(slots=2), keep_variants=True)
+    selected, evicted, outgoing = (_FakeTexture() for _ in range(3))
+    m.store("A", "off", _gpu_payload(selected))
+    m.store("A", "ca", _gpu_payload(evicted))
+    assert m.get("A", "off")["base_positive"] is selected
+    m.store("A", "distortion", _gpu_payload(outgoing))
+    assert m.get("A", "off")["base_positive"] is selected
+    assert m.get("A", "distortion")["base_positive"] is outgoing
+    assert m.get("A", "ca") is None
+    assert selected.destroyed == outgoing.destroyed == 0
+    assert evicted.destroyed == 1
+    m.invalidate("A")
+    assert selected.destroyed == outgoing.destroyed == 1
+
+
+def test_variant_rekey_only_moves_the_measured_state() -> None:
+    m = RenderMemo(_cfg(slots=4), keep_variants=True)
+    off, on = _FakeTexture(), _FakeTexture()
+    m.store("A", "off", _gpu_payload(off))
+    m.store("A", "on", _gpu_payload(on))
+    m.rekey("A", "settled-on", old_key="on")
+    assert m.get("A", "on") is None
+    assert m.get("A", "off")["base_positive"] is off
+    assert m.get("A", "settled-on")["base_positive"] is on
+    m.rekey("A", "missing-render", old_key="missing")
+    m.rekey("A", "unspecified-render")
+    assert m.get("A", "missing-render") is None
+    assert m.get("A", "unspecified-render") is None
+    assert off.destroyed == on.destroyed == 0
+    m.clear()
+    assert off.destroyed == on.destroyed == 1

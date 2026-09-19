@@ -71,9 +71,10 @@ class HdrWorker(QObject):
                     self.cancelled.emit()
                     return
                 self.progress.emit(i, total, f"Decoding {f['name']}")
-                # Flat-field off for the solve: the decode pins the white level, so saturation sits at
-                # exactly 1.0 and the reference and ratio thresholds mean what they say. A gain map
-                # applied first moves that point. The merge at decode time defers it for the same reason.
+                # Flat-field and lens correction off for the solve: the decode uses unwarped pixels
+                # and pins the white level, so saturation sits at exactly 1.0 and the reference and
+                # ratio thresholds mean what they say. A gain map or lens warp applied first moves
+                # that point. The merge at decode time defers both for the same reason.
                 #
                 # Reconstruction off explicitly: WorkspaceConfig.__post_init__ only zeroes it once
                 # `hdr` names this bracket, which is exactly what has not happened yet here — the
@@ -86,6 +87,7 @@ class HdrWorker(QObject):
                     flatfield=FlatFieldConfig(),
                     hdr=HdrConfig(),
                     process=replace(original.process, highlight_reconstruction=0),
+                    geometry=replace(original.geometry, lens_distortion_from_metadata=False, lens_ca_from_metadata=False),
                 )
                 f32, _, _ = self._processor._decode_oriented_f32(f["path"], params, wb_override=bracket_wb)
                 if i == 0:

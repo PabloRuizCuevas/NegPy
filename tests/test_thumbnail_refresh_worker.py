@@ -9,6 +9,7 @@ from negpy.desktop.workers.render import (
     ThumbnailRenderWorker,
 )
 from negpy.domain.models import WorkspaceConfig
+from negpy.features.lens.models import LensCorrections
 from negpy.features.rgbscan.models import RgbScanConfig
 from negpy.features.stitch.models import StitchConfig
 
@@ -39,6 +40,8 @@ class _PreviewService:
         positive_source=False,  # noqa: ARG002 — accepted, not asserted on
         highlight_mode=0,  # noqa: ARG002 — accepted, not asserted on
         bake_camera_wb=False,  # noqa: ARG002 — accepted, not asserted on
+        lens_corrections=LensCorrections(),  # noqa: ARG002 — accepted, not asserted on
+        lens_flatfield=None,  # noqa: ARG002 — accepted, not asserted on
     ):
         self.linear_calls.append({"file_path": file_path, "file_hash": file_hash})
         raw = np.full((4, 6, 3), 0.5, dtype=np.float32)
