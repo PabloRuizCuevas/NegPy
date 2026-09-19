@@ -4354,6 +4354,21 @@ class TestSemanticIndexing(unittest.TestCase):
 
         self.controller.embedding_requested.emit.assert_not_called()
 
+    def test_refreshes_the_model_even_when_nothing_was_missing(self):
+        """A whole-library search hands off files that are, by construction, already
+        indexed -- so an in-session semantic filter left active from before the hand-off
+        would otherwise never see these newly cached embeddings and would exclude every
+        one of them (absent-from-embeddings means excluded, not zero-scored)."""
+        state = self.mock_session_manager.state
+        state.semantic_search_enabled = True
+        state.uploaded_files = [{"name": "a", "path": "/a.dng", "hash": "h1"}]
+        self.mock_session_manager.repo.load_embeddings_for.return_value = {"h1": object()}
+
+        with patch("negpy.desktop.controller.semantic_model.clip_model_ready", return_value=True):
+            self.controller.generate_missing_embeddings()
+
+        self.mock_session_manager.asset_model.refresh.assert_called_once_with()
+
     def test_a_thumbnail_batch_finishing_triggers_indexing(self):
         state = self.mock_session_manager.state
         state.semantic_search_enabled = True

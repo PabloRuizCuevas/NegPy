@@ -882,6 +882,11 @@ class AppController(QObject):
             return
         hashes = [f["hash"] for f in self.state.uploaded_files]
         self.state.embeddings.update(self.session.repo.load_embeddings_for(hashes, semantic_model.MODEL_VERSION))
+        # An active in-session semantic filter excludes any file absent from
+        # state.embeddings, so a batch of already-indexed files (e.g. a whole-library
+        # search's own hand-off) needs a refresh right here -- missing being empty below
+        # means no later _apply_embeddings will ever fire one.
+        self.session.asset_model.refresh()
         missing = [f for f in self.state.uploaded_files if f["hash"] not in self.state.embeddings]
         if not missing:
             return
