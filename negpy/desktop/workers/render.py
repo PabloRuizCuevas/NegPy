@@ -410,8 +410,10 @@ class ThumbnailWorker(QObject):
         super().__init__()
         self._store = asset_store
         self._files: list[dict] = []
+        self._slow_files: list[dict] = []
         self._current = 0
         self._active = False
+        self._slow_phase = False
         self._cancel_requested = threading.Event()
         self._next_timer = QTimer(self)
         self._next_timer.setSingleShot(True)
@@ -433,8 +435,10 @@ class ThumbnailWorker(QObject):
         self._next_timer.stop()
         self._cancel_requested.clear()
         self._files = list(files)
+        self._slow_files = []
         self._current = 0
         self._active = bool(self._files)
+        self._slow_phase = False
         if not self._active:
             self.activity.emit("")
             return
@@ -463,15 +467,26 @@ class ThumbnailWorker(QObject):
                 tuple(f_info["crop_rect"]) if f_info.get("crop_rect") else None,
                 float(f_info.get("gutter_thickness") or 0.0),
                 str(f_info.get("process_mode") or ""),
+                fast_only=not self._slow_phase,
+                should_cancel=self._cancel_requested.is_set,
             )
             if thumb is not None:
                 self.partial.emit({key: thumb})
+            elif not self._slow_phase:
+                self._slow_files.append(f_info)
         except Exception as e:
             logger.error(f"Thumbnail generation failure: {e}")
 
         self._current += 1
         if self._cancel_requested.is_set():
             self._finish()
+            return
+        if self._current >= len(self._files) and not self._slow_phase and self._slow_files:
+            self._files = self._slow_files
+            self._slow_files = []
+            self._current = 0
+            self._slow_phase = True
+            self._next_timer.start(0)
             return
         if self._current >= len(self._files):
             self._finish()
@@ -484,6 +499,8 @@ class ThumbnailWorker(QObject):
         self._next_timer.stop()
         self._active = False
         self._files = []
+        self._slow_files = []
+        self._slow_phase = False
         self.activity.emit("")
 
     @pyqtSlot(ThumbnailUpdateTask)

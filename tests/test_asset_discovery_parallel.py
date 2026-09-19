@@ -174,6 +174,32 @@ class TestThumbnailStreaming(unittest.TestCase):
         self.assertEqual(calls, ["/tmp/f0.arw"])
         self.assertEqual(activity, ["h0-v3", ""])
 
+    def test_quick_sources_finish_before_slow_fallbacks(self):
+        worker = ThumbnailWorker(None)
+        files = [{"name": f"f{i}", "path": f"/tmp/f{i}.dng", "hash": f"h{i}"} for i in range(2)]
+        calls: list[tuple[str, bool]] = []
+
+        def generate(path, *args, fast_only=False, **kwargs):
+            calls.append((path, fast_only))
+            return None if fast_only else Image.new("RGB", (4, 4))
+
+        with patch("negpy.services.assets.thumbnails.get_thumbnail_worker", side_effect=generate):
+            worker.generate(files)
+            worker._next_timer.stop()
+            while worker._active:
+                worker._process_next()
+                worker._next_timer.stop()
+
+        self.assertEqual(
+            calls,
+            [
+                ("/tmp/f0.dng", True),
+                ("/tmp/f1.dng", True),
+                ("/tmp/f0.dng", False),
+                ("/tmp/f1.dng", False),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
