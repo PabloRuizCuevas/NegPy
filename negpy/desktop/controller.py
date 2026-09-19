@@ -250,7 +250,6 @@ class _DiscoveryRequest:
     half_frame: bool
     half_frame_profile: Optional[dict] = None  # {crop_rect, split_x, gutter_thickness}
     half_frame_overrides: Optional[dict] = None  # {base_hash: {crop_rect, split_x, gutter_thickness}}
-    half_frame_known_hashes: Optional[frozenset] = None  # base hashes already confirmed as diptychs
     hot_folder: bool = False
 
 
@@ -1151,12 +1150,13 @@ class AppController(QObject):
             rgb_scan=bool(self.session.repo.get_global_setting("rgbscan_mode", False)),
             # No roll is active for a batch with no single shared roll (a library-wide
             # search's mixed results, a restored session that disagrees) -- there is no
-            # roll-wide toggle to apply, so each file splits only if already confirmed a
-            # diptych on its own, never guessed from whatever roll was open last.
+            # roll-wide toggle to apply, and "confirmed diptych" hashes are recorded by
+            # whatever roll's toggle was on at the time, not verified per file, so they
+            # are not a safe signal here either. Nothing splits until the file is opened
+            # through a roll that says so.
             half_frame=self.half_frame_mode_for_roll(active_roll_id) if active_roll_id else False,
             half_frame_profile=self.half_frame_profile(),
             half_frame_overrides=self.half_frame_overrides(),
-            half_frame_known_hashes=None if active_roll_id else frozenset(split_scans(self.session.repo)),
             hot_folder=hot_folder,
         )
         if self._discovery_running:
@@ -1202,7 +1202,6 @@ class AppController(QObject):
             restore_hdr=merges,
             half_frame_profile=request.half_frame_profile,
             half_frame_overrides=request.half_frame_overrides,
-            half_frame_known_hashes=request.half_frame_known_hashes,
         )
         self.asset_discovery_requested.emit(task)
 

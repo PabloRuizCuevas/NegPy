@@ -321,38 +321,6 @@ def test_expand_half_frames_per_file_override_wins_over_the_profile(monkeypatch)
     assert b1["split_x"] == b2["split_x"] == 0.5
 
 
-def test_expand_half_frames_only_hashes_splits_just_the_confirmed_ones(monkeypatch):
-    """A batch with no single roll-wide toggle to apply (a library-wide search's mixed
-    results): only files already confirmed as diptychs split, each auto-detecting its
-    own gutter; everything else stays whole regardless of what it looks like."""
-    from negpy.desktop.workers import render as render_mod
-
-    monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_x_for_file", lambda p: 0.42)
-    worker = render_mod.AssetDiscoveryWorker()
-    assets = [
-        {"name": "cat.tif", "path": "/p/cat.tif", "hash": "ha"},  # a confirmed diptych
-        {"name": "dog.tif", "path": "/p/dog.tif", "hash": "hb"},  # never split before
-    ]
-    out = worker._expand_half_frames(assets, only_hashes=frozenset({"ha"}))
-    assert [a["hash"] for a in out] == ["ha#1", "ha#2", "hb"]
-    assert out[0]["split_x"] == out[1]["split_x"] == 0.42
-
-
-def test_expand_half_frames_only_hashes_respects_a_per_file_override(monkeypatch):
-    """A confirmed diptych with its own saved override still uses it, same as the
-    roll-wide path — it is a per-file fact either way."""
-    from negpy.desktop.workers import render as render_mod
-
-    monkeypatch.setattr("negpy.services.assets.half_frame.detect_split_x_for_file", lambda p: 0.9)
-    worker = render_mod.AssetDiscoveryWorker()
-    assets = [{"name": "cat.tif", "path": "/p/cat.tif", "hash": "ha"}]
-    overrides = {"ha": {"crop_rect": [0.05, 0.0, 0.95, 1.0], "split_x": 0.4, "gutter_thickness": 0.03}}
-    out = worker._expand_half_frames(assets, overrides=overrides, only_hashes=frozenset({"ha"}))
-    a1, a2 = out
-    assert a1["split_x"] == a2["split_x"] == 0.4
-    assert a1["crop_rect"] == a2["crop_rect"] == (0.05, 0.0, 0.95, 1.0)
-
-
 def test_auto_detect_all_splits_worker_emits_per_file_results(monkeypatch):
     """process_auto_detect_all_splits reports one (split, thickness, crop) triple
     per path, so a big roll's detection can run off the GUI thread and still land
