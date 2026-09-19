@@ -48,7 +48,7 @@ from negpy.features.hdr.logic import anchor_choices
 from negpy.features.hdr.models import hdr_frame_paths
 from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 from negpy.desktop.view.shortcut_registry import label_with_shortcut
-from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, labeled_action, tool_toggle
+from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, labeled_action, tool_toggle, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog, open_paste_dialog
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
@@ -473,9 +473,9 @@ class FileBrowser(QWidget):
         self.half_frame_btn = QToolButton()
         self.half_frame_btn.setCheckable(True)
         self.half_frame_btn.setIcon(qta.icon("mdi.view-split-vertical", color=THEME.text_primary))
-        self.half_frame_btn.setToolTip("Half Frame — split each scan into two frames, edited and measured separately")
         self.half_frame_btn.setChecked(self.controller.half_frame_mode_for_roll(self.session.state.active_roll_id))
         self._update_half_frame_style(self.half_frame_btn.isChecked())
+        self._sync_half_frame_availability()
 
         # One button for every half-frame action, rather than one icon apiece: the menu
         # is rebuilt on each open, so "Unsplit Diptych" only enables for the active frame's
@@ -932,6 +932,7 @@ class FileBrowser(QWidget):
         self.semantic_btn.setVisible(self.session.state.semantic_search_enabled)
         if not self.session.state.semantic_search_enabled and self.semantic_btn.isChecked():
             self.semantic_btn.setChecked(False)  # reverts to the plain filter via _on_semantic_toggled
+        self._sync_half_frame_availability()
         self.library_tree.sync_ui()
         self._update_unload_button()
         self._update_tally()
@@ -1159,6 +1160,23 @@ class FileBrowser(QWidget):
     def _update_half_frame_style(self, checked: bool) -> None:
         icon_color = "white" if checked else THEME.text_primary
         self.half_frame_btn.setIcon(qta.icon("mdi.view-split-vertical", color=icon_color))
+
+    def _sync_half_frame_availability(self) -> None:
+        """The toggle is a roll-wide fact -- one film type, split or not -- so it has
+        nothing to apply to a batch with no single active roll (a library-wide search's
+        mixed results, a restored session with no shared roll). Those already-confirmed
+        diptychs in it still show split, each at its own gutter; the toggle just cannot
+        turn that on or off for a batch that is not one roll."""
+        has_roll = bool(self.session.state.active_roll_id)
+        self.half_frame_btn.setEnabled(has_roll)
+        self.half_frame_btn.setToolTip(
+            wrap_tooltip("Half Frame — split each scan into two frames, edited and measured separately")
+            if has_roll
+            else wrap_tooltip(
+                "Half Frame is a roll-wide setting, and this isn't one roll. Already-split scans still show "
+                "split; open the roll itself to change it."
+            )
+        )
 
     def _sync_half_frame_button(self, enabled: bool) -> None:
         """Follow the active roll's own toggle state. Signals are blocked because

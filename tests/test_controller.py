@@ -3160,6 +3160,39 @@ class TestDiscoveryProgressPopup(unittest.TestCase):
         self.controller.request_asset_discovery(["/a.dng"])
         self.assertEqual(started, [("Hashing files", False)])
 
+    def _captured_task(self, **discovery_kwargs):
+        self.controller.asset_discovery_requested.disconnect(self.controller.discovery_worker.process)
+        tasks = []
+        self.controller.asset_discovery_requested.connect(tasks.append)
+        self.controller.request_asset_discovery(["/a.dng"], **discovery_kwargs)
+        return tasks[0]
+
+    def test_no_active_roll_scopes_half_frame_to_already_confirmed_files(self):
+        """A batch with no single shared roll (a library-wide search's mixed results)
+        has no roll-wide toggle to apply -- only files this session already knows are
+        diptychs split, each at its own gutter, never guessed from the sticky flag."""
+        self.mock_session_manager.state.active_roll_id = None
+        self.mock_session_manager.repo.get_global_setting.side_effect = lambda key, default=None: (
+            ["ha", "hb"] if key == "half_frame_scans" else True if key == "half_frame_mode" else default
+        )
+
+        task = self._captured_task()
+
+        self.assertFalse(task.half_frame)
+        self.assertEqual(task.half_frame_known_hashes, frozenset({"ha", "hb"}))
+
+    def test_an_active_roll_uses_its_own_toggle_not_the_confirmed_set(self):
+        self.mock_session_manager.state.active_roll_id = "r1"
+        by_roll = {"r1": True}
+        self.mock_session_manager.repo.get_global_setting.side_effect = lambda key, default=None: (
+            by_roll if key == "half_frame_mode_by_roll" else ["ha"] if key == "half_frame_scans" else default
+        )
+
+        task = self._captured_task()
+
+        self.assertTrue(task.half_frame)
+        self.assertIsNone(task.half_frame_known_hashes)
+
     def test_progress_feeds_popup(self):
         progress = []
         self.controller.batch_progress.connect(lambda c, t, n: progress.append((c, t, n)))

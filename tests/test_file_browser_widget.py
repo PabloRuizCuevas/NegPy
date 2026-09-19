@@ -270,6 +270,25 @@ def test_sync_half_frame_button_follows_the_active_rolls_state_without_retogglin
     browser.controller.set_half_frame_mode.assert_not_called()
 
 
+def test_half_frame_toggle_disabled_with_no_active_roll(browser, session):
+    """A batch with no single active roll (a library-wide search's mixed results) has
+    no roll-wide toggle to apply -- already-confirmed diptychs in it still show split,
+    but the button itself has nothing left to turn on or off."""
+    session.state.active_roll_id = None
+
+    browser.sync_ui()
+
+    assert browser.half_frame_btn.isEnabled() is False
+
+
+def test_half_frame_toggle_enabled_with_an_active_roll(browser, session):
+    session.state.active_roll_id = "r1"
+
+    browser.sync_ui()
+
+    assert browser.half_frame_btn.isEnabled() is True
+
+
 def test_adjust_half_frame_split_reloads_only_on_apply(browser, session):
     browser.controller.open_half_frame_dialog.return_value = None
     browser._on_adjust_half_frame_split("/tmp/scan.tif", "h1")

@@ -171,6 +171,12 @@ class AssetDiscoveryTask:
     restore_hdr: dict | None = None  # {reference_path: {paths, ratios, align, hash}} (session restore).
     half_frame_profile: dict | None = None  # {crop_rect, split_x, gutter_thickness} override
     half_frame_overrides: dict | None = None  # {base_hash: {crop_rect, split_x, gutter_thickness}} per-file overrides
+    # Split only base hashes already confirmed as diptychs (half_frame.split_scans), each
+    # at its own known or auto-detected gutter -- no roll-wide toggle applies, no blind
+    # auto-detection on a file never split before. Mutually exclusive with half_frame:
+    # a batch with no single active roll (a library-wide search's mixed results, a
+    # restored session with no shared roll) has no roll-wide fact to apply either way.
+    half_frame_known_hashes: frozenset[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -675,10 +681,22 @@ class AssetDiscoveryWorker(QObject):
 
         if task.half_frame and valid_assets:
             valid_assets = self._expand_half_frames(valid_assets, profile=task.half_frame_profile, overrides=task.half_frame_overrides)
+        elif task.half_frame_known_hashes and valid_assets:
+            valid_assets = self._expand_half_frames(
+                valid_assets,
+                overrides=task.half_frame_overrides,
+                only_hashes=task.half_frame_known_hashes,
+            )
 
         self.finished.emit(valid_assets)
 
-    def _expand_half_frames(self, assets: list, profile: dict | None = None, overrides: dict | None = None) -> list:
+    def _expand_half_frames(
+        self,
+        assets: list,
+        profile: dict | None = None,
+        overrides: dict | None = None,
+        only_hashes: frozenset[str] | None = None,
+    ) -> list:
         """Expand each file into two half-frame assets sharing the path, with
         per-half hash/name identities. Composite assets (triplet, stitch, HDR) stay
         whole — an unsupported combination.
@@ -692,13 +710,19 @@ class AssetDiscoveryWorker(QObject):
              override.
           3. No profile yet — every file auto-detects, so a first-time roll starts
              from a real split rather than a blind center cut.
+
+        ``only_hashes``, given, additionally restricts which files split at all to
+        those whose base hash it contains -- everything else stays whole regardless
+        of auto-detection, for a batch with no single roll-wide toggle to apply.
         """
         import os
 
         from negpy.services.assets.half_frame import base_hash, detect_split_x_for_file, half_hash, half_name, is_composite
 
         def _splittable(a: dict) -> bool:
-            return not is_composite(a)
+            if is_composite(a):
+                return False
+            return only_hashes is None or base_hash(a["hash"]) in only_hashes
 
         overrides = overrides or {}
         auto_split = profile is None
