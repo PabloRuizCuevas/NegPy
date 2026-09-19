@@ -3330,6 +3330,27 @@ class AppController(QObject):
         )
         self.request_render()
 
+    def handle_dust_exclusion_painted(self, viewport_pts: list) -> None:
+        """Commits a right-painted stroke (viewport-normalized points) the optical detector
+        must leave alone. One stroke, so the whole path it swept is released as a band."""
+        if not viewport_pts:
+            return
+        with self.state.metrics_lock:
+            uv_grid = self.state.last_metrics.get("uv_grid")
+        if uv_grid is None:
+            return
+        conf = self.state.config.retouch
+        raw_pts = [CoordinateMapping.map_click_to_raw(nx, ny, uv_grid) for nx, ny in viewport_pts]
+        stroke = ([[rx, ry] for rx, ry in raw_pts], float(conf.manual_dust_size))
+        self.session.update_config(
+            replace(
+                self.state.config,
+                retouch=replace(conf, dust_exclusion_strokes=list(conf.dust_exclusion_strokes) + [stroke]),
+            ),
+            persist=True,
+        )
+        self.request_render()
+
     def handle_local_mask_created(self, shape: str, viewport_vertices: list) -> None:
         from negpy.features.local.logic import min_points
         from negpy.features.local.models import LocalMask, MaskShape
