@@ -4686,6 +4686,32 @@ class TestLibraryIndexing(unittest.TestCase):
 
         discovery.assert_not_called()
 
+    def test_semantic_search_excludes_a_whole_scan_embedding_superseded_by_its_own_halves(self):
+        """The whole-library indexer walks every physical file with no half-frame
+        awareness, so a file keeps its whole-scan embedding once its two halves get
+        their own -- unrotated, both subjects at once, a worse candidate than either
+        half and never the one actually shown once split. Real half-hash embeddings
+        existing for it (not merely split_scans() saying so, which is written from
+        a roll-wide toggle and is not a per-file fact) is what proves it superseded."""
+        query = np.array([0.0, 1.0], dtype=np.float32)
+        background = {
+            f"far{i}": (f"/photos/far{i}.nef", np.array([np.sqrt(1.0 - c**2), c], dtype=np.float32))
+            for i, c in enumerate(np.linspace(0.05, 0.15, 20))
+        }
+        close = np.array([0.1, 0.9], dtype=np.float32) / np.linalg.norm([0.1, 0.9])
+        self.mock_session_manager.repo.load_all_embeddings.return_value = {
+            **background,
+            "h1": ("/photos/whole.nef", close),
+            "h1#1": ("/photos/whole.nef", close),
+        }
+        with (
+            patch.object(self.controller, "embed_search_query", return_value=query),
+            patch.object(self.controller, "request_asset_discovery") as discovery,
+        ):
+            self.controller.request_library_semantic_search("a sunset")
+
+        discovery.assert_called_once_with(["/photos/whole.nef"], auto_open=True, replace_existing=True)
+
     def test_semantic_search_with_no_matches_does_not_open_anything(self):
         with (
             patch.object(self.controller, "embed_search_query", return_value=np.zeros(2, dtype=np.float32)),

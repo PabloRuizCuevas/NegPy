@@ -942,7 +942,17 @@ class AppController(QObject):
             self.set_status("Type a search first" if not query.strip() else "Search by meaning is not ready yet", 3000)
             return
         candidates = self.session.repo.load_all_embeddings(semantic_model.MODEL_VERSION)
-        vectors = {file_hash: vec for file_hash, (path, vec) in candidates.items() if path}
+        # A file embedded whole before it was ever split keeps that embedding once its
+        # two halves get their own -- unrotated, both subjects at once, a worse
+        # candidate than either half and never the one shown once split. Its own two
+        # half-hash companions actually being embedded (not merely split_scans() saying
+        # so, which is written from a roll-wide toggle and not a per-file fact) is what
+        # proves the whole embedding is superseded.
+        vectors = {
+            file_hash: vec
+            for file_hash, (path, vec) in candidates.items()
+            if path and half_hash(file_hash, 1) not in candidates and half_hash(file_hash, 2) not in candidates
+        }
         ranked_hashes = semantic_model.rank_by_similarity(embedding, vectors)
         paths = [candidates[file_hash][0] for file_hash in ranked_hashes]
         self.library_search_finished.emit(len(paths))
