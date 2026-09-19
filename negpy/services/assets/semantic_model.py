@@ -7,11 +7,13 @@ tokenizer are built lazily on first use, and the ~150MB of model weights are fet
 demand (download_clip_model) rather than bundled into the app -- only the small
 `onnxruntime` inference engine itself ships in every install.
 
-Model: Xenova/clip-vit-base-patch32 on Hugging Face, the quantized per-tower ONNX
+Model: Xenova/clip-vit-base-patch16 on Hugging Face, the quantized per-tower ONNX
 exports (vision_model_quantized.onnx, text_model_quantized.onnx) plus the tokenizer's
 merges.txt. Preprocessing constants below (image size, mean/std, resample) come from
 that repo's own preprocessor_config.json -- a different model swap would need new
-constants, not just new file names, hence MODEL_VERSION.
+constants, not just new file names, hence MODEL_VERSION also naming the cache
+directory: a stale download from a retired model can never be mistaken for the
+current one under the same generic filenames.
 """
 
 from __future__ import annotations
@@ -34,10 +36,11 @@ logger = get_logger(__name__)
 
 # Bumped whenever the model or preprocessing changes, so cached embeddings from a
 # retired model don't silently get compared against ones from a new one -- see
-# repository.py's image_embeddings.model_version column.
-MODEL_VERSION = "clip-vit-base-patch32-v1"
+# repository.py's image_embeddings.model_version column. Also names the download
+# cache directory below, for the same reason.
+MODEL_VERSION = "clip-vit-base-patch16-v1"
 
-_REPO = "Xenova/clip-vit-base-patch32"
+_REPO = "Xenova/clip-vit-base-patch16"
 _BASE_URL = f"https://huggingface.co/{_REPO}/resolve/main"
 VISION_FILE = "vision_model_quantized.onnx"
 TEXT_FILE = "text_model_quantized.onnx"
@@ -65,7 +68,7 @@ class ClipDownloadError(Exception):
 
 
 def _model_dir() -> str:
-    return os.path.join(APP_CONFIG.cache_dir, "clip_model")
+    return os.path.join(APP_CONFIG.cache_dir, "clip_model", MODEL_VERSION)
 
 
 def _model_path(filename: str) -> str:
