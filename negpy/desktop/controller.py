@@ -952,6 +952,12 @@ class AppController(QObject):
         self.set_status(f"{len(paths)} frame{'s' if len(paths) != 1 else ''} found", 3000)
         self.state.active_roll_id = None
         self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(None))
+        # rank_by_similarity already picked these out as the standouts against the whole
+        # library; re-running the same outlier check in-session, against just this small,
+        # now mutually-similar set, has no background left to stand out from and can
+        # exclude the lot. The hand-off already is the filtered result.
+        if self.session.asset_model.semantic_query_active:
+            self.session.asset_model.set_semantic_query(None)
         self.request_asset_discovery(paths, auto_open=True, replace_existing=True)
 
     def _on_embedding_progress(self, current: int, total: int, name: str) -> None:
