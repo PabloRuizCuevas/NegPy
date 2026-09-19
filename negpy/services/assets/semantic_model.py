@@ -153,8 +153,10 @@ def _l2_normalize(vec: np.ndarray) -> np.ndarray:
 # almost everything through or excludes everything, never a real match from noise. A
 # genuine match stands out from that baseline rather than sitting at a fixed score, so
 # the cutoff is relative: how many standard deviations above this query's own mean score
-# a candidate sits.
-SIMILARITY_Z_SCORE = 2.5
+# a candidate sits. Tuned against a real library across a spread of plain-word queries:
+# loose enough that a query with a genuine cluster of matches still returns them, tight
+# enough that a common word stops reading as "the whole library, reordered."
+SIMILARITY_Z_SCORE = 3.0
 
 
 def rank_by_similarity(query: np.ndarray, candidates: dict) -> list:

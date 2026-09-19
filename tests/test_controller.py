@@ -4602,7 +4602,7 @@ class TestLibraryIndexing(unittest.TestCase):
         query = np.array([0.0, 1.0], dtype=np.float32)
         background = {
             f"far{i}": (f"/photos/far{i}.nef", np.array([np.sqrt(1.0 - c**2), c], dtype=np.float32))
-            for i, c in enumerate(np.linspace(0.05, 0.15, 9))
+            for i, c in enumerate(np.linspace(0.05, 0.15, 20))
         }
         self.mock_session_manager.repo.load_all_embeddings.return_value = {
             **background,
@@ -4626,7 +4626,7 @@ class TestLibraryIndexing(unittest.TestCase):
         query = np.array([0.0, 1.0], dtype=np.float32)
         background = {
             f"far{i}": (f"/photos/far{i}.nef", np.array([np.sqrt(1.0 - c**2), c], dtype=np.float32))
-            for i, c in enumerate(np.linspace(0.05, 0.15, 9))
+            for i, c in enumerate(np.linspace(0.05, 0.15, 20))
         }
         self.mock_session_manager.repo.load_all_embeddings.return_value = {
             **background,

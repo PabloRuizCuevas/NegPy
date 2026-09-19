@@ -32,20 +32,20 @@ def test_ranks_by_similarity_most_relevant_first():
     needs a real background to separate a match from -- a couple of near-identical
     scores can't stand out from each other the way a real search's rare match stands
     out from its library's own baseline."""
-    background = {f"h{i}": _cos(c) for i, c in enumerate(np.linspace(0.08, 0.16, 18))}
+    background = {f"h{i}": _cos(c) for i, c in enumerate(np.linspace(0.08, 0.16, 28))}
     state = _state(
-        20,
+        30,
         {
             **background,
-            "h18": _cos(0.32),  # close to the query
-            "h19": _cos(0.35),  # closer still
+            "h28": _cos(0.32),  # close to the query
+            "h29": _cos(0.35),  # closer still
         },
     )
     model = AssetListModel(state)
 
     model.set_semantic_query(_unit(0, 1))
 
-    assert model.visible_actual_indices_ordered() == [19, 18]  # background below threshold, excluded
+    assert model.visible_actual_indices_ordered() == [29, 28]  # background below threshold, excluded
 
 
 def test_a_file_with_no_cached_embedding_is_excluded_not_zero_scored():

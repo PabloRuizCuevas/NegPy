@@ -113,3 +113,16 @@ def test_search_library_runs_the_keyword_variant_when_unchecked(browser):
 
     browser.controller.request_library_search.assert_called_once_with("film:portra")
     browser.controller.request_library_semantic_search.assert_not_called()
+
+
+def test_search_library_stops_the_pending_live_filter_debounce(browser):
+    """A keystroke just before Enter/click leaves filter_timer running. Left alone, it
+    would fire _apply_filter after the hand-off replaces the file list -- reapplying the
+    in-session query the hand-off itself just cleared, right back onto the new results."""
+    browser.semantic_btn.setChecked(True)
+    browser.search_input.setText("a sunset")  # setText's own textChanged starts the timer
+    assert browser.filter_timer.isActive()
+
+    browser.search_library()
+
+    assert not browser.filter_timer.isActive()

@@ -858,6 +858,11 @@ class FileBrowser(QWidget):
 
     def search_library(self) -> None:
         """Run the box's query against the library folders instead of the loaded roll."""
+        # A keystroke just before Enter/click leaves the live-filter debounce pending;
+        # left running, it fires _apply_filter on whatever the hand-off just loaded --
+        # for search-by-meaning, the same in-session query the hand-off itself clears,
+        # right back on. One action, one rebuild, same as _clear_frame_filters.
+        self.filter_timer.stop()
         if self.semantic_btn.isChecked():
             self.controller.request_library_semantic_search(self.search_input.text())
         else:
