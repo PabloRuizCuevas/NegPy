@@ -516,6 +516,17 @@ class PhotometricProcessor:
             (self.config.wb_cyan, self.config.wb_magenta, self.config.wb_yellow),
             final_bounds,
         )
+        cmy_max = EXPOSURE_CONSTANTS["cmy_max_density"]
+        shadow_cmy = (
+            self.config.shadow_cyan * cmy_max,
+            self.config.shadow_magenta * cmy_max,
+            self.config.shadow_yellow * cmy_max,
+        )
+        highlight_cmy = (
+            self.config.highlight_cyan * cmy_max,
+            self.config.highlight_magenta * cmy_max,
+            self.config.highlight_yellow * cmy_max,
+        )
         # Shadow refs stay out: the P98 tie is calibrated for a negative. With no neutral
         # axis this solves to the identity and the capture passes through.
         strength, _shadow_refs_norm, neutral_axis_norm = cast_solve_inputs(
@@ -544,9 +555,20 @@ class PhotometricProcessor:
             sw3,
             shadow_density=self.config.shadow_density,
             highlight_density=self.config.highlight_density + highlight_auto,
+            shadow_cmy=shadow_cmy,
+            highlight_cmy=highlight_cmy,
             cast_gain=cast_gain,
             cast_offset=cast_offset,
             positive_source=self.process_config.positive_source,
+            separation=1.0 if is_bw else self.config.dye_separation,
+            separation_trims=(0.0, 0.0, 0.0)
+            if is_bw
+            else (
+                self.config.dye_separation_trim_red,
+                self.config.dye_separation_trim_green,
+                self.config.dye_separation_trim_blue,
+            ),
+            damping=0.0 if is_bw else self.config.separation_damping,
         )
 
         if is_bw:

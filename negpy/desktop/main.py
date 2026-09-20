@@ -10,6 +10,7 @@ from negpy.desktop.session import DesktopSessionManager
 from negpy.desktop.view.main_window import MainWindow
 from negpy.features.flatfield.logic import set_gain_provider
 from negpy.infrastructure.storage.repository import StorageRepository
+from negpy.services.assets.cast_removal_migration import migrate_legacy_slide_cast_removal
 from negpy.services.assets.crosstalk import CrosstalkProfiles
 from negpy.services.assets.flatfield import FlatFieldProfiles
 from negpy.services.assets.flatfield_migration import migrate_legacy_flatfield_profiles
@@ -255,6 +256,7 @@ def main() -> None:
         migrate_gear_presets(repo)
         migrate_legacy_normalization_rolls(repo)
         migrate_auto_meter_for_positive_frames(repo)
+        migrate_legacy_slide_cast_removal(repo)
 
         scale = float(repo.get_global_setting("ui_scale", 1.0) or 1.0)
         scale = max(0.8, min(1.2, scale))

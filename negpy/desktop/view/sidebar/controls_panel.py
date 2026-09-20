@@ -15,7 +15,7 @@ from negpy.features.lab.models import LabConfig
 from negpy.features.altprocess.models import AltProcessConfig
 from negpy.features.toning.models import ToningConfig
 from negpy.features.geometry.models import GeometryConfig
-from negpy.features.process.models import ProcessConfig, auto_meter_for_positive_source
+from negpy.features.process.models import ProcessConfig, auto_meter_for_positive_source, cast_removal_for_mode
 from negpy.features.finish.models import FinishConfig
 from negpy.features.flatfield.models import FlatFieldConfig
 
@@ -144,13 +144,17 @@ _DEFAULT_FLATFIELD = FlatFieldConfig()
 _AUTO_METER_FIELDS = ("auto_exposure", "auto_normalize_contrast")
 
 
-def _default_exposure_field(field: str, positive_source: bool):
-    """The value *field* defaults to, given the frame's own positive_source. Auto
-    Density/Auto Grade default differently on a Positive frame (auto_meter_for_
-    positive_source); every other ExposureConfig field has one flat default."""
+def _default_exposure_field(field: str, positive_source: bool, process_mode: str):
+    """The value *field* defaults to on this frame. Auto Density/Auto Grade default
+    differently on a Positive frame (auto_meter_for_positive_source) and Cast Removal
+    differently per mode (cast_removal_for_mode); every other ExposureConfig field has
+    one flat default."""
+    default = getattr(_DEFAULT_EXPOSURE, field)
     if field in _AUTO_METER_FIELDS:
-        return auto_meter_for_positive_source(positive_source, getattr(_DEFAULT_EXPOSURE, field))
-    return getattr(_DEFAULT_EXPOSURE, field)
+        return auto_meter_for_positive_source(positive_source, default)
+    if field == "cast_removal_strength":
+        return cast_removal_for_mode(process_mode, default)
+    return default
 
 
 class ControlsPanel(QWidget):
@@ -428,6 +432,7 @@ class ControlsPanel(QWidget):
         col = self.color_sidebar
         for btn, action_id in (
             (self.retouch_sidebar.auto_dust_btn, "toggle_optical_removal"),
+            (self.retouch_sidebar.right_click_btn, "toggle_right_click_excludes"),
             (self.retouch_sidebar.ir_dust_btn, "toggle_ir_removal"),
             (self.flatfield_sidebar.enable_btn, "toggle_flat_field"),
             (self.geometry_sidebar.auto_crop_all_btn, "batch_autocrop"),
@@ -445,6 +450,18 @@ class ControlsPanel(QWidget):
         ret = self.retouch_sidebar
         ton = self.toning_sidebar
         fin = self.finish_sidebar
+        geo.metadata_distortion_btn.setToolTip(
+            tooltip_with_shortcut(
+                "Apply embedded scanning-lens distortion correction. Replaces manual distortion.",
+                "lens_distortion_from_metadata",
+            )
+        )
+        geo.metadata_ca_btn.setToolTip(
+            tooltip_with_shortcut(
+                "Apply embedded lateral chromatic aberration correction. Can be used with manual distortion.",
+                "lens_ca_from_metadata",
+            )
+        )
 
         col.pick_wb_btn.setToolTip(
             tooltip_with_shortcut(
@@ -651,10 +668,11 @@ class ControlsPanel(QWidget):
         )
         exp.dye_separation_slider.setToolTip(
             tooltip_with_shortcut(
-                "Pushes the print's dye densities apart before decode, in the same matrix slot as the "
+                "Pushes density apart before decode. On a print, in the same matrix slot as the "
                 "paper's own dye crosstalk — so it responds to the paper profile and eases off where the "
-                "curve is already compressed at toe and shoulder. Chroma in Color is the flat version: "
-                "an even a*/b* scale after decode. Takes per-layer R/G/B trims. 1.0 = off/identity",
+                "curve is already compressed at toe and shoulder, and takes per-layer R/G/B trims. On a "
+                "slide with Normalize off, applied directly with no paper matrix or trims. Chroma in "
+                "Color is the flat version: an even a*/b* scale after decode. 1.0 = off/identity",
                 ["dye_separation_inc", "dye_separation_dec"],
             )
         )
@@ -883,16 +901,15 @@ class ControlsPanel(QWidget):
 
     def _reset_exposure_fields(self, fields) -> None:
         """Reset only the given ExposureConfig fields to defaults (scoped section reset).
-        auto_exposure/auto_normalize_contrast default differently on a Positive frame
-        (auto_meter_for_positive_source) -- resetting them means the value that rule
-        would carry, not the flat ExposureConfig default, which is always the negative
-        one."""
+        A reset means the value the frame's own defaulting rules would carry, not the
+        flat ExposureConfig default (_default_exposure_field)."""
         from dataclasses import replace
 
-        exp = self.controller.state.config.exposure
-        defaults = {f: _default_exposure_field(f, self.controller.state.config.process.positive_source) for f in fields}
+        cfg = self.controller.state.config
+        exp = cfg.exposure
+        defaults = {f: _default_exposure_field(f, cfg.process.positive_source, cfg.process.process_mode) for f in fields}
         new_exp = replace(exp, **defaults)
-        new_config = replace(self.controller.state.config, exposure=new_exp)
+        new_config = replace(cfg, exposure=new_exp)
         self.controller.session.update_config(new_config, persist=True)
 
     def _sync_modified_dots(self) -> None:
@@ -907,8 +924,9 @@ class ControlsPanel(QWidget):
 
         exp = cfg.exposure
         positive_source = cfg.process.positive_source
-        color_count = sum(getattr(exp, f) != getattr(_exp, f) for f in _COLOR_FIELDS)
-        tone_count = sum(getattr(exp, f) != _default_exposure_field(f, positive_source) for f in _TONE_FIELDS)
+        mode = cfg.process.process_mode
+        color_count = sum(getattr(exp, f) != _default_exposure_field(f, positive_source, mode) for f in _COLOR_FIELDS)
+        tone_count = sum(getattr(exp, f) != _default_exposure_field(f, positive_source, mode) for f in _TONE_FIELDS)
 
         lab = cfg.lab
         lab_count = sum(
@@ -966,6 +984,8 @@ class ControlsPanel(QWidget):
                 geo.autocrop_offset != _geo.autocrop_offset,
                 geo.autocrop_rebate_trim != _geo.autocrop_rebate_trim,
                 geo.distortion_k1 != _geo.distortion_k1,
+                geo.lens_distortion_from_metadata != _geo.lens_distortion_from_metadata,
+                geo.lens_ca_from_metadata != _geo.lens_ca_from_metadata,
             ]
         )
 

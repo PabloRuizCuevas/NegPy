@@ -13,14 +13,13 @@ imports this one).
 Also not here: migrations that rewrite *rows* rather than a config payload, since those
 need a repository and this module stays dependency-free. They live beside the feature
 they belong to — ``services/assets/hash_migration.py`` (edits saved under a superseded
-content hash) and ``services/assets/flatfield_migration.py`` (legacy profile table).
+content hash), ``services/assets/flatfield_migration.py`` (legacy profile table) and
+``services/assets/cast_removal_migration.py`` (a one-time value rewrite that needs a
+done flag rather than a per-load equality check, since a load can't tell a legacy row
+from a value the user just saved).
 """
 
 from typing import Any, Dict
-
-#: MUST equal ``ExposureConfig.cast_removal_strength``'s default. Mirrored rather than
-#: imported to keep this module dependency-free; test_migrations.py asserts they agree.
-_SHIPPED_CAST_STRENGTH = 0.5
 
 # Old field name → new field name.
 KEY_RENAMES: Dict[str, str] = {
@@ -73,6 +72,9 @@ DROPPED_KEYS: frozenset[str] = frozenset(
         # Gear presets merged into metadata presets, which store the resolved gear
         # fields rather than a library reference (services/assets/gear_preset_migration.py).
         "gear_preset_id",
+        # Optical-removal exclusions became strokes (dust_exclusion_strokes); the loose
+        # patch list they replaced cannot be unpacked as one.
+        "dust_exclusions",
     }
 )
 
@@ -114,6 +116,11 @@ def migrate_flat_config(data: Dict[str, Any]) -> Dict[str, Any]:
         legacy = bool(data.pop("use_roll_average"))
         data.setdefault("use_luma_average", legacy)
         data.setdefault("use_color_average", legacy)
+
+    if "lens_from_metadata" in data:
+        legacy = bool(data.pop("lens_from_metadata"))
+        data.setdefault("lens_distortion_from_metadata", legacy)
+        data.setdefault("lens_ca_from_metadata", legacy)
 
     # Lab "Separation" moved to ProcessConfig crosstalk: the 1.0-2.0 slider maps to
     # strength 0-1. crosstalk_matrix/crosstalk_profile keep their names and re-route
@@ -175,14 +182,6 @@ def migrate_flat_config(data: Dict[str, Any]) -> Dict[str, Any]:
 
     if "export_fmt" in data:
         data["export_fmt"] = migrate_export_fmt(str(data["export_fmt"]))
-
-    # Cast Removal reached slides after every slide edit was already saved carrying the
-    # shipped default. On a transparency the control corrects a faded original's
-    # crossover, which is a deliberate act, so a saved slide starts at 0 and renders as
-    # it always did. A value the user chose is left alone.
-    if str(data.get("process_mode", "")) in ("Transparency", "E-6"):
-        if float(data.get("cast_removal_strength", _SHIPPED_CAST_STRENGTH)) == _SHIPPED_CAST_STRENGTH:
-            data["cast_removal_strength"] = 0.0
 
     for key in DROPPED_KEYS:
         data.pop(key, None)

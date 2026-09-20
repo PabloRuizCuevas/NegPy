@@ -88,6 +88,7 @@ class FakeController:
         self.config_updated = self._mock.config_updated
         self.image_updated = self._mock.image_updated
         self.tool_sync_requested = self._mock.tool_sync_requested
+        self.thumbnail_refresh_running = False
 
     def half_frame_mode_for_roll(self, roll_id):
         if roll_id:

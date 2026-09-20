@@ -1,3 +1,4 @@
+import dataclasses
 import json
 
 import cv2
@@ -13,10 +14,14 @@ from negpy.features.retouch.logic import (
     compute_dust_stats,
     detect_bar,
     detect_luma_score,
+    drop_exclusions,
+    exclusion_cover,
+    exclusion_token,
     film_scale,
     hair_bake_token,
     ir_defect_score,
     lines_to_score,
+    luma_bake_token,
     manual_bake_token,
     normalize_ir,
     repair_components,
@@ -218,6 +223,15 @@ def _dusty_source(h=160, w=160, seed=42):
     return img
 
 
+def _two_speck_source(h=200, w=200, seed=7):
+    rng = np.random.default_rng(seed)
+    img = (np.full((h, w, 3), 0.18) * (1.0 + rng.normal(0, 0.02, (h, w, 3)))).astype(np.float32)
+    spots = [(40, 40), (160, 160)]
+    for y, x in spots:
+        img[y : y + 3, x : x + 3] = 0.005
+    return img, spots
+
+
 def test_detect_luma_score_finds_dark_speck():
     img = _dusty_source()
     score, hairs = detect_luma_score(img, dust_threshold=0.66, dust_size=4)
@@ -238,6 +252,78 @@ def test_detect_luma_score_clean_frame_is_empty():
     rng = np.random.default_rng(9)
     img = (np.full((160, 160, 3), 0.18) * (1.0 + rng.normal(0, 0.02, (160, 160, 3)))).astype(np.float32)
     assert detect_luma_score(img, 0.66, 4)[0] is None
+
+
+def test_exclusion_releases_the_detection_under_it():
+    img = _dusty_source()
+    score, _ = detect_luma_score(img, 0.66, 4)
+    assert score is not None
+    # Wide enough to cover the speck and the skirt the score ramps over.
+    size = _size_at_ref(30, img.shape)
+    out, hairs = drop_exclusions(score, None, [([[81.5 / 160.0, 81.5 / 160.0]], size)])
+    assert out is None and hairs is None, "nothing left to repair, so nothing is baked"
+
+
+def test_exclusion_elsewhere_leaves_the_detection_alone():
+    img = _dusty_source()
+    score, _ = detect_luma_score(img, 0.66, 4)
+    out, _ = drop_exclusions(score, None, [([[0.1, 0.1]], _size_at_ref(30, img.shape))])
+    assert out is not None
+    np.testing.assert_array_equal(out, score)
+
+
+def test_exclusion_releases_a_speck_it_only_clips():
+    """The band is a search area: a defect wider than the brush must come back whole, not
+    repaired on one side of the stroke and left on the other."""
+    img = _dusty_source()
+    score, _ = detect_luma_score(img, 0.66, 4)
+    assert score is not None
+    marked = score < 1.0
+    ys, xs = np.where(marked)
+    # A brush far narrower than the mark, touching one edge of it only.
+    clip = ([[float(xs.min()) / 160.0, float(ys.min()) / 160.0]], _size_at_ref(2, img.shape))
+    out, _ = drop_exclusions(score, None, [clip])
+    assert out is None or not (out < 1.0)[marked].any(), "the whole speck is released"
+
+
+def test_exclusion_leaves_untouched_specks_repaired():
+    """Releasing whole components must not spill onto a defect the band never reached."""
+    img, _ = _two_speck_source()
+    score, _ = detect_luma_score(img, 0.66, 4)
+    assert score is not None
+    near = ([[40.0 / 200.0, 40.0 / 200.0]], _size_at_ref(12, img.shape))
+    out, _ = drop_exclusions(score, None, [near])
+    assert out is not None
+    assert not (out < 1.0)[36:46, 36:46].any(), "the touched speck is released"
+    assert (out < 1.0)[156:166, 156:166].any(), "the far speck is still repaired"
+
+
+def test_exclusion_stroke_covers_the_film_between_its_points():
+    """A drag is sampled sparsely, so the band has to be swept along the path — loose dabs
+    at the sample points would leave the film between them repaired."""
+    stroke = ([[0.2, 0.5], [0.8, 0.5]], _size_at_ref(6, (200, 200)))
+    cover = exclusion_cover([stroke], (200, 200))
+    assert cover[100, 40] and cover[100, 160], "the ends are covered"
+    assert cover[100, 60:140].all(), "and so is every pixel between them"
+
+
+def test_dust_busy_label_does_not_contradict_an_exclusion():
+    """The bake's busy toast reads back to the user, so it must not say it is repairing
+    dust on the pass a right-click asked it to stop repairing."""
+    from negpy.services.rendering.image_processor import _dust_step_label
+
+    base = RetouchConfig(dust_remove=True)
+    assert _dust_step_label(base) == "repairing dust"
+    assert "repairing" not in _dust_step_label(dataclasses.replace(base, dust_exclusion_strokes=[([[0.5, 0.5]], 6.0)]))
+
+
+def test_exclusion_token_tracks_the_strokes():
+    base = RetouchConfig(dust_remove=True)
+    assert exclusion_token(base) == ""
+    excluded = dataclasses.replace(base, dust_exclusion_strokes=[([[0.5, 0.5]], 6.0)])
+    assert exclusion_token(excluded) != ""
+    assert luma_bake_token(excluded) != luma_bake_token(base)
+    assert hair_bake_token(excluded) != hair_bake_token(base)
 
 
 def test_ir_long_scratch_is_healed_by_the_fill():

@@ -6,6 +6,7 @@ from negpy.desktop.view.sidebar.base import BaseSidebar
 from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, section_subheader, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.sliders import CompactSlider
+from negpy.features.exposure.logic import per_channel_dye_separation
 from negpy.features.exposure.models import EXPOSURE_CONSTANTS, TUNABLE_TARGETS, apply_targets
 
 _CH_SUFFIX = ("red", "green", "blue")
@@ -484,9 +485,6 @@ class ToneSidebar(BaseSidebar):
                 self.midtone_gamma_slider,
                 self.shadow_grade_slider,
                 self.highlight_grade_slider,
-                self.dye_separation_slider,
-                self.dye_separation_trim_slider,
-                self.separation_damping_slider,
                 # The transfer curve takes no dodge/burn map, and the mask rides it.
                 self.contrast_mask_slider,
                 self.mask_spacer_slider,
@@ -519,9 +517,13 @@ class ToneSidebar(BaseSidebar):
             self.toe_w_trim_slider.setVisible(not global_mode)
             self.sh_w_slider.setVisible(global_mode)
             self.sh_w_trim_slider.setVisible(not global_mode)
-            self.dye_separation_slider.setVisible(global_mode and not is_bw and not transfer)
-            self.dye_separation_trim_slider.setVisible(not global_mode and not is_bw and not transfer)
-            self.separation_damping_slider.setVisible(global_mode and not is_bw and not transfer)
+            # Dye Separation swaps the same way on both paths: the global slider in the
+            # global view, the per-channel trim in a channel tab (see
+            # features/exposure/transfer.py). Separation Damping has no per-channel
+            # trim of its own, so it stays global-view-only on both paths too.
+            self.dye_separation_slider.setVisible(global_mode and not is_bw)
+            self.dye_separation_trim_slider.setVisible(not global_mode and not is_bw)
+            self.separation_damping_slider.setVisible(global_mode and not is_bw)
             self.toe_slider.label.setText("Toe" + suffix)
             self.sh_slider.label.setText("Shoulder" + suffix)
             self.midtone_gamma_slider.label.setText("Snap" + suffix)
@@ -586,8 +588,13 @@ class ToneSidebar(BaseSidebar):
             # Out of _global_only: that tuple means enabled exactly when global.
             self.mask_spacer_slider.setEnabled(global_mode and conf.contrast_mask != 0.0)
             # It redistributes Dye Separation's push and does nothing on its own, so at 1.0
-            # separation it is dead. Say so instead of letting it be dragged for no result.
-            self.separation_damping_slider.setEnabled(conf.dye_separation != 1.0)
+            # separation on every channel it is dead — a per-channel trim also arms it,
+            # not just the global value. Say so instead of letting it be dragged for no result.
+            sep_k3 = per_channel_dye_separation(
+                conf.dye_separation,
+                (conf.dye_separation_trim_red, conf.dye_separation_trim_green, conf.dye_separation_trim_blue),
+            )
+            self.separation_damping_slider.setEnabled(sep_k3 != (1.0, 1.0, 1.0))
 
             self.paper_dmin_btn.setChecked(conf.paper_dmin)
             self.paper_black_btn.setChecked(conf.paper_black)

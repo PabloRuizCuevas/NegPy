@@ -49,6 +49,7 @@ Migrations that rewrite *rows* rather than a config payload need a repository, s
 - **CPU**: `DarkroomEngine.process()` (`negpy/services/rendering/engine.py`) — base (geometry + normalization) → exposure (incl. dodge/burn) → clahe → lab → alt process → toning → crop → finish. The first four stages are cached per config-hash via `_run_stage()`; the rest run unconditionally. The alt-process stage (lith or cyanotype, never both) is B&W-only and off by default; when off, both engines skip it rather than run an identity pass.
 - **GPU**: `GPUEngine` (`negpy/services/rendering/gpu_engine.py`) — the same logical stages as WGSL compute shaders from `negpy/features/<name>/shaders/`, with its own config-diff change detection.
 - **Orchestration**: `ImageProcessor` (`image_processor.py`) tries GPU first and falls back to CPU. Export always runs full-res, with CPU stage caching off (`PipelineContext.cache_stages`). Linear DNG decode, CPU saturation and unsharp masking use row blocks to bound temporary storage. `PipelineContext` carries `scale_factor`, `process_mode`, `active_roi` and a `metrics` dict between stages.
+- **Embedded lens correction** (`features/lens`) is a single-file decode step shared by preview and export: flat-field, lens warp, then sensor unmix and user geometry. Its independent distortion and CA settings and flat-field token belong to the source identity. It is disabled for composite setup, composite assembly and RGB+IR sources.
 - **Source bakes** run before either engine, on the linear source: flat-field, sensor unmix and every defect repair (IR, detected specks, painted heal strokes). Both engines re-upload that source per frame, so a bake reaches them parity-free and needs no shader. Each bake folds a token into `source_hash` to invalidate the engine cache.
 - **Working space**: scene-linear internally; the working OETF (Adobe RGB 1998 TRC — a pure 563/256 power, no linear segment) is the final engine step. Lab/toning compute CIELAB directly from linear, D65. Adobe RGB rather than a wide gamut because ProPhoto's imaginary primaries inflate chroma in the saturation and toning stages.
 
@@ -65,12 +66,18 @@ Every feature lives in `negpy/features/<name>/`:
 
 One exception: `features/altprocess/` holds only `models.py`. Lith and cyanotype are mutually exclusive, so they share the Alternative Processes panel and one `AltProcessConfig`; their logic and shaders stay in `features/lith/` and `features/cyanotype/`.
 
+`features/lens/warps.py` holds frozen lens models with `has_distortion`, `has_ca`, and
+`remap(...)`, as defined by `LensWarp` in `models.py`. `logic.py` applies their maps in
+row blocks. File readers are registered in `infrastructure/loaders/lens_metadata.py`.
+
 ### Desktop (MVC)
 
 - `AppState` (`negpy/desktop/session.py`) — mutable session state
 - `AppController` (`negpy/desktop/controller.py`) — single controller; all UI interactions call it; emits `config_updated` / `image_updated`
 - Workers (`negpy/desktop/workers/`) — heavy work in QThread-backed objects, Qt-signal communication
+- Source loaders (`negpy/infrastructure/loaders/`) own `load_bounded_preview(...)`. It returns an oriented RGB image within the requested long edge, or `None` when the loader cannot keep the decode bounded. Automatic thumbnails never use a full camera RAW demosaic. `LoaderFactory.estimate_linear_preview_prefetch_memory(...)` admits bounded cooperative decodes and conservatively small non-LibRaw decodes. Long LibRaw calls do not run as neighbor prefetch.
 - Sidebars (`negpy/desktop/view/sidebar/<name>.py`) — one per feature, registered in `ControlsPanel`, synced on `config_updated`
+- The Film Strip's thumbnail grid (`ThumbnailGridView` in `files.py`) owns click-driven selection itself — `mousePressEvent`/`mouseMoveEvent`/`mouseReleaseEvent` decide plain/Shift/Ctrl once, from the modifiers at press, and reapply that on every later stage. `QAbstractItemView`'s own selection handling recomputes independently at each stage instead, reading modifiers fresh each time, which is what made Shift/Ctrl-click erratic before this — don't call `setSelection`/rely on the base class's mouse handling for this view.
 - **Shortcuts** (`negpy/desktop/view/shortcut_registry.py`) — `REGISTRY` is the single source of truth for every binding: one `ShortcutEntry(default_key, description, category)` per action id, dispatched through the matching entry in the action map in `keyboard_shortcuts.py`. It also feeds the shortcut editor, the `?` overlay and `tooltip_with_shortcut()`.
   **Any new user-facing toggle, tool or action gets a registry entry** — leave `default_key` empty rather than inventing a conflicting one. Check for collisions before picking: the same key on two actions makes Qt fire `activatedAmbiguously` and both go dead. `docs/KEYBOARD.md` is generated, so run `uv run python -m negpy.desktop.view.keyboard_doc` after a registry change. Copy that names a key reads it through `key_for`/`label_with_shortcut`, never as a literal.
 

@@ -2,6 +2,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
+from negpy.features.lens.models import LensCorrections
 
 import negpy.desktop.workers.render as render_workers
 from negpy.desktop.workers.render import (
@@ -29,6 +30,10 @@ class _PreviewService:
         file_hash,
         demosaic="Auto",
         positive_source=False,  # noqa: ARG002 — accepted, not asserted on
+        highlight_mode=0,  # noqa: ARG002 — accepted, not asserted on
+        bake_camera_wb=False,  # noqa: ARG002 — accepted, not asserted on
+        lens_corrections=LensCorrections(),  # noqa: ARG002 — accepted, not asserted on
+        lens_flatfield=None,  # noqa: ARG002 — accepted, not asserted on
     ):
         self.linear_calls.append(
             {
@@ -201,12 +206,10 @@ def test_batch_autocrop_per_file_failure_does_not_abort_roll(qapp, monkeypatch) 
     base = WorkspaceConfig()
 
     class _FailFirstPreview(_PreviewService):
-        def load_linear_preview(
-            self, file_path, color_space, use_camera_wb, full_resolution, file_hash, demosaic="Auto", positive_source=False
-        ):
+        def load_linear_preview(self, file_path, color_space, use_camera_wb, full_resolution, file_hash, demosaic="Auto", **kwargs):
             if file_hash == "hash-bad":
                 raise RuntimeError("broken preview")
-            return super().load_linear_preview(file_path, color_space, use_camera_wb, full_resolution, file_hash, demosaic, positive_source)
+            return super().load_linear_preview(file_path, color_space, use_camera_wb, full_resolution, file_hash, demosaic, **kwargs)
 
     preview = _FailFirstPreview()
     worker = BatchAutoCropWorker(preview)

@@ -21,12 +21,19 @@ struct TransferUniforms {
     cmy: vec4<f32>,
     // Zone Density: (shadow ΔD, highlight ΔD, shadow centre, highlight centre).
     zone: vec4<f32>,
+    // Shadows/Highlights WB: xyz = shadow CMY density offset, w = split centre.
+    shadow_cmy: vec4<f32>,
+    // Shadows/Highlights WB: xyz = highlight CMY density offset, w = split sharpness.
+    highlight_cmy: vec4<f32>,
     // x = width of the black taper, in density. y = positive_source (nonzero skips
     // display_rendering below). zw unused.
     zone_taper: vec4<f32>,
     // Cast Removal affine on density: per-channel gain and offset (w lane unused).
     cast_gain: vec4<f32>,
     cast_offset: vec4<f32>,
+    // Dye Separation: xyz = per-channel k (global + trim; no paper matrix to compose
+    // the trims into instead). w = Separation Damping (0 = off).
+    separation: vec4<f32>,
 };
 
 @group(0) @binding(0) var input_tex: texture_2d<f32>;
@@ -58,6 +65,18 @@ fn oetf_encode(t: f32) -> f32 {
     return pow(x, 0.45470693);
 }
 
+// One pixel's effective dye-separation k; mirrors separation_damping_gain in
+// exposure/logic.py. 0.35 mirrors separation_damping_ref_spread in models.py and
+// the copy in exposure.wgsl -- change all three. Copied here because WGSL has no
+// includes.
+fn separation_damping_gain(k: f32, damping: f32, chroma: f32) -> f32 {
+    if (k <= 0.0) {
+        return 0.0;
+    }
+    let h = (0.35 - chroma) / (0.35 + chroma);
+    return min(pow(k, (1.0 - damping) + damping * h), 3.0);
+}
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let dims = textureDimensions(input_tex);
@@ -69,6 +88,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let norm = textureLoad(input_tex, coords, 0).rgb;
 
     var res: vec3<f32>;
+    var dens: vec3<f32>;
     for (var ch = 0; ch < 3; ch++) {
         var d = norm[ch] * params.density_range;
 
@@ -78,6 +98,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         d = d - params.exposure_offset + params.cmy[ch] * params.density_range;
         d = params.pivot + (d - params.pivot) * params.contrast;
+
+        // Shadows/Highlights WB: regional CMY, mirroring exposure.wgsl's own blend.
+        if (params.shadow_cmy[ch] != 0.0 || params.highlight_cmy[ch] != 0.0) {
+            let w_sh = 1.0 / (1.0 + exp(-params.highlight_cmy.w * (d - params.shadow_cmy.w)));
+            let w_hi = 1.0 - w_sh;
+            d = d + params.shadow_cmy[ch] * w_sh + params.highlight_cmy[ch] * w_hi;
+        }
 
         // Zone Density: mid-sparing offsets on the print path's own weights. Positive
         // adds density, so it darkens. After contrast, before the knees — as on the print.
@@ -103,10 +130,35 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             d = d + s * softplus(params.sh_knee - d, params.shoulder_width[ch]);
         }
 
+        dens[ch] = d;
+    }
+
+    // Dye Separation: M(k) = diag(k) + (1-k)*J (papers.resolve_saturation_matrix), each
+    // channel scaling its own deviation from the frame's mean density by its own k —
+    // there is no paper dye matrix here to compose the per-layer trims into instead.
+    // Separation Damping makes each channel's k chroma-dependent per pixel, from the
+    // same chroma but each channel's own k (see separation_damping_gain).
+    if (any(params.separation.xyz != vec3<f32>(1.0))) {
+        let mean = (dens.x + dens.y + dens.z) / 3.0;
+        let e = dens - vec3<f32>(mean);
+        if (params.separation.w > 0.0) {
+            let chroma = sqrt(((e.x - e.y) * (e.x - e.y) + (e.y - e.z) * (e.y - e.z) + (e.x - e.z) * (e.x - e.z)) / 3.0);
+            let k_eff = vec3<f32>(
+                separation_damping_gain(params.separation.x, params.separation.w, chroma),
+                separation_damping_gain(params.separation.y, params.separation.w, chroma),
+                separation_damping_gain(params.separation.z, params.separation.w, chroma),
+            );
+            dens = vec3<f32>(mean) + k_eff * e;
+        } else {
+            dens = vec3<f32>(mean) + params.separation.xyz * e;
+        }
+    }
+
+    for (var ch = 0; ch < 3; ch++) {
         // Baseline + display rendering last: the controls above shape the scene. A
         // positive source skips both (baseline_gain arrives as 1.0), matching
         // transfer.py::apply_transfer_curve.
-        let scene = pow(10.0, -d) * params.baseline_gain;
+        let scene = pow(10.0, -dens[ch]) * params.baseline_gain;
         if (params.zone_taper.y != 0.0) {
             res[ch] = oetf_encode(clamp(scene, 0.0, 1.0));
         } else {

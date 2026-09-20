@@ -410,6 +410,76 @@ class TestControlsStayLive(unittest.TestCase):
         delta = (warmed - self.base).reshape(-1, 3).mean(axis=0)
         self.assertGreater(abs(float(delta[0])), 1e-4)
 
+    def test_shadow_and_highlight_white_balance_still_shift_channels(self):
+        """Regression for issue #1077: Shadows/Highlights WB did nothing on Slides
+        because the transfer path never read shadow_cyan/highlight_cyan at all."""
+        shadow = self._rendered(shadow_cyan=0.5)
+        delta_shadow = (shadow - self.base).reshape(-1, 3).mean(axis=0)
+        self.assertGreater(abs(float(delta_shadow[0])), 1e-4)
+
+        highlight = self._rendered(highlight_cyan=0.5)
+        delta_highlight = (highlight - self.base).reshape(-1, 3).mean(axis=0)
+        self.assertGreater(abs(float(delta_highlight[0])), 1e-4)
+
+    def test_shadow_and_highlight_wb_favor_their_own_end(self):
+        ramp = _ramp(lo=1e-3, hi=0.6)
+        base = _run_stages(ramp, _e6_config())[0][0, :, 0]
+        values = ramp[0, :, 1]
+        shadows, highs = values < np.percentile(values, 10), values > np.percentile(values, 90)
+
+        def rel_shift(**overrides):
+            out = _run_stages(ramp, _e6_config(**overrides))[0][0, :, 0]
+            r = np.abs(out - base) / np.maximum(base, 1e-9)
+            return float(r[shadows].mean()), float(r[highs].mean())
+
+        sh_shadow, sh_high = rel_shift(shadow_cyan=0.5)
+        self.assertGreater(sh_shadow, sh_high)
+
+        hi_shadow, hi_high = rel_shift(highlight_cyan=0.5)
+        self.assertGreater(hi_high, hi_shadow)
+
+    def test_shadow_highlight_wb_geometry_matches_the_print_by_tonal_position(self):
+        """Same contract as zone_geometry: the centre carries across by fraction of
+        span, not by the print's raw density number."""
+        from negpy.features.exposure.models import EXPOSURE_CONSTANTS as C
+        from negpy.features.exposure.transfer import TRANSFER_DENSITY_RANGE, wb_split_geometry
+
+        centre, k = wb_split_geometry()
+        d_min, span = float(C["d_min"]), float(C["d_max"]) - float(C["d_min"])
+        anchor = float(C["anchor_target_density"])
+        self.assertAlmostEqual(centre / TRANSFER_DENSITY_RANGE, (anchor - d_min) / span, places=6)
+        self.assertAlmostEqual(k * TRANSFER_DENSITY_RANGE / span, 3.0, places=6)
+
+    def test_dye_separation_still_pushes_color_with_no_paper_to_compose_into(self):
+        """This path has no paper matrix, so Dye Separation must apply straight to
+        density instead of silently doing nothing off the print path."""
+        base_chroma = float(np.abs(self.base[..., 0] - self.base[..., 2]).mean())
+
+        grey = self._rendered(dye_separation=0.0)
+        self.assertLess(float(np.abs(grey[..., 0] - grey[..., 2]).mean()), base_chroma * 0.1)
+
+        boosted = self._rendered(dye_separation=2.0)
+        self.assertGreater(float(np.abs(boosted[..., 0] - boosted[..., 2]).mean()), base_chroma)
+
+    def test_dye_separation_trims_are_wired_per_channel(self):
+        """Mirrors the print path: a trim on one channel must move only that channel,
+        since an untrimmed channel keeps k = dye_separation exactly (mean + 1.0 * e is
+        the original density bit-exact)."""
+        trimmed = self._rendered(dye_separation_trim_red=0.6)
+        self.assertGreater(float(np.abs(trimmed[..., 0] - self.base[..., 0]).mean()), 1e-4)
+        np.testing.assert_allclose(trimmed[..., 1], self.base[..., 1], atol=1e-6)
+        np.testing.assert_allclose(trimmed[..., 2], self.base[..., 2], atol=1e-6)
+
+    def test_separation_damping_still_tapers_the_push_with_no_paper_here_either(self):
+        """Separation Damping has no per-layer trim of its own on this path, but the
+        chroma taper itself needs no paper and must still run over each channel's k."""
+        flat = self._rendered(dye_separation=1.4)
+        damped = self._rendered(dye_separation=1.4, separation_damping=1.0)
+        self.assertGreater(float(np.abs(flat - damped).max()), 1e-4)
+
+        # Inert without a separation push, same as on the print path.
+        self.assertTrue(np.array_equal(self.base, self._rendered(separation_damping=1.0)))
+
     def test_curve_stays_monotonic_under_extreme_settings(self):
         for overrides in (
             {"toe": 1.0, "shoulder": 1.0},
@@ -817,7 +887,54 @@ class TestGpuTransferParity(unittest.TestCase):
             wb_yellow=-0.2,
             shadow_density=-0.5,
             highlight_density=0.3,
+            dye_separation=1.3,
+            dye_separation_trim_red=0.2,
+            dye_separation_trim_blue=-0.15,
         )
+        self._assert_parity(*self._both(settings))
+
+    def test_dye_separation_matches(self):
+        """Dye Separation carries no paper matrix on this path — each channel scales its
+        own deviation from the frame mean instead of a matmul — and CPU/GPU must apply
+        that same per-channel k."""
+        settings = _e6_config()
+        active = _e6_config(dye_separation=1.6)
+        cpu, gpu = self._both(active)
+        self._assert_parity(cpu, gpu)
+
+        off_cpu, off_gpu = self._both(settings)
+        self.assertGreater(float(np.abs(cpu - off_cpu).max()), 0.01, "dye separation inert on the CPU")
+        self.assertGreater(float(np.abs(gpu - off_gpu).max()), 0.01, "dye separation inert on the GPU")
+
+    def test_dye_separation_trims_match(self):
+        """The per-channel trims (same fields the print path's per-layer view edits)
+        must reach the shader's separation.xyz lanes the same way the CPU folds them."""
+        settings = _e6_config()
+        active = _e6_config(dye_separation_trim_red=0.4, dye_separation_trim_green=-0.3)
+        cpu, gpu = self._both(active)
+        self._assert_parity(cpu, gpu)
+
+        off_cpu, off_gpu = self._both(settings)
+        self.assertGreater(float(np.abs(cpu - off_cpu).max()), 0.01, "trims inert on the CPU")
+        self.assertGreater(float(np.abs(gpu - off_gpu).max()), 0.01, "trims inert on the GPU")
+
+    def test_separation_damping_matches(self):
+        """Separation Damping tapers each channel's own k by the same shared chroma on
+        this path too, and CPU/GPU must taper it by the same law."""
+        flat = _e6_config(dye_separation=1.4)
+        damped = _e6_config(dye_separation=1.4, separation_damping=1.0)
+        cpu, gpu = self._both(damped)
+        self._assert_parity(cpu, gpu)
+
+        flat_cpu, flat_gpu = self._both(flat)
+        self.assertGreater(float(np.abs(cpu - flat_cpu).max()), 0.01, "damping inert on the CPU")
+        self.assertGreater(float(np.abs(gpu - flat_gpu).max()), 0.01, "damping inert on the GPU")
+
+    def test_separation_damping_with_trims_matches(self):
+        """Damping combined with an asymmetric per-channel k (not just a shared one) is
+        the path that used to collapse to a single scalar before every channel got its
+        own trim — CPU and GPU must still agree once the trims split the k apart."""
+        settings = _e6_config(dye_separation=1.4, dye_separation_trim_red=0.5, separation_damping=0.8)
         self._assert_parity(*self._both(settings))
 
     def test_cast_removal_matches(self):
@@ -949,6 +1066,18 @@ class TestGpuTransferParity(unittest.TestCase):
         off_cpu, off_gpu = self._both(settings)
         self.assertGreater(float(np.abs(cpu - off_cpu).max()), 0.01, "zone density inert on the CPU")
         self.assertGreater(float(np.abs(gpu - off_gpu).max()), 0.01, "zone density inert on the GPU")
+
+    def test_shadow_highlight_wb_matches(self):
+        """Shadows/Highlights WB rides uniform lanes the transfer shader did not have
+        (issue #1077: the sliders had no effect on Slides)."""
+        settings = _e6_config()
+        active = _e6_config(shadow_cyan=0.5, highlight_yellow=-0.4)
+        cpu, gpu = self._both(active)
+        self._assert_parity(cpu, gpu)
+
+        off_cpu, off_gpu = self._both(settings)
+        self.assertGreater(float(np.abs(cpu - off_cpu).max()), 0.01, "shadow/highlight WB inert on the CPU")
+        self.assertGreater(float(np.abs(gpu - off_gpu).max()), 0.01, "shadow/highlight WB inert on the GPU")
 
 
 if __name__ == "__main__":

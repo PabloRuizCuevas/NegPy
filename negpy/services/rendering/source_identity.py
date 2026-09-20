@@ -12,9 +12,15 @@ field served the previous buffer for a setting the user had just changed.
 from negpy.domain.models import WorkspaceConfig
 from negpy.features.flatfield.logic import flatfield_token
 from negpy.features.hdr.models import hdr_token
-from negpy.features.process.logic import demosaic_token, effective_linear_raw
+from negpy.features.process.logic import (
+    demosaic_token,
+    effective_highlight_reconstruction,
+    effective_linear_raw,
+    highlight_reconstruction_bakes_wb,
+)
 from negpy.features.rgbscan.logic import rgbscan_token
 from negpy.features.stitch.models import stitch_token
+from negpy.services.rendering.lens import lens_decode_token, metadata_lens_corrections
 
 
 def source_token(config: WorkspaceConfig) -> str:
@@ -22,17 +28,22 @@ def source_token(config: WorkspaceConfig) -> str:
     parts = [
         # Decides use_camera_wb, so it changes the decoded numbers themselves.
         f"|lr{int(effective_linear_raw(config.process, config.exposure.render_intent))}",
+        # Reconstruction level, resolved through the same gate the decode reads — changes
+        # the decoded numbers on a slide's blown highlights.
+        f"|hr{effective_highlight_reconstruction(config.process)}",
+        # Whether that reconstruction bakes real white balance into the decode instead of
+        # folding it downstream — changes the decoded numbers too, see should_fold_camera_wb.
+        f"|hrwb{int(highlight_reconstruction_bakes_wb(config.process, config.exposure.render_intent))}",
         # Preview only: folding the export choice in would re-decode the open frame whenever
         # an export setting moved.
         demosaic_token(config.process.demosaic_preview),
         rgbscan_token(config.rgbscan),
         stitch_token(config.stitch),
         hdr_token(config.hdr),
+        lens_decode_token(metadata_lens_corrections(config), config.flatfield),
     ]
     if config.stitch.stitch_enabled:
-        # Stitch is the only assembly that flat-fields during the decode, per part and before the
-        # warp, because a canvas-wide gain map would stretch across the seam. Everywhere else
-        # flat-field is a render stage, and including it here would force a needless re-decode
-        # every time the profile is switched.
+        # Stitch flat-fields each part before assembly; embedded lens mode carries this
+        # dependency in lens_decode_token. Other frames flat-field at render time.
         parts.append(flatfield_token(config.flatfield))
     return "".join(parts)

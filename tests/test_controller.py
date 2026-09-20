@@ -7,6 +7,11 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
+
+
+from PIL import Image
+from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
 from negpy.desktop.controller import AppController
@@ -369,22 +374,227 @@ class TestAppController(unittest.TestCase):
         mock_slot.assert_called_once_with(1.0)
         self.assertFalse(self.controller.state.hq_preview)
 
-    def test_prefetch_neighbors_no_selection_is_noop(self):
-        """With no current selection the scheduled prefetch must fire harmlessly:
-        no load requested, and crucially no exception out of the QTimer slot (PyQt6
-        aborts the process on one). Regression: it used to reach the asset model
-        before checking for an empty state."""
-        from PyQt6.QtTest import QTest
+    def test_load_file_tags_the_decode_with_the_current_generation(self):
+        tasks = []
+        self.controller.preview_load_requested.connect(tasks.append)
 
-        self.controller.state.uploaded_files = []
-        self.controller.state.selected_file_idx = -1
-        mock_slot = MagicMock()
-        self.controller.preview_load_requested.connect(mock_slot)
+        self.controller.load_file("dummy.dng")
 
-        self.controller._schedule_prefetch_neighbors()
-        QTest.qWait(120)  # let the 50ms singleShot fire
+        self.assertEqual(tasks[-1].generation, self.controller._prefetch_gen)
 
-        mock_slot.assert_not_called()
+    def test_lens_toggles_keep_the_displayed_texture_during_reload(self):
+        from negpy.infrastructure.gpu.resources import GPUTexture
+        from negpy.features.lens.models import LensCorrections
+        from negpy.services.rendering.lens import lens_decode_token
+
+        self.controller.preview_load_requested.disconnect(self.controller.preview_load_worker.process)
+        state = self.controller.state
+        state.current_file_path = "scan.arw"
+        self.controller._requested_file_path = state.current_file_path
+        texture = MagicMock(spec=GPUTexture)
+        state.last_metrics["base_positive"] = texture
+        loading, released, cleanup, decode, zoom = (MagicMock() for _ in range(5))
+        self.controller.loading_started.connect(loading)
+        self.controller.gpu_textures_released.connect(released)
+        self.controller._render_cleanup_requested.connect(cleanup)
+        self.controller.preview_load_requested.connect(decode)
+        self.controller.zoom_requested.connect(zoom)
+
+        previous = LensCorrections()
+        for corrections in (LensCorrections(True, False), LensCorrections(True, True), LensCorrections(False, True), LensCorrections()):
+            state.config = replace(
+                state.config,
+                geometry=replace(
+                    state.config.geometry, lens_distortion_from_metadata=corrections.distortion, lens_ca_from_metadata=corrections.ca
+                ),
+            )
+            state.preview_lens_token = lens_decode_token(previous, state.config.flatfield)
+            self.controller.request_render()
+            task = decode.call_args.args[0]
+            self.assertEqual(task.lens_corrections, corrections)
+            self.assertFalse(task.use_splash)
+            self.assertIs(cleanup.call_args.args[0], texture)
+            previous = corrections
+
+        loading.assert_not_called()
+        released.assert_not_called()
+        zoom.assert_not_called()
+        texture.destroy.assert_not_called()
+
+    def test_cpu_reload_keeps_preview_but_navigation_shows_loading(self):
+        import numpy as np
+
+        self.controller.preview_load_requested.disconnect(self.controller.preview_load_worker.process)
+        self.controller._requested_file_path = "scan.arw"
+        self.controller.state.last_metrics["base_positive"] = np.ones((4, 4, 3), dtype=np.float32)
+        loading, decode, repaint = (MagicMock() for _ in range(3))
+        self.controller.loading_started.connect(loading)
+        self.controller.preview_load_requested.connect(decode)
+        self.controller.image_updated.connect(repaint)
+
+        for _ in range(2):
+            self.controller.load_file("scan.arw", preserve_zoom=True)
+            self.assertFalse(decode.call_args.args[0].use_splash)
+        loading.assert_not_called()
+        repaint.assert_not_called()
+
+        self.controller.load_file("next.arw", preserve_zoom=True)
+        loading.assert_called_once()
+        self.assertTrue(decode.call_args.args[0].use_splash)
+
+    def test_slow_reload_arms_the_spinner_late(self):
+        """keep_preview suppresses the spinner so a fast reload doesn't flicker, but a
+        reload still in flight past the backstop delay must show one — otherwise a slow
+        decode looks identical to nothing happening."""
+        from negpy.desktop.controller import _KEEP_PREVIEW_SPINNER_DELAY_MS
+        import numpy as np
+
+        self.controller.preview_load_requested.disconnect(self.controller.preview_load_worker.process)
+        self.controller._requested_file_path = "scan.arw"
+        self.controller.state.last_metrics["base_positive"] = np.ones((4, 4, 3), dtype=np.float32)
+        loading = MagicMock()
+        self.controller.loading_started.connect(loading)
+
+        self.controller.load_file("scan.arw", preserve_zoom=True)
+        loading.assert_not_called()
+
+        QTest.qWait(_KEEP_PREVIEW_SPINNER_DELAY_MS + 100)
+        loading.assert_called_once()
+
+    def test_reload_that_finishes_before_the_backstop_never_shows_the_spinner(self):
+        from negpy.desktop.controller import _KEEP_PREVIEW_SPINNER_DELAY_MS
+        import numpy as np
+
+        self.controller.preview_load_requested.disconnect(self.controller.preview_load_worker.process)
+        self.controller._requested_file_path = "scan.arw"
+        self.controller.state.last_metrics["base_positive"] = np.ones((4, 4, 3), dtype=np.float32)
+        loading = MagicMock()
+        self.controller.loading_started.connect(loading)
+
+        self.controller.load_file("scan.arw", preserve_zoom=True)
+        self.controller._foreground_preview_generation = None  # decode already landed
+
+        QTest.qWait(_KEEP_PREVIEW_SPINNER_DELAY_MS + 100)
+        loading.assert_not_called()
+
+    def test_lens_toggle_repaints_live_cached_texture_before_decode(self):
+        from negpy.infrastructure.gpu.resources import GPUTexture
+
+        self.controller.preview_load_requested.disconnect(self.controller.preview_load_worker.process)
+        state = self.controller.state
+        state.current_file_path = "scan.arw"
+        state.current_file_hash = "scan"
+        state.uploaded_files = [{"path": "scan.arw", "hash": "scan"}]
+        self.controller._requested_file_path = state.current_file_path
+        cached, outgoing = MagicMock(spec=GPUTexture), MagicMock(spec=GPUTexture)
+        self.controller._render_memo.store("scan", "off", {"base_positive": cached})
+        state.last_metrics["base_positive"] = outgoing
+        self.controller._last_render_identity = ("scan", "on", None)
+        events = []
+        self.controller.image_updated.connect(lambda: events.append(("paint", state.last_metrics["base_positive"])))
+        self.controller.preview_load_requested.connect(lambda task: events.append(("decode", task.file_path)))
+
+        with patch.object(self.controller, "_render_memo_key", return_value="off"):
+            self.controller.load_file(state.current_file_path, preserve_zoom=True)
+
+        self.assertEqual(events, [("paint", cached), ("decode", "scan.arw")])
+        cached.destroy.assert_not_called()
+        outgoing.destroy.assert_not_called()
+        self.assertIs(self.controller._render_memo.get("scan", "on")["base_positive"], outgoing)
+
+        stale_metrics = {"source_hash": "scan", "memo_key": "on", "base_positive": outgoing}
+        metrics_available = MagicMock()
+        self.controller.metrics_available.connect(metrics_available)
+        self.controller._on_render_finished(outgoing, stale_metrics)
+        self.controller._on_metrics_updated(stale_metrics)
+
+        self.assertEqual(events, [("paint", cached), ("decode", "scan.arw")])
+        self.assertIs(state.last_metrics["base_positive"], cached)
+        metrics_available.assert_not_called()
+
+    def test_preview_load_defers_neighbor_prefetch_until_render_finishes(self):
+        self.controller._requested_file_path = "/tmp/a.dng"
+        self.controller.request_render = MagicMock()
+        self.controller._schedule_prefetch_neighbors = MagicMock()
+
+        self.controller._on_preview_loaded("/tmp/a.dng", object(), (10, 20), "", None, "")
+
+        self.controller.request_render.assert_called_once_with()
+        self.controller._schedule_prefetch_neighbors.assert_not_called()
+        self.assertEqual(self.controller._neighbor_prefetch_generation, self.controller._prefetch_gen)
+
+    def test_foreground_render_queue_blocks_neighbor_prefetch(self):
+        self.controller._foreground_preview_generation = None
+        self.controller._neighbor_prefetch_generation = self.controller._prefetch_gen
+        self.controller._is_rendering = True
+        self.controller._pending_render_task = object()
+        self.controller._schedule_prefetch_neighbors = MagicMock()
+
+        self.controller._continue_background_work()
+
+        self.controller._schedule_prefetch_neighbors.assert_not_called()
+
+    def test_only_one_neighbor_prefetch_is_dispatched_at_a_time(self):
+        first = MagicMock(generation=4)
+        second = MagicMock(generation=4)
+        controller = MagicMock()
+        controller._foreground_work_active.return_value = False
+        controller._prefetch_in_flight_generation = None
+        controller._neighbor_prefetch_queue = [first, second]
+
+        AppController._start_next_neighbor_prefetch(controller)
+        AppController._start_next_neighbor_prefetch(controller)
+
+        controller.preview_load_requested.emit.assert_called_once_with(first)
+        self.assertEqual(controller._neighbor_prefetch_queue, [second])
+
+    def test_neighbor_prefetch_protects_the_selected_frame_cache_entry(self):
+        self.controller.session.repo.load_file_settings.return_value = None
+        self.controller._half_slice_for_asset = MagicMock(return_value=None)
+        asset = {"path": "/tmp/neighbor.dng", "hash": "neighbor"}
+
+        task = self.controller._neighbor_prefetch_task(asset, generation=4, protected_file_hashes=("selected",))
+
+        self.assertIsNotNone(task)
+        self.assertEqual(task.protected_file_hashes, ("selected",))
+
+    def test_second_neighbor_prefetch_protects_the_first_neighbor(self):
+        state = self.controller.state
+        state.uploaded_files = [
+            {"path": "/tmp/previous.dng", "hash": "previous"},
+            {"path": "/tmp/selected.dng", "hash": "selected"},
+            {"path": "/tmp/next.dng", "hash": "next"},
+        ]
+        state.selected_file_idx = 1
+        self.controller._prefetch_gen = 4
+        self.controller.session.repo.load_file_settings.return_value = None
+        self.controller.session.asset_model = MagicMock()
+        self.controller.session.asset_model.visible_actual_indices_ordered.return_value = [0, 1, 2]
+        self.controller._half_slice_for_asset = MagicMock(return_value=None)
+        self.controller._start_next_neighbor_prefetch = MagicMock()
+
+        with patch("negpy.desktop.controller.GPUDevice.get", return_value=SimpleNamespace(is_integrated=False)):
+            self.controller._prepare_neighbor_prefetch(4)
+
+        first, second = self.controller._neighbor_prefetch_queue
+        self.assertEqual(first.protected_file_hashes, ("selected",))
+        self.assertEqual(second.protected_file_hashes, ("selected", "previous"))
+
+    def test_render_waits_for_running_neighbor_prefetch_to_stop(self):
+        import numpy as np
+
+        emitted = []
+        self.controller.render_requested.connect(emitted.append)
+        self.controller.state.preview_raw = np.zeros((4, 4, 3), dtype=np.float32)
+        self.controller._prefetch_in_flight_generation = self.controller._prefetch_gen
+
+        self.controller.request_render()
+
+        self.assertEqual(emitted, [])
+        self.assertIsNotNone(self.controller._pending_render_task)
+        self.controller._on_neighbor_prefetch_finished(self.controller._prefetch_gen, "/neighbor.dng")
+        self.assertEqual(len(emitted), 1)
+        self.assertTrue(self.controller._is_rendering)
 
     def test_decode_failure_badges_file_and_success_clears_it(self):
         self.mock_session_manager.asset_model = MagicMock()
@@ -1016,7 +1226,7 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(rolls.frame_override_cards(self.controller.session.repo, roll_id, "h1"), {"sensor"})
         self.assertTrue(self.controller.roll_card_locked("sensor"))
 
-    def test_thumbnail_miss_marks_file_unreadable(self):
+    def test_thumbnail_miss_does_not_mark_source_unreadable(self):
         from PIL import Image
 
         from negpy.services.assets.thumbnails import asset_thumbnail_key
@@ -1028,14 +1238,12 @@ class TestAppController(unittest.TestCase):
             {"name": "good.dng", "path": "/tmp/good.dng", "hash": "h2"},
         ]
         keys = [asset_thumbnail_key(f) for f in state.uploaded_files]
-        self.controller._thumb_requested = keys
+        self.controller._apply_thumbnails({keys[1]: Image.new("RGB", (4, 4))})
 
-        self.controller._on_thumbnails_finished({keys[1]: Image.new("RGB", (4, 4))})
-
-        self.assertIn("decode_failed", state.uploaded_files[0])
+        self.assertNotIn("decode_failed", state.uploaded_files[0])
         self.assertNotIn("decode_failed", state.uploaded_files[1])
 
-    def test_a_thumbnail_that_cannot_decode_badges_its_frame(self):
+    def test_a_thumbnail_that_cannot_decode_does_not_badge_its_source(self):
         """A PIL image decodes lazily, so a truncated cache entry raises on the UI
         thread, inside a Qt slot, where an exception ends the process."""
         from PIL import Image
@@ -1046,16 +1254,14 @@ class TestAppController(unittest.TestCase):
         state = self.mock_session_manager.state
         state.uploaded_files = [{"name": "cut.dng", "path": "/tmp/cut.dng", "hash": "h1"}]
         key = asset_thumbnail_key(state.uploaded_files[0])
-        self.controller._thumb_requested = [key]
-
         broken = MagicMock(spec=Image.Image)
         broken.convert.side_effect = OSError("broken data stream when reading image file")
-        self.controller._on_thumbnails_finished({key: broken})
+        self.controller._apply_thumbnails({key: broken})
 
         self.assertNotIn(key, state.thumbnails)
-        self.assertIn("decode_failed", state.uploaded_files[0])
+        self.assertNotIn("decode_failed", state.uploaded_files[0])
 
-    def test_render_thumbnail_update_does_not_badge_other_frames(self):
+    def test_thumbnail_updates_do_not_badge_other_frames(self):
         from PIL import Image
 
         self.mock_session_manager.asset_model = MagicMock()
@@ -1064,13 +1270,12 @@ class TestAppController(unittest.TestCase):
             {"name": "a.dng", "path": "/tmp/a.dng", "hash": "h1"},
             {"name": "b.dng", "path": "/tmp/b.dng", "hash": "h2"},
         ]
-        self.controller._thumb_requested = ["h1", "h2"]
         img = Image.new("RGB", (4, 4))
-        self.controller._on_thumbnails_finished({"h1": img, "h2": img})
+        self.controller._apply_thumbnails({"h1": img, "h2": img})
         self.assertNotIn("decode_failed", state.uploaded_files[0])
 
-        # A second, narrower batch result must not badge frames absent from it.
-        self.controller._on_thumbnails_finished({"h1": img})
+        # A second, narrower result must not badge frames absent from it.
+        self.controller._apply_thumbnails({"h1": img})
         self.assertNotIn("decode_failed", state.uploaded_files[1])
 
     def test_batch_thumbnail_does_not_clobber_rendered(self):
@@ -1081,12 +1286,10 @@ class TestAppController(unittest.TestCase):
         self.mock_session_manager.asset_model = MagicMock()
         state = self.mock_session_manager.state
         state.uploaded_files = [{"name": "a.dng", "path": "/tmp/a.dng", "hash": "h1"}]
-        self.controller._thumb_requested = ["h1"]
-
         rendered = Image.new("RGB", (4, 4), (255, 0, 0))
         placeholder = Image.new("RGB", (4, 4), (0, 255, 0))
         self.controller._on_rendered_thumbnail({"h1": rendered})
-        self.controller._on_thumbnails_finished({"h1": placeholder})
+        self.controller._apply_thumbnails({"h1": placeholder})
 
         self.assertEqual(state.thumbnails["h1"].pixmap(4, 4).toImage().pixelColor(0, 0).red(), 255)
 
@@ -1520,6 +1723,19 @@ class TestAppController(unittest.TestCase):
         self.controller._on_preview_loaded("stale.dng", object(), (10, 20), "", None, "")
 
         self.assertIsNone(self.controller.state.preview_raw)
+        self.controller.request_render.assert_not_called()
+
+    def test_stale_lens_correction_decode_is_dropped(self):
+        self.controller.request_render = MagicMock()
+        self.controller._requested_file_path = "current.arw"
+        state = self.controller.state
+        state.config = replace(state.config, geometry=replace(state.config.geometry, lens_ca_from_metadata=True))
+        current_raw = object()
+        state.preview_raw = current_raw
+
+        self.controller._on_preview_loaded("current.arw", object(), (10, 20), "", None, "", (None, None, None, ""))
+
+        self.assertIs(state.preview_raw, current_raw)
         self.controller.request_render.assert_not_called()
 
     def test_apply_auto_crop_enables_auto_crop_and_clears_manual_rect(self):
@@ -2835,6 +3051,27 @@ class TestPresetExportSelected(unittest.TestCase):
 
         self.mock_session_manager.reset_roll.assert_not_called()
 
+    def test_batch_normalization_offers_other_files_for_a_thumbnail_refresh(self):
+        self.mock_session_manager.repo.load_file_settings.return_value = None
+        self.mock_session_manager.config_for_asset.return_value = WorkspaceConfig()
+
+        self.controller._on_normalization_finished((0.1, 0.1, 0.1), (0.9, 0.9, 0.9), [])
+
+        self.mock_session_manager.frames_edited_offscreen.emit.assert_called_once_with(["h1", "h3"])
+
+    def test_apply_normalization_roll_offers_other_files_for_a_thumbnail_refresh(self):
+        self.mock_session_manager.repo.load_file_settings.return_value = None
+        self.mock_session_manager.config_for_asset.return_value = WorkspaceConfig()
+        data = {"floors": (0.1, 0.1, 0.1), "ceils": (0.9, 0.9, 0.9), "cast": (0.0, 0.0, 0.0)}
+
+        with (
+            patch.object(rolls, "roll_normalization", return_value=data),
+            patch.object(rolls, "roll_for_id", return_value={"name": "Roll A"}),
+        ):
+            self.controller.apply_normalization_roll("roll-1")
+
+        self.mock_session_manager.frames_edited_offscreen.emit.assert_called_once_with(["h1", "h3"])
+
 
 class TestSessionRestore(unittest.TestCase):
     def setUp(self):
@@ -3211,6 +3448,20 @@ class TestDiscoveryProgressPopup(unittest.TestCase):
 
         self.assertEqual(order, ["finished", "thumbs"])
 
+    def test_thumbnail_queue_does_not_delay_a_new_folder_discovery(self):
+        state = self.mock_session_manager.state
+        state.uploaded_files = [{"name": "old.dng", "path": "/old.dng", "hash": "old"}]
+        self.controller.generate_missing_thumbnails()
+        self.assertIsNone(self.controller._active_batch)
+
+        self.controller.asset_discovery_requested.disconnect(self.controller.discovery_worker.process)
+        tasks = []
+        self.controller.asset_discovery_requested.connect(tasks.append)
+        self.controller.request_asset_discovery(["/new-folder"], auto_open=True, replace_existing=True)
+
+        self.assertEqual(len(tasks), 1)
+        self.assertEqual(tasks[0].paths, ["/new-folder"])
+
     def test_back_to_back_capture_completions_are_discovered_in_order(self):
         self.controller.asset_discovery_requested.disconnect(self.controller.discovery_worker.process)
         tasks = []
@@ -3245,10 +3496,7 @@ class TestDiscoveryProgressPopup(unittest.TestCase):
 
 
 class TestHotFolderSequenceState(unittest.TestCase):
-    """`hot_folder_sequence_active` spans a hot-folder-triggered discovery through its
-    thumbnail phase, and only that phase — a manual request never claims it, and every
-    early exit (discovery error, no assets found, nothing to thumbnail, thumbnail error)
-    releases it without waiting for `_on_thumbnails_finished`."""
+    """`hot_folder_sequence_active` belongs only to hot-folder discovery."""
 
     def setUp(self):
         self.mock_session_manager = MagicMock(spec=DesktopSessionManager)
@@ -3292,20 +3540,15 @@ class TestHotFolderSequenceState(unittest.TestCase):
         self.controller.request_asset_discovery(["/manual.dng"])
         self.assertFalse(self.controller.hot_folder_sequence_active, "a manual request must not claim the hot-folder sequence")
 
-    def test_hot_folder_sequence_spans_discovery_and_thumbnails(self):
+    def test_hot_folder_sequence_ends_when_discovery_finishes(self):
         self.assertFalse(self.controller.hot_folder_sequence_active)
 
         self.controller.request_asset_discovery(["/hot.dng"], hot_folder=True)
         self.assertTrue(self.controller.hot_folder_sequence_active, "a hot-folder discovery must claim the sequence")
 
-        self.controller.generate_missing_thumbnails = MagicMock(
-            side_effect=lambda: self.controller._begin_batch("thumbnails", "Generating thumbnails", abortable=False)
-        )
+        self.controller.generate_missing_thumbnails = MagicMock()
         self.controller._on_discovery_finished([{"name": "hot", "path": "/hot.dng", "hash": "h1"}])
-        self.assertTrue(self.controller.hot_folder_sequence_active, "must stay claimed through the thumbnail phase")
-
-        self.controller._on_thumbnails_finished({})
-        self.assertFalse(self.controller.hot_folder_sequence_active, "must release once thumbnails finish")
+        self.assertFalse(self.controller.hot_folder_sequence_active)
 
     def test_hot_folder_sequence_clears_on_discovery_error(self):
         self.controller.request_asset_discovery(["/hot.dng"], hot_folder=True)
@@ -3327,17 +3570,6 @@ class TestHotFolderSequenceState(unittest.TestCase):
         self.assertTrue(self.controller.hot_folder_sequence_active)
         self.controller._on_discovery_finished([asset])
         self.assertFalse(self.controller.hot_folder_sequence_active, "nothing to thumbnail is itself the end of the sequence")
-
-    def test_hot_folder_sequence_clears_on_thumbnail_error(self):
-        self.controller.request_asset_discovery(["/hot.dng"], hot_folder=True)
-        self.controller.generate_missing_thumbnails = MagicMock(
-            side_effect=lambda: self.controller._begin_batch("thumbnails", "Generating thumbnails", abortable=False)
-        )
-        self.controller._on_discovery_finished([{"name": "hot", "path": "/hot.dng", "hash": "h1"}])
-        self.assertTrue(self.controller.hot_folder_sequence_active)
-
-        self.controller._on_thumbnail_batch_error("boom")
-        self.assertFalse(self.controller.hot_folder_sequence_active)
 
 
 class TestBatchAnalysisFiltering(unittest.TestCase):
@@ -3734,14 +3966,14 @@ class TestDisplayTransformParams(unittest.TestCase):
         self.assertIsNotNone(proof)
 
     def test_proof_inactive_converts_from_the_working_space(self):
-        self.controller.proof_profiles = lambda: None
+        self.controller.proof_profiles = lambda process=None: None
         cs, monitor, proof = self.controller.display_transform_params()
         self.assertEqual(cs, self.controller.state.workspace_color_space)
         self.assertEqual(monitor, b"fake-monitor-profile")
         self.assertIsNone(proof)
 
     def test_splash_buffer_is_treated_as_srgb(self):
-        self.controller.proof_profiles = lambda: None
+        self.controller.proof_profiles = lambda process=None: None
         cs, monitor, proof = self.controller.display_transform_params(splash=True)
         self.assertEqual(cs, ColorSpace.SRGB.value)
         self.assertEqual(monitor, b"fake-monitor-profile")
@@ -4430,15 +4662,26 @@ class TestSemanticIndexing(unittest.TestCase):
 
         self.mock_session_manager.asset_model.refresh.assert_called_once_with()
 
-    def test_a_thumbnail_batch_finishing_triggers_indexing(self):
+    def test_the_thumbnail_queue_going_idle_triggers_indexing(self):
+        """Indexing follows the thumbnails so each file's preview is already on disk;
+        the queue's own idle transition is what says they are all in."""
         state = self.mock_session_manager.state
         state.semantic_search_enabled = True
         state.uploaded_files = [{"name": "a", "path": "/a.dng", "hash": "h1"}]
         self.controller.generate_missing_embeddings = MagicMock()
+        self.controller._thumbnail_queue_active = True
 
-        self.controller._on_thumbnails_finished({})
+        self.controller._on_thumbnail_activity("")
 
         self.controller.generate_missing_embeddings.assert_called_once_with()
+
+    def test_an_already_idle_thumbnail_queue_does_not_trigger_indexing(self):
+        self.controller.generate_missing_embeddings = MagicMock()
+        self.controller._thumbnail_queue_active = False
+
+        self.controller._on_thumbnail_activity("")
+
+        self.controller.generate_missing_embeddings.assert_not_called()
 
     def test_apply_embeddings_updates_state_and_refreshes_the_model(self):
         vector = object()
@@ -4469,6 +4712,199 @@ class TestSemanticIndexing(unittest.TestCase):
         self.controller._on_embedding_batch_error("boom")
 
         self.assertIsNone(self.controller._active_batch)
+
+
+class TestRotateThumbnails(unittest.TestCase):
+    """A batch rotate turns other selected frames' saved geometry without opening
+    them, so their filmstrip thumbnail has to turn too, in place, disk cache
+    included — generate_missing_thumbnails would re-derive from the source instead
+    and never see the rotation."""
+
+    def setUp(self):
+        self.mock_session_manager = MagicMock(spec=DesktopSessionManager)
+        self.mock_session_manager.state = AppState()
+        self.mock_session_manager.repo = MagicMock()
+        self.mock_session_manager.asset_model = MagicMock()
+
+        with (
+            patch("negpy.desktop.controller.RenderWorker") as mock_rw_class,
+            patch("negpy.desktop.controller.PreviewManager") as mock_pm_class,
+        ):
+            mock_rw_class.return_value = MagicMock()
+            mock_pm_class.return_value = MagicMock(spec=PreviewManager)
+            self.controller = AppController(self.mock_session_manager)
+        self.controller.asset_store = MagicMock()
+
+    def tearDown(self):
+        import gc
+
+        for thread in [
+            self.controller.render_thread,
+            self.controller.export_thread,
+            self.controller.thumb_thread,
+            self.controller.norm_thread,
+            self.controller.discovery_thread,
+            self.controller.preview_load_thread,
+            self.controller.scan_thread,
+        ]:
+            if thread is not None and thread.isRunning():
+                thread.quit()
+                thread.wait()
+        del self.controller
+        gc.collect()
+
+    @staticmethod
+    def _corner_icon(w=4, h=2, corner=(255, 0, 0)):
+        """A QIcon whose (w-1, 0) pixel is `corner`, everything else black."""
+        from PyQt6.QtGui import QColor, QImage
+
+        img = QImage(w, h, QImage.Format.Format_RGB32)
+        img.fill(0)
+        img.setPixelColor(w - 1, 0, QColor(*corner))
+        return QIcon(QPixmap.fromImage(img))
+
+    @staticmethod
+    def _icon_pixel(icon, x, y):
+        img = icon.pixmap(icon.availableSizes()[0]).toImage()
+        c = img.pixelColor(x, y)
+        return (c.red(), c.green(), c.blue())
+
+    def test_rotates_memory_icon_and_disk_cache_independently(self):
+        # Different markers in each store: memory (canvas-rendered) can be ahead of
+        # disk (persisted lazily), so deriving one from the other would be wrong.
+        self.mock_session_manager.state.thumbnails["hash1-v3"] = self._corner_icon(corner=(255, 0, 0))
+        disk_cached = Image.new("RGB", (4, 2), (0, 0, 0))
+        disk_cached.putpixel((3, 0), (0, 255, 0))
+        self.controller.asset_store.get_thumbnail.return_value = disk_cached
+
+        self.controller.rotate_thumbnails(["hash1-v3"], 1)
+
+        # A quarter-turn CCW swaps the axes: the top-right marker lands top-left,
+        # the same corner np.rot90(k=1) puts it at.
+        self.assertEqual(self._icon_pixel(self.mock_session_manager.state.thumbnails["hash1-v3"], 0, 0), (255, 0, 0))
+        saved_key, saved_img = self.controller.asset_store.save_thumbnail.call_args.args
+        self.assertEqual(saved_key, "hash1-v3")
+        self.assertEqual(saved_img.size, (2, 4))
+        self.assertEqual(saved_img.getpixel((0, 0)), (0, 255, 0))
+        self.mock_session_manager.asset_model.refresh.assert_called_once_with()
+
+    def test_rotates_disk_only_when_no_memory_icon_yet(self):
+        disk_cached = Image.new("RGB", (4, 2), (0, 0, 0))
+        disk_cached.putpixel((3, 0), (0, 255, 0))
+        self.controller.asset_store.get_thumbnail.return_value = disk_cached
+
+        self.controller.rotate_thumbnails(["hash1-v3"], 1)
+
+        self.controller.asset_store.save_thumbnail.assert_called_once()
+        # No memory icon existed, so none is fabricated from the disk copy.
+        self.assertNotIn("hash1-v3", self.mock_session_manager.state.thumbnails)
+        self.mock_session_manager.asset_model.refresh.assert_not_called()
+
+    def test_rotates_memory_only_when_no_disk_cache_yet(self):
+        self.mock_session_manager.state.thumbnails["hash1-v3"] = self._corner_icon(corner=(255, 0, 0))
+        self.controller.asset_store.get_thumbnail.return_value = None
+
+        self.controller.rotate_thumbnails(["hash1-v3"], 1)
+
+        self.assertEqual(self._icon_pixel(self.mock_session_manager.state.thumbnails["hash1-v3"], 0, 0), (255, 0, 0))
+        self.controller.asset_store.save_thumbnail.assert_not_called()
+        self.mock_session_manager.asset_model.refresh.assert_called_once_with()
+
+    def test_skips_a_key_with_no_cached_thumbnail_anywhere_yet(self):
+        self.controller.asset_store.get_thumbnail.return_value = None
+
+        self.controller.rotate_thumbnails(["hash1-v3"], 1)
+
+        self.controller.asset_store.save_thumbnail.assert_not_called()
+        self.mock_session_manager.asset_model.refresh.assert_not_called()
+
+    def test_zero_quarter_turns_is_a_noop(self):
+        self.controller.rotate_thumbnails(["hash1-v3"], 0)
+
+        self.controller.asset_store.get_thumbnail.assert_not_called()
+
+    def test_flip_mirrors_memory_icon_and_disk_cache_independently(self):
+        self.mock_session_manager.state.thumbnails["hash1-v3"] = self._corner_icon(corner=(255, 0, 0))
+        disk_cached = Image.new("RGB", (4, 2), (0, 0, 0))
+        disk_cached.putpixel((3, 0), (0, 255, 0))
+        self.controller.asset_store.get_thumbnail.return_value = disk_cached
+
+        self.controller.flip_thumbnails(["hash1-v3"], True)
+
+        # A horizontal flip moves the top-right marker to top-left.
+        self.assertEqual(self._icon_pixel(self.mock_session_manager.state.thumbnails["hash1-v3"], 0, 0), (255, 0, 0))
+        saved_key, saved_img = self.controller.asset_store.save_thumbnail.call_args.args
+        self.assertEqual(saved_key, "hash1-v3")
+        self.assertEqual(saved_img.getpixel((0, 0)), (0, 255, 0))
+        self.mock_session_manager.asset_model.refresh.assert_called_once_with()
+
+    def test_flip_skips_a_key_with_no_cached_thumbnail_anywhere_yet(self):
+        self.controller.asset_store.get_thumbnail.return_value = None
+
+        self.controller.flip_thumbnails(["hash1-v3"], True)
+
+        self.controller.asset_store.save_thumbnail.assert_not_called()
+        self.mock_session_manager.asset_model.refresh.assert_not_called()
+
+    def test_flip_with_no_keys_is_a_noop(self):
+        self.controller.flip_thumbnails([], True)
+
+        self.controller.asset_store.get_thumbnail.assert_not_called()
+
+    def test_rotate_before_decode_finishes_corrects_the_stale_delivery(self):
+        """A frame with no cached thumbnail yet is still being decoded by
+        generate_missing_thumbnails; that decode's own (orientation-blind) result,
+        landing after the rotate, must come out corrected rather than stale."""
+        asset = {"name": "f1.dng", "path": "/roll/f1.dng", "hash": "h1"}
+        key = asset_thumbnail_key(asset)
+        self.mock_session_manager.state.uploaded_files = [asset]
+        self.controller.asset_store.get_thumbnail.return_value = None  # still mid-decode
+
+        self.controller.rotate_thumbnails([key], 1)
+
+        self.controller.asset_store.save_thumbnail.assert_not_called()
+        self.assertNotIn(key, self.mock_session_manager.state.thumbnails)
+
+        # The in-flight decode's own result lands afterward, in the old orientation.
+        stale = Image.new("RGB", (4, 2), (0, 0, 0))
+        stale.putpixel((3, 0), (0, 255, 0))
+        self.controller._apply_thumbnails({key: stale})
+
+        saved_key, saved_img = self.controller.asset_store.save_thumbnail.call_args.args
+        self.assertEqual(saved_key, key)
+        self.assertEqual(saved_img.size, (2, 4))
+        self.assertEqual(saved_img.getpixel((0, 0)), (0, 255, 0))
+        self.assertEqual(self._icon_pixel(self.mock_session_manager.state.thumbnails[key], 0, 0), (0, 255, 0))
+
+    def test_rotate_correction_is_not_replayed_a_second_time(self):
+        asset = {"name": "f1.dng", "path": "/roll/f1.dng", "hash": "h1"}
+        key = asset_thumbnail_key(asset)
+        self.mock_session_manager.state.uploaded_files = [asset]
+        self.controller.asset_store.get_thumbnail.return_value = None
+
+        self.controller.rotate_thumbnails([key], 1)
+        self.controller._apply_thumbnails({key: Image.new("RGB", (4, 2), (0, 0, 0))})
+        self.controller.asset_store.save_thumbnail.reset_mock()
+
+        # A later, unrelated re-delivery for the same key (e.g. clear_thumbnail_cache)
+        # must not be turned again — the correction was a one-time catch-up.
+        self.controller._apply_thumbnails({key: Image.new("RGB", (2, 4), (0, 0, 0))})
+
+        self.controller.asset_store.save_thumbnail.assert_not_called()
+
+    def test_rotate_correction_is_dropped_once_the_frame_leaves_the_roll(self):
+        asset = {"name": "f1.dng", "path": "/roll/f1.dng", "hash": "h1"}
+        key = asset_thumbnail_key(asset)
+        self.mock_session_manager.state.uploaded_files = [asset]
+        self.controller.asset_store.get_thumbnail.return_value = None
+
+        self.controller.rotate_thumbnails([key], 1)
+        self.mock_session_manager.state.uploaded_files = []  # removed before the decode lands
+
+        self.controller._apply_thumbnails({key: Image.new("RGB", (4, 2), (0, 0, 0))})
+
+        self.controller.asset_store.save_thumbnail.assert_not_called()
+        self.assertNotIn(key, self.controller._thumbnail_pending_correction)
 
 
 class TestLibraryIndexing(unittest.TestCase):

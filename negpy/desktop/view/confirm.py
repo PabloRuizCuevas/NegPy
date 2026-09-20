@@ -1,4 +1,5 @@
 from PyQt6.QtWidgets import QCheckBox, QMessageBox
+from negpy.kernel.system.text import count_of
 
 
 def confirm_load_roll(parent, repo, image_count: int, label: str) -> bool:
@@ -106,6 +107,26 @@ def confirm_delete_mask(parent) -> bool:
     box.setIcon(QMessageBox.Icon.Question)
     box.setWindowTitle("Delete Mask")
     box.setText("Delete this dodge/burn mask?")
+    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+    box.setDefaultButton(QMessageBox.StandardButton.Yes)
+    return box.exec() == QMessageBox.StandardButton.Yes
+
+
+def confirm_reset_frames(parent, count: int, *, roll: bool = False) -> bool:
+    """Ask before resetting several frames to their defaults at once.
+
+    Each frame's reset is still an ordinary undo step, but reverting many frames at
+    once in the wrong roll or selection is disruptive, so it is gated like Clear All.
+    """
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    if roll:
+        box.setWindowTitle("Reset Roll to Defaults")
+        box.setText(f"Reset all {count_of(count, 'frame')} in this roll to their default settings?")
+    else:
+        box.setWindowTitle("Reset Settings")
+        box.setText(f"Reset {count_of(count, 'frame')} to their default settings?")
+    box.setInformativeText("Each frame's reset is a normal undo step, so you can revert it after.")
     box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
     box.setDefaultButton(QMessageBox.StandardButton.Yes)
     return box.exec() == QMessageBox.StandardButton.Yes

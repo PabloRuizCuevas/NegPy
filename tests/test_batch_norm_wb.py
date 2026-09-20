@@ -10,6 +10,7 @@ import numpy as np
 
 from negpy.desktop.workers.render import NormalizationInput, NormalizationTask, NormalizationWorker
 from negpy.domain.models import WorkspaceConfig
+from negpy.features.lens.models import LensCorrections
 
 
 class _FakePreviewService:
@@ -18,7 +19,20 @@ class _FakePreviewService:
     def __init__(self) -> None:
         self.calls: dict[str, bool] = {}
 
-    def load_linear_preview(self, path, color_space, use_camera_wb, full_resolution, file_hash, demosaic="Auto", positive_source=False):
+    def load_linear_preview(
+        self,
+        path,
+        color_space,
+        use_camera_wb,
+        full_resolution,
+        file_hash,
+        demosaic="Auto",
+        positive_source=False,
+        highlight_mode=0,
+        bake_camera_wb=False,
+        lens_corrections=LensCorrections(),
+        lens_flatfield=None,
+    ):
         self.calls[file_hash] = use_camera_wb
         raw = np.full((8, 8, 3), 0.5, dtype=np.float32)
         return raw, (8, 8), {}
@@ -109,7 +123,20 @@ class _VaryingPreviewService(_FakePreviewService):
         super().__init__()
         self.fills = fills
 
-    def load_linear_preview(self, path, color_space, use_camera_wb, full_resolution, file_hash, demosaic="Auto", positive_source=False):
+    def load_linear_preview(
+        self,
+        path,
+        color_space,
+        use_camera_wb,
+        full_resolution,
+        file_hash,
+        demosaic="Auto",
+        positive_source=False,
+        highlight_mode=0,
+        bake_camera_wb=False,
+        lens_corrections=LensCorrections(),
+        lens_flatfield=None,
+    ):
         self.calls[file_hash] = use_camera_wb
         raw = np.full((8, 8, 3), self.fills[file_hash], dtype=np.float32)
         return raw, (8, 8), {}

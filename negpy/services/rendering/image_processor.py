@@ -24,11 +24,21 @@ from negpy.domain.models import (
 from negpy.features.altprocess.models import AltProcess
 from negpy.features.process.capture_color import wb_only_cam_xyz
 from negpy.features.process.models import DemosaicMode, ProcessMode
-from negpy.features.process.logic import demosaic_token, effective_linear_raw, linear_raw_token
+from negpy.features.process.logic import (
+    demosaic_token,
+    effective_highlight_reconstruction,
+    effective_linear_raw,
+    highlight_reconstruction_bakes_wb,
+    highlight_reconstruction_bakes_wb_token,
+    highlight_reconstruction_bright_gain,
+    highlight_reconstruction_token,
+    linear_raw_token,
+)
 from negpy.features.process.sensor import apply_sensor_correction, effective_sensor_matrix, sensor_token
 from negpy.features.exposure.analysis import COLOR_HIST_BINS
 from negpy.features.exposure.models import RenderIntent
 from negpy.features.flatfield.logic import apply_flatfield, flatfield_token
+from negpy.services.rendering.lens import lens_decode_token, metadata_lens_corrections, prepare_lens_source
 from negpy.features.geometry.logic import autocrop_detection_key, resolve_autocrop_rect
 from negpy.features.retouch.logic import (
     apply_hair_inpaint,
@@ -36,6 +46,8 @@ from negpy.features.retouch.logic import (
     apply_score_repair,
     compute_dust_stats,
     detect_luma_score,
+    drop_exclusions,
+    exclusion_token,
     film_scale,
     downsample_ir,
     hair_bake_token,
@@ -63,6 +75,7 @@ from negpy.features.stitch.models import stitch_has_triplets, stitch_token
 from negpy.domain.interfaces import PipelineContext
 from negpy.services.rendering.engine import DarkroomEngine
 from negpy.services.rendering.gpu_engine import GPUEngine
+from negpy.infrastructure.capture.raw_demosaic import _user_sat
 from negpy.infrastructure.gpu.device import GPUDevice
 from negpy.kernel.image.logic import (
     apply_exif_orientation,
@@ -112,6 +125,15 @@ logger = get_logger(__name__)
 
 
 _CMS_STRIPS = 16
+
+# Busy-toast labels for the dust bakes. With an exclusion in play the pass is re-deciding
+# what to repair, so the plain "repairing dust" would contradict the click that started it.
+_DUST_STEP = "repairing dust"
+_DUST_STEP_EXCLUDED = "updating dust removal"
+
+
+def _dust_step_label(retouch) -> str:
+    return _DUST_STEP_EXCLUDED if retouch.dust_exclusion_strokes else _DUST_STEP
 
 
 def _cms_transform_strips(img_u16: np.ndarray, src_bytes: bytes, dst_bytes: bytes) -> np.ndarray:
@@ -257,7 +279,7 @@ class ImageProcessor:
     Seamlessly switches between CPU (DarkroomEngine) and GPU (GPUEngine).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, use_gpu: bool = True) -> None:
         self.engine_cpu = DarkroomEngine()
         self.engine_gpu: Optional[GPUEngine] = None
 
@@ -330,7 +352,7 @@ class ImageProcessor:
         # RenderWorker. The caller runs on the render thread, so keep it to a signal emit.
         self.on_slow_step: Optional[Callable[[str], None]] = None
 
-        if APP_CONFIG.use_gpu:
+        if use_gpu and APP_CONFIG.use_gpu:
             gpu = GPUDevice.get()
             if gpu.is_available:
                 self.engine_gpu = GPUEngine()
@@ -432,14 +454,14 @@ class ImageProcessor:
         self._ice_value = val
         return val
 
-    def _hair_inpaint(self, img: np.ndarray, hair_masks: List[np.ndarray], cache_key: str) -> np.ndarray:
+    def _hair_inpaint(self, img: np.ndarray, hair_masks: List[np.ndarray], cache_key: str, label: str = _DUST_STEP) -> np.ndarray:
         """Structure-following inpaint of detected hairs, baked into the source before
         the engine (like _ir_bake; the GPU re-uploads source each frame, so it reaches
         both paths parity-free). Cached per (source+params, resolution)."""
         ckey = (cache_key, img.shape)
         if ckey == self._hair_key and self._hair_value is not None:
             return self._hair_value
-        self._slow_step("repairing dust")
+        self._slow_step(label)
         out = apply_hair_inpaint(img, hair_masks)
         self._hair_key = ckey
         self._hair_value = out
@@ -464,6 +486,7 @@ class ImageProcessor:
             source_key,
             round(float(ret.dust_threshold), 6),
             int(ret.dust_size),
+            exclusion_token(ret),
             settings.process.process_mode,
             small.shape,
         )
@@ -478,12 +501,13 @@ class ImageProcessor:
             self._dust_stats_key = stats_key
             self._dust_stats_value = stats
         score, hair_luma = detect_luma_score(small, ret.dust_threshold, ret.dust_size, stats=stats)
+        score, hair_luma = drop_exclusions(score, hair_luma, ret.dust_exclusion_strokes)
         value = (score, [hair_luma] if hair_luma is not None else [])
         self._retouch_detect_key = key
         self._retouch_detect_value = value
         return value
 
-    def _luma_bake(self, img: np.ndarray, score: Optional[np.ndarray], cache_key: str) -> np.ndarray:
+    def _luma_bake(self, img: np.ndarray, score: Optional[np.ndarray], cache_key: str, label: str = _DUST_STEP) -> np.ndarray:
         """Detected specks repaired into the linear source, ahead of the meters (mirrors
         _ir_bake). Cached per (source+detection params, resolution)."""
         if score is None:
@@ -491,7 +515,7 @@ class ImageProcessor:
         ckey = (cache_key, img.shape)
         if ckey == self._luma_key and self._luma_value is not None:
             return self._luma_value
-        self._slow_step("repairing dust")
+        self._slow_step(label)
         out = np.asarray(repair_components(img, score))
         self._luma_key = ckey
         self._luma_value = out
@@ -640,6 +664,7 @@ class ImageProcessor:
             source_hash,
             img.shape,
             skip_flatfield,
+            metadata_lens_corrections(settings),
             flatfield_token(settings.flatfield),
             sensor_token(settings.process),
             rgbscan_token(settings.rgbscan),
@@ -650,7 +675,7 @@ class ImageProcessor:
             img = self._precorrect_value
         else:
             source = img
-            if not skip_flatfield and not settings.stitch.stitch_enabled:
+            if not skip_flatfield and not settings.stitch.stitch_enabled and not metadata_lens_corrections(settings):
                 img = apply_flatfield(img, settings.flatfield)
             # Sensor unmix is a source pre-correction like flat-field. skip_flatfield buffers
             # come from _load_source_f32, which already applied it. Triplet composites take
@@ -669,10 +694,13 @@ class ImageProcessor:
         base_hash = (
             source_hash
             + flatfield_token(settings.flatfield)
+            + lens_decode_token(metadata_lens_corrections(settings), settings.flatfield)
             + rgbscan_token(settings.rgbscan)
             + stitch_token(settings.stitch)
             + hdr_token(settings.hdr)
             + linear_raw_token(settings.process, settings.exposure.render_intent)
+            + highlight_reconstruction_token(settings.process)
+            + highlight_reconstruction_bakes_wb_token(settings.process, settings.exposure.render_intent)
             + sensor_token(settings.process)
             + demosaic_token(settings.process.demosaic_preview)
             + ir_bake_token(settings.retouch, ir_buffer is not None)
@@ -691,7 +719,8 @@ class ImageProcessor:
             if ir_corrected_mask is not None and (detected_dust is not None or hair_masks):
                 # What IR already repaired is not repaired again from the visible.
                 detected_dust, hair_masks = _without_ir(detected_dust, hair_masks, ir_corrected_mask)
-            img = self._luma_bake(img, detected_dust, base_hash + hair_bake_token(orig_ret))
+            dust_label = _dust_step_label(orig_ret)
+            img = self._luma_bake(img, detected_dust, base_hash + hair_bake_token(orig_ret), dust_label)
             img, manual_routed = self._manual_bake(img, settings, base_hash)
             extra = [m for m in (ir_routed, manual_routed) if m is not None]
             if extra:
@@ -700,7 +729,7 @@ class ImageProcessor:
             # invalidates the base stage when detection params change.
             hair_token = hair_bake_token(orig_ret) if hair_masks else ""
             if hair_masks:
-                img = self._hair_inpaint(img, hair_masks, base_hash + hair_token)
+                img = self._hair_inpaint(img, hair_masks, base_hash + hair_token, dust_label)
 
         source_hash = base_hash + hair_token + f"|res{w_cols}x{h_orig}"
 
@@ -749,24 +778,43 @@ class ImageProcessor:
         if self._is_flat(settings):
             prefer_gpu = False
 
+        needs_tiling = bool(prefer_gpu and self.engine_gpu and self.engine_gpu.requires_tiling(img, settings))
+        if needs_tiling and crop_preview_full:
+            prefer_gpu = False
+
         if prefer_gpu and self.engine_gpu:
             try:
-                processed, gpu_metrics = self.engine_gpu.process_to_texture(
-                    img,
-                    settings,
-                    scale_factor=scale_factor,
-                    render_size_ref=render_size_ref,
-                    readback_metrics=readback_metrics,
-                    source_hash=source_hash,
-                    analysis_source_hash=source_hash,
-                    cam_xyz=cam_xyz,
-                    camera_wb=camera_wb,
-                    full_frame=crop_preview_full,
-                )
+                if needs_tiling:
+                    processed, gpu_metrics = self.engine_gpu.process(
+                        img,
+                        settings,
+                        scale_factor=scale_factor,
+                        readback_metrics=readback_metrics,
+                        source_hash=source_hash,
+                        analysis_source_hash=source_hash,
+                        cam_xyz=cam_xyz,
+                        camera_wb=camera_wb,
+                        memory_bounded=True,
+                        render_size_ref=render_size_ref,
+                    )
+                else:
+                    processed, gpu_metrics = self.engine_gpu.process_to_texture(
+                        img,
+                        settings,
+                        scale_factor=scale_factor,
+                        render_size_ref=render_size_ref,
+                        readback_metrics=readback_metrics,
+                        source_hash=source_hash,
+                        analysis_source_hash=source_hash,
+                        cam_xyz=cam_xyz,
+                        camera_wb=camera_wb,
+                        full_frame=crop_preview_full,
+                    )
                 context.metrics.update(gpu_metrics)
                 return processed, context.metrics
             except Exception:
                 logger.exception("Hardware acceleration failed, falling back to CPU")
+                self.engine_gpu.cleanup(collect=False)
                 context.metrics["gpu_fallback"] = True
 
         processed = self.engine_cpu.process(img, settings, source_hash, context)
@@ -813,6 +861,8 @@ class ImageProcessor:
         wb_override: Optional[Sequence[float]] = None,
         demosaic: str = DemosaicMode.AUTO,
         positive_source: bool = False,
+        highlight_mode: int = 0,
+        bake_camera_wb: bool = False,
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Decode one RAW to sensor-native (output_color=raw), linear uint16 RGB.
 
@@ -824,30 +874,67 @@ class ImageProcessor:
         absorb the difference, and `use_camera_wb` reads each *file's* as-shot multipliers —
         which differ per frame on a camera left in auto white balance.
 
+        `highlight_mode` is libraw's own reconstruction level; the caller resolves it via
+        `effective_highlight_reconstruction` so this method never has to re-derive the gate.
+
+        `bake_camera_wb` applies this file's own white balance even though `linear_raw` is
+        true, resolved by the caller via `highlight_reconstruction_bakes_wb` — reconstruction's
+        clip thresholds read the decode's own multipliers, which are all neutral on a plain
+        `linear_raw` decode. `wb_override` still wins when both are set, so a bracket sibling
+        pins to the reference frame's white balance rather than reading its own.
+
+        A non-Clip `highlight_mode` makes libraw scale the whole decode down against its
+        widest channel multiplier instead of its narrowest, so whatever real white balance
+        reaches this decode (camera or override) is offset back out via `bright` —
+        see `highlight_reconstruction_bright_gain`.
+
         Returns (rgb_uint16, loader_metadata).
         """
         ctx_mgr, metadata = loader_factory.get_loader(file_path, linear_raw=linear_raw, positive_source=positive_source)
         with ctx_mgr as raw:
             algo = get_best_demosaic_algorithm(raw, demosaic)
-            user_wb = [1, 1, 1, 1] if linear_raw else (list(wb_override) if wb_override is not None else None)
+            # Read before postprocess: camera_whitebalance is sensor metadata, unaffected by it,
+            # and highlight_reconstruction_bright_gain needs it ahead of the postprocess call.
+            camera_wb = camera_wb_multipliers(raw)
+            if wb_override is not None:
+                # rawpy's user_wb is [R, G, B, G2]; camera_wb_multipliers only ever supplies
+                # [R, G, B], so pad with G2=G rather than pass rawpy a length it rejects.
+                user_wb: Optional[list] = list(wb_override)
+                if len(user_wb) == 3:
+                    user_wb.append(user_wb[1])
+                use_camera_wb_flag = False
+                wb_for_gain: Optional[Sequence[float]] = user_wb
+            elif bake_camera_wb or not linear_raw:
+                user_wb = None
+                use_camera_wb_flag = True
+                wb_for_gain = camera_wb
+            else:
+                user_wb = [1, 1, 1, 1]
+                use_camera_wb_flag = False
+                wb_for_gain = None
             post_kw: Dict[str, Any] = {"half_size": True} if fast and _use_half_size_decode(raw, linear_raw) else {}
+            # NonStandardFileWrapper has no camera calibration to read; its postprocess ignores user_sat anyway.
+            user_sat = None if isinstance(raw, NonStandardFileWrapper) else _user_sat(raw)
             rgb = raw.postprocess(
                 gamma=(1, 1),
                 no_auto_bright=True,
                 adjust_maximum_thr=0.0,  # fixed white level, never the frame's own max
-                use_camera_wb=not linear_raw and wb_override is None,
+                user_sat=user_sat,  # calibrated linearity limit, not the format's generic max
+                use_camera_wb=use_camera_wb_flag,
                 user_wb=user_wb,
                 output_bps=16,
                 output_color=rawpy.ColorSpace.raw,
                 demosaic_algorithm=algo,
                 user_flip=0,
+                highlight_mode=highlight_mode,
+                bright=highlight_reconstruction_bright_gain(wb_for_gain, highlight_mode),
                 **post_kw,
             )
             rgb = ensure_rgb(rgb)
             # Sensor-native decode leaves the buffer in camera primaries, and the
             # transparency transfer needs the matrix to reach the working space.
             metadata["cam_xyz"] = camera_xyz_matrix(raw)
-            metadata["camera_wb"] = camera_wb_multipliers(raw)
+            metadata["camera_wb"] = camera_wb
         return rgb, metadata
 
     def _load_source_f32(
@@ -872,7 +959,10 @@ class ImageProcessor:
         cache_key = (
             file_path,
             mtime,
+            lens_decode_token(metadata_lens_corrections(params), params.flatfield),
             effective_linear_raw(params.process, params.exposure.render_intent),
+            effective_highlight_reconstruction(params.process),
+            highlight_reconstruction_bakes_wb(params.process, params.exposure.render_intent),
             rgbscan_token(params.rgbscan),
             stitch_token(params.stitch),
             hdr_token(params.hdr),
@@ -916,6 +1006,8 @@ class ImageProcessor:
         `hdr` cleared, so it cannot: it passes the pin in from outside.
         """
         linear_raw = effective_linear_raw(params.process, params.exposure.render_intent)
+        highlight_mode = effective_highlight_reconstruction(params.process)
+        bake_wb = highlight_reconstruction_bakes_wb(params.process, params.exposure.render_intent)
         demosaic = params.process.demosaic_export
         rgbcfg = params.rgbscan
         # A bracket wins over a triplet. The UI refuses the two together, and the export
@@ -943,13 +1035,19 @@ class ImageProcessor:
                     wb_override=_NEUTRAL_WB,
                     demosaic=demosaic,
                     positive_source=params.process.positive_source,
+                    highlight_mode=highlight_mode,
                 )
                 decoded = dict(
                     zip(
                         siblings,
                         pool.map(
                             lambda p: self._decode_sensor_rgb(
-                                p, linear_raw, wb_override=_NEUTRAL_WB, demosaic=demosaic, positive_source=params.process.positive_source
+                                p,
+                                linear_raw,
+                                wb_override=_NEUTRAL_WB,
+                                demosaic=demosaic,
+                                positive_source=params.process.positive_source,
+                                highlight_mode=highlight_mode,
                             )[0],
                             siblings,
                         ),
@@ -964,6 +1062,8 @@ class ImageProcessor:
                 wb_override=wb_override,
                 demosaic=demosaic,
                 positive_source=params.process.positive_source,
+                highlight_mode=highlight_mode,
+                bake_camera_wb=bake_wb,
             )
         # No embedded profile (scanner-raw linear, sensor-native RAW) means the buffer is
         # already in the working space, so "Same as Source" exports without converting.
@@ -997,8 +1097,9 @@ class ImageProcessor:
             # Every frame decodes on the reference's white balance, never its own. The
             # transfer path already decodes neutral, but it is pinned here anyway, because
             # a bracket whose frames sit on different white balances solves wrong ratios
-            # and reports nothing.
-            bracket_wb = None if linear_raw else metadata.get("camera_wb")
+            # and reports nothing. An active reconstruction bakes the reference's real white
+            # balance in (see highlight_reconstruction_bakes_wb), so siblings pin to that too.
+            bracket_wb = metadata.get("camera_wb") if (bake_wb or not linear_raw) else None
             # fast_decode must ride along: a half-size primary against full-size
             # siblings is a shape mismatch, not just a slow merge.
             hdr_siblings = [p for p in dict.fromkeys(params.hdr.hdr_paths) if p != file_path]
@@ -1014,6 +1115,7 @@ class ImageProcessor:
                                 wb_override=bracket_wb,
                                 demosaic=demosaic,
                                 positive_source=params.process.positive_source,
+                                highlight_mode=highlight_mode,
                             )[0],
                             hdr_siblings,
                         ),
@@ -1036,7 +1138,10 @@ class ImageProcessor:
 
         orientation = metadata.get("orientation", 1)
         f32_buffer = apply_exif_orientation(f32_buffer, orientation)
-        f32_buffer = apply_flatfield(f32_buffer, params.flatfield)
+        if metadata_lens_corrections(params):
+            f32_buffer = prepare_lens_source(f32_buffer, metadata, params.flatfield, metadata_lens_corrections(params))
+        else:
+            f32_buffer = apply_flatfield(f32_buffer, params.flatfield)
         if not is_triplet:
             f32_buffer = apply_sensor_correction(f32_buffer, effective_sensor_matrix(params.process))
         if ir_full is not None:
@@ -1113,10 +1218,13 @@ class ImageProcessor:
         detect_key = (
             source_hash
             + flatfield_token(params.flatfield)
+            + lens_decode_token(metadata_lens_corrections(params), params.flatfield)
             + rgbscan_token(params.rgbscan)
             + stitch_token(params.stitch)
             + hdr_token(params.hdr)
             + linear_raw_token(params.process, params.exposure.render_intent)
+            + highlight_reconstruction_token(params.process)
+            + highlight_reconstruction_bakes_wb_token(params.process, params.exposure.render_intent)
             + sensor_token(params.process)
             + demosaic_token(params.process.demosaic_export)
             + ir_bake_token(params.retouch, ir_full is not None)
@@ -1126,13 +1234,14 @@ class ImageProcessor:
         f32_buffer, _, _, ir_routed = self._ir_bake(f32_buffer, ir_full, params, detect_key)
         orig_ret = params.retouch
         detected, hair_masks = self._detect_luma(params, f32_buffer, detect_key)
-        f32_buffer = self._luma_bake(f32_buffer, detected, detect_key + hair_bake_token(orig_ret))
+        dust_label = _dust_step_label(orig_ret)
+        f32_buffer = self._luma_bake(f32_buffer, detected, detect_key + hair_bake_token(orig_ret), dust_label)
         f32_buffer, manual_routed = self._manual_bake(f32_buffer, params, detect_key)
         extra = [m for m in (ir_routed, manual_routed) if m is not None]
         if extra:
             hair_masks = hair_masks + extra
         if hair_masks:
-            f32_buffer = self._hair_inpaint(f32_buffer, hair_masks, detect_key + hair_bake_token(orig_ret))
+            f32_buffer = self._hair_inpaint(f32_buffer, hair_masks, detect_key + hair_bake_token(orig_ret), dust_label)
         export_token = detect_key + (hair_bake_token(orig_ret) if hair_masks else "")
         return f32_buffer, source_cs, export_token
 
@@ -1565,10 +1674,13 @@ class ImageProcessor:
             detect_key = (
                 source_hash
                 + flatfield_token(params.flatfield)
+                + lens_decode_token(metadata_lens_corrections(params), params.flatfield)
                 + rgbscan_token(params.rgbscan)
                 + stitch_token(params.stitch)
                 + hdr_token(params.hdr)
                 + linear_raw_token(params.process, params.exposure.render_intent)
+                + highlight_reconstruction_token(params.process)
+                + highlight_reconstruction_bakes_wb_token(params.process, params.exposure.render_intent)
                 + sensor_token(params.process)
                 + ir_bake_token(params.retouch, ir_full is not None)
                 + manual_bake_token(params.retouch)

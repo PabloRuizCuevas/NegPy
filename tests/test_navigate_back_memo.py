@@ -36,6 +36,7 @@ def _stub(memo, **overrides):
         _thumb_config=object(),
         _render_memo=memo,
         _last_render_identity=None,
+        _expected_render_key="",
         _spared_texture=None,
         _gpu_fallback_notified=True,
         _freeze_resolved_auto_crop=MagicMock(),

@@ -201,6 +201,7 @@ class CanvasOverlay(QWidget):
     cursor_left = pyqtSignal()
     local_mask_created = pyqtSignal(str, list)  # (shape value, viewport-normalised points)
     scratch_completed = pyqtSignal(list)
+    dust_exclusion_painted = pyqtSignal(list)  # viewport-normalized points of a right-drag
     local_mask_selected = pyqtSignal(int)
     local_mask_edited = pyqtSignal(int, list)  # (mask index, viewport-normalized vertices)
     local_vertex_deleted = pyqtSignal(int, int)  # (mask index, vertex index)
@@ -258,6 +259,9 @@ class CanvasOverlay(QWidget):
         # Scratch heal (open polyline) interaction state
         self._scratch_pts: List[QPointF] = []
         self._heal_drag_pts: List[QPointF] = []
+        # Right-drag path painting an optical-removal exclusion. Non-empty from the press to
+        # the release, which is also what holds the context menu back (contextMenuEvent).
+        self._exclude_drag_pts: List[QPointF] = []
         # Per mask, in list order: the outline (hit test, notes) and the control points
         # (drag handles). Only a polygon has the same points in both lists.
         self._local_mask_screen_polys: List[List[QPointF]] = []
@@ -318,6 +322,7 @@ class CanvasOverlay(QWidget):
 
         self._buffer_overlay_ratio: float = 0.0
         self._buffer_overlay_visible: bool = False
+        self._buffer_slider_dragging: bool = False
         self._buffer_hide_timer = QTimer(self)
         self._buffer_hide_timer.setSingleShot(True)
         self._buffer_hide_timer.timeout.connect(self._hide_buffer_overlay)
@@ -375,8 +380,18 @@ class CanvasOverlay(QWidget):
     def show_analysis_buffer(self, ratio: float) -> None:
         self._buffer_overlay_ratio = max(0.0, min(ratio, 0.3))
         self._buffer_overlay_visible = True
-        self._buffer_hide_timer.start(1000)
+        if not self._buffer_slider_dragging:
+            self._buffer_hide_timer.start(1000)
         self.update()
+
+    def set_analysis_buffer_dragging(self, dragging: bool) -> None:
+        """Hold the overlay while the slider is pressed; a stationary press fires no
+        valueChanged to keep restarting the hide timer."""
+        self._buffer_slider_dragging = dragging
+        if dragging:
+            self._buffer_hide_timer.stop()
+        elif self._buffer_overlay_visible:
+            self._buffer_hide_timer.start(1000)
 
     def _hide_buffer_overlay(self) -> None:
         self._buffer_overlay_visible = False
@@ -737,6 +752,13 @@ class CanvasOverlay(QWidget):
             self._draw_scratch_in_progress(painter)
         if self._tool_mode == ToolMode.DUST_PICK:
             self._draw_heal_drag_in_progress(painter)
+        # Committed patches show with the detection overlay or a retouch tool, where the
+        # question "what is the detector doing here" is being asked; a drag always shows.
+        if self._exclude_drag_pts or (
+            self.state.config.retouch.dust_exclusion_strokes
+            and (self.state.dust_overlay_mode != "off" or self._tool_mode in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK))
+        ):
+            self._draw_dust_exclusions(painter)
         if self._tool_mode == ToolMode.STRAIGHTEN:
             self._draw_straighten_line(painter)
 
@@ -998,6 +1020,37 @@ class CanvasOverlay(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(fill)
         painter.drawPath(self._heal_region_path(self._heal_drag_pts, radius))
+
+    def _draw_dust_exclusions(self, painter: QPainter) -> None:
+        """Bands held back from optical removal: the committed strokes, plus the one under a
+        right-drag in progress. Each stroke fills as one region, so its own dabs do not
+        composite into a chain of darker blobs."""
+        conf = self.state.config.retouch
+        fill = QColor(THEME.warn_amber)
+        fill.setAlpha(60)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(fill)
+
+        if conf.dust_exclusion_strokes:
+            with self.state.metrics_lock:
+                uv_grid = self.state.last_metrics.get("uv_grid")
+            if uv_grid is not None:
+                for points, size in conf.dust_exclusion_strokes:
+                    screen_pts = [self._raw_to_screen(px, py, uv_grid) for px, py in points]
+                    self._fill_brush_band(painter, screen_pts, max(1.5, self._brush_screen_radius(size)))
+
+        if self._exclude_drag_pts:
+            self._fill_brush_band(painter, self._exclude_drag_pts, max(1.5, self._brush_screen_radius(conf.manual_dust_size)))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    def _fill_brush_band(self, painter: QPainter, pts: List[QPointF], radius: float) -> None:
+        """The swept band of a brush path, smoothed past two points like the mask is."""
+        if len(pts) == 1:
+            painter.drawEllipse(pts[0], radius, radius)
+            return
+        if len(pts) >= 3:
+            pts = [QPointF(x, y) for x, y in smooth_polyline([(p.x(), p.y()) for p in pts], closed=False)]
+        painter.drawPath(self._heal_region_path(pts, radius))
 
     def _draw_straighten_line(self, painter: QPainter) -> None:
         """Reference line being dragged with the straighten tool, plus a badge
@@ -2020,6 +2073,10 @@ class CanvasOverlay(QWidget):
 
         return float(np.clip(nb_x, 0, 1)), float(np.clip(nb_y, 0, 1))
 
+    def image_coords_at(self, screen_pos: QPointF) -> Optional[Tuple[float, float]]:
+        """Viewport-normalized coordinates of a widget position, or None off the frame."""
+        return self._map_to_image_coords(screen_pos)
+
     def _map_to_image_coords_unbounded(self, screen_pos: QPointF) -> Optional[Tuple[float, float]]:
         """As `_map_to_image_coords`, but keeps points off the frame.
 
@@ -2064,6 +2121,18 @@ class CanvasOverlay(QWidget):
             self.parent()._is_panning = True
             self.parent()._last_mouse_pos = event.position()
             self.parent().setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+
+        # A right press over the frame arms an exclusion drag while Optical Removal is on.
+        # It stays a press until the release says which it was: a drag paints, a click gets
+        # the context menu the armed state held back.
+        if (
+            event.button() == Qt.MouseButton.RightButton
+            and self.state.config.retouch.dust_remove
+            and self._content_view_rect().contains(event.position())
+        ):
+            self._exclude_drag_pts = [event.position()]
             event.accept()
             return
 
@@ -2236,6 +2305,22 @@ class CanvasOverlay(QWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self._mouse_pos = event.position()
+
+        # An exclusion drag owns the mouse like the divider does below: it is painting, and a
+        # tool or a pan reading the same motion would act on it twice. Sampled at half the
+        # brush radius, so the committed disks overlap into a band, and clamped to the frame.
+        if self._exclude_drag_pts and event.buttons() & Qt.MouseButton.RightButton:
+            rect = self._content_view_rect()
+            pos = QPointF(
+                float(np.clip(event.position().x(), rect.left(), rect.right())),
+                float(np.clip(event.position().y(), rect.top(), rect.bottom())),
+            )
+            spacing = max(6.0, self._brush_screen_radius(self.state.config.retouch.manual_dust_size) * 0.5)
+            if (pos - self._exclude_drag_pts[-1]).manhattanLength() >= spacing:
+                self._exclude_drag_pts.append(pos)
+            self.update()
+            event.accept()
+            return
 
         # First: a divider drag owns the mouse, and no tool or readout should see it.
         if self._split_dragging:
@@ -2698,7 +2783,34 @@ class CanvasOverlay(QWidget):
             self.scratch_completed.emit(vertices)
         self.update()
 
+    def _right_click_excludes(self) -> bool:
+        """Whether a plain right-click excludes instead of opening the menu. The heal and
+        scratch tools keep theirs: right-click is how a heal is deleted while one is live."""
+        return self.state.right_click_excludes and self._tool_mode not in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK)
+
+    def contextMenuEvent(self, event) -> None:
+        # An armed right press may still become an exclusion drag, so the menu waits for the
+        # release to decide; a press that was never armed falls through to the canvas.
+        if self._exclude_drag_pts:
+            event.accept()
+            return
+        event.ignore()
+
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._exclude_drag_pts and event.button() == Qt.MouseButton.RightButton:
+            pts = self._exclude_drag_pts
+            self._exclude_drag_pts = []
+            vertices = [c for c in (self._map_to_image_coords(p) for p in pts) if c is not None]
+            if len(vertices) > 1 or (vertices and self._right_click_excludes()):
+                self.dust_exclusion_painted.emit(vertices)
+            else:
+                # The press never moved and a click is not set to exclude, so it was the
+                # right-click it looked like, and the menu contextMenuEvent held back is owed.
+                self.parent().show_canvas_menu(event.position(), event.globalPosition().toPoint())
+            self.update()
+            event.accept()
+            return
+
         if self._split_dragging:
             self._split_dragging = False
             self.unsetCursor()

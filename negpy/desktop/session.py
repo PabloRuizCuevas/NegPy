@@ -23,11 +23,13 @@ from negpy.desktop.sticky import (
 from negpy.desktop.view.canvas.crop_guides import CropGuide
 from negpy.domain.models import PROOF_INTENT_LABELS, ExportPreset, ProofIntent, WorkspaceConfig
 from negpy.features.exposure.models import apply_targets
+from negpy.features.geometry.logic import flip_geometry_and_analysis, rotate_geometry_and_analysis
 from negpy.features.process.models import invalidate_local_bounds
 from negpy.features.rgbscan.models import RgbScanConfig, is_rgb_triplet
 from negpy.features.hdr.logic import resolve_anchor, seed_shadow_density
 from negpy.features.hdr.models import ANCHOR_EV_UNSET, HdrConfig, hdr_frame_paths
 from negpy.features.stitch.models import StitchConfig
+from negpy.features.lens.models import LensMetadata
 from negpy.infrastructure.display.color_spaces import WORKING_COLOR_SPACE
 from negpy.infrastructure.storage.repository import StorageRepository
 from negpy.kernel.system.config import APP_CONFIG
@@ -96,6 +98,9 @@ class AppState:
     # None for sources that carry no camera matrix (scanner TIFF, JPEG).
     preview_cam_xyz: Optional[list] = None
     preview_camera_wb: Optional[list] = None
+    preview_lens: Optional[LensMetadata] = None
+    preview_lens_path: str = ""
+    preview_lens_token: str = ""
     # Preview-resolution stand-in for preview_raw while HQ is on. Interactive frames render
     # against it. None when preview_raw is already small enough.
     preview_proxy: Optional[Any] = None
@@ -178,6 +183,10 @@ class AppState:
     # saved edit. Off, a new file gets bare WorkspaceConfig() defaults for every catalog
     # row; the user's row picks (STICKY_ROWS_KEY/STICKY_CONFIG_KEY) are untouched.
     sticky_settings_enabled: bool = True
+    # When True, a right-click on the canvas excludes the mark under it from Optical Removal
+    # and the canvas context menu is unreachable while the removal is on. Off, a right-click
+    # opens that menu and its Exclude item does the same job in one more step.
+    right_click_excludes: bool = False
 
     # Crop tool composition guide (CropGuide value); display-only, so not in GeometryConfig
     crop_guide: str = "thirds"
@@ -298,6 +307,12 @@ class AppState:
             self.local_hidden_masks_by_hash.pop(h, None)
 
 
+def _asset_key(asset: Dict[str, Any]) -> tuple:
+    """A file's stable identity: its content hash, plus which half for a half-frame pair
+    sharing that hash. Survives `uploaded_files` gaining or losing rows, unlike its position."""
+    return (asset.get("hash"), asset.get("half"))
+
+
 def _asset_mtime(asset: Dict[str, Any]) -> float:
     """Discovery stamps ``mtime`` on every asset; ones assembled elsewhere (triplet
     edit, stitch) fall back to a stat so a mixed list still sorts by date."""
@@ -366,6 +381,10 @@ class AssetListModel(QAbstractListModel):
         self._sheet_filter: str = "all"  # "all" | "keepers" | "unrejected"
         self._semantic_query: Optional[np.ndarray] = None
         self._sorted_indices: list[int] = []
+        # Each display row's stable identity as of the last rebuild — a cache, not a re-derive
+        # from `uploaded_files`, so `_apply_reindex` can look up an old row's file even after a
+        # row was removed from (or inserted into) that list before it runs.
+        self._sorted_keys: list[tuple] = []
         self._rebuild_indices()
 
     def _rebuild_indices(self) -> None:
@@ -395,6 +414,21 @@ class AssetListModel(QAbstractListModel):
                 indices = [i for i in indices if match(self._filter_terms, facts.get(files[i]["hash"]) or facts_for(files[i]))]
 
         self._sorted_indices = indices
+        self._sorted_keys = [_asset_key(files[i]) for i in indices]
+
+    def _apply_reindex(self) -> None:
+        """Rebuilds `_sorted_indices` and remaps persistent indexes (Qt's selection, current
+        index, and the shift-click anchor) to follow the same files, keyed by each row's
+        cached identity from the last rebuild — not `uploaded_files`, which may already
+        reflect the delete/insert `refresh()` calls this for."""
+        self.layoutAboutToBeChanged.emit()
+        old_persistent = self.persistentIndexList()
+        old_keys = [self._sorted_keys[pidx.row()] if 0 <= pidx.row() < len(self._sorted_keys) else None for pidx in old_persistent]
+        self._rebuild_indices()
+        key_to_display = {key: display for display, key in enumerate(self._sorted_keys)}
+        new_persistent = [self.index(key_to_display[key], 0) if key in key_to_display else QModelIndex() for key in old_keys]
+        self.changePersistentIndexList(old_persistent, new_persistent)
+        self.layoutChanged.emit()
 
     def _rank_by_similarity(self, indices: list[int], files: list) -> list[int]:
         """Cosine similarity against the query, most relevant first. A file with no
@@ -436,8 +470,7 @@ class AssetListModel(QAbstractListModel):
         if mode not in ("all", "keepers", "unrejected"):
             mode = "all"
         self._sheet_filter = mode
-        self._rebuild_indices()
-        self.layoutChanged.emit()
+        self._apply_reindex()
 
     @property
     def sheet_filter(self) -> str:
@@ -449,13 +482,11 @@ class AssetListModel(QAbstractListModel):
 
     def set_sort_order(self, order: str) -> None:
         self._sort_order = order
-        self._rebuild_indices()
-        self.layoutChanged.emit()
+        self._apply_reindex()
 
     def set_sort_descending(self, descending: bool) -> None:
         self._sort_descending = descending
-        self._rebuild_indices()
-        self.layoutChanged.emit()
+        self._apply_reindex()
 
     def set_filter(self, text: str, regex: bool) -> bool:
         """Updates filter. Returns True on success, False if regex failed to compile.
@@ -468,8 +499,7 @@ class AssetListModel(QAbstractListModel):
             self._filter_regex = regex
             self._filter_pattern = None
             self._filter_terms = []
-            self._rebuild_indices()
-            self.layoutChanged.emit()
+            self._apply_reindex()
             return True
 
         if regex:
@@ -487,8 +517,7 @@ class AssetListModel(QAbstractListModel):
             self._filter_pattern = None
             self._filter_terms = parse_query(text)
 
-        self._rebuild_indices()
-        self.layoutChanged.emit()
+        self._apply_reindex()
         return True
 
     def visible_actual_indices(self) -> set[int]:
@@ -541,8 +570,7 @@ class AssetListModel(QAbstractListModel):
         return None
 
     def refresh(self) -> None:
-        self._rebuild_indices()
-        self.layoutChanged.emit()
+        self._apply_reindex()
 
 
 def _source_effective_bounds(process) -> Optional[tuple]:
@@ -681,6 +709,7 @@ class DesktopSessionManager(QObject):
     settings_copied = pyqtSignal()
     settings_pasted = pyqtSignal()
     settings_synced = pyqtSignal(str)  # Bulk "Apply to selected" done — carries a status message
+    frames_edited_offscreen = pyqtSignal(list)  # hashes whose saved edits changed without a render
     file_selected = pyqtSignal(str)  # Emits file path when active file changes
     session_emptied = pyqtSignal()  # Last file removed — the viewer must blank the stale frame
 
@@ -741,6 +770,9 @@ class DesktopSessionManager(QObject):
         saved_sticky_enabled = self.repo.get_global_setting("sticky_settings_enabled")
         if saved_sticky_enabled is not None:
             self.state.sticky_settings_enabled = bool(saved_sticky_enabled)
+        saved_right_click_excludes = self.repo.get_global_setting("right_click_excludes")
+        if saved_right_click_excludes is not None:
+            self.state.right_click_excludes = bool(saved_right_click_excludes)
 
         saved_guide = self.repo.get_global_setting("crop_guide")
         if saved_guide in set(CropGuide):
@@ -886,6 +918,12 @@ class DesktopSessionManager(QObject):
         if self.state.sticky_settings_enabled != enabled:
             self.state.sticky_settings_enabled = enabled
             self.repo.save_global_setting("sticky_settings_enabled", enabled)
+
+    def set_right_click_excludes(self, enabled: bool) -> None:
+        """Updates and persists whether a right-click excludes instead of opening the menu."""
+        if self.state.right_click_excludes != enabled:
+            self.state.right_click_excludes = enabled
+            self.repo.save_global_setting("right_click_excludes", enabled)
             self.state_changed.emit()
 
     def set_invert_zoom_scroll(self, enabled: bool) -> None:
@@ -1251,6 +1289,7 @@ class DesktopSessionManager(QObject):
         target_indices = self.asset_model.visible_actual_indices_ordered() if scope == "roll" else self.state.selected_indices
 
         count = 0
+        changed_hashes: list[str] = []
         for idx in target_indices:
             if idx == self.state.selected_file_idx or not (0 <= idx < len(self.state.uploaded_files)):
                 continue
@@ -1268,6 +1307,7 @@ class DesktopSessionManager(QObject):
                 synced = replace(synced, process=replace(synced.process, **changes))
             self.push_external_history(target_hash, target_config, synced)
             self.repo.save_file_settings(target_hash, synced, file_path=target_path)
+            changed_hashes.append(target_hash)
             count += 1
 
         if count:
@@ -1279,6 +1319,7 @@ class DesktopSessionManager(QObject):
                 msg = f"{n} {noun} synced to {count} frame{'s' if count != 1 else ''}"
             self.settings_synced.emit(msg)
             self.settings_saved.emit()
+            self.frames_edited_offscreen.emit(changed_hashes)
         return count
 
     def apply_preset_fields(self, source: WorkspaceConfig, rows, scope: str = "current") -> int:
@@ -1297,6 +1338,7 @@ class DesktopSessionManager(QObject):
             target_indices = [self.state.selected_file_idx]
 
         count = 0
+        changed_hashes: list[str] = []
         for idx in target_indices:
             if not (0 <= idx < len(self.state.uploaded_files)):
                 continue
@@ -1309,6 +1351,7 @@ class DesktopSessionManager(QObject):
             synced = apply_selected_fields(source, target_config, rows)
             self.push_external_history(target_hash, target_config, synced)
             self.repo.save_file_settings(target_hash, synced, file_path=self.state.uploaded_files[idx]["path"])
+            changed_hashes.append(target_hash)
             count += 1
 
         if count:
@@ -1316,7 +1359,111 @@ class DesktopSessionManager(QObject):
             noun = "setting" if n == 1 else "settings"
             self.settings_synced.emit(f"Preset applied: {n} {noun} to {count} frame{'s' if count != 1 else ''}")
             self.settings_saved.emit()
+            if changed_hashes:
+                self.frames_edited_offscreen.emit(changed_hashes)
         return count
+
+    def reset_roll_settings(self, scope: str = "roll") -> int:
+        """Reset every frame in scope to its own asset defaults, same as Reset Settings
+        but for many frames. Each frame keeps what it *is* (_asset_defaults).
+        scope is "roll" (every visible frame) or "selection" (the file-list selection)."""
+        if self.state.selected_file_idx == -1:
+            return 0
+        target_indices = self.asset_model.visible_actual_indices_ordered() if scope == "roll" else self.state.selected_indices
+        count = 0
+        changed_hashes: list[str] = []
+        for idx in target_indices:
+            if not (0 <= idx < len(self.state.uploaded_files)):
+                continue
+            asset = self.state.uploaded_files[idx]
+            defaults = self._asset_defaults(WorkspaceConfig(), asset)
+            if idx == self.state.selected_file_idx:
+                self.update_config(defaults, persist=True, render=False)
+            else:
+                target_hash = asset["hash"]
+                target_config = self.repo.load_file_settings(target_hash) or self.config_for_asset(asset)
+                self.push_external_history(target_hash, target_config, defaults)
+                self.repo.save_file_settings(target_hash, defaults, file_path=asset["path"])
+                changed_hashes.append(target_hash)
+            count += 1
+        if count:
+            self.settings_synced.emit(f"Reset {count} frame{'s' if count != 1 else ''} to defaults")
+            self.settings_saved.emit()
+            if changed_hashes:
+                self.frames_edited_offscreen.emit(changed_hashes)
+        return count
+
+    def rotate_selected_frames(self, direction: int, active_included: bool = True) -> List[str]:
+        """Rotates every OTHER selected frame by its own current geometry, a quarter-turn
+        at a time. The active frame, if it is itself part of the selection, rotates
+        through the normal update_config path; this only fans the same turn out to the
+        rest of a multi-selection. `active_included` only affects the status message's
+        count, since the active frame is always excluded from this method's own loop.
+        Returns the thumbnail keys touched, so the caller can invalidate them."""
+        if len(self.state.selected_indices) <= 1:
+            return []
+
+        touched_keys = []
+        # Two open paths sharing a content hash share an edit row; applying a relative
+        # turn to both would read-modify-write it twice and turn it 180 in one click.
+        seen_hashes = {self.state.current_file_hash}
+        count = 0
+        for idx in self.state.selected_indices:
+            if idx == self.state.selected_file_idx or not (0 <= idx < len(self.state.uploaded_files)):
+                continue
+            asset = self.state.uploaded_files[idx]
+            target_hash = asset["hash"]
+            if target_hash in seen_hashes:
+                continue
+            seen_hashes.add(target_hash)
+            target_config = self.repo.load_file_settings(target_hash) or self.config_for_asset(asset)
+            new_geo, new_rect = rotate_geometry_and_analysis(target_config.geometry, target_config.process.analysis_rect, direction)
+            new_config = replace(target_config, geometry=new_geo)
+            if target_config.process.analysis_rect is not None:
+                new_config = replace(new_config, process=replace(target_config.process, analysis_rect=new_rect))
+            self.push_external_history(target_hash, target_config, new_config)
+            self.repo.save_file_settings(target_hash, new_config, file_path=asset["path"])
+            touched_keys.append(asset_thumbnail_key(asset))
+            count += 1
+
+        if count:
+            total = count + int(active_included)
+            self.settings_synced.emit(f"Rotated {total} frame{'s' if total != 1 else ''}")
+            self.settings_saved.emit()
+        return touched_keys
+
+    def flip_selected_frames(self, horizontal: bool, active_included: bool = True) -> List[str]:
+        """Mirrors every OTHER selected frame by its own current geometry. See
+        rotate_selected_frames — same active/other split, same reasoning."""
+        if len(self.state.selected_indices) <= 1:
+            return []
+
+        touched_keys = []
+        seen_hashes = {self.state.current_file_hash}
+        count = 0
+        for idx in self.state.selected_indices:
+            if idx == self.state.selected_file_idx or not (0 <= idx < len(self.state.uploaded_files)):
+                continue
+            asset = self.state.uploaded_files[idx]
+            target_hash = asset["hash"]
+            if target_hash in seen_hashes:
+                continue
+            seen_hashes.add(target_hash)
+            target_config = self.repo.load_file_settings(target_hash) or self.config_for_asset(asset)
+            new_geo, new_rect = flip_geometry_and_analysis(target_config.geometry, target_config.process.analysis_rect, horizontal)
+            new_config = replace(target_config, geometry=new_geo)
+            if target_config.process.analysis_rect is not None:
+                new_config = replace(new_config, process=replace(target_config.process, analysis_rect=new_rect))
+            self.push_external_history(target_hash, target_config, new_config)
+            self.repo.save_file_settings(target_hash, new_config, file_path=asset["path"])
+            touched_keys.append(asset_thumbnail_key(asset))
+            count += 1
+
+        if count:
+            total = count + int(active_included)
+            self.settings_synced.emit(f"Flipped {total} frame{'s' if total != 1 else ''}")
+            self.settings_saved.emit()
+        return touched_keys
 
     def next_file(self) -> None:
         display_idx = self.asset_model.actual_to_display(self.state.selected_file_idx)
@@ -1520,6 +1667,7 @@ class DesktopSessionManager(QObject):
         `update_config`, the rest are written straight to the DB with an external history
         step, the same split `_on_normalization_finished` uses for a roll-wide write.
         """
+        changed_hashes: list[str] = []
         for f_info in assets:
             new_p = self._asset_defaults(WorkspaceConfig(), f_info)
             if f_info["hash"] == self.state.current_file_hash:
@@ -1528,6 +1676,9 @@ class DesktopSessionManager(QObject):
             old_p = self.repo.load_file_settings(f_info["hash"]) or self.config_for_asset(f_info)
             self.push_external_history(f_info["hash"], old_p, new_p)
             self.repo.save_file_settings(f_info["hash"], new_p, file_path=f_info["path"])
+            changed_hashes.append(f_info["hash"])
+        if changed_hashes:
+            self.frames_edited_offscreen.emit(changed_hashes)
 
     def reset_section(self, section: str) -> None:
         """Reset a single feature section to its default config."""

@@ -38,6 +38,7 @@ def test_film_strip_toolbar_holds_roll_scoped_actions(panel):
         browser.half_frame_menu_btn,
         browser.apply_btn,
         browser.roll_settings_btn,
+        browser.update_thumbnails_btn,
         browser.unload_btn,
         browser.sheet_btn,
     ]
@@ -53,6 +54,33 @@ def test_new_roll_lives_on_the_film_strip_section_header(panel):
     assert actions_btn is not None
     labels = [action.text() for action in actions_btn.menu().actions()]
     assert labels == ["New Roll…", "Reset Roll to Defaults…"]
+
+
+def test_update_thumbnails_button_refreshes_the_whole_roll(panel):
+    panel.file_browser.update_thumbnails_btn.click()
+    panel.file_browser.controller.request_thumbnail_refresh.assert_called_once_with("roll")
+
+
+def test_update_thumbnails_button_cancels_instead_while_running(panel):
+    panel.file_browser.controller.thumbnail_refresh_running = True
+
+    panel.file_browser.update_thumbnails_btn.click()
+
+    panel.file_browser.controller.cancel_thumbnail_refresh.assert_called_once_with()
+    panel.file_browser.controller.request_thumbnail_refresh.assert_not_called()
+
+
+def test_update_thumbnails_button_reflects_the_running_state(panel):
+    browser = panel.file_browser
+    idle_tip = browser.update_thumbnails_btn.toolTip()
+
+    browser._on_thumbnail_refresh_state_changed(True)
+    running_tip = browser.update_thumbnails_btn.toolTip()
+    assert running_tip != idle_tip
+    assert "Cancel" in running_tip
+
+    browser._on_thumbnail_refresh_state_changed(False)
+    assert browser.update_thumbnails_btn.toolTip() == idle_tip
 
 
 def test_narrowing_the_panel_raises_a_populated_overflow_menu(panel, qapp):

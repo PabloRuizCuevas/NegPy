@@ -1,6 +1,6 @@
 import gc
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Tuple
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
@@ -56,7 +56,12 @@ class StitchWorker(QObject):
                     self.cancelled.emit()
                     return
                 self.progress.emit(i, total, f"Decoding {f['name']}")
-                f32, _, _ = self._processor._decode_oriented_f32(f["path"], task.params_by_path[f["path"]])
+                # Registration and composite assembly both use unwarped sources.
+                params = task.params_by_path[f["path"]]
+                params = replace(
+                    params, geometry=replace(params.geometry, lens_distortion_from_metadata=False, lens_ca_from_metadata=False)
+                )
+                f32, _, _ = self._processor._decode_oriented_f32(f["path"], params)
                 parts.append(f32)
             self.progress.emit(len(task.files), total, "Registering frames")
             transforms, canvas = register_parts(parts, is_cancelled=self._cancel.is_set)
