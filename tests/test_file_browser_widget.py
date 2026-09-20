@@ -307,8 +307,8 @@ def test_sync_half_frame_button_follows_the_active_rolls_state_without_retogglin
 
 def test_half_frame_toggle_disabled_with_no_active_roll(browser, session):
     """A batch with no single active roll (a library-wide search's mixed results) has
-    no roll-wide toggle to apply -- already-confirmed diptychs in it still show split,
-    but the button itself has nothing left to turn on or off."""
+    no roll-wide toggle to apply -- nothing in it splits, so the button has nothing
+    left to turn on or off."""
     session.state.active_roll_id = None
 
     browser.sync_ui()

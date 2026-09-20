@@ -1394,9 +1394,18 @@ class FileBrowser(QWidget):
         if rejected:
             text += f" · {rejected} rejected"
         roll_name = self._active_roll_name()
-        if roll_name:
-            text = f"{roll_name} — {text}"
+        # The prefix slot holds the roll's name. Frames that are not one roll get named
+        # as what they are instead: an edit here reaches the roll each frame came from,
+        # which a strip that looks identical either way gives no sign of.
+        text = f"{roll_name or 'Collection'} — {text}"
         self.tally_label.setText(text)
+        self.tally_label.setToolTip(
+            ""
+            if roll_name
+            else wrap_tooltip(
+                "These frames are not one roll. An edit changes the photo itself, so it also shows in the roll the frame came from."
+            )
+        )
         self.tally_label.setVisible(True)
 
     def _active_roll_name(self) -> str:
@@ -1464,18 +1473,14 @@ class FileBrowser(QWidget):
     def _sync_half_frame_availability(self) -> None:
         """The toggle is a roll-wide fact -- one film type, split or not -- so it has
         nothing to apply to a batch with no single active roll (a library-wide search's
-        mixed results, a restored session with no shared roll). Those already-confirmed
-        diptychs in it still show split, each at its own gutter; the toggle just cannot
-        turn that on or off for a batch that is not one roll."""
+        mixed results, a restored session with no shared roll). Nothing in such a batch
+        splits: the roll itself is where a scan becomes two frames."""
         has_roll = bool(self.session.state.active_roll_id)
         self.half_frame_btn.setEnabled(has_roll)
         self.half_frame_btn.setToolTip(
             wrap_tooltip("Half Frame — split each scan into two frames, edited and measured separately")
             if has_roll
-            else wrap_tooltip(
-                "Half Frame is a roll-wide setting, and this isn't one roll. Already-split scans still show "
-                "split; open the roll itself to change it."
-            )
+            else wrap_tooltip("Half Frame is a roll-wide setting, and this isn't one roll. Open the roll itself to split its scans.")
         )
 
     def _sync_half_frame_button(self, enabled: bool) -> None:
