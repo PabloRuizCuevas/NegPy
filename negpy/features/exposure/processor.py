@@ -511,6 +511,15 @@ class PhotometricProcessor:
             cast_gain=cast_gain,
             cast_offset=cast_offset,
             positive_source=self.process_config.positive_source,
+            separation=1.0 if is_bw else self.config.dye_separation,
+            separation_trims=(0.0, 0.0, 0.0)
+            if is_bw
+            else (
+                self.config.dye_separation_trim_red,
+                self.config.dye_separation_trim_green,
+                self.config.dye_separation_trim_blue,
+            ),
+            damping=0.0 if is_bw else self.config.separation_damping,
         )
 
         if is_bw:

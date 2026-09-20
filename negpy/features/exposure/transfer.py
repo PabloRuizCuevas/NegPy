@@ -27,6 +27,10 @@ Controls map onto the existing Print sliders, each neutral at its current defaul
   WB C/M/Y (0)   -> per-channel density offsets
   shadow/highlight_density (0.0) -> Zone Density, the print path's mid-sparing offsets,
                     re-centred onto this curve's own scale (see zone_geometry)
+  dye_separation (1.0) -> density-domain saturation, applied directly to density
+                    (there is no paper dye matrix here to compose it into)
+  separation_damping (0.0) -> tapers that saturation by each pixel's own chroma
+                    (see logic.separation_damping_gain)
 """
 
 from typing import Optional, Tuple
@@ -34,7 +38,12 @@ from typing import Optional, Tuple
 import numpy as np
 
 from negpy.domain.types import ImageBuffer
-from negpy.features.exposure.logic import per_channel_toe_shoulder, per_channel_widths
+from negpy.features.exposure.logic import (
+    per_channel_dye_separation,
+    per_channel_toe_shoulder,
+    per_channel_widths,
+    separation_damping_gain_np,
+)
 from negpy.features.exposure.models import EXPOSURE_CONSTANTS, ExposureConfig
 from negpy.kernel.image.validation import ensure_image
 
@@ -224,6 +233,9 @@ def apply_transfer_curve(
     cast_gain: Tuple[float, float, float] = (1.0, 1.0, 1.0),
     cast_offset: Tuple[float, float, float] = (0.0, 0.0, 0.0),
     positive_source: bool = False,
+    separation: float = 1.0,
+    separation_trims: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+    damping: float = 0.0,
 ) -> ImageBuffer:
     """
     Normalized log density -> scene-linear positive.
@@ -236,6 +248,14 @@ def apply_transfer_curve(
     adjustment of it. `positive_source` skips both and passes the scene through unshaped.
 
     `cast_offset` arrives already scaled by density_range (see neutral_axis_affine).
+
+    `separation`/`separation_trims` are Dye Separation and its per-channel trims,
+    applied after the curve shapes each channel and before decode. They share their
+    math with the print path's resolve_saturation_matrix but not its paper crosstalk:
+    this curve has no paper dye matrix to compose into, so each channel scales its own
+    deviation from the frame's mean density directly rather than through a 3x3 matmul.
+    `damping` is Separation Damping, tapering each channel's own k by each pixel's own
+    chroma (see logic.separation_damping_gain); inert at separation 1.0, same as on the print.
     """
     c = TRANSFER_CONSTANTS
     base_width = float(c["transfer_knee_width"])
@@ -246,7 +266,7 @@ def apply_transfer_curve(
     sh_knee = float(c["transfer_shoulder_knee"])
 
     n = np.asarray(img_norm, dtype=np.float32)
-    out = np.empty_like(n)
+    dens = np.empty_like(n)
     for ch in range(3):
         d = n[:, :, ch] * np.float32(density_range)
 
@@ -289,7 +309,31 @@ def apply_transfer_curve(
         if shoulder[ch] != 0.0:
             d = d + np.float32(shoulder[ch]) * _softplus(np.float32(sh_knee) - d, sw3[ch])
 
-        out[:, :, ch] = np.power(np.float32(10.0), -d, dtype=np.float32)
+        dens[:, :, ch] = d
+
+    sep_k3 = per_channel_dye_separation(separation, separation_trims)
+    if sep_k3 != (1.0, 1.0, 1.0):
+        # M(k) = diag(k) + (1-k)*J (papers.resolve_saturation_matrix): each channel
+        # scales its own deviation from the frame's mean density by its own k, since
+        # this curve has no paper base to measure above and no dye matrix to fold the
+        # per-layer trims into instead.
+        mean = dens.mean(axis=2, keepdims=True)
+        e = dens - mean
+        if damping > 0.0:
+            # Separation Damping makes each channel's k chroma-dependent per pixel, from
+            # the same chroma but each channel's own k (see separation_damping_gain_np).
+            chroma = np.sqrt(((e[:, :, 0] - e[:, :, 1]) ** 2 + (e[:, :, 1] - e[:, :, 2]) ** 2 + (e[:, :, 0] - e[:, :, 2]) ** 2) / 3.0)
+            ref_spread = float(EXPOSURE_CONSTANTS["separation_damping_ref_spread"])
+            k_eff = np.stack(
+                [separation_damping_gain_np(sep_k3[ch], damping, chroma, ref_spread) for ch in range(3)],
+                axis=2,
+            )
+            dens = mean + k_eff * e
+        else:
+            k3 = np.asarray(sep_k3, dtype=np.float32)
+            dens = mean + k3[np.newaxis, np.newaxis, :] * e
+
+    out = np.power(np.float32(10.0), -dens, dtype=np.float32)
 
     # Baseline and display rendering last, so the controls above shape the scene and this
     # only decides how the scene is shown. A finished positive sits nowhere below a sensor

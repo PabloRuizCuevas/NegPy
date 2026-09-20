@@ -42,6 +42,20 @@ def test_separation_damping_locked_without_a_separation_push(qapp):
     assert sidebar.separation_damping_slider.isEnabled()
 
 
+def test_separation_damping_armed_by_a_trim_alone(qapp):
+    """A per-channel trim also gives Dye Separation a real per-pixel push even with the
+    global value left at its neutral 1.0 — the enabled check must ask the same question
+    the pipeline does (per_channel_dye_separation), not just the global scalar."""
+    controller = MagicMock()
+    controller.state = AppState()
+    sidebar = ToneSidebar(controller)
+
+    conf = controller.state.config
+    controller.state.config = replace(conf, exposure=replace(conf.exposure, dye_separation_trim_red=0.3))
+    sidebar.sync_ui()
+    assert sidebar.separation_damping_slider.isEnabled()
+
+
 def test_paper_combo_rebuilt_only_when_entries_change(qapp):
     controller = MagicMock()
     controller.state = AppState()
@@ -184,3 +198,29 @@ def test_channel_selector_hidden_in_bw(qapp):
     # Dye Separation is a color control: gone on a single-emulsion B&W paper.
     assert sidebar.dye_separation_slider.isHidden()
     assert sidebar.dye_separation_trim_slider.isHidden()
+
+
+def test_dye_separation_trim_swaps_per_channel_on_transfer_too(qapp):
+    """The transfer curve now wires the per-channel trims the same way the print path
+    does, so the global/trim swap on the channel tabs must match — not the old
+    print-only exemption that kept the trim hidden and the global slider always shown."""
+    controller = MagicMock()
+    controller.state = AppState()
+    cfg = controller.state.config
+    controller.state.config = replace(
+        cfg,
+        process=replace(cfg.process, process_mode=ProcessMode.E6, e6_normalize=False),
+        exposure=replace(cfg.exposure, dye_separation=1.3, dye_separation_trim_red=0.25),
+    )
+    sidebar = ToneSidebar(controller)
+    sidebar.sync_ui()
+
+    assert not sidebar.dye_separation_slider.isHidden()
+    assert sidebar.dye_separation_trim_slider.isHidden()
+    assert not sidebar.separation_damping_slider.isHidden()
+
+    sidebar.ch_r_btn.setChecked(True)
+    assert sidebar.dye_separation_slider.isHidden()
+    assert not sidebar.dye_separation_trim_slider.isHidden()
+    assert abs(sidebar.dye_separation_trim_slider.value() - 0.25) < 1e-9
+    assert sidebar.separation_damping_slider.isHidden()

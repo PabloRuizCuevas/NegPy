@@ -318,7 +318,7 @@ class GPUEngine:
             "geometry": 64,
             "normalization": 160,
             "exposure": 336,
-            "transfer": 208,
+            "transfer": 224,
             "clahe_u": 32,
             "lab": 96,
             "lith": 64,
@@ -1609,6 +1609,23 @@ class GPUEngine:
         # the shader to skip display_rendering too. Matches transfer.py.
         t_positive_source = bool(settings.process.positive_source)
         t_baseline_gain = 1.0 if t_positive_source else 2.0 ** float(tc["transfer_baseline_ev"])
+        # Dye Separation on the transfer curve: same per-channel k3 as the print path,
+        # applied directly since there is no paper matrix here (see
+        # transfer.py::apply_transfer_curve).
+        t_is_bw = settings.process.process_mode == ProcessMode.BW
+        t_sep_k3 = (
+            (1.0, 1.0, 1.0)
+            if t_is_bw
+            else per_channel_dye_separation(
+                settings.exposure.dye_separation,
+                (
+                    settings.exposure.dye_separation_trim_red,
+                    settings.exposure.dye_separation_trim_green,
+                    settings.exposure.dye_separation_trim_blue,
+                ),
+            )
+        )
+        t_sep_damping = 0.0 if t_is_bw else float(settings.exposure.separation_damping)
         tr_data = (
             struct.pack(
                 "ffffffff",
@@ -1656,6 +1673,7 @@ class GPUEngine:
                 t_cast_off[2] * TRANSFER_DENSITY_RANGE,
                 0.0,
             )
+            + struct.pack("ffff", t_sep_k3[0], t_sep_k3[1], t_sep_k3[2], t_sep_damping)
         )
         from negpy.features.exposure.papers import (
             compose_density_matrices,
