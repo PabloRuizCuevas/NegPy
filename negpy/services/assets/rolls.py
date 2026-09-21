@@ -9,8 +9,8 @@ decides which files show up when you open it -- with two exceptions. A path a us
 explicitly forked (``forked_paths``) gets its own edit identity for that roll alone,
 suffixed onto the frame's content hash (``roll_edit_hash``), the same convention
 half-frame scans already use for their two halves. And roll-wide defaults, below, hold
-a handful of Calibration/Demosaic/Normalization facts that describe the rig and the
-roll rather than one frame's own look.
+a handful of film, rig and scanning facts that describe the roll rather than one
+frame's own look.
 """
 
 import os
@@ -18,6 +18,8 @@ import time
 import uuid
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+from negpy.features.metadata.models import GEAR_FIELDS, PROCESS_FIELDS, SCANNING_FIELDS
 
 if TYPE_CHECKING:
     from negpy.domain.models import WorkspaceConfig
@@ -246,45 +248,76 @@ def virtual_rolls(repo: Any) -> List[tuple]:
 
 # --- Roll-wide defaults ----------------------------------------------------------
 #
-# ProcessConfig fields the Roll tab's Calibration, Demosaic and Normalization cards
-# edit, grouped by the card that owns them -- the same grouping a per-card lock button
-# unlocks. White/Black Point and their trims stay off this list: they are exposure
-# choices that legitimately vary shot to shot within a roll, unlike these, which
-# describe the rig or the roll's own shared baseline.
+# The fields each Roll-tab card edits, as (WorkspaceConfig section, field names) keyed
+# by the card that owns them -- the same grouping a per-card lock button unlocks. A
+# card names one section; the stored `defaults` dict stays flat, which WorkspaceConfig's
+# own flat key namespace already makes unambiguous. White/Black Point and their trims
+# stay off this list: they are exposure choices that legitimately vary shot to shot
+# within a roll, unlike these, which describe the rig or the roll's own shared baseline.
 ROLL_DEFAULT_FIELDS: Dict[str, tuple] = {
     # Which film type the roll is, and whether it is already a finished positive --
     # edited and locked away from the roll exactly like every other card here, even
     # though a roll being one film type, scanned one way, means the common case is
     # every frame following it.
-    "film": ("process_mode", "positive_source"),
+    "film": ("process", ("process_mode", "positive_source")),
     "sensor": (
-        "linear_raw",
-        "narrowband_scan",
-        "sensor_profile",
-        "sensor_matrix",
-        "crosstalk_strength",
-        "crosstalk_profile",
-        "crosstalk_matrix",
-        # Baked alongside the profile+matrix so the render can gate the unmix on it
-        # without disk I/O -- travels with them, or another frame's roll-derived
-        # crosstalk would be read back through its own, unrelated film process.
-        "crosstalk_process",
-        "hue_trim",
+        "process",
+        (
+            "linear_raw",
+            "narrowband_scan",
+            "sensor_profile",
+            "sensor_matrix",
+            "crosstalk_strength",
+            "crosstalk_profile",
+            "crosstalk_matrix",
+            # Baked alongside the profile+matrix so the render can gate the unmix on it
+            # without disk I/O -- travels with them, or another frame's roll-derived
+            # crosstalk would be read back through its own, unrelated film process.
+            "crosstalk_process",
+            "hue_trim",
+        ),
     ),
-    "demosaic": ("demosaic_preview", "demosaic_export"),
+    "demosaic": ("process", ("demosaic_preview", "demosaic_export")),
     "process": (
-        "e6_normalize",
-        "analysis_buffer",
-        "luma_range_clip",
-        "color_range_clip",
-        # Which baseline this frame's bounds come from -- the roll's shared meter or
-        # its own auto-analysis -- is the same "roll vs. this frame" choice as the
-        # rest of this card's fields, unlike locked_floors/locked_ceils themselves,
-        # which stay Batch Analysis's own job to spread (a metering run, not an edit).
-        "use_luma_average",
-        "use_color_average",
+        "process",
+        (
+            "e6_normalize",
+            "analysis_buffer",
+            "luma_range_clip",
+            "color_range_clip",
+            # Which baseline this frame's bounds come from -- the roll's shared meter or
+            # its own auto-analysis -- is the same "roll vs. this frame" choice as the
+            # rest of this card's fields, unlike locked_floors/locked_ceils themselves,
+            # which stay Batch Analysis's own job to spread (a metering run, not an edit).
+            "use_luma_average",
+            "use_color_average",
+        ),
     ),
+    # The film edge, the rebate width and the format's shape are properties of the roll,
+    # not of one frame. The rect autocrop finds from them is not: it stays each frame's own.
+    "autocrop": ("geometry", ("autocrop_mode", "autocrop_offset", "autocrop_rebate_trim", "autocrop_ratio")),
+    "lens": ("geometry", ("distortion_k1", "lens_distortion_from_metadata", "lens_ca_from_metadata")),
+    # profile_id also has a rig-global fallback, applied upstream of roll defaults, so a
+    # roll that names no profile of its own still gets the active one.
+    "flatfield": ("flatfield", ("apply", "profile_id")),
+    # Metadata describes the roll almost by definition -- one camera, one stock, one
+    # development, one scanning rig. capture_frame is the exception and is absent: a frame
+    # number is unique to one frame. So are protect_original_metadata and
+    # description_fields, which are export decisions rather than capture facts.
+    "metadata_gear": ("metadata", GEAR_FIELDS),
+    "metadata_capture": (
+        "metadata",
+        ("capture_date", "gps_latitude", "gps_longitude", "location_city", "location_state", "location_country"),
+    ),
+    "metadata_process": ("metadata", PROCESS_FIELDS),
+    "metadata_scanning": ("metadata", SCANNING_FIELDS + ("capture_roll",)),
+    "metadata_exposure": ("metadata", ("exposure_override",)),
 }
+
+
+def card_fields(card_key: str) -> tuple:
+    """The field names *card_key* owns, without its section."""
+    return ROLL_DEFAULT_FIELDS[card_key][1]
 
 
 def roll_defaults(repo: Any, roll_id: str) -> Dict[str, Any]:
@@ -342,24 +375,49 @@ def set_frame_override(repo: Any, roll_id: str, file_hash: str, card_key: str, l
     _write(repo, store)
 
 
-def resolve_roll_process_config(repo: Any, roll_id: Optional[str], file_hash: str, process_config: Any) -> Any:
-    """Overlay this roll's defaults onto *process_config* for every card the frame has
-    not locked to its own value. No roll, no defaults set yet, or every relevant card
-    locked leaves *process_config* unchanged."""
+def resolve_roll_config(repo: Any, roll_id: Optional[str], file_hash: str, config: "WorkspaceConfig") -> "WorkspaceConfig":
+    """Overlay this roll's defaults onto *config* for every card the frame has not
+    locked to its own value. No roll, no defaults set yet, or every relevant card
+    locked leaves *config* unchanged."""
     if roll_id is None:
-        return process_config
+        return config
     defaults = roll_defaults(repo, roll_id)
     if not defaults:
-        return process_config
+        return config
     locked_cards = frame_override_cards(repo, roll_id, file_hash)
-    updates: Dict[str, Any] = {}
-    for card_key, field_names in ROLL_DEFAULT_FIELDS.items():
+    by_section: Dict[str, Dict[str, Any]] = {}
+    for card_key, (section, field_names) in ROLL_DEFAULT_FIELDS.items():
         if card_key in locked_cards:
             continue
         for name in field_names:
             if name in defaults:
-                updates[name] = defaults[name]
-    return replace(process_config, **updates) if updates else process_config
+                by_section.setdefault(section, {})[name] = defaults[name]
+    for section, updates in by_section.items():
+        config = replace(config, **{section: replace(getattr(config, section), **updates)})
+    return config
+
+
+def section_push(repo: Any, roll_id: str, section_key: str) -> Dict[str, Any]:
+    """What a frame-level card last pushed to this roll, field by field. Unlike
+    ROLL_DEFAULT_FIELDS this never overlays onto a frame on open -- a look is a copy, not
+    a binding -- it only records what the roll agreed on, so a card can say whether the
+    frame in front of you still matches it."""
+    entry = roll_for_id(repo, roll_id)
+    pushes = entry.get("section_pushes", {}) if entry else {}
+    return dict(pushes.get(section_key, {}))
+
+
+def set_section_push(repo: Any, roll_id: str, section_key: str, values: Dict[str, Any]) -> None:
+    """Records a whole-roll apply of *section_key*, merging into whatever it pushed
+    before: applying two of a card's settings in two goes leaves both at the roll."""
+    store = _read(repo)
+    entry = store.get(roll_id)
+    if entry is None:
+        return
+    pushes = dict(entry.get("section_pushes", {}))
+    pushes[section_key] = {**pushes.get(section_key, {}), **values}
+    entry["section_pushes"] = pushes
+    _write(repo, store)
 
 
 def roll_normalization(repo: Any, roll_id: str) -> Optional[Dict[str, tuple]]:

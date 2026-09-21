@@ -18,6 +18,10 @@ from negpy.features.geometry.models import GeometryConfig
 from negpy.features.process.models import ProcessConfig, auto_meter_for_positive_source, cast_removal_for_mode
 from negpy.features.finish.models import FinishConfig
 from negpy.features.flatfield.models import FlatFieldConfig
+from negpy.domain.models import WorkspaceConfig
+from negpy.services.assets.rolls import ROLL_DEFAULT_FIELDS
+from negpy.desktop.settings_catalog import rows_for_fields, rows_for_section, selected_flat_dict
+from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog
 
 # Sidebar Components
 from negpy.desktop.view.sidebar.presets import PresetsSidebar
@@ -29,6 +33,8 @@ from negpy.desktop.view.sidebar.sensor import SensorSidebar
 from negpy.desktop.view.sidebar.color import ColorSidebar
 from negpy.desktop.view.sidebar.tone import ToneSidebar
 from negpy.desktop.view.sidebar.geometry import GeometrySidebar
+from negpy.desktop.view.sidebar.autocrop import AutocropSidebar
+from negpy.desktop.view.sidebar.lens import LensSidebar
 from negpy.desktop.view.sidebar.lab import LabSidebar
 from negpy.desktop.view.sidebar.altprocess import AltProcessSidebar
 from negpy.desktop.view.sidebar.toning import ToningSidebar
@@ -54,6 +60,32 @@ _COLOR_FIELDS = (
 _DEMOSAIC_FIELDS = (
     "demosaic_preview",
     "demosaic_export",
+)
+# GeometryConfig is split across three cards. The rect auto crop resolves, the rotation
+# and the easel movements are this frame's own placement and stay on Geometry; what the
+# detector looks for and how the scanning lens bends are the roll's.
+_AUTOCROP_FIELDS = (
+    "autocrop_mode",
+    "autocrop_offset",
+    "autocrop_rebate_trim",
+    "autocrop_ratio",
+)
+_LENS_FIELDS = (
+    "distortion_k1",
+    "lens_distortion_from_metadata",
+    "lens_ca_from_metadata",
+)
+_GEOMETRY_FIELDS = (
+    "rotation",
+    "fine_rotation",
+    "flip_horizontal",
+    "flip_vertical",
+    "converge_v",
+    "converge_h",
+    "crop_to_valid",
+    "crop_rect",
+    "crop_from_auto",
+    "crop_detect_key",
 )
 _SENSOR_FIELDS = (
     "linear_raw",
@@ -137,6 +169,8 @@ _TONE_FIELDS = (
     "dye_separation_trim_green",
     "dye_separation_trim_blue",
     "separation_damping",
+    "contrast_mask",
+    "mask_spacer",
 )
 
 # Constant frozen-dataclass defaults, built once rather than per resync.
@@ -148,6 +182,22 @@ _DEFAULT_GEOMETRY = GeometryConfig()
 _DEFAULT_PROCESS = ProcessConfig()
 _DEFAULT_FINISH = FinishConfig()
 _DEFAULT_FLATFIELD = FlatFieldConfig()
+_DEFAULT_CONFIG = WorkspaceConfig()
+
+# Frame cards whose settings can be pushed to other frames, and the fields each owns.
+# A card keyed by its own config section needs no tuple. Roll-tab cards are absent: their
+# scope pair drives the roll defaults instead. Dodge & Burn is absent because a mask drawn
+# on one frame means nothing on the next, and has no catalog row.
+_APPLY_FIELDS: dict[str, tuple | None] = {
+    "geometry": _GEOMETRY_FIELDS,
+    "color": _COLOR_FIELDS,
+    "tone": _TONE_FIELDS + _TONAL_RANGE_FIELDS,
+    "lab": None,
+    "altproc": None,
+    "toning": None,
+    "retouch": None,
+    "finish": None,
+}
 
 _AUTO_METER_FIELDS = ("auto_exposure", "auto_normalize_contrast")
 
@@ -206,6 +256,22 @@ class ControlsPanel(QWidget):
             icon_name="fa5s.crop",
         )
 
+        self.autocrop_sidebar = AutocropSidebar(self.controller)
+        self.autocrop_section = self._make_section(
+            "Auto Crop",
+            "autocrop",
+            self.autocrop_sidebar,
+            icon_name="fa5s.magic",
+        )
+
+        self.lens_sidebar = LensSidebar(self.controller)
+        self.lens_section = self._make_section(
+            "Lens Correction",
+            "lens",
+            self.lens_sidebar,
+            icon_name="fa5s.circle-notch",
+        )
+
         self.process_sidebar = ProcessSidebar(self.controller)
         # Always expanded (no chevron): the first choice of every edit, and the one
         # every other Roll-tab card's fields assume is already settled.
@@ -256,8 +322,8 @@ class ControlsPanel(QWidget):
             icon_name="mdi6.grid",
         )
 
-        # One-line answer to "roll-wide or this frame's own": which of Calibration,
-        # Demosaic and Normalization (if any) this frame overrides. RightPanel places
+        # One-line answer to "roll-wide or this frame's own": which Roll-tab cards
+        # (if any) this frame overrides. RightPanel places
         # it above every Roll-tab card; _sync_roll_locks keeps it current.
         self.roll_override_summary = hint_label("", "muted")
 
@@ -338,9 +404,9 @@ class ControlsPanel(QWidget):
             (
                 "geometry",
                 "fa5s.crop",
-                "Geometry & Flat Field",
-                [self.geometry_section, self.flatfield_section],
-                ["geometry_section", "flatfield_section"],
+                "Geometry",
+                [self.geometry_section],
+                ["geometry_section"],
             ),
             (
                 "tone",
@@ -419,7 +485,9 @@ class ControlsPanel(QWidget):
         self.lab_section.reset_requested.connect(lambda: self.controller.session.reset_section("lab"))
         self.altproc_section.reset_requested.connect(lambda: self.controller.session.reset_section("altproc"))
         self.toning_section.reset_requested.connect(lambda: self.controller.session.reset_section("toning"))
-        self.geometry_section.reset_requested.connect(lambda: self.controller.session.reset_section("geometry"))
+        self.geometry_section.reset_requested.connect(self._reset_geometry_fields)
+        self.autocrop_section.reset_requested.connect(lambda: self._reset_card_fields("autocrop"))
+        self.lens_section.reset_requested.connect(lambda: self._reset_card_fields("lens"))
         self.process_section.reset_requested.connect(lambda: self._reset_process_fields(_NORMALIZATION_FIELDS))
         self.retouch_section.reset_requested.connect(lambda: self.controller.session.reset_section("retouch"))
         self.local_section.reset_requested.connect(lambda: self.controller.session.reset_section("local"))
@@ -429,10 +497,8 @@ class ControlsPanel(QWidget):
         self.demosaic_section.reset_requested.connect(lambda: self._reset_process_fields(_DEMOSAIC_FIELDS))
         self.flatfield_section.reset_requested.connect(self._reset_flatfield)
 
-        self.film_section.lock_toggled.connect(lambda locked: self.controller.set_roll_card_locked("film", locked))
-        self.sensor_section.lock_toggled.connect(lambda locked: self.controller.set_roll_card_locked("sensor", locked))
-        self.demosaic_section.lock_toggled.connect(lambda locked: self.controller.set_roll_card_locked("demosaic", locked))
-        self.process_section.lock_toggled.connect(lambda locked: self.controller.set_roll_card_locked("process", locked))
+        for key, section in self._roll_sections() + self._frame_sections():
+            section.scope_selected.connect(lambda scope, k=key: self._on_scope_selected(k, scope))
 
     def apply_shortcut_tooltips(self) -> None:
         """Single source for every shortcut-bearing widget tooltip — re-run on each
@@ -444,7 +510,7 @@ class ControlsPanel(QWidget):
             (self.retouch_sidebar.right_click_btn, "toggle_right_click_excludes"),
             (self.retouch_sidebar.ir_dust_btn, "toggle_ir_removal"),
             (self.flatfield_sidebar.enable_btn, "toggle_flat_field"),
-            (self.geometry_sidebar.auto_crop_all_btn, "batch_autocrop"),
+            (self.autocrop_sidebar.auto_crop_all_btn, "batch_autocrop"),
             (self.tone_sidebar.auto_density_btn, "toggle_auto_density"),
             (self.tone_sidebar.auto_grade_btn, "toggle_auto_grade"),
             (self.presets_sidebar.apply_btn, "preset_apply"),
@@ -453,19 +519,21 @@ class ControlsPanel(QWidget):
             btn.setToolTip(wrap_tooltip(tooltip_with_shortcut(btn.plain_tooltip, action_id)))
         exp = self.tone_sidebar
         geo = self.geometry_sidebar
+        crop = self.autocrop_sidebar
+        lens = self.lens_sidebar
         lab = self.lab_sidebar
         proc = self.process_sidebar
         sen = self.sensor_sidebar
         ret = self.retouch_sidebar
         ton = self.toning_sidebar
         fin = self.finish_sidebar
-        geo.metadata_distortion_btn.setToolTip(
+        lens.metadata_distortion_btn.setToolTip(
             tooltip_with_shortcut(
                 "Apply embedded scanning-lens distortion correction. Replaces manual distortion.",
                 "lens_distortion_from_metadata",
             )
         )
-        geo.metadata_ca_btn.setToolTip(
+        lens.metadata_ca_btn.setToolTip(
             tooltip_with_shortcut(
                 "Apply embedded lateral chromatic aberration correction. Can be used with manual distortion.",
                 "lens_ca_from_metadata",
@@ -590,7 +658,7 @@ class ControlsPanel(QWidget):
                 "straighten",
             )
         )
-        geo.offset_slider.setToolTip(
+        crop.offset_slider.setToolTip(
             tooltip_with_shortcut(
                 "Insets the auto-crop border from the detected film edge. Positive = trim more; negative = bleed outside",
                 ["offset_inc", "offset_dec"],
@@ -849,35 +917,70 @@ class ControlsPanel(QWidget):
         self.finish_sidebar.sync_ui()
         self.presets_sidebar.sync_ui()
         self.flatfield_sidebar.sync_ui()
+        self.autocrop_sidebar.sync_ui()
+        self.lens_sidebar.sync_ui()
         self.sensor_sidebar.sync_ui()
         self.demosaic_sidebar.sync_ui()
         self._sync_modified_dots()
-        self._sync_roll_locks()
+        self._sync_scope_buttons()
 
-    _ROLL_CARD_LABELS = {"film": "Film Mode", "sensor": "Calibration", "demosaic": "Demosaic", "process": "Normalization"}
+    _ROLL_CARD_LABELS = AppController._ROLL_CARD_LABELS
 
-    def _sync_roll_locks(self) -> None:
-        """Show each Roll-tab card's lock only once it is actually locked -- the
-        exception worth flagging, not the common case of following the roll -- and
-        keep roll_override_summary's one-line answer to "roll-wide or this frame's
-        own" current alongside it."""
-        overridden = []
-        for card_key, section in (
+    def _roll_sections(self) -> tuple:
+        return (
             ("film", self.film_section),
             ("sensor", self.sensor_section),
             ("demosaic", self.demosaic_section),
             ("process", self.process_section),
-        ):
+            ("autocrop", self.autocrop_section),
+            ("lens", self.lens_section),
+            ("flatfield", self.flatfield_section),
+        )
+
+    def _sync_scope_buttons(self) -> None:
+        """Each card's Frame/Roll pair, and roll_override_summary's one-line answer to
+        "roll-wide or this frame's own" alongside it. A Roll-tab card reads its own lock;
+        a frame card is always Frame, since a sync is a copy rather than a binding. The
+        pair hides with no roll open: there is nothing to be roll-wide about."""
+        has_roll = self.controller.state.active_roll_id is not None
+        overridden = []
+        for card_key, section in self._roll_sections():
             locked = self.controller.roll_card_locked(card_key)
-            section.set_lock_button(locked, locked)
+            label = self._ROLL_CARD_LABELS[card_key]
+            section.set_scope_buttons(
+                has_roll,
+                "frame" if locked else "roll",
+                roll_tooltip=f"{label} follows the roll — click to give the roll this frame's value",
+                frame_tooltip=f"{label} follows this frame alone — click to rejoin the roll",
+            )
             if locked:
-                overridden.append(self._ROLL_CARD_LABELS[card_key])
+                overridden.append(label)
+
+        for key, section in self._frame_sections():
+            section.set_scope_buttons(has_roll, self.controller.frame_section_scope(key))
 
         if overridden:
             set_hint_kind(self.roll_override_summary, "warning")
             self.roll_override_summary.setText(f"This frame overrides: {', '.join(overridden)}")
         else:
             self.roll_override_summary.setText("")
+
+    def _frame_sections(self) -> tuple:
+        return tuple((key, getattr(self, f"{key}_section")) for key in _APPLY_FIELDS)
+
+    def _on_scope_selected(self, key: str, scope: str) -> None:
+        """Roll on a Roll-tab card pushes that card out; on a frame card it opens the
+        picker over that card's own settings. Frame on a Roll-tab card locks it here;
+        a frame card is already there, so the pair's own click guard swallows it."""
+        if key in dict(self._roll_sections()):
+            self.controller.set_card_scope(key, scope)
+            self._sync_scope_buttons()
+            return
+        fields = _APPLY_FIELDS[key]
+        rows = rows_for_fields(fields) if fields else rows_for_section(key)
+        applied = open_apply_dialog(self, self.controller.session, rows=rows)
+        if applied and applied[1] == "roll":
+            self.controller.record_section_push(key, selected_flat_dict(self.controller.state.config, applied[0]))
 
     def _update_histogram(self) -> None:
         """Repaint only when the render produced a new buffer."""
@@ -919,10 +1022,26 @@ class ControlsPanel(QWidget):
         self.controller.apply_config(replace(cfg, process=new_proc), persist=True)
 
     def _reset_flatfield(self) -> None:
+        self._reset_card_fields("flatfield")
+
+    def _reset_geometry_fields(self) -> None:
+        """Geometry's own fields alone: a plain session.reset_section("geometry") would
+        take Auto Crop and Lens Correction with it."""
         from dataclasses import replace
 
         cfg = self.controller.state.config
-        self.controller.apply_config(replace(cfg, flatfield=FlatFieldConfig()), persist=True)
+        new_geo = replace(cfg.geometry, **{f: getattr(_DEFAULT_GEOMETRY, f) for f in _GEOMETRY_FIELDS})
+        self.controller.apply_config(replace(cfg, geometry=new_geo), persist=True)
+
+    def _reset_card_fields(self, card_key: str) -> None:
+        """Reset one roll card through set_roll_default, so the reset follows the roll
+        or locks away from it exactly as an edit by hand would. Ratio keeps its own
+        entry point, which reshapes a drawn crop rather than leaving it stale."""
+        section, fields = ROLL_DEFAULT_FIELDS[card_key]
+        default = getattr(_DEFAULT_CONFIG, section)
+        if "autocrop_ratio" in fields:
+            self.controller.set_crop_ratio(default.autocrop_ratio)
+        self.controller.set_roll_default(card_key, **{f: getattr(default, f) for f in fields if f != "autocrop_ratio"})
 
     def _reset_exposure_fields(self, fields) -> None:
         """Reset only the given ExposureConfig fields to defaults (scoped section reset).
@@ -997,22 +1116,12 @@ class ControlsPanel(QWidget):
         )
 
         geo = cfg.geometry
-        geometry_count = sum(
-            [
-                geo.fine_rotation != _geo.fine_rotation,
-                geo.flip_horizontal != _geo.flip_horizontal,
-                geo.flip_vertical != _geo.flip_vertical,
-                geo.crop_from_auto != _geo.crop_from_auto,
-                geo.crop_rect is not None,
-                geo.autocrop_ratio != _geo.autocrop_ratio,
-                geo.autocrop_mode != _geo.autocrop_mode,
-                geo.autocrop_offset != _geo.autocrop_offset,
-                geo.autocrop_rebate_trim != _geo.autocrop_rebate_trim,
-                geo.distortion_k1 != _geo.distortion_k1,
-                geo.lens_distortion_from_metadata != _geo.lens_distortion_from_metadata,
-                geo.lens_ca_from_metadata != _geo.lens_ca_from_metadata,
-            ]
-        )
+        # crop_rect counts as set rather than as different: its default is None, and a
+        # resolved auto rect is not an edit the way a hand-drawn one is.
+        geometry_count = sum(getattr(geo, f) != getattr(_geo, f) for f in _GEOMETRY_FIELDS if f != "crop_rect")
+        geometry_count += geo.crop_rect is not None
+        autocrop_count = sum(getattr(geo, f) != getattr(_geo, f) for f in _AUTOCROP_FIELDS)
+        lens_count = sum(getattr(geo, f) != getattr(_geo, f) for f in _LENS_FIELDS)
 
         proc = cfg.process
         film_count = sum(getattr(proc, f) != getattr(_proc, f) for f in _FILM_FIELDS)
@@ -1061,6 +1170,8 @@ class ControlsPanel(QWidget):
         self.altproc_section.set_modified(altproc_count)
         self.toning_section.set_modified(toning_count)
         self.geometry_section.set_modified(geometry_count)
+        self.autocrop_section.set_modified(autocrop_count)
+        self.lens_section.set_modified(lens_count)
         # The picked Roll Baseline counts against Normalization, the card it sits on.
         self.process_section.set_modified(process_count + (proc.roll_name is not None))
         self.retouch_section.set_modified(retouch_count)

@@ -231,8 +231,6 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "copy_with_bounds": ShortcutEntry("Ctrl+Shift+C", "Copy settings (with bounds)", "Actions"),
     "paste": ShortcutEntry("Ctrl+V", "Paste settings", "Actions"),
     "reset_roll": ShortcutEntry("", "Reset roll to defaults", "Actions"),
-    "roll_apply": ShortcutEntry("", "Apply the Roll tab's cards at the current scope", "Actions"),
-    "roll_force_settings": ShortcutEntry("", "Toggle Force Settings (Apply also reclaims locked frames)", "Actions"),
     "roll_batch_analysis": ShortcutEntry("", "Batch Analysis (measure the roll's baseline)", "Actions"),
     "roll_settings": ShortcutEntry("", "Open Roll Settings", "Actions"),
     "save_as_roll": ShortcutEntry("", "Save the loaded frames as a roll", "Actions"),

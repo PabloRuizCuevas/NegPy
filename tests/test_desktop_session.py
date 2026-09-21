@@ -171,6 +171,49 @@ class TestDesktopSessionSync(unittest.TestCase):
 
         self.assertTrue(config.process.linear_raw)
 
+    def test_config_for_asset_applies_roll_defaults_outside_the_process_config(self):
+        """Auto Crop, Lens Correction and Flat Field are roll cards on other config
+        sections; a roll's own flat-field profile outranks the rig-global one."""
+        rolls_store = {
+            "r1": {
+                "kind": "virtual",
+                "name": "Portra",
+                "defaults": {"autocrop_rebate_trim": 0.5, "distortion_k1": 0.02, "profile_id": "roll-ff", "apply": True},
+            }
+        }
+        globals_ = {"rolls_by_id": rolls_store, "flatfield_active_profile": ""}
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: globals_.get(key, default)
+        self.session.state.active_roll_id = "r1"
+        asset = {"name": "a.dng", "path": "/roll/a.dng", "hash": "a-hash"}
+
+        with patch("negpy.desktop.session.load_or_promote", return_value=None):
+            config = self.session.config_for_asset(asset)
+
+        self.assertEqual(config.geometry.autocrop_rebate_trim, 0.5)
+        self.assertEqual(config.geometry.distortion_k1, 0.02)
+        self.assertEqual(config.flatfield.profile_id, "roll-ff")
+        self.assertTrue(config.flatfield.apply)
+
+    def test_config_for_asset_keeps_a_frames_own_auto_crop_when_that_card_is_locked(self):
+        rolls_store = {
+            "r1": {
+                "kind": "virtual",
+                "name": "Portra",
+                "defaults": {"autocrop_rebate_trim": 0.5, "distortion_k1": 0.02},
+                "frame_overrides": {"a-hash": ["autocrop"]},
+            }
+        }
+        globals_ = {"rolls_by_id": rolls_store}
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: globals_.get(key, default)
+        self.session.state.active_roll_id = "r1"
+        asset = {"name": "a.dng", "path": "/roll/a.dng", "hash": "a-hash"}
+
+        with patch("negpy.desktop.session.load_or_promote", return_value=None):
+            config = self.session.config_for_asset(asset)
+
+        self.assertEqual(config.geometry.autocrop_rebate_trim, 1.0)
+        self.assertEqual(config.geometry.distortion_k1, 0.02)
+
     def test_config_for_asset_ignores_roll_defaults_when_the_file_belongs_to_no_roll(self):
         rolls_store = {"r1": {"kind": "virtual", "name": "Portra", "defaults": {"linear_raw": True}}}
         globals_ = {"rolls_by_id": rolls_store}

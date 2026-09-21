@@ -62,64 +62,102 @@ class TestNonCollapsible:
         assert section.title_label.text() == "Title"
 
 
-class TestLockButton:
-    def test_hidden_until_set_lock_button_is_called(self) -> None:
+class TestScopeButtons:
+    def test_hidden_until_set_scope_buttons_is_called(self) -> None:
         section = CollapsibleSection("Calibration")
-        assert section.lock_btn is None
+        assert section.frame_btn is None
+        assert section.roll_btn is None
 
-    def test_visible_true_shows_it_visible_false_hides_it(self) -> None:
+    def test_visible_true_shows_them_visible_false_hides_them(self) -> None:
         section = CollapsibleSection("Calibration")
-        section.set_lock_button(visible=True, locked=False)
-        assert section.lock_btn.isHidden() is False
-        section.set_lock_button(visible=False, locked=False)
-        assert section.lock_btn.isHidden() is True
+        section.set_scope_buttons(visible=True, scope="roll")
+        assert section.frame_btn.isHidden() is False
+        assert section.roll_btn.isHidden() is False
+        section.set_scope_buttons(visible=False, scope="roll")
+        assert section.frame_btn.isHidden() is True
+        assert section.roll_btn.isHidden() is True
 
-    def test_clicking_it_emits_the_opposite_of_the_current_state(self) -> None:
+    def test_the_active_half_reads_the_scope(self) -> None:
         section = CollapsibleSection("Calibration")
-        section.set_lock_button(visible=True, locked=False)
+        section.set_scope_buttons(visible=True, scope="roll")
+        assert (section.roll_btn.isChecked(), section.frame_btn.isChecked()) == (True, False)
+        section.set_scope_buttons(visible=True, scope="frame")
+        assert (section.roll_btn.isChecked(), section.frame_btn.isChecked()) == (False, True)
+
+    def test_clicking_the_inactive_half_emits_its_scope(self) -> None:
+        section = CollapsibleSection("Calibration")
+        section.set_scope_buttons(visible=True, scope="roll")
         received = []
-        section.lock_toggled.connect(received.append)
+        section.scope_selected.connect(received.append)
 
-        section.lock_btn.click()
+        section.frame_btn.click()
 
-        assert received == [True]
+        assert received == ["frame"]
 
-    def test_clicking_a_locked_button_emits_false(self) -> None:
+    def test_clicking_the_active_half_emits_nothing_and_stays_checked(self) -> None:
+        """The pair is a readout as much as a control: a click on the half already active
+        must not leave it unchecked, which would read as a third, meaningless state."""
         section = CollapsibleSection("Calibration")
-        section.set_lock_button(visible=True, locked=True)
+        section.set_scope_buttons(visible=True, scope="roll")
         received = []
-        section.lock_toggled.connect(received.append)
+        section.scope_selected.connect(received.append)
 
-        section.lock_btn.click()
+        section.roll_btn.click()
 
-        assert received == [False]
+        assert received == []
+        assert section.roll_btn.isChecked() is True
 
-    def test_reuses_the_same_button_across_calls(self) -> None:
+    def test_reuses_the_same_buttons_across_calls(self) -> None:
         section = CollapsibleSection("Calibration")
-        section.set_lock_button(visible=True, locked=False)
-        first = section.lock_btn
-        section.set_lock_button(visible=True, locked=True)
-        assert section.lock_btn is first
+        section.set_scope_buttons(visible=True, scope="roll")
+        first = (section.frame_btn, section.roll_btn)
+        section.set_scope_buttons(visible=True, scope="frame")
+        assert (section.frame_btn, section.roll_btn) == first
 
-    def test_locking_badges_the_lock_button_and_marks_the_card_border(self) -> None:
+    def test_the_header_stripe_follows_the_lit_button(self) -> None:
+        section = CollapsibleSection("Calibration")
+        section.set_modified(1)
+
+        section.set_scope_buttons(visible=True, scope="frame")
+        assert section.toggle_button.property("scope") == "frame"
+
+        section.set_scope_buttons(visible=True, scope="roll")
+        assert section.toggle_button.property("scope") == "roll"
+
+    def test_an_untouched_section_is_never_striped(self) -> None:
+        """A stripe down every card says nothing; it marks the ones holding something
+        other than their defaults."""
         section = CollapsibleSection("Calibration")
 
-        section.set_lock_button(visible=True, locked=True)
-        assert section.lock_btn.text() == " This Frame Only"
-        assert section.toggle_button.property("roll_locked") == "true"
-        assert section.content_area.property("roll_locked") == "true"
+        section.set_scope_buttons(visible=True, scope="roll")
+        assert section.toggle_button.property("scope") == ""
 
-        section.set_lock_button(visible=False, locked=False)
-        assert section.lock_btn.text() == ""
-        assert section.toggle_button.property("roll_locked") == "false"
-        assert section.content_area.property("roll_locked") == "false"
+        section.set_modified(2)
+        assert section.toggle_button.property("scope") == "roll"
 
-    def test_locking_does_not_touch_the_title_or_its_modified_count(self) -> None:
+        section.set_modified(0)
+        assert section.toggle_button.property("scope") == ""
+
+    def test_the_stripe_clears_with_the_pair(self) -> None:
+        section = CollapsibleSection("Calibration")
+        section.set_modified(1)
+        section.set_scope_buttons(visible=False, scope="roll")
+        assert section.toggle_button.property("scope") == ""
+
+    def test_the_card_body_is_never_striped(self) -> None:
+        """The stripe is the header's alone: a bar down the whole card read as a different
+        kind of section from every other sidebar's."""
+        section = CollapsibleSection("Calibration")
+        section.set_modified(1)
+        section.set_scope_buttons(visible=True, scope="frame")
+        assert section.content_area.property("scope") is None
+
+    def test_the_scope_does_not_touch_the_title_or_its_modified_count(self) -> None:
         """title_label's "· count" is set_modified's own, unrelated fact (how far
-        from NegPy's defaults) -- set_lock_button must never chain onto it."""
+        from NegPy's defaults) -- the scope pair must never chain onto it."""
         section = CollapsibleSection("Calibration")
         section.set_modified(2)
-        section.set_lock_button(visible=True, locked=True)
+        section.set_scope_buttons(visible=True, scope="frame")
         assert section.title_label.text() == "Calibration · 2"
 
 

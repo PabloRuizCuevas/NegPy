@@ -22,6 +22,8 @@ GUIDED_KEYS = (
     "demosaic",
     "process",
     "geometry",
+    "autocrop",
+    "lens",
     "flatfield",
     "color",
     "tone",

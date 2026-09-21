@@ -1,15 +1,16 @@
-"""_sync_roll_locks: per-card lock buttons and the roll_override_summary one-liner
-that answers "roll-wide or this frame's own" for the whole Roll tab. _reset_process_fields:
-a card's reset scoped to only the fields it shows.
+"""_sync_scope_buttons: each card's Frame/Roll pair and the roll_override_summary
+one-liner that answers "roll-wide or this frame's own". _reset_process_fields: a card's
+reset scoped to only the fields it shows.
 
 Stub-on-unbound-method, like test_right_panel_wiring.py: ControlsPanel pulls in every
 sidebar in the app, so no test here constructs a real one.
 """
 
 from dataclasses import replace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from negpy.desktop.session import AppState
+from negpy.desktop.settings_catalog import rows_for_fields
 from negpy.desktop.view.sidebar.controls_panel import _TONAL_RANGE_FIELDS, _TONE_FIELDS, ControlsPanel
 from negpy.features.exposure.models import ExposureConfig
 from negpy.features.process.models import ProcessConfig, ProcessMode
@@ -22,53 +23,129 @@ def _panel_stub(*, active_roll_id="roll1", locked_cards=()) -> MagicMock:
     panel.sensor_section = MagicMock()
     panel.demosaic_section = MagicMock()
     panel.process_section = MagicMock()
+    panel.autocrop_section = MagicMock()
+    panel.lens_section = MagicMock()
+    panel.flatfield_section = MagicMock()
     panel.roll_override_summary = MagicMock()
+    panel._roll_sections = lambda: ControlsPanel._roll_sections(panel)
+    panel._frame_sections = lambda: ControlsPanel._frame_sections(panel)
     panel.controller.state.active_roll_id = active_roll_id
     panel.controller.roll_card_locked.side_effect = lambda key: key in locked_cards
     return panel
 
 
-def test_sync_roll_locks_blank_summary_without_an_active_roll():
+def _scope(section) -> str:
+    return section.set_scope_buttons.call_args[0][1]
+
+
+def test_sync_scope_buttons_blank_summary_without_an_active_roll():
     panel = _panel_stub(active_roll_id=None)
 
-    ControlsPanel._sync_roll_locks(panel)
+    ControlsPanel._sync_scope_buttons(panel)
 
     panel.roll_override_summary.setText.assert_called_once_with("")
 
 
-def test_sync_roll_locks_blank_summary_when_nothing_is_overridden():
+def test_sync_scope_buttons_blank_summary_when_nothing_is_overridden():
     panel = _panel_stub(locked_cards=())
 
-    ControlsPanel._sync_roll_locks(panel)
+    ControlsPanel._sync_scope_buttons(panel)
 
     panel.roll_override_summary.setText.assert_called_once_with("")
 
 
-def test_sync_roll_locks_names_every_overridden_card():
+def test_sync_scope_buttons_names_every_overridden_card():
     panel = _panel_stub(locked_cards={"sensor", "process"})
 
-    ControlsPanel._sync_roll_locks(panel)
+    ControlsPanel._sync_scope_buttons(panel)
 
     panel.roll_override_summary.setText.assert_called_once_with("This frame overrides: Calibration, Normalization")
 
 
-def test_sync_roll_locks_names_film_mode_too():
+def test_sync_scope_buttons_names_film_mode_too():
     panel = _panel_stub(locked_cards={"film"})
 
-    ControlsPanel._sync_roll_locks(panel)
+    ControlsPanel._sync_scope_buttons(panel)
 
     panel.roll_override_summary.setText.assert_called_once_with("This frame overrides: Film Mode")
 
 
-def test_sync_roll_locks_sets_each_sections_lock_button():
+def test_sync_scope_buttons_marks_only_the_diverged_card_as_frame():
     panel = _panel_stub(locked_cards={"demosaic"})
 
-    ControlsPanel._sync_roll_locks(panel)
+    ControlsPanel._sync_scope_buttons(panel)
 
-    panel.film_section.set_lock_button.assert_called_once_with(False, False)
-    panel.sensor_section.set_lock_button.assert_called_once_with(False, False)
-    panel.demosaic_section.set_lock_button.assert_called_once_with(True, True)
-    panel.process_section.set_lock_button.assert_called_once_with(False, False)
+    assert _scope(panel.demosaic_section) == "frame"
+    for section in (panel.film_section, panel.sensor_section, panel.process_section, panel.autocrop_section):
+        assert _scope(section) == "roll"
+
+
+def test_sync_scope_buttons_reads_each_frame_cards_own_scope():
+    """A frame card reads Roll only once a whole-roll apply put its values there and the
+    frame still matches them."""
+    panel = _panel_stub()
+    panel.controller.frame_section_scope.side_effect = lambda key: "roll" if key == "tone" else "frame"
+
+    ControlsPanel._sync_scope_buttons(panel)
+
+    assert _scope(panel.tone_section) == "roll"
+    assert _scope(panel.finish_section) == "frame"
+
+
+def test_sync_scope_buttons_hides_the_pair_with_no_roll_open():
+    panel = _panel_stub(active_roll_id=None)
+
+    ControlsPanel._sync_scope_buttons(panel)
+
+    assert panel.tone_section.set_scope_buttons.call_args[0][0] is False
+    assert panel.sensor_section.set_scope_buttons.call_args[0][0] is False
+
+
+def test_sync_scope_buttons_names_the_geometry_and_flat_field_cards():
+    panel = _panel_stub(locked_cards={"autocrop", "lens", "flatfield"})
+
+    ControlsPanel._sync_scope_buttons(panel)
+
+    panel.roll_override_summary.setText.assert_called_once_with("This frame overrides: Auto Crop, Lens Correction, Flat Field")
+    assert _scope(panel.autocrop_section) == "frame"
+
+
+def test_a_roll_card_routes_both_halves_to_the_controller():
+    """Roll-tab cards share one entry point with the Metadata tab's, so the two panels
+    cannot drift on what a click means."""
+    panel = _panel_stub(locked_cards={"sensor"})
+
+    ControlsPanel._on_scope_selected(panel, "sensor", "roll")
+    panel.controller.set_card_scope.assert_called_once_with("sensor", "roll")
+
+    panel.controller.set_card_scope.reset_mock()
+    ControlsPanel._on_scope_selected(panel, "process", "frame")
+    panel.controller.set_card_scope.assert_called_once_with("process", "frame")
+
+
+def test_a_whole_roll_apply_from_a_frame_card_is_recorded():
+    """The record is what lets the card read Roll afterwards; a selection apply is not
+    roll-wide and leaves it alone."""
+    panel = _panel_stub()
+    rows = [r for r in rows_for_fields(("dye_separation",))]
+
+    with patch("negpy.desktop.view.sidebar.controls_panel.open_apply_dialog", return_value=(rows, "roll")):
+        ControlsPanel._on_scope_selected(panel, "tone", "roll")
+    assert panel.controller.record_section_push.call_args[0][0] == "tone"
+
+    panel.controller.record_section_push.reset_mock()
+    with patch("negpy.desktop.view.sidebar.controls_panel.open_apply_dialog", return_value=(rows, "selection")):
+        ControlsPanel._on_scope_selected(panel, "tone", "roll")
+    panel.controller.record_section_push.assert_not_called()
+
+
+def test_a_cancelled_apply_records_nothing():
+    panel = _panel_stub()
+
+    with patch("negpy.desktop.view.sidebar.controls_panel.open_apply_dialog", return_value=None):
+        ControlsPanel._on_scope_selected(panel, "tone", "roll")
+
+    panel.controller.record_section_push.assert_not_called()
 
 
 def test_reset_process_fields_only_touches_the_given_fields():

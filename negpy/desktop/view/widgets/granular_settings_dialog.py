@@ -1,3 +1,4 @@
+import os
 from functools import partial
 
 from PyQt6.QtCore import Qt
@@ -95,6 +96,7 @@ class GranularSettingsDialog(QDialog):
         super().__init__(parent)
         self._checks: list[tuple[QCheckBox, SettingRow, bool, QWidget]] = []
         self._sections: list[tuple[QWidget, int]] = []
+        self._section_ids: list[tuple[str, ...]] = []
         self._section_rows: list[tuple[CollapsibleSection, tuple[str, ...]]] = []
         self._scope_radios: ScopeRadios | None = None
         self._preselect_ids = preselect_ids
@@ -204,6 +206,7 @@ class GranularSettingsDialog(QDialog):
                 section.set_content(self._build_rows(rows))
             col.addWidget(section)
             self._sections.append((section, edited_count))
+            self._section_ids.append(tuple(r.id for r, _v, _e in rows))
 
         if bounds_mode == "axes":
             section = CollapsibleSection("Roll baseline", expanded=True)
@@ -355,6 +358,31 @@ class GranularSettingsDialog(QDialog):
         for box, row, _edited, _line in self._checks:
             box.setChecked(row.id in wanted)
 
+    def limit_to_rows(self, row_ids) -> None:
+        """Show only these rows, for a picker opened from one section's own header. The
+        rest leave _checks entirely, so Check All and the Apply gate never see them."""
+        wanted = set(row_ids)
+        kept = []
+        for box, row, edited, line in self._checks:
+            if row.id in wanted:
+                kept.append((box, row, edited, line))
+            else:
+                box.setChecked(False)
+                line.setVisible(False)
+                line.setParent(None)
+        self._checks = kept
+        # A section's own edited count drives whether it shows at all, so recount it over
+        # what is left rather than over what it was built with.
+        kept_edited = {row.id for _box, row, edited, _line in kept if edited}
+        rebuilt = []
+        for (section, _old), ids in zip(self._sections, self._section_ids):
+            count = sum(1 for i in ids if i in kept_edited)
+            section.set_modified(count)
+            rebuilt.append((section, count))
+        self._sections = rebuilt
+        self._apply_visibility()
+        self._update_apply_enabled()
+
     def selected_ids(self) -> list[str]:
         return [row.id for row in self.selected()]
 
@@ -381,6 +409,54 @@ class GranularSettingsDialog(QDialog):
         if getattr(self, "replace_radio", None) is not None and self.replace_radio.isChecked():
             return "replace"
         return "overlay"
+
+
+def open_apply_dialog(parent, session, rows=None, title: str = "") -> tuple[list, str] | None:
+    """Apply the active frame's settings to the selection or the whole roll.
+
+    *rows* limits the picker to one section's own settings, for the Roll button on that
+    section's header; None lists every section, which is the Film Strip's own button. The
+    metered-bounds rows come only with the full list: they belong to Normalization, a
+    Roll-tab card with a scope pair of its own.
+
+    Returns what was applied, as (rows, scope), or None if nothing was.
+    """
+    from negpy.desktop.session import _source_effective_bounds
+
+    state = session.state
+    src = state.selected_file_idx
+    if src == -1:
+        return None
+    # "Whole roll" means the visible (filtered) frames, not every loaded file: a filename
+    # filter is a non-destructive view, so hidden files are not counted.
+    visible = session.asset_model.visible_actual_indices()
+    sel_targets = len([i for i in set(state.selected_indices) if i != src and i in visible])
+    roll_targets = len([i for i in visible if i != src])
+    if not sel_targets and not roll_targets:
+        session.settings_synced.emit("Only one frame here — nothing to apply to")
+        return None
+
+    source_cfg = state.config
+    source_name = os.path.basename(state.uploaded_files[src]["path"]) if src < len(state.uploaded_files) else ""
+    bounds_mode = "axes" if rows is None and _source_effective_bounds(source_cfg.process) is not None else ""
+    dlg = GranularSettingsDialog(
+        parent,
+        source_cfg,
+        source_name,
+        show_scope=True,
+        bounds_mode=bounds_mode,
+        sel_count=sel_targets,
+        roll_count=roll_targets,
+    )
+    if rows is not None:
+        dlg.limit_to_rows([r.id for r in rows])
+    if title:
+        dlg.setWindowTitle(title)
+    if dlg.exec() != QDialog.DialogCode.Accepted:
+        return None
+    applied = dlg.selected()
+    session.sync_selected_settings(applied, dlg.bounds_flags(), dlg.scope())
+    return applied, dlg.scope()
 
 
 def open_paste_dialog(parent, controller) -> None:

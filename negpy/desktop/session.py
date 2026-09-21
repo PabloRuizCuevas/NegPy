@@ -1132,8 +1132,8 @@ class DesktopSessionManager(QObject):
         return containing[0]
 
     def _overlay_roll_defaults(self, config: WorkspaceConfig, asset: dict) -> WorkspaceConfig:
-        """Roll-wide Calibration/Demosaic/Normalization facts win over this frame's own
-        saved value, on every card it has not locked away from the roll within this
+        """Roll-wide film, rig and scanning facts win over this frame's own saved
+        value, on every card it has not locked away from the roll within this
         roll. Applied before the asset-identity overlays below, so a composite's own
         required wiring (a trichrome triplet's forced narrowband decode, a merge's
         process mode) always has the last word over a roll preference.
@@ -1145,7 +1145,7 @@ class DesktopSessionManager(QObject):
         if roll_id is None:
             return config
         file_hash = unforked_hash(asset["hash"])
-        return replace(config, process=rolls.resolve_roll_process_config(self.repo, roll_id, file_hash, config.process))
+        return rolls.resolve_roll_config(self.repo, roll_id, file_hash, config)
 
     def _hydrate_asset_config(self, asset: dict) -> tuple[WorkspaceConfig, bool]:
         """Build an asset's effective config and report whether it had saved edits."""

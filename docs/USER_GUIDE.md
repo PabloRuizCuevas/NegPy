@@ -80,6 +80,28 @@ The **Carry settings between frames** checkbox next to that button is the master
 
 A frame you have already edited keeps its own look whatever you tick, since only export and metadata settings reach it. **Reset Settings** on a frame ignores this list and returns it to bare defaults.
 
+### Frame or roll: the scope pair
+
+Every settings section's header carries the same two buttons, on the right beside its
+reset arrow: **Frame** (a picture, amber) and **Roll** (a film roll, red). The lit one says
+where that card's values live right now; clicking the other moves them there. A card
+holding something other than its defaults carries that same color as a stripe down the
+left of its header, so a glance across the panel says which cards are in play and where
+each one's values live. The pair appears once a roll is open, since there is nothing to be
+roll-wide about before that.
+
+On a **Roll tab** or **Metadata** card the pair is a latch. Roll is the normal state, and
+the card follows the roll's own value — a frame opened into the roll inherits it. Edit a slider and it flips to Frame, meaning this frame has stopped
+following. Click **Roll** to give the roll this frame's value and rejoin it; click
+**Frame** on a card that is following to pin it here without changing anything.
+
+On a **frame** card — Geometry, Filtration, Tone, Lab, Alternative Processes, Toning,
+Retouch, Finishing — **Roll** opens the same picker the film strip's clone button uses,
+listing only that section's settings and ticked to whatever you changed, with a choice of
+the selected frames or the whole roll. Apply it to the whole roll and the card reads Roll
+from then on; touch one of the settings you pushed and it reads Frame again, with nothing
+to clear. Applying to a selection is not roll-wide and leaves the card on Frame.
+
 ### Menu bar (macOS)
 
 `Ctrl` in this guide is `⌘` on macOS, and every menu, tooltip and shortcut list in the app shows it that way.
@@ -367,20 +389,9 @@ Where the frame gets its final shape: what is inside the print, and whether it s
 
 **Crop:**
 
-*   **Ratio** (default `Free`): target aspect ratio: `Free`, `1:1`, `3:2`, `4:3`, `5:4`, `6:7`, `7:5`, `65:24`, `16:9`, `16:10`, `11:8.5`. There is one entry per shape, because the crop tool auto-orients to portrait or landscape as you drag. On `Free` the crop tool is unconstrained, and auto-crop takes the ratio from the film format it detects, so 6x6, 645, 6x7 and 35mm each keep their own shape. Pick a ratio to force every frame to it instead.
-*   **Detect** (crosshairs): snap the ratio to the closest standard.
+*   **Auto**: detect the frame edge and crop this frame to it. What it looks for, the shape it snaps to, and **Batch Autocrop** for the whole roll live in **Auto Crop** on the Roll tab ([§10.5](#105-auto-crop)).
 *   **Crop** tool: draw a crop rectangle on the canvas. It opens on the crop already set, including one **Auto** found, so you can nudge an auto crop instead of redrawing it. Once you adjust it by hand, nothing re-detects over it. **Reset** clears it and turns auto-crop off.
 *   **Guide**: overlay a composition guide while cropping: *Thirds*, *Phi Grid*, *Diagonals*, *Golden Triangles*, *Golden Spiral*, *Armature*, *Diagonal Method*, *Grid* or *Off*. The redo button rotates guides that have orientations; the spiral has 8, the triangles 2.
-
-**Auto Crop**, to detect the frame edge automatically:
-
-*   **Mode**: *Image only* (exposed area) or *Film edge* (full film, including rebate and sprockets).
-*   **Crop Offset** (-5 to 100 px): inset the detected edge inward. Positive trims more; negative bleeds slightly outside, for when detection clips too tightly.
-*   **Rebate Trim** (0 to 150%): how far into the detected rebate to cut. 0% stops at the film edge, 100% lands on the detected image edge, and above 100% bites into the picture to clear a stubborn white border. *Image only* mode; it applies to both **Auto** and **Batch Autocrop**.
-*   **Auto**: detect and crop this frame. Best on clean rebate. The crop is detected once and stored, so the export is framed like the preview. **Mode**, **Ratio**, **Rebate Trim** and the orientation re-detect; **Crop Offset** moves the stored crop without re-detecting.
-*   **Batch Autocrop**: analyze all visible landscape frames as a roll, using confident detections to calibrate weaker ones. A portrait frame among them takes no part in the roll and is cropped on its own, the same as pressing **Auto** on it. Where no frame in the roll has a readable film edge (film that overfills the sensor, leaving no scanner bed around it), every frame is trimmed from its own measured border instead. A roll of only a few frames, an RGB triplet among them, is too short to pool a border across, so it trims by the edges that read brighter than the picture. It runs in the background with progress and cancellation. Manual, Film-edge and ambiguous frames are left alone. *Image only* mode only.
-*   **Mixing scans in one batch**: allowed, but the roll is what makes batch worth running. A frame that reads its own film edge keeps its own crop, and the roll supplies only what that frame could not measure. A frame that finds no edge at all is placed from the roll instead, so it takes the roll's width and tilt. That is the rescue on a consistent roll, and the risk in a selection of unrelated scans. Frames from one camera, holder and format pool best; mixed formats are safe while each frame reads its own edge.
-*   **When auto-crop leaves a frame alone**: the detector reads film against the light of the scanner bed, so it needs the bed to be the brightest thing in the scan. A slide with highlights as bright as the bed does not give it that, and the frame comes back uncropped rather than cropped to a guess. Sprocket-exposed film, and a neighboring frame filling more than a tenth of one side, read the same way. Crop those by hand, or use *Film edge* mode and trim in.
 
 **Alignment:**
 
@@ -392,17 +403,7 @@ Where the frame gets its final shape: what is inside the print, and whether it s
 
     Both replicate a wedge along the squeezed edge, as Fine Rotation does; crop it off, or turn on **Crop by Default**. Crop before correcting if you can, because the meters read the corrected frame: on an uncropped scan a big correction pulls rebate and surround into the metered area and the print darkens.
 
-*   **Distortion Correction** (-0.100 to 0.100, in steps of 0.001): radial lens distortion. Positive corrects barrel, negative pincushion. Use the film rebate as a straight-edge reference. Corrected before Tilt and Swing.
-*   **Metadata Distortion**: straighten curved lines with lens correction data stored in the file. Replaces manual distortion correction. Set before cropping or retouching. Available when the file contains supported distortion data.
-*   **Metadata CA**: reduce color fringes along edges with lens correction data stored in the file. Works independently of Metadata Distortion and can be used with manual distortion correction. Available when the file contains supported CA data.
-
-<!-- panel:flatfield -->
-### 4.2 Flat Field: even out the light
-
-Corrects uneven illumination (vignetting or falloff) from your copy-stand or scanner light, using a reference shot of the bare light source.
-
-*   **Profile** dropdown, with **+** and **trash** beside it: pick a reference image and save it as a named profile. **+** reads the reference once and bakes its correction into the profile, so you can then move, rename or delete the original reference file without affecting your edits. The profile is self-contained, stored in NegPy's own `flatfield` folder like sensor and crosstalk profiles. **Trash** asks first: the baked gain map cannot be recovered, and every frame using the profile loses its correction.
-*   **Apply Flat Field**: apply the active reference to this image, enabled once a profile exists.
+The scanning lens's own distortion and chromatic aberration are the rig's, not this frame's, and live in **Lens Correction** on the Roll tab ([§10.6](#106-lens-correction)).
 
 ---
 
@@ -701,7 +702,9 @@ A scrollable list of every edit step, the last 100 kept, newest on top. The curr
 
 ## 10. Roll tab
 
-**Film Mode, Calibration, Demosaic and Normalization are shared by every frame in the roll** — but only once applied. A slider or toggle edits the current frame alone, like any other control, and marks that card **This Frame Only** (amber border, badge on its header) the moment it stops matching the roll — and clears the mark again on its own if you edit it back to what the roll already says, without needing Apply for that. **Apply to Whole Roll**, above the cards, pushes every marked card out to the roll and clears the mark; its chevron switches it to **Apply to Selected Frames**, which pushes the same cards onto the film strip's selection instead. **Force Settings** (Apply to Whole Roll only) also reclaims every *other* frame marked This Frame Only, on any card — not just the one(s) marked on the frame you're looking at, since a stray mark elsewhere in the roll is otherwise reachable only by opening that exact frame. A card reclaimed this way, that isn't itself marked here, takes the roll's existing value for it rather than this frame's. Click a marked card's badge to discard the edit and rejoin the roll without applying anything. **Apply grays out** whenever its current scope and Force Settings state would touch nothing — no need to click it to find out. A frame outside any roll edits every card per frame, exactly as before this existed, and Apply has nothing to do.
+**Every card here is shared by every frame in the roll** — but only once applied. A slider or toggle edits the current frame alone, like any other control, and flips that card's scope pair to **Frame** (see [§1](#frame-or-roll-the-scope-pair)) the moment it stops matching the roll — and back to **Roll** on its own if you edit it to what the roll already says, without needing to apply anything for that.
+
+The card's own **Roll** button is what pushes it out: the roll takes this frame's value for that card, and the frame rejoins it. It touches one card on the frame you are looking at — a different frame that has locked the same card to its own value keeps it. The line above the cards names every card this frame currently overrides, so nothing is hidden behind a collapsed section. A frame outside any roll edits every card per frame, and the pair is hidden.
 
 <!-- panel:film -->
 ### 10.1 Film Mode
@@ -775,7 +778,7 @@ Bayer and X-Trans RAW only: a scanner TIFF, a Pakon scan or a linear DNG arrives
 <!-- panel:process -->
 ### 10.4 Normalization: negative → positive
 
-How the negative is measured into a positive's tonal bounds. The film mode that decides *which* conversion runs sits above the panels (§10.1), and how the scan is decoded lives in **Calibration** (§10.2). The analysis window below, the Roll Baseline picker and the tuning further down are one card: getting a negative's bounds right is one job, whether a frame borrows a roll's shared meter or measures its own. Every field here follows the Roll tab's usual **Apply to Whole Roll** / **Apply to Selected Frames** — see [§10](#10-roll-tab) — so editing one marks this card **This Frame Only** until applied.
+How the negative is measured into a positive's tonal bounds. The film mode that decides *which* conversion runs sits above the panels (§10.1), and how the scan is decoded lives in **Calibration** (§10.2). The analysis window below, the Roll Baseline picker and the tuning further down are one card: getting a negative's bounds right is one job, whether a frame borrows a roll's shared meter or measures its own. Every field here follows the Roll tab's usual scope pair — see [§10](#10-roll-tab) — so editing one flips this card to **Frame** until its **Roll** button pushes it back out.
 
 *   **Multi-core CPU rendering** (**Preferences → Performance**, beside **GPU acceleration**): spreads the CPU rendering kernels across your cores. It takes effect immediately, with no recompile and no restart.
 
@@ -828,8 +831,43 @@ How the negative is measured into a positive's tonal bounds. The film mode that 
 
 **Highlight Recovery** (Transparency only, default **Off**) recovers a genuinely clipped highlight on a camera RAW source; greyed out on a scanner TIFF, JPEG or other already-rendered file, which has no sensor data left to recover from. **Off** leaves a blown highlight flat, or magenta if one channel clipped before the others. **Blend** recovers a plausible neutral color from the channels that are not clipped — right for a genuinely neutral highlight, such as a sun disc, sky, chrome or a glass reflection. **Reconstruct** is libraw's own more aggressive default level, which can misjudge a highlight that was a saturated color rather than a near-neutral one, so judge it on the actual frame. Hidden outside Transparency, and inert under Narrowband, where a single raw channel per exposure carries no highlight color to reconstruct. Also greyed on a merged bracket: a bracket already recovers a genuine highlight from a shorter, unclipped exposure, and a reconstructed pixel would read below the sensor ceiling and confuse the merge's own clip detection.
 
+<!-- panel:autocrop -->
+### 10.5 Auto Crop
+
+What the frame detector looks for, and the shape it snaps to. The film edge, the rebate width and the format are the roll's, so these are roll-wide; the rectangle each frame ends up with is its own, and lives in **Geometry** ([§4.1](#41-geometry-crop-and-straighten)) with **Auto**.
+
+*   **Ratio** (default `Free`): target aspect ratio: `Free`, `1:1`, `3:2`, `4:3`, `5:4`, `6:7`, `7:5`, `65:24`, `16:9`, `16:10`, `11:8.5`. There is one entry per shape, because the crop tool auto-orients to portrait or landscape as you drag. On `Free` the crop tool is unconstrained, and auto-crop takes the ratio from the film format it detects, so 6x6, 645, 6x7 and 35mm each keep their own shape. Pick a ratio to force every frame to it instead.
+*   **Detect** (crosshairs): snap the ratio to the closest standard.
+*   **Mode**: *Image only* (exposed area) or *Film edge* (full film, including rebate and sprockets).
+*   **Crop Offset** (-5 to 100 px): inset the detected edge inward. Positive trims more; negative bleeds slightly outside, for when detection clips too tightly.
+*   **Rebate Trim** (0 to 150%): how far into the detected rebate to cut. 0% stops at the film edge, 100% lands on the detected image edge, and above 100% bites into the picture to clear a stubborn white border. *Image only* mode; it applies to both **Auto** and **Batch Autocrop**.
+*   **Batch Autocrop**: analyze all visible landscape frames as a roll, using confident detections to calibrate weaker ones. A portrait frame among them takes no part in the roll and is cropped on its own, the same as pressing **Auto** on it. Where no frame in the roll has a readable film edge (film that overfills the sensor, leaving no scanner bed around it), every frame is trimmed from its own measured border instead. A roll of only a few frames, an RGB triplet among them, is too short to pool a border across, so it trims by the edges that read brighter than the picture. It runs in the background with progress and cancellation. Manual, Film-edge and ambiguous frames are left alone. *Image only* mode only.
+*   **Mixing scans in one batch**: allowed, but the roll is what makes batch worth running. A frame that reads its own film edge keeps its own crop, and the roll supplies only what that frame could not measure. A frame that finds no edge at all is placed from the roll instead, so it takes the roll's width and tilt. That is the rescue on a consistent roll, and the risk in a selection of unrelated scans. Frames from one camera, holder and format pool best; mixed formats are safe while each frame reads its own edge.
+*   **When auto-crop leaves a frame alone**: the detector reads film against the light of the scanner bed, so it needs the bed to be the brightest thing in the scan. A slide with highlights as bright as the bed does not give it that, and the frame comes back uncropped rather than cropped to a guess. Sprocket-exposed film, and a neighboring frame filling more than a tenth of one side, read the same way. Crop those by hand, or use *Film edge* mode and trim in.
+
+Changing any of these re-detects the frame on every following frame that was cropped by **Auto**; a crop drawn by hand is never re-detected over, except by **Ratio**, which reshapes it in place around the same center.
+
+<!-- panel:lens -->
+### 10.6 Lens Correction
+
+The scanning lens, not the frame: one rig, one correction for every frame it shot.
+
+*   **Distortion Correction** (-0.100 to 0.100, in steps of 0.001): radial lens distortion. Positive corrects barrel, negative pincushion. Use the film rebate as a straight-edge reference. Corrected before Tilt and Swing.
+*   **Metadata Distortion**: straighten curved lines with lens correction data stored in the file. Replaces manual distortion correction. Set before cropping or retouching. Available when the file contains supported distortion data.
+*   **Metadata CA**: reduce color fringes along edges with lens correction data stored in the file. Works independently of Metadata Distortion and can be used with manual distortion correction. Available when the file contains supported CA data.
+
+<!-- panel:flatfield -->
+### 10.7 Flat Field: even out the light
+
+Corrects uneven illumination (vignetting or falloff) from your copy-stand or scanner light, using a reference shot of the bare light source.
+
+*   **Profile** dropdown, with **+** and **trash** beside it: pick a reference image and save it as a named profile. **+** reads the reference once and bakes its correction into the profile, so you can then move, rename or delete the original reference file without affecting your edits. The profile is self-contained, stored in NegPy's own `flatfield` folder like sensor and crosstalk profiles. **Trash** asks first: the baked gain map cannot be recovered, and every frame using the profile loses its correction.
+*   **Apply Flat Field**: apply the selected reference to this roll, enabled once a profile exists.
+
+A newly chosen profile also becomes the rig's default, so the next roll starts on it without being told.
+
 <!-- panel:presets -->
-### 10.5 Presets
+### 10.8 Presets
 
 Save and recall a complete edit, the full workspace, by name.
 
@@ -844,6 +882,8 @@ Save and recall a complete edit, the full workspace, by name.
 Archival metadata for the **original analog capture** (camera, lens, film, process), written into exported files as EXIF and embedded XMP, so DAMs like Lightroom show your film gear rather than the scanner.
 
 Every export format carries it: JPEG, TIFF, PNG, JPEG XL and WebP. A TIFF holds the capture position in XMP only, and EXIF text is 7-bit, so typographic punctuation is transliterated (`4×5` is written `4x5`). **Protect original metadata**, on the Export tab (§13), copies the source file's own EXIF/XMP instead of writing these fields.
+
+**These cards are roll-wide by default** — one camera, one stock, one development, one scanning rig — so **Analog Gear**, **Capture**, **Process**, **Scanning** and **Exposure** each carry the scope pair from [§1](#frame-or-roll-the-scope-pair) with **Roll** lit, and a frame opened into the roll inherits what the roll holds. Edit a field and only that card flips to **Frame**; its **Roll** button gives the roll this frame's value again. The line under the panel title names every card this frame has taken off the roll. The frame number is the one field that never travels: it is unique to one frame.
 
 <!-- panel:metadata_presets -->
 ### Metadata Presets
@@ -878,7 +918,7 @@ Searches the gear you've declared as your own (§12); pick **Other…** for the 
 *   **Format**: `—` (not set), `35mm`, `120`, `4×5`, `8×10`, `110`, or `Other` with a free-text field.
 *   **Developer** and **Dilution**: the developer, for example `D-76`, and its working strength, for example `1+1`, `1+50` or `stock`. The two join in EXIF `ImageDescription` as `D-76 1+1`; the dilution also goes to XMP as `negpy:DevelopmentDilution`.
 *   **Push / Pull**: `Push +3` … `Normal` … `Pull -3`.
-*   **Time** and **Temp (°C)**: development time as `9:30` or plain minutes, and the temperature it ran at. An unreadable time turns the field red and is not saved. Both are written to XMP as `negpy:DevelopmentTime` and `negpy:DevelopmentTemperature`, and searchable as `devtime:` (minutes) and `temp:`.
+*   **Time** and **Temperature (°C)**: development time as `9:30` or plain minutes, and the temperature it ran at. An unreadable time turns the field red and is not saved. Both are written to XMP as `negpy:DevelopmentTime` and `negpy:DevelopmentTemperature`, and searchable as `devtime:` (minutes) and `temp:`.
 *   **Clear**: empties the saved process and everything it fills: developer, dilution, push/pull, time and temperature. Format stays, since the film stock sets it.
 
 <!-- panel:metadata_scanning -->

@@ -427,7 +427,7 @@ def test_open_apply_dialog_routes_rows_bounds_scope_to_session(browser, session)
     mock_dlg.selected.return_value = rows
     mock_dlg.bounds_flags.return_value = (False, False)
     mock_dlg.scope.return_value = "selection"
-    with patch("negpy.desktop.view.sidebar.files.GranularSettingsDialog", return_value=mock_dlg) as ctor:
+    with patch("negpy.desktop.view.widgets.granular_settings_dialog.GranularSettingsDialog", return_value=mock_dlg) as ctor:
         browser._open_apply_dialog()
 
     assert ctor.call_args.args[2] == "IMG_0001.cr2"
@@ -439,7 +439,7 @@ def test_open_apply_dialog_routes_rows_bounds_scope_to_session(browser, session)
 def test_open_apply_dialog_noop_without_active_file(browser, session):
     session.state.selected_file_idx = -1
     session.sync_selected_settings = MagicMock()
-    with patch("negpy.desktop.view.sidebar.files.GranularSettingsDialog") as ctor:
+    with patch("negpy.desktop.view.widgets.granular_settings_dialog.GranularSettingsDialog") as ctor:
         browser._open_apply_dialog()
     ctor.assert_not_called()
     session.sync_selected_settings.assert_not_called()

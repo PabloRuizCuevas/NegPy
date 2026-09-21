@@ -43,7 +43,7 @@ from PyQt6.QtWidgets import (
 
 from negpy.kernel.system.text import count_of
 from negpy.desktop.controller import AppController
-from negpy.desktop.session import AppState, _source_effective_bounds, composite_kind
+from negpy.desktop.session import AppState, composite_kind
 from negpy.desktop.view.confirm import (
     confirm_reset_frames,
     confirm_undiptych,
@@ -65,7 +65,7 @@ from negpy.desktop.view.styles.templates import (
     wrap_tooltip,
 )
 from negpy.desktop.view.styles.theme import THEME
-from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog, open_paste_dialog
+from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog, open_paste_dialog
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
 from negpy.services.assets import rolls
 from negpy.services.assets.gear import GearProfiles
@@ -1679,29 +1679,7 @@ class FileBrowser(QWidget):
         return os.path.basename(files[idx]["path"]) if 0 <= idx < len(files) else ""
 
     def _open_apply_dialog(self) -> None:
-        state = self.session.state
-        src = state.selected_file_idx
-        if src == -1:
-            return
-        # "Whole roll" means the visible (filtered) frames, not every loaded file: a filename
-        # filter is a non-destructive view, so hidden files are not counted.
-        visible = self.session.asset_model.visible_actual_indices()
-        sel_targets = len([i for i in set(state.selected_indices) if i != src and i in visible])
-        roll_targets = len([i for i in visible if i != src])
-
-        source_cfg = self.session.state.config
-        bounds_mode = "axes" if _source_effective_bounds(source_cfg.process) is not None else ""
-        dlg = GranularSettingsDialog(
-            self,
-            source_cfg,
-            self._source_name(),
-            show_scope=True,
-            bounds_mode=bounds_mode,
-            sel_count=sel_targets,
-            roll_count=roll_targets,
-        )
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.session.sync_selected_settings(dlg.selected(), dlg.bounds_flags(), dlg.scope())
+        open_apply_dialog(self, self.session)
 
     def _open_roll_settings_dialog(self) -> None:
         """The tag-icon button: always opens, and silently pre-fills a gear match too

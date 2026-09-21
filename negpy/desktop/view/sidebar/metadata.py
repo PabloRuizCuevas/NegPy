@@ -21,10 +21,12 @@ from negpy.desktop.settings_catalog import (
 )
 from negpy.desktop.view.shortcut_registry import tooltip_with_shortcut
 from negpy.desktop.view.sidebar.base import BaseSidebar
-from negpy.desktop.view.styles.templates import field_label, hint_label, section_subheader, wrap_tooltip
+from negpy.desktop.view.styles.templates import field_label, hint_label, section_subheader, set_hint_kind, wrap_tooltip
 from negpy.desktop.view.styles.fonts import mono_font_family
 from negpy.desktop.view.styles.theme import THEME
+from negpy.desktop.controller import AppController
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
+from negpy.services.assets.rolls import ROLL_DEFAULT_FIELDS
 from negpy.desktop.view.widgets.description_fields_dialog import DescriptionFieldsDialog
 from negpy.desktop.view.widgets.gear_catalog_dialog import resolve_other_gear_pick
 from negpy.desktop.view.widgets.location_picker_dialog import LocationPickerDialog
@@ -103,7 +105,9 @@ class MetadataSidebar(BaseSidebar):
 
         self.metadata_title_label = section_subheader("METADATA")
         self.layout.addWidget(self.metadata_title_label)
-        self.metadata_scope_hint = hint_label("This frame only.")
+        # One line naming every card this frame has taken off the roll, the same answer
+        # roll_override_summary gives on the Roll tab.
+        self.metadata_scope_hint = hint_label("", "muted")
         self.layout.addWidget(self.metadata_scope_hint)
 
         self._metadata_controls = QWidget()
@@ -155,7 +159,8 @@ class MetadataSidebar(BaseSidebar):
         )
         gear_actions_row.addWidget(self.gear_infer_btn)
         gear.addLayout(gear_actions_row)
-        controls.addWidget(self._card("Analog Gear", "gear", gear_body, "fa5s.camera-retro"))
+        self.gear_section = self._card("Analog Gear", "gear", gear_body, "fa5s.camera-retro")
+        controls.addWidget(self.gear_section)
 
         # ── CAPTURE ──────────────────────────────────────────────────────
         cap_body, cap = self._card_body()
@@ -181,7 +186,8 @@ class MetadataSidebar(BaseSidebar):
         self.place_clear_btn = self._icon_action("fa5s.times", "Clear the capture place")
         place_row.addWidget(self.place_clear_btn)
         cap.addLayout(place_row)
-        controls.addWidget(self._card("Capture", "capture", cap_body, "fa5s.clock"))
+        self.capture_section = self._card("Capture", "capture", cap_body, "fa5s.clock")
+        controls.addWidget(self.capture_section)
 
         # ── PROCESS ──────────────────────────────────────────────────────
         proc_body, proc = self._card_body()
@@ -243,7 +249,7 @@ class MetadataSidebar(BaseSidebar):
         time_col.addWidget(self.dev_time_edit)
         temp_col = QVBoxLayout()
         temp_col.setSpacing(THEME.space_md)
-        temp_col.addWidget(field_label("Temp (°C)"))
+        temp_col.addWidget(field_label("Temperature (°C)"))
         self.dev_temp_edit = QLineEdit()
         self.dev_temp_edit.setPlaceholderText("e.g. 20")
         self.dev_temp_edit.setText(format_temperature(conf.process_temperature_c))
@@ -254,7 +260,8 @@ class MetadataSidebar(BaseSidebar):
 
         self.process_clear_btn = self._labeled_action("", "Clear", "Empty the saved process and everything it fills; Format stays")
         proc.addWidget(self.process_clear_btn)
-        controls.addWidget(self._card("Process", "process", proc_body, "fa5s.flask"))
+        self.process_section = self._card("Process", "process", proc_body, "fa5s.flask")
+        controls.addWidget(self.process_section)
 
         # ── SCANNING ─────────────────────────────────────────────────────
         scan_body, scan = self._card_body()
@@ -294,7 +301,8 @@ class MetadataSidebar(BaseSidebar):
 
         self.scan_clear_btn = self._labeled_action("", "Clear", "Empty the saved setup and the scanning note; Roll and Frame stay")
         scan.addWidget(self.scan_clear_btn)
-        controls.addWidget(self._card("Scanning", "scanning", scan_body, "mdi6.scanner"))
+        self.scanning_section = self._card("Scanning", "scanning", scan_body, "mdi6.scanner")
+        controls.addWidget(self.scanning_section)
 
         # ── EXPOSURE ─────────────────────────────────────────────────────
         exp_body, exp = self._card_body()
@@ -303,7 +311,8 @@ class MetadataSidebar(BaseSidebar):
         self.exposure_label = field_label("Exposure")
         exp.addWidget(self.exposure_label)
         self.exposure_edit = self._make_exif_field("exposure", exp)
-        controls.addWidget(self._card("Exposure", "exposure", exp_body, "fa5s.stopwatch"))
+        self.exposure_section = self._card("Exposure", "exposure", exp_body, "fa5s.stopwatch")
+        controls.addWidget(self.exposure_section)
 
         self._gear_combo_category = {
             id(self.camera_combo): "cameras",
@@ -346,9 +355,71 @@ class MetadataSidebar(BaseSidebar):
         self._metadata_scroll_area.setWidget(self._metadata_controls)
         self.layout.addWidget(self._metadata_scroll_area, 1)
 
+        for key, section in self._scope_sections():
+            section.scope_selected.connect(lambda scope, k=key: self._on_scope_selected(k, scope))
+            section.reset_requested.connect(lambda k=key: self._reset_card(k))
+
         # After every card: the tooltips it fills in span all of them.
         self.apply_shortcut_tooltips()
         self._set_metadata_controls_enabled(not conf.protect_original_metadata)
+
+    def _scope_sections(self) -> tuple:
+        """Every card whose fields are a roll fact, paired with its ROLL_DEFAULT_FIELDS
+        key. Presets and Preview own no metadata of their own and are absent."""
+        return (
+            ("metadata_gear", self.gear_section),
+            ("metadata_capture", self.capture_section),
+            ("metadata_process", self.process_section),
+            ("metadata_scanning", self.scanning_section),
+            ("metadata_exposure", self.exposure_section),
+        )
+
+    def _on_scope_selected(self, card_key: str, scope: str) -> None:
+        self.controller.set_card_scope(card_key, scope)
+        self._sync_scope_buttons()
+
+    def _reset_card(self, card_key: str) -> None:
+        """Clears just this card's fields, then lets the roll fill them again on the cards
+        still following it -- the same scoped reset every Roll-tab card has."""
+        _section, fields = ROLL_DEFAULT_FIELDS[card_key]
+        default = MetadataConfig()
+        self.update_config_section(
+            "metadata",
+            persist=True,
+            render=False,
+            readback_metrics=False,
+            **{f: getattr(default, f) for f in fields},
+        )
+        self.controller.sync_metadata_card_locks()
+        self.sync_ui()
+
+    def _sync_scope_buttons(self) -> None:
+        """Each card's Frame/Roll pair and its "· N" count. Metadata is roll-wide by
+        default -- one camera, one stock, one development -- so a card reads Roll until
+        this frame is given something of its own."""
+        has_roll = self.state.active_roll_id is not None
+        conf = self.state.config.metadata
+        default = MetadataConfig()
+        overridden = []
+        for card_key, section in self._scope_sections():
+            _sec, fields = ROLL_DEFAULT_FIELDS[card_key]
+            section.set_modified(sum(getattr(conf, f) != getattr(default, f) for f in fields))
+            locked = self.controller.roll_card_locked(card_key)
+            label = AppController._ROLL_CARD_LABELS[card_key]
+            section.set_scope_buttons(
+                has_roll,
+                "frame" if locked else "roll",
+                roll_tooltip=f"{label} follows the roll — click to give the roll this frame's value",
+                frame_tooltip=f"{label} is this frame's own — click to rejoin the roll",
+            )
+            if locked:
+                overridden.append(label)
+
+        if overridden:
+            set_hint_kind(self.metadata_scope_hint, "warning")
+            self.metadata_scope_hint.setText(f"This frame overrides: {', '.join(overridden)}")
+        else:
+            self.metadata_scope_hint.setText("")
 
     def _card_body(self) -> tuple[QWidget, QVBoxLayout]:
         body = QWidget()
@@ -674,6 +745,7 @@ class MetadataSidebar(BaseSidebar):
             readback_metrics=False,
             **asdict(new_meta),
         )
+        self.controller.sync_metadata_card_locks()
         if refresh_combos:
             self._refresh_gear_combos(force=True)
         self.sync_ui()
@@ -854,6 +926,8 @@ class MetadataSidebar(BaseSidebar):
         )
 
     def sync_ui(self) -> None:
+        # Before the dirty guard: a card's scope can change while an edit is uncommitted.
+        self._sync_scope_buttons()
         if self._dirty:
             return
 

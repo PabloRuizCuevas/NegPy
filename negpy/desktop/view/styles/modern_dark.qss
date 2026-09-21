@@ -393,16 +393,15 @@ QFrame#collapsible_content {
     border-top: none;
 }
 
-/* A Roll-tab card locked to this frame's own value (widgets/collapsible.py
-   set_lock_button): an amber stripe down the whole card, not just its small lock
-   icon, since switching frames should make an override obvious before its sliders
-   are even read. */
-QFrame#collapsible_content[roll_locked="true"] {
+/* A card's scope (widgets/collapsible.py set_scope_buttons), as a stripe on the header
+   alone: the same amber and red the Frame/Roll buttons beside it carry, so the card says
+   which one is lit without the buttons being read. */
+QPushButton#collapsible_header[scope="frame"] {
     border-left: 3px solid @warn_amber;
 }
 
-QPushButton#collapsible_header[roll_locked="true"] {
-    border-left: 3px solid @warn_amber;
+QPushButton#collapsible_header[scope="roll"] {
+    border-left: 3px solid @accent_secondary;
 }
 
 /* Section content must not repaint over the card: plain QWidget bodies would

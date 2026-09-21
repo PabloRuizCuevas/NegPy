@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
-from negpy.desktop.view.styles.templates import HEADER_BUTTON_SIZE
+from negpy.desktop.view.styles.templates import HEADER_BUTTON_SIZE, HEADER_HEIGHT, HEADER_ICON_SIZE
 from negpy.desktop.view.styles.theme import THEME
 import qtawesome as qta
 
@@ -26,7 +26,7 @@ class CollapsibleSection(QWidget):
     expanded_changed = pyqtSignal(bool)
     info_requested = pyqtSignal()
     selection_toggled = pyqtSignal(bool)
-    lock_toggled = pyqtSignal(bool)
+    scope_selected = pyqtSignal(str)  # "frame" | "roll"
 
     def __init__(
         self,
@@ -54,7 +54,7 @@ class CollapsibleSection(QWidget):
             self.toggle_button.setCheckable(True)
             self.toggle_button.setChecked(expanded)
             self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.toggle_button.setFixedHeight(36)
+        self.toggle_button.setFixedHeight(HEADER_HEIGHT)
 
         # Styled by the QPushButton#collapsible_header rules in modern_dark.qss. overlay="true"
         # means the header is stacked over a preview widget, on a translucent background.
@@ -99,7 +99,7 @@ class CollapsibleSection(QWidget):
             self.info_btn = QPushButton()
             self.info_btn.setIcon(qta.icon("fa5s.info-circle", color=THEME.text_muted))
             self.info_btn.setFixedSize(HEADER_BUTTON_SIZE, HEADER_BUTTON_SIZE)
-            self.info_btn.setIconSize(QSize(11, 11))
+            self.info_btn.setIconSize(QSize(HEADER_ICON_SIZE, HEADER_ICON_SIZE))
             self.info_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.info_btn.setToolTip(f"What am I looking at? — {title} guide")
             self.info_btn.setObjectName("collapsible_reset_btn")
@@ -109,7 +109,7 @@ class CollapsibleSection(QWidget):
         self.reset_btn = QPushButton()
         self.reset_btn.setIcon(qta.icon("fa5s.undo", color=THEME.text_muted))
         self.reset_btn.setFixedSize(HEADER_BUTTON_SIZE, HEADER_BUTTON_SIZE)
-        self.reset_btn.setIconSize(QSize(10, 10))
+        self.reset_btn.setIconSize(QSize(HEADER_ICON_SIZE, HEADER_ICON_SIZE))
         self.reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.reset_btn.setToolTip(f"Reset {title} to defaults")
         self.reset_btn.setVisible(False)
@@ -121,10 +121,13 @@ class CollapsibleSection(QWidget):
         # here, so no button exists until one asks for it.
         self.actions_btn: Optional[QPushButton] = None
 
-        # Lazily built by set_lock_button(): only a section backing a Roll-tab card has
-        # anything to lock away from.
-        self.lock_btn: Optional[QPushButton] = None
-        self._locked = False
+        # Lazily built by set_scope_buttons(): a section owning no settings has no scope
+        # to choose between.
+        self.frame_btn: Optional[QPushButton] = None
+        self.roll_btn: Optional[QPushButton] = None
+        self._scope = "frame"
+        self._scope_visible = False
+        self.modified_count = 0
 
         self.chevron_label: Optional[QLabel] = None
         if collapsible:
@@ -136,7 +139,7 @@ class CollapsibleSection(QWidget):
         if background_widget:
             background_widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
             header_container = QWidget()
-            header_container.setFixedHeight(36)
+            header_container.setFixedHeight(HEADER_HEIGHT)
             stacked = QStackedLayout(header_container)
             stacked.setStackingMode(QStackedLayout.StackingMode.StackAll)
             stacked.setContentsMargins(0, 0, 0, 0)
@@ -175,13 +178,14 @@ class CollapsibleSection(QWidget):
 
     def set_modified(self, count: int) -> None:
         """Append count to title when non-zero; show reset button. Unrelated to
-        set_lock_button's roll-override state -- keeping this title to only what it
+        the scope pair's roll-override state -- keeping this title to only what it
         has always meant (how far from NegPy's own defaults) instead of chaining a
         second, unrelated fact onto the same "· count" reading."""
         self.modified_count = count
         visible = count > 0
         self.reset_btn.setVisible(visible)
         self.title_label.setText(f"{self._title_text} · {count}" if visible else self._title_text)
+        self._refresh_scope_stripe()
 
     def set_selection_state(self, checked: int, total: int) -> None:
         """Reflect how many of the section's rows are ticked. Emits nothing."""
@@ -224,51 +228,66 @@ class CollapsibleSection(QWidget):
             self.actions_btn = QPushButton()
             self.actions_btn.setIcon(qta.icon("fa5s.ellipsis-v", color=THEME.text_muted))
             self.actions_btn.setFixedSize(HEADER_BUTTON_SIZE, HEADER_BUTTON_SIZE)
-            self.actions_btn.setIconSize(QSize(10, 10))
+            self.actions_btn.setIconSize(QSize(HEADER_ICON_SIZE, HEADER_ICON_SIZE))
             self.actions_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.actions_btn.setObjectName("collapsible_reset_btn")
             self._header_row.insertWidget(self._header_row.count() - 1, self.actions_btn)
         self.actions_btn.setToolTip(tooltip)
         self.actions_btn.setMenu(menu)
 
-    def set_lock_button(self, visible: bool, locked: bool) -> None:
-        """A per-frame override lock for a section backing a Roll-tab card: locked
-        freezes this card at the frame's own value, away from the roll's. Locked
-        reads as a labeled amber badge, not just an icon, so the header itself says
-        what the card's amber [roll_locked] border is about -- deliberately a
-        separate widget from title_label's own "· count" (set_modified), which
-        answers an unrelated question (how far from NegPy's own defaults, not the
-        roll's). Unlocked, when shown at all, stays a plain muted icon."""
-        if self.lock_btn is None:
-            self.lock_btn = QPushButton()
-            self.lock_btn.setFixedHeight(HEADER_BUTTON_SIZE)
-            self.lock_btn.setIconSize(QSize(10, 10))
-            self.lock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.lock_btn.setObjectName("collapsible_reset_btn")
-            self.lock_btn.clicked.connect(lambda: self.lock_toggled.emit(not self._locked))
-            self._header_row.insertWidget(self._header_row.count() - 1, self.lock_btn)
-        self._locked = locked
-        self.lock_btn.setVisible(visible)
-        self.lock_btn.setText(" This Frame Only" if locked else "")
-        icon_name = "fa5s.lock" if locked else "fa5s.lock-open"
-        color = THEME.warn_amber if locked else THEME.text_muted
-        self.lock_btn.setIcon(qta.icon(icon_name, color=color))
-        self.lock_btn.setStyleSheet(
-            f"color: {THEME.warn_amber}; font-size: {THEME.font_size_small}px; font-weight: {THEME.weight_semibold};" if locked else ""
-        )
-        self.lock_btn.setToolTip(
-            f"{self._title_text} follows this frame's own value, not the roll's — click to use the roll's again"
-            if locked
-            else f"{self._title_text} follows the roll — click to lock this frame to its own value"
-        )
-        # An amber stripe down the whole card (QSS [roll_locked] rules), not just the
-        # badge -- switching to a frame with an override should be obvious before its
-        # sliders are even read.
-        for widget in (self.toggle_button, self.content_area):
-            widget.setProperty("roll_locked", "true" if locked else "false")
-            style = widget.style()
-            style.unpolish(widget)
-            style.polish(widget)
+    def set_scope_buttons(self, visible: bool, scope: str, roll_tooltip: str = "", frame_tooltip: str = "") -> None:
+        """The header's Frame/Roll pair: which scope this card's values live at, and the
+        one click that moves them to the other. The active half is colored and checked,
+        the other is the affordance; clicking the active one does nothing. A Roll-tab card
+        reads its lock here, a frame card is always Frame and uses Roll as a one-shot
+        push."""
+        if self.frame_btn is None:
+            self.frame_btn = self._build_scope_button("fa5s.image", "frame")
+            self.roll_btn = self._build_scope_button("fa5s.film", "roll")
+        self._scope = scope
+        for btn, key, color in (
+            (self.frame_btn, "frame", THEME.warn_amber),
+            (self.roll_btn, "roll", THEME.accent_secondary),
+        ):
+            active = key == scope
+            btn.setVisible(visible)
+            btn.setChecked(active)
+            btn.setIcon(qta.icon(btn.property("scope_icon"), color=color if active else THEME.text_muted))
+        self.frame_btn.setToolTip(frame_tooltip or f"{self._title_text} is this frame's own")
+        self.roll_btn.setToolTip(roll_tooltip or f"Give the roll this frame's {self._title_text}…")
+        self._scope_visible = visible
+        self._refresh_scope_stripe()
+
+    def _refresh_scope_stripe(self) -> None:
+        """The header carries the lit button's own colour as a stripe (QSS [scope] rules),
+        and only on a card holding something other than its defaults: a stripe down every
+        untouched card says nothing. The body stays plain, like every other sidebar's."""
+        striped = self._scope_visible and self.modified_count > 0
+        self.toggle_button.setProperty("scope", self._scope if striped else "")
+        style = self.toggle_button.style()
+        style.unpolish(self.toggle_button)
+        style.polish(self.toggle_button)
+
+    def _build_scope_button(self, icon_name: str, scope: str) -> QPushButton:
+        btn = QPushButton()
+        btn.setCheckable(True)
+        btn.setProperty("scope_icon", icon_name)
+        btn.setFixedSize(HEADER_BUTTON_SIZE, HEADER_BUTTON_SIZE)
+        btn.setIconSize(QSize(HEADER_ICON_SIZE, HEADER_ICON_SIZE))
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setObjectName("collapsible_reset_btn")
+        # Checked is display only: the pair is a readout as much as a control, so a click
+        # on the half already active must not un-check it into a third, meaningless state.
+        btn.clicked.connect(lambda: self._on_scope_clicked(scope))
+        self._header_row.insertWidget(self._header_row.count() - 1, btn)
+        return btn
+
+    def _on_scope_clicked(self, scope: str) -> None:
+        if scope == self._scope:
+            self.frame_btn.setChecked(self._scope == "frame")
+            self.roll_btn.setChecked(self._scope == "roll")
+            return
+        self.scope_selected.emit(scope)
 
 
 def make_section(
