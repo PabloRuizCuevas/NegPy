@@ -1131,3 +1131,17 @@ class TestCrosstalkIsModeAware(unittest.TestCase):
         from negpy.features.process.models import ProcessConfig
 
         self.assertEqual(str(ProcessConfig().crosstalk_process), str(ProcessMode.C41))
+
+
+def test_normalization_shader_reads_the_transfer_decision_it_is_given():
+    """The WGSL must not re-derive is_transfer_path: it had no positive_source term,
+    so a Positive frame took the print branch on the GPU and the transfer branch on
+    the CPU."""
+    from pathlib import Path
+
+    import negpy
+
+    src = (Path(negpy.__file__).parent / "features/exposure/shaders/normalization.wgsl").read_text()
+
+    assert "transfer_flag" in src
+    assert "params.mode == 2u" not in src

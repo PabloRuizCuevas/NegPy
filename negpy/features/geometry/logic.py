@@ -1,5 +1,6 @@
 import math
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from typing import List, NamedTuple, Optional, Tuple
 
 import cv2
@@ -1833,6 +1834,7 @@ _CROP_TO_VALID_ITERS = 30
 _CROP_TO_VALID_TERNARY_ITERS = 25
 
 
+@lru_cache(maxsize=32)
 def compute_geometry_crop_rect(
     fine_rotation: float, converge_v: float, converge_h: float, w: int, h: int
 ) -> Tuple[float, float, float, float]:

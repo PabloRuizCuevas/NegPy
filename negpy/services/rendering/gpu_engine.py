@@ -1415,10 +1415,12 @@ class GPUEngine:
 
         device.queue.submit([enc.finish()])
         # The exact stretch the shader normalized with (mirrors the CPU "final_bounds").
+        # The transfer path renders through the fixed window, not the measured one.
+        _base_bounds = LogNegativeBounds(*transfer_bounds()) if transfer else bounds
         _wp3, _bp3 = per_channel_point_offsets(settings.process, settings.process.process_mode == ProcessMode.E6)
         final_bounds = LogNegativeBounds(
-            floors=(bounds.floors[0] + _wp3[0], bounds.floors[1] + _wp3[1], bounds.floors[2] + _wp3[2]),
-            ceils=(bounds.ceils[0] + _bp3[0], bounds.ceils[1] + _bp3[1], bounds.ceils[2] + _bp3[2]),
+            floors=tuple(f + wp for f, wp in zip(_base_bounds.floors, _wp3)),
+            ceils=tuple(c + bp for c, bp in zip(_base_bounds.ceils, _bp3)),
         )
         metrics: Dict[str, Any] = {
             "active_roi": roi,
@@ -1588,7 +1590,11 @@ class GPUEngine:
             + struct.pack(
                 "IIff",
                 mode_val,
-                (1 if settings.process.e6_normalize else 0),
+                (
+                    1
+                    if is_transfer_path(settings.process.process_mode, settings.process.e6_normalize, settings.process.positive_source)
+                    else 0
+                ),
                 0.0,
                 0.0,
             )
