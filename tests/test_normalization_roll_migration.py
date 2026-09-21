@@ -50,30 +50,52 @@ def test_migration_defaults_a_missing_cast_to_zero(legacy_repo):
     assert portra["cast"] == (0.0, 0.0, 0.0)
 
 
-def test_migration_drops_a_row_whose_name_matches_no_roll(legacy_repo):
+def test_migration_creates_no_roll_for_a_name_that_matches_none(legacy_repo):
     migrate_legacy_normalization_rolls(legacy_repo)
 
-    # Nothing in the roll store carries the orphan's baseline; only the two real rolls do.
-    for roll_id, entry in rolls.all_rolls_sorted(legacy_repo):
+    for _roll, entry in rolls.all_rolls_sorted(legacy_repo):
         if entry.get("name") == "Deleted Roll":
             pytest.fail("orphan row must not create a roll")
 
 
-def test_migration_drops_the_legacy_table(legacy_repo):
+def test_migration_keeps_an_unmatched_row_and_stays_pending(legacy_repo):
+    """Rolls are recognized on import, so a name that matches none today can match one
+    tomorrow. The row waits; dropping it would discard the only copy of that baseline."""
     migrate_legacy_normalization_rolls(legacy_repo)
 
     with closing(sqlite3.connect(legacy_repo.edits_db_path)) as conn:
+        rows = conn.execute("SELECT name FROM normalization_rolls").fetchall()
+    assert [r[0] for r in rows] == ["Deleted Roll"]
+    assert legacy_repo.get_global_setting("normalization_rolls_migrated_v1") is None
+
+
+def test_migration_survives_a_first_launch_with_no_rolls_yet(tmp_path):
+    """The upgrade path: nothing has been imported as a roll, so nothing matches and
+    every baseline must still be there once the user imports the folders."""
+    repo = StorageRepository(str(tmp_path / "edits.db"), str(tmp_path / "settings.db"))
+    repo.initialize()
+    with closing(sqlite3.connect(repo.edits_db_path)) as conn, conn:
+        conn.execute("CREATE TABLE normalization_rolls (name TEXT PRIMARY KEY, floors_json TEXT, ceils_json TEXT, cast_json TEXT)")
+        conn.execute(
+            "INSERT INTO normalization_rolls VALUES (?, ?, ?, ?)",
+            ("Tri-X", json.dumps([0.1, 0.1, 0.1]), json.dumps([0.9, 0.9, 0.9]), None),
+        )
+
+    migrate_legacy_normalization_rolls(repo)
+
+    rolls.create_virtual_roll(repo, "Tri-X", [])
+    migrate_legacy_normalization_rolls(repo)
+
+    tri_x = rolls.roll_normalization(repo, _roll_id(repo, "Tri-X"))
+    assert tri_x["floors"] == (0.1, 0.1, 0.1)
+    assert repo.get_global_setting("normalization_rolls_migrated_v1") is True
+    with closing(sqlite3.connect(repo.edits_db_path)) as conn:
         assert conn.execute("SELECT name FROM sqlite_master WHERE name='normalization_rolls'").fetchone() is None
-
-
-def test_migration_sets_the_done_flag(legacy_repo):
-    migrate_legacy_normalization_rolls(legacy_repo)
-    assert legacy_repo.get_global_setting("normalization_rolls_migrated_v1") is True
 
 
 def test_migration_is_idempotent(legacy_repo):
     migrate_legacy_normalization_rolls(legacy_repo)
-    migrate_legacy_normalization_rolls(legacy_repo)  # second run must not raise or re-read a dropped table
+    migrate_legacy_normalization_rolls(legacy_repo)  # second run must not raise or re-copy a migrated row
 
     tri_x = rolls.roll_normalization(legacy_repo, _roll_id(legacy_repo, "Tri-X"))
     assert tri_x["floors"] == (0.1, 0.1, 0.1)
