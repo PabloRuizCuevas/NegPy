@@ -220,6 +220,10 @@ class CollapsibleSection(QWidget):
         if self.collapsible and not self.toggle_button.isChecked():
             self.toggle_button.setChecked(True)
 
+    def set_expanded(self, expanded: bool) -> None:
+        if self.collapsible:
+            self.toggle_button.setChecked(expanded)
+
     def set_actions_menu(self, menu: QMenu, tooltip: str) -> None:
         """An always-visible header menu button, for section-level actions that reach
         past the section's own settings -- Film Strip's New Roll and its roll-wide
@@ -303,12 +307,14 @@ def make_section(
     """The one way a sidebar builds a section: persisted under section_expanded_{key}, and the
     ⓘ guide present exactly when docs/USER_GUIDE.md carries a `panel:{key}` marker. The help
     dialog is parented to the section, so it centres on the window the section is in.
-    collapsible=False always expands and never reads or writes the persisted setting."""
+    collapsible=False always expands and never reads or writes the persisted setting; repo=None
+    keeps the section but not its expanded state."""
     from negpy.desktop.view.widgets.section_help_dialog import SectionHelpDialog, has_guide
 
+    persist = collapsible and repo is not None
     if collapsible:
         setting = f"section_expanded_{key}"
-        persisted = repo.get_global_setting(setting)
+        persisted = repo.get_global_setting(setting) if persist else None
         expanded = default_expanded if persisted is None else bool(persisted)
     else:
         expanded = True
@@ -321,7 +327,7 @@ def make_section(
         collapsible=collapsible,
     )
     section.set_content(content)
-    if collapsible:
+    if persist:
         section.expanded_changed.connect(lambda checked: repo.save_global_setting(setting, checked))
     if section.info_btn:
         section.info_requested.connect(lambda: SectionHelpDialog(key, title, section).exec())

@@ -22,6 +22,7 @@ from negpy.domain.models import WorkspaceConfig
 from negpy.services.assets.rolls import ROLL_DEFAULT_FIELDS
 from negpy.desktop.settings_catalog import rows_for_fields, rows_for_section, selected_flat_dict
 from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog
+from negpy.desktop.view.widgets.tab_header import TabHeader
 
 # Sidebar Components
 from negpy.desktop.view.sidebar.presets import PresetsSidebar
@@ -424,6 +425,7 @@ class ControlsPanel(QWidget):
                 "geometry",
                 "fa5s.crop",
                 "Geometry",
+                "Geometry",
                 [self.geometry_section],
                 ["geometry_section"],
             ),
@@ -431,12 +433,14 @@ class ControlsPanel(QWidget):
                 "tone",
                 "fa5s.sun",
                 "Exposure — Filtration, Tone, Dodge & Burn",
+                "Exposure",
                 [self.color_section, self.tone_section, self.local_section],
                 ["color_section", "tone_section", "local_section"],
             ),
             (
                 "color",
                 "fa5s.flask",
+                "Lab & Toning",
                 "Lab & Toning",
                 [self.lab_section, self.altproc_section, self.toning_section],
                 ["lab_section", "altproc_section", "toning_section"],
@@ -445,17 +449,25 @@ class ControlsPanel(QWidget):
                 "finish",
                 "fa5s.brush",
                 "Finish — Retouch, Finishing",
+                "Finish",
                 [self.retouch_section, self.finish_section],
                 ["retouch_section", "finish_section"],
             ),
         ]
 
         self.pages = []
-        for key, icon_name, tooltip, sections, section_attrs in groups:
+        self.tab_headers: list[TabHeader] = []
+        for key, icon_name, tooltip, title, sections, section_attrs in groups:
             page = QWidget()
             page_layout = QVBoxLayout(page)
             page_layout.setContentsMargins(0, 0, 0, 0)
             page_layout.setSpacing(8)
+            # A one-card tab has no header: that card's own is already the whole tab's.
+            header = (
+                self._make_tab_header(title, sections, [a.removesuffix("_section") for a in section_attrs]) if len(sections) > 1 else None
+            )
+            if header is not None:
+                page_layout.addWidget(header)
             for section in sections:
                 page_layout.addWidget(section)
             page_layout.addStretch(1)
@@ -466,8 +478,42 @@ class ControlsPanel(QWidget):
                     "tooltip": tooltip,
                     "widget": page,
                     "sections": section_attrs,
+                    "header": header,
                 }
             )
+
+    def _make_tab_header(self, title: str, sections: list, card_keys: list[str]) -> TabHeader:
+        """One tab's header bar: how many of the cards below it are edited, and the reset
+        and apply that reach all of them."""
+        header = TabHeader(title)
+        header.bind(sections)
+        header.apply_requested.connect(lambda keys=tuple(card_keys): self._apply_tab(keys))
+        self.tab_headers.append(header)
+        return header
+
+    def _card_rows(self, card_key: str) -> list:
+        """A frame card's catalog rows: its own field tuple, or its whole config section."""
+        fields = _APPLY_FIELDS.get(card_key, ())
+        if fields is None:
+            return rows_for_section(card_key)
+        return rows_for_fields(fields) if fields else []
+
+    def _apply_tab(self, card_keys: tuple) -> None:
+        """Every card on the tab in one picker. A whole-roll apply is recorded per card,
+        the same record a card's own Roll button writes, so each header still reads back
+        what went out."""
+        live = [k for k in card_keys if not getattr(self, f"{k}_section").isHidden()]
+        rows_by_card = {k: self._card_rows(k) for k in live}
+        rows = list(dict.fromkeys(r for card_rows in rows_by_card.values() for r in card_rows))
+        if not rows:
+            return
+        applied = open_apply_dialog(self, self.controller.session, rows=rows)
+        if not applied or applied[1] != "roll":
+            return
+        for key, card_rows in rows_by_card.items():
+            own = [r for r in applied[0] if r in card_rows]
+            if own:
+                self.controller.record_section_push(key, selected_flat_dict(self.controller.state.config, own))
 
     def _make_section(
         self,
@@ -1202,6 +1248,8 @@ class ControlsPanel(QWidget):
         self.flatfield_section.set_modified(flatfield_count)
         self.local_section.set_modified(len(cfg.local.masks))
         self.finish_section.set_modified(finish_count)
+        for header in self.tab_headers:
+            header.refresh()
         self.modified_synced.emit()
 
     def _sync_tool_buttons(self) -> None:

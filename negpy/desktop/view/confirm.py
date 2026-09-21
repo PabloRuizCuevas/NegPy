@@ -118,6 +118,18 @@ def confirm_reset_frames(parent, count: int, *, roll: bool = False) -> bool:
     return box.exec() == QMessageBox.StandardButton.Yes
 
 
+def confirm_reset_tab(parent, tab: str, count: int) -> bool:
+    """Ask before one tab's whole set of cards goes back to defaults. One card's reset
+    button is a single undo step and asks nothing; a tab's is every card at once."""
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle(f"Reset {tab}")
+    box.setText(f"Reset {count_of(count, 'card')} on {tab} to their default settings?")
+    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+    box.setDefaultButton(QMessageBox.StandardButton.Yes)
+    return box.exec() == QMessageBox.StandardButton.Yes
+
+
 def confirm_clear_heals(parent, count: int) -> bool:
     """Ask before wiping every manual heal/scratch on the frame.
 

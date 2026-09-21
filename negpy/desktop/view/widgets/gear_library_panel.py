@@ -2,8 +2,8 @@
 library is reference data you build up over time, reached exactly as often as Export
 or Metadata, not something opened, changed once and dismissed.
 
-Two subtabs: Items (physical gear) and Presets (saved metadata field sets). They share
-one GearLibrary but otherwise diverge -- Items has categories and a bundled/personal
+Two sections: My Gear (physical gear) and Presets (saved metadata field sets). They share
+one GearLibrary but otherwise diverge -- My Gear has categories and a bundled/personal
 Catalog toggle that a preset has no equivalent for -- so each gets its own widget."""
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from dataclasses import replace
 from typing import Callable, Optional
 
 import qtawesome as qta
-from PyQt6.QtCore import QSize, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -23,10 +23,8 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
-    QPushButton,
     QScrollArea,
     QSpinBox,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -44,9 +42,9 @@ from negpy.desktop.view.sidebar.base import install_wheel_guards
 from negpy.desktop.view.shortcut_registry import tooltip_with_shortcut
 from negpy.desktop.view.styles.templates import field_label, hint_label, icon_button, section_subheader, tool_toggle, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
+from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
 from negpy.desktop.view.widgets.gear_catalog_dialog import GearCatalogDialog, resolve_other_gear_pick
 from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog
-from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 from negpy.domain.models import WorkspaceConfig
 from negpy.features.metadata.gear_logic import (
     CATEGORY_SINGULAR,
@@ -1185,10 +1183,10 @@ class GearPresetsPanel(QWidget):
 
 
 class GearLibraryPanel(QWidget):
-    """Items and Presets, as two subtabs over one gear library. Items holds physical
+    """My Gear and Presets, as two sections over one gear library. My Gear holds physical
     gear (Cameras, Lenses, Film Stocks, Process, Scanning), with a bundled/personal
     Catalog toggle; Presets holds saved metadata field sets, which have no bundled
-    counterpart, so the toggle lives on Items only."""
+    counterpart, so the toggle lives on My Gear only."""
 
     library_changed = pyqtSignal()
     presets_changed = pyqtSignal()
@@ -1198,9 +1196,11 @@ class GearLibraryPanel(QWidget):
         library: GearLibrary | None = None,
         parent=None,
         current_config_fn: Optional[Callable[[], Optional[WorkspaceConfig]]] = None,
+        repo=None,
     ):
         super().__init__(parent)
         self._library = library or GearProfiles.load_library()
+        self._repo = repo
 
         self.items = GearItemsPanel(self._library)
         self.presets = GearPresetsPanel(self._library, current_config_fn)
@@ -1219,56 +1219,43 @@ class GearLibraryPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # (key, icon_name, tooltip, content_widget)
+        # (key, title, icon_name, content_widget)
         specs = [
-            ("items", "fa5s.toolbox", "Items", self.items),
-            ("presets", "fa5s.magic", "Presets", self.presets),
+            ("items", "My Gear", "fa5s.toolbox", self.items),
+            ("presets", "Presets", "fa5s.magic", self.presets),
         ]
 
-        self.switcher = OverflowBar(tile=True, height=38, min_item=36)
-        self.stack = QStackedWidget()
-        self._sub_buttons: list[QPushButton] = []
-        self._sub_keys: list[str] = []
-        self._sub_icons: list[str] = []
-        self._sub_tooltips: list[str] = []
+        column = QWidget()
+        column_layout = QVBoxLayout(column)
+        column_layout.setContentsMargins(0, 0, 0, 0)
+        column_layout.setSpacing(THEME.space_md)
 
-        for i, (key, icon_name, tooltip, content) in enumerate(specs):
-            btn = QPushButton()
-            btn.setObjectName("right_tab_btn")
-            btn.setIcon(qta.icon(icon_name, color=THEME.text_secondary))
-            btn.setIconSize(QSize(18, 18))
-            btn.setCheckable(True)
-            btn.setFixedHeight(38)
-            btn.clicked.connect(lambda _checked=False, idx=i: self._switch_subtab(idx))
-            self.switcher.add_button(btn, tooltip)
-            self._sub_buttons.append(btn)
-            self._sub_keys.append(key)
-            self._sub_icons.append(icon_name)
-            self._sub_tooltips.append(tooltip)
+        self._sections: dict[str, CollapsibleSection] = {}
+        self._section_titles: dict[str, str] = {}
+        for key, title, icon_name, content in specs:
+            section = make_section(self._repo, title, f"gear_{key}", content, icon_name, default_expanded=True)
+            column_layout.addWidget(section)
+            self._sections[key] = section
+            self._section_titles[key] = title
+        column_layout.addStretch()
 
-            scroll = QScrollArea()
-            scroll.setWidgetResizable(True)
-            scroll.setWidget(content)
-            self.stack.addWidget(scroll)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setWidget(column)
+        layout.addWidget(self.scroll, 1)
 
-        layout.addWidget(self.switcher)
-        layout.addWidget(self.stack, 1)
+        self._sections["presets"].expanded_changed.connect(lambda shown: self.presets.on_activated() if shown else None)
+        self.presets.on_activated()
         self.apply_shortcut_tooltips()
-        self._switch_subtab(0)
 
-    def _switch_subtab(self, index: int) -> None:
-        self.stack.setCurrentIndex(index)
-        for i, btn in enumerate(self._sub_buttons):
-            btn.setChecked(i == index)
-            btn.setIcon(qta.icon(self._sub_icons[i], color="white" if i == index else THEME.text_secondary))
-        self.switcher.set_pinned(index)
-        if index == 1:
-            self.presets.on_activated()
-
-    def show_subtab_by_key(self, key: str) -> None:
-        if key in self._sub_keys:
-            self._switch_subtab(self._sub_keys.index(key))
+    def show_section_by_key(self, key: str) -> None:
+        section = self._sections.get(key)
+        if section is None:
+            return
+        section.expand()
+        self.scroll.ensureWidgetVisible(section)
 
     def apply_shortcut_tooltips(self) -> None:
-        for btn, key, base in zip(self._sub_buttons, self._sub_keys, self._sub_tooltips):
-            btn.setToolTip(wrap_tooltip(tooltip_with_shortcut(base, f"tab_gear_{key}")))
+        for key, section in self._sections.items():
+            tip = tooltip_with_shortcut(self._section_titles[key], f"tab_gear_{key}")
+            section.toggle_button.setToolTip(wrap_tooltip(tip))

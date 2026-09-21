@@ -134,7 +134,7 @@ CATALOG: list[tuple[str, tuple[SettingRow, ...]]] = [
         _row("Easel Tilt", "geometry", "converge_v"),
         _row("Easel Swing", "geometry", "converge_h"),
         _row("Lens Correction", "geometry", "distortion_k1", "lens_distortion_from_metadata", sticky=True),
-        _row("Metadata CA", "geometry", "lens_ca_from_metadata", sticky=True),
+        _row("Embedded CA", "geometry", "lens_ca_from_metadata", sticky=True),
         _row("Flip Horizontal", "geometry", "flip_horizontal", sticky=True),
         _row("Flip Vertical", "geometry", "flip_vertical", sticky=True),
     )),

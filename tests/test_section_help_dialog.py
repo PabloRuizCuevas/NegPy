@@ -49,6 +49,8 @@ GUIDED_KEYS = (
     "metadata_scanning",
     "metadata_exposure",
     "metadata_preview",
+    "gear_items",
+    "gear_presets",
     "scan_sane",
     "scan_rgb",
     "scan_strip",

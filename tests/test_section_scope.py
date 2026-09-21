@@ -48,7 +48,7 @@ def test_tone_carries_both_of_its_halves():
 def test_geometry_excludes_the_rows_that_moved_to_the_roll_tab():
     labels = {r.label for r in _rows_for("geometry")}
     assert "Fine Rotation" in labels
-    assert {"Crop Offset", "Rebate Trim", "Crop Ratio", "Lens Correction", "Metadata CA"} & labels == set()
+    assert {"Crop Offset", "Rebate Trim", "Crop Ratio", "Lens Correction", "Embedded CA"} & labels == set()
 
 
 def test_a_partially_named_row_still_travels_whole():

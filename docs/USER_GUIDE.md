@@ -102,6 +102,17 @@ the selected frames or the whole roll. Apply it to the whole roll and the card r
 from then on; touch one of the settings you pushed and it reads Frame again, with nothing
 to clear. Applying to a selection is not roll-wide and leaves the card on Frame.
 
+### The tab header
+
+A tab holding more than one card — Roll, Exposure, Lab & Toning, Finish and Metadata —
+carries one bar above them all. It reads **3 of 5 cards edited** (or **No cards edited**),
+and acts on every card at once: the reset arrow, which appears once something is edited
+and asks before putting them all back; the roll button, which offers every setting on the
+tab in one picker, for the selected frames or the whole roll; and the double chevron,
+which collapses or expands every card. A card the film mode has retired is none of the
+bar's business — it is not counted, not reset and not carried. Geometry holds a single
+card, so it has no bar: that card's own header already is one.
+
 ### Menu bar (macOS)
 
 `Ctrl` in this guide is `⌘` on macOS, and every menu, tooltip and shortcut list in the app shows it that way.
@@ -865,8 +876,8 @@ Changing any of these re-detects the frame on every following frame that was cro
 The scanning lens, not the frame: one rig, one correction for every frame it shot.
 
 *   **Distortion Correction** (-0.100 to 0.100, in steps of 0.001): radial lens distortion. Positive corrects barrel, negative pincushion. Use the film rebate as a straight-edge reference. Corrected before Tilt and Swing.
-*   **Metadata Distortion**: straighten curved lines with lens correction data stored in the file. Replaces manual distortion correction. Set before cropping or retouching. Available when the file contains supported distortion data.
-*   **Metadata CA**: reduce color fringes along edges with lens correction data stored in the file. Works independently of Metadata Distortion and can be used with manual distortion correction. Available when the file contains supported CA data.
+*   **Embedded Profile — Distortion**: straighten curved lines with lens correction data stored in the file. Replaces manual distortion correction. Set before cropping or retouching. Available when the file contains supported distortion data.
+*   **Embedded Profile — CA**: reduce color fringes along edges with lens correction data stored in the file. Works independently of **Distortion** and can be used with manual distortion correction. Available when the file contains supported CA data.
 
 <!-- panel:flatfield -->
 ### 10.9 Flat Field: even out the light
@@ -957,15 +968,21 @@ When you set capture gear, it is written to standard EXIF, and the digitizing ri
 
 ## 12. Gear tab
 
-A searchable, user-extendable library shared by Metadata (§11), Roll Settings and every other picker in the app that offers gear, split into two subtabs: **Items** for physical gear, **Presets** for saved metadata field sets. Presets have no bundled/personal split to browse, so the Catalog toggle lives on Items only.
+A searchable, user-extendable library shared by Metadata (§11), Roll Settings and every other picker in the app that offers gear, split into two sections: **My Gear** for physical gear, **Presets** for saved metadata field sets. Presets have no bundled/personal split to browse, so the Catalog toggle lives on My Gear only.
 
-**Items** holds cameras, lenses, film stocks, development processes and scan setups. **Category** picks what the list below shows: **Cameras**, **Lenses**, **Film Stocks**, **Process** or **Scanning**. A Process entry is a development recipe (developer, dilution, push/pull, time and temperature); a Scanning entry is a digitizing setup. The list defaults to gear you have added yourself; a built-in reference catalog of common cameras, lenses, film stocks, processes and scan setups is available alongside it, without cluttering the list. Your own gear saves to `~/NegPy/gear/`. An empty category reads "You haven't added any…yet" rather than showing a blank list.
+<!-- panel:gear_items -->
+### My Gear
+
+Cameras, lenses, film stocks, development processes and scan setups. **Category** picks what the list below shows: **Cameras**, **Lenses**, **Film Stocks**, **Process** or **Scanning**. A Process entry is a development recipe (developer, dilution, push/pull, time and temperature); a Scanning entry is a digitizing setup. The list defaults to gear you have added yourself; a built-in reference catalog of common cameras, lenses, film stocks, processes and scan setups is available alongside it, without cluttering the list. Your own gear saves to `~/NegPy/gear/`. An empty category reads "You haven't added any…yet" rather than showing a blank list.
 
 *   **+**: pick the one you own from the built-in catalog — it copies into your own list, editable from there — or **Add Custom** to enter one by hand.
 *   **Catalog**: show the built-in reference models alongside your own, for browsing the full list. Off by default.
 *   **copy / trash**: duplicate or delete the selected item. Trash is disabled on a built-in catalog entry, since it is reference data, not yours to remove; duplicate still copies it into your own list.
 
-**Presets** holds saved metadata field sets.
+<!-- panel:gear_presets -->
+### Presets
+
+Saved metadata field sets.
 
 *   **+** stores the current frame's metadata under a name you pick.
 *   **pen**: rename a preset or change which fields it stores.

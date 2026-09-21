@@ -21,12 +21,15 @@ from negpy.desktop.settings_catalog import (
 )
 from negpy.desktop.view.shortcut_registry import tooltip_with_shortcut
 from negpy.desktop.view.sidebar.base import BaseSidebar
-from negpy.desktop.view.styles.templates import field_label, hint_label, section_subheader, set_hint_kind, wrap_tooltip
+from negpy.desktop.view.styles.templates import field_label, hint_label, set_hint_kind, wrap_tooltip
 from negpy.desktop.view.styles.fonts import mono_font_family
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.controller import AppController
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
 from negpy.services.assets.rolls import ROLL_DEFAULT_FIELDS
+from negpy.desktop.view.widgets.tab_header import TabHeader
+from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog
+from negpy.desktop.settings_catalog import rows_for_fields
 from negpy.desktop.view.widgets.description_fields_dialog import DescriptionFieldsDialog
 from negpy.desktop.view.widgets.gear_catalog_dialog import resolve_other_gear_pick
 from negpy.desktop.view.widgets.location_picker_dialog import LocationPickerDialog
@@ -103,8 +106,9 @@ class MetadataSidebar(BaseSidebar):
         self._exif_locked = {"exposure": True}
         self._description_fields: tuple[str, ...] = conf.description_fields or DEFAULT_DESCRIPTION_FIELDS
 
-        self.metadata_title_label = section_subheader("METADATA")
-        self.layout.addWidget(self.metadata_title_label)
+        self.tab_header = TabHeader("Metadata")
+        self.tab_header.apply_requested.connect(self._apply_metadata_tab)
+        self.layout.addWidget(self.tab_header)
         # One line naming every card this frame has taken off the roll, the same answer
         # roll_override_summary gives on the Roll tab.
         self.metadata_scope_hint = hint_label("", "muted")
@@ -355,6 +359,7 @@ class MetadataSidebar(BaseSidebar):
         self._metadata_scroll_area.setWidget(self._metadata_controls)
         self.layout.addWidget(self._metadata_scroll_area, 1)
 
+        self.tab_header.bind([section for _key, section in self._scope_sections()])
         for key, section in self._scope_sections():
             section.scope_selected.connect(lambda scope, k=key: self._on_scope_selected(k, scope))
             section.reset_requested.connect(lambda k=key: self._reset_card(k))
@@ -373,6 +378,11 @@ class MetadataSidebar(BaseSidebar):
             ("metadata_scanning", self.scanning_section),
             ("metadata_exposure", self.exposure_section),
         )
+
+    def _apply_metadata_tab(self) -> None:
+        """Every metadata card in one picker, the tab-wide twin of a card's Roll button."""
+        fields = tuple(f for key, _section in self._scope_sections() for f in ROLL_DEFAULT_FIELDS[key][1])
+        open_apply_dialog(self, self.controller.session, rows=rows_for_fields(fields))
 
     def _on_scope_selected(self, card_key: str, scope: str) -> None:
         self.controller.set_card_scope(card_key, scope)
@@ -415,6 +425,7 @@ class MetadataSidebar(BaseSidebar):
             if locked:
                 overridden.append(label)
 
+        self.tab_header.refresh()
         if overridden:
             set_hint_kind(self.metadata_scope_hint, "warning")
             self.metadata_scope_hint.setText(f"This frame overrides: {', '.join(overridden)}")

@@ -238,7 +238,7 @@ class TestSourceGpsPrefill:
 
 class TestTabIdentity:
     def test_header_and_scope_hint_lead_the_panel(self, sidebar: MetadataSidebar) -> None:
-        order = [sidebar.layout.indexOf(w) for w in (sidebar.metadata_title_label, sidebar.metadata_scope_hint)]
+        order = [sidebar.layout.indexOf(w) for w in (sidebar.tab_header, sidebar.metadata_scope_hint)]
         assert -1 not in order
         assert order[0] < order[1]
 

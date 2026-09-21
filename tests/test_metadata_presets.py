@@ -1052,27 +1052,25 @@ class TestNewPresetWindow:
 
 
 class TestItemsPresetsSplit:
-    """The Gear tab's Items/Presets switcher, and what each side does and does not have."""
+    """The Gear tab's My Gear/Presets sections, and what each side does and does not have."""
 
     def _panel(self, monkeypatch, tmp_path, **kwargs):
         monkeypatch.setattr(APP_CONFIG, "gear_dir", str(tmp_path / "gear"))
         return GearLibraryPanel(GearLibrary(), **kwargs)
 
-    def test_items_is_the_default_subtab(self, monkeypatch, tmp_path):
+    def test_both_sections_start_expanded(self, monkeypatch, tmp_path):
         panel = self._panel(monkeypatch, tmp_path)
 
-        assert panel.stack.currentWidget().widget() is panel.items
-        assert panel._sub_buttons[0].isChecked() is True
-        assert panel._sub_buttons[1].isChecked() is False
+        assert panel._sections["items"].content_area.isVisibleTo(panel) is True
+        assert panel._sections["presets"].content_area.isVisibleTo(panel) is True
 
-    def test_switching_subtabs_swaps_the_stack_page(self, monkeypatch, tmp_path):
+    def test_collapsing_one_section_leaves_the_other_open(self, monkeypatch, tmp_path):
         panel = self._panel(monkeypatch, tmp_path)
 
-        panel._switch_subtab(1)
+        panel._sections["items"].toggle_button.setChecked(False)
 
-        assert panel.stack.currentWidget().widget() is panel.presets
-        assert panel._sub_buttons[1].isChecked() is True
-        assert panel._sub_buttons[0].isChecked() is False
+        assert panel._sections["items"].content_area.isVisibleTo(panel) is False
+        assert panel._sections["presets"].content_area.isVisibleTo(panel) is True
 
     def test_items_category_picker_has_no_presets_entry(self, monkeypatch, tmp_path):
         panel = self._panel(monkeypatch, tmp_path)
@@ -1103,23 +1101,22 @@ class TestItemsPresetsSplit:
         ids = {item_id for _label, item_id, _search in panel.presets.preset_camera_combo._entries}
         assert added.id in ids
 
-    def test_show_subtab_by_key_switches_the_stack_page(self, monkeypatch, tmp_path):
+    def test_show_section_by_key_expands_a_collapsed_section(self, monkeypatch, tmp_path):
+        panel = self._panel(monkeypatch, tmp_path)
+        panel._sections["presets"].toggle_button.setChecked(False)
+
+        panel.show_section_by_key("presets")
+
+        assert panel._sections["presets"].content_area.isVisibleTo(panel) is True
+
+    def test_show_section_by_key_ignores_an_unknown_key(self, monkeypatch, tmp_path):
         panel = self._panel(monkeypatch, tmp_path)
 
-        panel.show_subtab_by_key("presets")
-        assert panel.stack.currentWidget().widget() is panel.presets
+        panel.show_section_by_key("bogus")
 
-        panel.show_subtab_by_key("items")
-        assert panel.stack.currentWidget().widget() is panel.items
+        assert panel._sections["items"].content_area.isVisibleTo(panel) is True
 
-    def test_show_subtab_by_key_ignores_an_unknown_key(self, monkeypatch, tmp_path):
-        panel = self._panel(monkeypatch, tmp_path)
-
-        panel.show_subtab_by_key("bogus")
-
-        assert panel.stack.currentWidget().widget() is panel.items
-
-    def test_subtab_tooltips_carry_their_bound_shortcut(self, monkeypatch, tmp_path):
+    def test_section_tooltips_carry_their_bound_shortcut(self, monkeypatch, tmp_path):
         # A bare, unmodified key: Ctrl/Shift combos render as platform symbols (e.g. macOS
         # shows ⇧⌘ glyphs), which a literal string match can't see through.
         import negpy.desktop.view.shortcut_registry as registry
@@ -1133,5 +1130,5 @@ class TestItemsPresetsSplit:
 
         panel.apply_shortcut_tooltips()
 
-        assert "G" in panel._sub_buttons[0].toolTip()
-        assert "G" not in panel._sub_buttons[1].toolTip()
+        assert "G" in panel._sections["items"].toggle_button.toolTip()
+        assert "G" not in panel._sections["presets"].toggle_button.toolTip()

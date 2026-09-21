@@ -1,7 +1,9 @@
 from dataclasses import replace
 
+from PyQt6.QtWidgets import QHBoxLayout
+
 from negpy.desktop.view.sidebar.base import BaseSidebar
-from negpy.desktop.view.styles.templates import hint_label, wrap_tooltip
+from negpy.desktop.view.styles.templates import hint_label, section_subheader, wrap_tooltip
 from negpy.desktop.view.widgets.sliders import CompactSlider
 from negpy.features.lens.models import LensMetadata
 from negpy.infrastructure.loaders.lens_metadata import read_lens_metadata
@@ -29,22 +31,27 @@ class LensSidebar(BaseSidebar):
         )
         self.layout.addWidget(self.distortion_slider)
 
+        self.layout.addWidget(section_subheader("EMBEDDED PROFILE"))
+
         self.metadata_distortion_btn = self._labeled_toggle(
             "fa5s.camera",
-            "Metadata Distortion",
+            " Distortion",
             conf.lens_distortion_from_metadata,
             "Apply embedded scanning-lens distortion correction. Replaces manual distortion.",
         )
         self.metadata_ca_btn = self._labeled_toggle(
             "fa5s.camera",
-            "Metadata CA",
+            " CA",
             conf.lens_ca_from_metadata,
             "Apply embedded lateral chromatic aberration correction. Can be used with manual distortion.",
         )
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self.metadata_distortion_btn, 1)
+        btn_row.addWidget(self.metadata_ca_btn, 1)
+        self.layout.addLayout(btn_row)
+
         self.lens_hint = hint_label("")
         self.lens_hint.setWordWrap(True)
-        self.layout.addWidget(self.metadata_distortion_btn)
-        self.layout.addWidget(self.metadata_ca_btn)
         self.layout.addWidget(self.lens_hint)
 
     def _connect_signals(self) -> None:

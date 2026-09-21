@@ -24,11 +24,18 @@ from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.charts import PhotometricCurveWidget, StepWedgeWidget, ZoneStripWidget
 from negpy.desktop.view.widgets.collapsible import make_section
 from negpy.desktop.view.widgets.gear_library_panel import GearLibraryPanel
+from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog
+from negpy.desktop.view.widgets.tab_header import TabHeader
+from negpy.desktop.settings_catalog import rows_for_fields
+from negpy.services.assets.rolls import card_fields
 from negpy.desktop.view.widgets.stats import DensitometerRow, NegativeStatsWidget, ZonePlacementRows
 from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 
 # ControlsPanel sections built into the Roll tab (_build_roll_page), not a Frame sub-tab --
 # reveal_section routes these to the Roll group instead of Frame's inner tab switcher.
+# The Roll tab's cards that own settings, for its header's count, reset and apply.
+_ROLL_TAB_CARDS = ("film", "sensor", "demosaic", "process", "autocrop", "lens", "flatfield")
+
 _ROLL_SECTION_ATTRS = frozenset(
     {
         "trichrome_section",
@@ -74,7 +81,7 @@ class RightPanel(QWidget):
 
         self.export_sidebar = ExportSidebar(self.controller)
         self.metadata_sidebar = MetadataSidebar(self.controller)
-        self.gear_panel = GearLibraryPanel(current_config_fn=lambda: self.controller.state.config)
+        self.gear_panel = GearLibraryPanel(current_config_fn=lambda: self.controller.state.config, repo=self.controller.session.repo)
         self.gear_panel.library_changed.connect(self.metadata_sidebar._on_library_changed)
         self.gear_panel.presets_changed.connect(self.metadata_sidebar._refresh_metadata_presets)
 
@@ -187,6 +194,7 @@ class RightPanel(QWidget):
         tab_specs = [
             (page["key"], page["icon_name"], page["tooltip"], page["widget"], page["sections"]) for page in self.controls_panel.pages
         ]
+        self._frame_tab_headers = {page["key"]: page["header"] for page in self.controls_panel.pages if page["header"]}
         tab_specs += [
             ("favourites", "fa5s.star", "Favorites", self.favourites_sidebar, []),
             ("history", "fa5s.history", "History", self.history_panel, []),
@@ -279,6 +287,23 @@ class RightPanel(QWidget):
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(THEME.space_lg)
+
+        self.roll_tab_header = TabHeader("Roll")
+        self.roll_tab_header.bind(
+            (
+                cp.film_section,
+                cp.sensor_section,
+                cp.demosaic_section,
+                cp.process_section,
+                cp.autocrop_section,
+                cp.lens_section,
+                cp.flatfield_section,
+            )
+        )
+        self.roll_tab_header.apply_requested.connect(self._apply_roll_tab)
+        self.controls_panel.modified_synced.connect(self.roll_tab_header.refresh)
+        page_layout.addWidget(self.roll_tab_header)
+
         page_layout.addWidget(cp.roll_override_summary)
         for section in (
             cp.film_section,
@@ -295,6 +320,25 @@ class RightPanel(QWidget):
             page_layout.addWidget(section)
         page_layout.addStretch(1)
         return page
+
+    def active_tab_header(self):
+        """The header bar of whatever tab is in front, or None on a tab that owns no
+        settings (Gear, Export, Scan, Favorites, History)."""
+        group = self._group_keys[self._active_group]
+        if group == "roll":
+            return self.roll_tab_header
+        if group == "metadata":
+            return self.metadata_sidebar.tab_header
+        if group == "frame":
+            return self._frame_tab_headers.get(self._tab_keys[self._active_index])
+        return None
+
+    def _apply_roll_tab(self) -> None:
+        """Every Roll card's settings in one picker. The cards themselves stay roll
+        defaults; this carries their current values onto other frames, the same as the
+        Film Strip's own apply with a narrower list."""
+        fields = tuple(f for card in _ROLL_TAB_CARDS for f in card_fields(card))
+        open_apply_dialog(self, self.controller.session, rows=rows_for_fields(fields))
 
     def _build_scan_page(self) -> QWidget:
         """The 'Scan' tab hosts two collapsible sections (like Frame's Color tab): the
@@ -436,9 +480,9 @@ class RightPanel(QWidget):
             self._switch_group(self._group_keys.index("frame"))
             self._switch_tab(self._tab_keys.index(key))
 
-    def show_gear_subtab_by_key(self, key: str) -> None:
+    def show_gear_section_by_key(self, key: str) -> None:
         self._switch_group(self._group_keys.index("gear"))
-        self.gear_panel.show_subtab_by_key(key)
+        self.gear_panel.show_section_by_key(key)
 
     def scroll_to(self, widget: QWidget) -> None:
         """Ensure *widget* is visible within its enclosing scroll area."""

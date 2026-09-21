@@ -29,6 +29,18 @@ def _context_undo(controller) -> None:
         controller.session.undo()
 
 
+def _fire_tab_header(right, action: str) -> None:
+    """The tab in front answers for its own cards; a tab that owns no settings has no
+    header and nothing happens."""
+    header = right.active_tab_header()
+    if header is None:
+        return
+    if action == "cards":
+        header.cards_btn.click()
+        return
+    (header.reset_requested if action == "reset" else header.apply_requested).emit()
+
+
 def _reset_roll(window, controller) -> None:
     count = len(controller.session.asset_model.visible_actual_indices_ordered())
     if count and confirm_reset_frames(window, count, roll=True) and controller.session.reset_roll_settings(scope="roll"):
@@ -236,8 +248,8 @@ class ShortcutManager:
             "tab_metadata": lambda: right.show_tab_by_key("metadata"),
             "tab_history": lambda: right.show_tab_by_key("history"),
             "tab_gear": lambda: right.show_tab_by_key("gear"),
-            "tab_gear_items": lambda: right.show_gear_subtab_by_key("items"),
-            "tab_gear_presets": lambda: right.show_gear_subtab_by_key("presets"),
+            "tab_gear_items": lambda: right.show_gear_section_by_key("items"),
+            "tab_gear_presets": lambda: right.show_gear_section_by_key("presets"),
             "tab_scan": lambda: right.show_tab_by_key("scan"),
             "fit_view": self.window.canvas.fit_to_window,
             "zoom_100": self.window.canvas.zoom_to_original,
@@ -248,6 +260,9 @@ class ShortcutManager:
             "copy_with_bounds": controller.session.copy_settings_with_bounds,
             "paste": lambda: open_paste_dialog(self.window, controller),
             "reset_roll": lambda: _reset_roll(self.window, controller),
+            "reset_tab": lambda: _fire_tab_header(right, "reset"),
+            "apply_tab": lambda: _fire_tab_header(right, "apply"),
+            "toggle_tab_cards": lambda: _fire_tab_header(right, "cards"),
             "roll_batch_analysis": controller.request_batch_normalization,
             "roll_settings": lambda: self.window.session_panel.file_browser.roll_settings_btn.click(),
             "save_as_roll": lambda: self.window.session_panel.file_browser.save_roll_btn.click(),
