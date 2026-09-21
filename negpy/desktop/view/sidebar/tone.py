@@ -73,12 +73,10 @@ class ToneSidebar(BaseSidebar):
             ch_row.addWidget(btn, 1)
         self.layout.addLayout(ch_row)
 
-        # This frame's own tonal window, before density/grade act on it -- unlike the H&D
-        # curve controls below, White Point/Black Point never join a roll: they are the one
-        # thing meant to differ frame to frame, the same category as Density/Grade. Marked
-        # off with its own subheader, the same device Paper Response uses below, since
-        # they come from a different pipeline stage (Normalization) and only share this
-        # card's Global/R/G/B selector rather than its print-curve subject.
+        # This frame's own tonal window, before density and grade act on it. White Point
+        # and Black Point never join a roll, being meant to differ frame to frame, and they
+        # come from Normalization rather than the print curve, so they carry their own
+        # subheader and share only this card's Global/R/G/B selector.
         self.tonal_range_header = section_subheader("TONAL RANGE")
         self.layout.addWidget(self.tonal_range_header)
 
@@ -467,10 +465,9 @@ class ToneSidebar(BaseSidebar):
             self.paper_combo.setCurrentIndex(paper_idx if paper_idx >= 0 else 0)
             self.paper_combo.setVisible(mode != ProcessMode.E6)
 
-            # Transfer path (an as-captured Slide, or any mode marked Positive): the render
-            # starts from the capture instead of printing it, so the paper model has
-            # nothing to act on. Density, Grade, Toe and Shoulder stay, because they drive
-            # the transfer curve (see features/exposure/transfer.py).
+            # On the transfer path (an as-captured Slide, or any Positive frame) the render
+            # starts from the capture, so the paper model has nothing to act on. Density,
+            # Grade, Toe and Shoulder drive the transfer curve instead (exposure/transfer.py).
             from negpy.features.exposure.transfer import is_transfer_path
 
             proc = self.state.config.process
@@ -490,10 +487,9 @@ class ToneSidebar(BaseSidebar):
                 self.mask_spacer_slider,
             ):
                 w.setVisible(not transfer)
-            # Auto Density/Auto Grade stay on a raw un-normalized slide only: they meter
-            # the frame to pick a look, which is what that path exists to avoid for a
-            # deliberate camera exposure. A Positive frame carries no such bracket to
-            # protect, so they run there exactly as on a negative (transfer_auto_terms).
+            # Auto Density and Auto Grade meter the frame to pick a look, which a raw
+            # un-normalized slide exists to avoid for a deliberate exposure. A Positive
+            # frame has no such bracket to protect, so they run (transfer_auto_terms).
             auto_hidden = transfer and not proc.positive_source
             for w in (self.auto_density_btn, self.auto_grade_btn):
                 w.setVisible(not auto_hidden)
@@ -567,11 +563,9 @@ class ToneSidebar(BaseSidebar):
                 if getattr(proc, f"white_point_trim_{ch}") != 0.0 or getattr(proc, f"black_point_trim_{ch}") != 0.0:
                     btn.edited_dot.set_active(True)
 
-            # Trims shift the same frozen bounds Batch Analysis measured, so further nudging
-            # is disabled once this frame's own bounds are locked -- unlike Grade/Toe/
-            # Shoulder, which have nothing to do with Normalization's Lock Bounds. The
-            # transfer path's window is never measured, so Lock Bounds has nothing there to
-            # freeze and must not gate these.
+            # Trims shift the bounds Batch Analysis measured, so they are disabled once this
+            # frame's bounds are locked, unlike Grade, Toe and Shoulder. The transfer path's
+            # window is never measured, so Lock Bounds has nothing to freeze there.
             self.white_point_slider.setEnabled(transfer or not proc.lock_bounds)
             self.black_point_slider.setEnabled(transfer or not proc.lock_bounds)
 

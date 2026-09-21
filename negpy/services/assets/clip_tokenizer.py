@@ -48,10 +48,9 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-# ASCII contractions get their own token like the reference tokenizer; \w+ covers
-# letters/digits/underscore broadly enough for search queries without a Unicode-
-# property regex engine (the `regex` package), which would be one more dependency for
-# a case (non-Latin search text) this feature does not need to handle exactly.
+# ASCII contractions get their own token, as in the reference tokenizer. \w+ covers search
+# queries without the `regex` package, one more dependency for non-Latin text this feature
+# need not handle exactly.
 _PAT = re.compile(r"""'s|'t|'re|'ve|'m|'ll|'d|[\w]+|[^\s\w]+""", re.IGNORECASE)
 
 

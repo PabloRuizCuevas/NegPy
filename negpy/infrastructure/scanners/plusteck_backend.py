@@ -1,35 +1,22 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """NegPy ``ScannerBackend`` adapter for plusteck (Plustek OpticFilm 135i).
 
-Unlike pyopticfilm/nkscan/pieusb, this backend never touches USB itself. It
-drives plusteck's own already-running local FastAPI service (see
-plusteck/backend/src/plusteck/api/main.py, default http://127.0.0.1:48213)
-over plain HTTP and then reads the resulting files straight off the local
-disk -- both processes run on the same machine, so there's no need to
-proxy pixel data through a request body. plusteck owns all the real
-hardware-validated protocol logic (the golden-sequence replay, resolution
-tiers, IR toggle, per-slot boundary auto-detection); this adapter only
-translates NegPy's ScannerBackend/ScannerSession/RollSession protocols
-into calls against it. Start it with plusteck's own `backend/run_backend.sh`
-before using this backend.
+This backend never touches USB. It drives plusteck's own local FastAPI service
+(plusteck/backend/src/plusteck/api/main.py, default http://127.0.0.1:48213) over HTTP and
+reads the resulting files off the local disk, both processes being on the same machine.
+plusteck owns the hardware-validated protocol logic: the golden-sequence replay, the
+resolution tiers, the IR toggle and per-slot boundary detection. This adapter only
+translates the ScannerBackend, ScannerSession and RollSession protocols into calls
+against it, so it stays in step with that sequence and inherits its fixes. Start the
+service with plusteck's `backend/run_backend.sh` first.
 
-Why not a real USB driver in-process, the way pyopticfilm/nkscan/pieusb
-are: plusteck's backend already serializes all device access behind its
-own lock, and there is exactly one physical device -- two processes both
-trying to hold the raw USB handle would just fight each other. Going
-through its existing HTTP API instead means this adapter can never be out
-of sync with the actual validated scan sequence, and gets every future
-fix to it for free.
+An in-process USB driver, the shape pyopticfilm, nkscan and pieusb take, would fight
+plusteck's own device lock over the one physical device.
 
-Why one physical pass covers a whole tray, not one frame at a time (the
-shape every other ScannerBackend here assumes): the OpticFilm 135i driver
-has no way to address "just frame 3" -- the golden sequence is a replay of
-one fixed captured USB trace covering a full physical carriage sweep
-across every loaded tray slot. See PlusteckBackend._scan_via_cache's own
-docstring for how this is reconciled with the one-scan()-per-frame shape
-ScanWorker.run_batch expects, without re-scanning the whole tray once per
-frame -- and specifically why that cache has to live on PlusteckBackend,
-not on PlusteckSession.
+One physical pass covers a whole tray rather than one frame: the golden sequence replays
+a captured USB trace of a full carriage sweep, and the driver cannot address one frame.
+PlusteckBackend._scan_via_cache reconciles that with the one scan() per frame
+ScanWorker.run_batch expects, and says why the cache lives on the backend.
 """
 
 from __future__ import annotations
@@ -66,34 +53,25 @@ logger = get_logger(__name__)
 
 ProgressCb = Callable[[float, str], None]
 
-#: Fixed port -- mirrors plusteck/backend/src/plusteck/api/main.py's own PORT
-#: constant. There is exactly one of these locally, not a discoverable fleet
-#: of them, so a fixed default (rather than mDNS/config-file discovery) is
-#: the honest amount of engineering for what this actually is.
+#: Fixed port, mirroring plusteck/backend/src/plusteck/api/main.py's own PORT
+#: constant. One instance runs locally, so there is nothing to discover.
 DEFAULT_BASE_URL = "http://127.0.0.1:48213"
 
-#: This adapter's one synthetic device id -- plusteck exposes no serial
-#: number/bus address of its own over HTTP, and there is only ever one
-#: locally reachable instance, so "reachable or not" is the whole of device
-#: enumeration here.
+#: This adapter's one synthetic device id. plusteck exposes no serial number or
+#: bus address over HTTP, so enumeration is "reachable or not".
 DEVICE_ID = "plusteck:opticfilm135i:local"
 
 _HTTP_TIMEOUT_S = 10.0
 _POLL_INTERVAL_S = 1.0
-#: Generous hard ceiling on how long one physical pass may run before this
-#: adapter gives up waiting -- plusteck's own UI documents "3+ minutes for a
-#: full tray at Standard 1800 dpi; other tiers vary", so this is several
-#: times the slowest case seen, not a tight bound.
+#: Hard ceiling on one physical pass, several times plusteck's own documented
+#: worst case for a full tray. A ceiling, not a tight bound.
 _SCAN_MAX_WAIT_S = 1800.0
 
 _TRANSIENT_ERROR_HINTS = ("lost connection", "wedged", "timed out", "timeout", "usb error")
 
 #: NegPy dpi -> plusteck's own named resolution tiers (ResolutionTier in
-#: backend/src/plusteck/usb/base.py). Only Color + STANDARD_1800 is fully
-#: validated end-to-end on the plusteck side as of this writing; every other
-#: tier is either a real capture not yet visually confirmed, or a disclosed
-#: inference -- plusteck's own "Known limitations" panel is the place that
-#: caveat lives, deliberately not re-litigated a second time here.
+#: backend/src/plusteck/usb/base.py). Only Color + STANDARD_1800 is validated
+#: end to end there; plusteck's "Known limitations" panel holds that caveat.
 _DPI_TO_TIER = {
     600: "low_600",
     1200: "lower_1200",
@@ -125,14 +103,9 @@ def _http_json(method: str, base_url: str, path: str, body: dict[str, Any] | Non
             f"plusteck backend not reachable at {base_url} ({exc.reason}). Start it with plusteck's backend/run_backend.sh, then retry."
         ) from exc
     except TimeoutError as exc:
-        # Distinct from URLError above: the connection was accepted (the process is up),
-        # it just didn't answer within _HTTP_TIMEOUT_S -- urllib only wraps a timeout as
-        # URLError while sending the request, not while waiting for the response, so this
-        # would otherwise escape as a bare, unclassified TimeoutError. Most likely cause on
-        # plusteck's own model: its single device lock is held by something else's real
-        # device I/O for the whole duration (a scan, a register read/write -- see
-        # scanner_service.py's own comment), which resolves on its own; worth ScannerService's
-        # existing retry, not a hard failure.
+        # urllib wraps a timeout as URLError only while sending, so a slow answer arrives
+        # here instead: the process is up and its single device lock is held by another
+        # scan or register access. That clears on its own, so it is worth a retry.
         raise TransientScanError(f"plusteck API {method} {path} did not respond within {_HTTP_TIMEOUT_S:.0f}s (busy?)") from exc
 
 
@@ -149,11 +122,9 @@ def _caps() -> ScannerCapabilities:
         supported_dpi=tuple(sorted(_DPI_TO_TIER)),
         supported_depths=(16,),
         sources=(ScanMode.TRANSPARENCY,),
-        # Standard 1800 dpi's own pixel width (2592px, confirmed real) implies
-        # ~36.6mm -- a standard 35mm frame including sprocket margin. Height
-        # is a full tray sweep, not one frame's, and isn't independently
-        # confirmed here -- reusing the width as a conservative square bound
-        # rather than asserting an unverified number for it.
+        # Width comes from Standard 1800 dpi's pixel count: a 35mm frame with its
+        # sprocket margin. Height is a whole tray sweep, so the width is reused as a
+        # conservative square bound rather than asserting an unmeasured number.
         max_area_mm=(36.6, 36.6),
         auto_exposure=False,
         autofocus=False,
@@ -166,13 +137,9 @@ def _caps() -> ScannerCapabilities:
     )
 
 
-#: How long a completed physical pass stays usable for a later scan() call at
-#: the same (dpi, capture_ir) before this adapter insists on a fresh one.
-#: Bounds the blast radius of the staleness risk described on
-#: PlusteckBackend._scan_via_cache's own docstring: long enough to cover one
-#: realistic batch (plusteck's own UI: "3+ minutes for a full tray at
-#: Standard 1800 dpi"), short enough that walking away and coming back with a
-#: different roll doesn't silently serve the old one for the rest of the day.
+#: How long a completed pass stays usable for a later scan() at the same
+#: (dpi, capture_ir). Long enough for one batch, short enough that a different
+#: roll is never served the previous one. See _scan_via_cache for the risk.
 _CACHE_TTL_S = 600.0
 
 
@@ -227,12 +194,9 @@ def _safe_progress(progress: ProgressCb | None, value: float, phase: str = "Scan
 def _wait_for_scan(base_url: str, session_id: str, progress: ProgressCb | None, cancel: threading.Event) -> None:
     """Poll /api/status until this session's scan leaves 'scanning'.
 
-    plusteck's live per-byte percent only exists on its WebSocket event
-    stream (see main.py's /api/events); this adapter deliberately stays on
-    plain polling HTTP to avoid adding a websocket-client dependency to
-    NegPy for what is, at this stage, a coarse phase indicator anyway --
-    genuinely fractional progress is a reasonable follow-up, not a
-    correctness requirement.
+    plusteck's per-byte percent lives on its WebSocket event stream (main.py's
+    /api/events). Polling keeps a websocket-client dependency out of NegPy, at the cost of
+    a coarse phase indicator instead of fractional progress.
     """
     start = time.monotonic()
     _safe_progress(progress, 0.02, "Scanning")
@@ -290,13 +254,9 @@ def _read_half_frame(path: Path) -> np.ndarray:
 class PlusteckBackend:
     """ScannerBackend for the Plustek OpticFilm 135i, via plusteck's own local service.
 
-    Owns the one real fine-scan cache (see `_scan_via_cache`) -- it, not
-    PlusteckSession, is what NegPy's own ScannerService keeps alive for a
-    whole app session (`ScannerService._get_backend()` builds one instance
-    and reuses it), and what ScanWorker.run_batch's real per-frame loop
-    actually calls into (via `service.run_scan` -> `backend.scan`, never
-    through a held-open ScannerSession -- confirmed by reading
-    negpy/desktop/workers/scan_worker.py's run_batch, 2026-09-03).
+    Owns the one fine-scan cache (see `_scan_via_cache`). ScannerService._get_backend()
+    builds one instance and reuses it for the whole app session, and ScanWorker.run_batch
+    reaches it through service.run_scan -> backend.scan rather than a held-open session.
     """
 
     def __init__(self, *, base_url: str = DEFAULT_BASE_URL) -> None:
@@ -324,12 +284,8 @@ class PlusteckBackend:
         ]
 
     def refresh_devices(self) -> list[ScannerDevice]:
-        # A natural point to drop a stale cache even inside the TTL: a
-        # refresh is the closest thing to an explicit "I just changed what's
-        # loaded" signal this Protocol offers (e.g. the scanner panel being
-        # reopened between rolls). Not a guarantee by itself -- see
-        # _scan_via_cache's own docstring -- but a real, principled signal,
-        # not just a timer.
+        # The closest thing to an "I just changed what's loaded" signal this Protocol
+        # offers, so the cache drops here even inside the TTL. See _scan_via_cache.
         self._cache_key = None
         self._cache_frames = None
         return self.list_devices()
@@ -382,20 +338,13 @@ class PlusteckBackend:
     def detect_frames(self, device_id: str, *, film_format: str | None = None, film_type: str = "negative") -> int:
         """Half-frame slot count on the loaded tray.
 
-        The other half of `roll_discovery` (see `ScannerCapabilities.roll_discovery`'s
-        own docstring): `ScanWorker.run_batch`'s whole-strip path (no frames named)
-        calls this via `ScannerService.detect_frames` before it can call `scan()` once
-        per frame at all -- without it, `ScannerService.detect_frames`'s own
-        `getattr(..., None)` fallback silently reports 0 frames and the batch fails
-        immediately with "No frames were detected on the loaded film", however full the
-        tray actually is.
+        The other half of `roll_discovery`: ScanWorker.run_batch's whole-strip path calls
+        this before it can call scan() per frame, and ScannerService.detect_frames
+        otherwise reports 0 frames, failing the batch on a full tray.
 
-        Runs plusteck's own cheap Preview pass (`PlusteckRollSession.discover`) rather
-        than a full-quality `_scan_via_cache` one: a request with no frames named must
-        not pay for two real physical passes (one to count them, one to read them) on a
-        transport that can only sweep the whole tray at a time. An already-fresh
-        real-scan cache answers this for free instead -- the batch's own per-frame
-        scans right after this call would hit that same cache anyway.
+        It runs plusteck's cheap Preview pass (PlusteckRollSession.discover) so a request
+        with no frames named never pays for two physical tray passes. A fresh real-scan
+        cache answers it instead, the same cache the per-frame scans then hit.
         """
         del film_format, film_type  # plusteck measures the physical layout itself; not modeled here (see open_roll)
         self._ensure_known_device(device_id)
@@ -412,26 +361,17 @@ class PlusteckBackend:
             session.close()
 
     def _scan_via_cache(self, params: ScanParams, progress: ProgressCb | None, cancel: threading.Event) -> list[Path]:
-        """One physical pass serves every frame NegPy asks for at the same
-        (dpi, capture_ir), for _CACHE_TTL_S, without a second physical scan.
+        """One physical pass serves every frame asked for at the same (dpi, capture_ir),
+        for _CACHE_TTL_S.
 
-        This has to live here rather than on PlusteckSession: NegPy's real
-        batch-scan path (ScanWorker.run_batch) calls `service.run_scan`
-        once PER FRAME, and that goes straight to `backend.scan` -- it never
-        holds one ScannerSession open across the loop the way a session-
-        scoped cache would need. PlusteckBackend, by contrast, genuinely is
-        the thing that stays alive for the whole batch (see this class's
-        own docstring), so caching here is what actually avoids re-running
-        the whole ~3+ minute physical tray pass once per frame -- the
-        transport still can't address a single frame (see module
-        docstring), a batch just no longer notices.
+        The cache belongs to the backend, not to PlusteckSession: ScanWorker.run_batch
+        calls service.run_scan once per frame, straight through to backend.scan, and holds
+        no session open across the loop. The backend is what lives for the whole batch, so
+        caching here is what keeps a batch from repeating the physical tray pass per frame.
 
-        Known limitation, disclosed rather than silently assumed away: nothing
-        here can tell "same settings, still the same roll" apart from "same
-        settings, a DIFFERENT roll loaded since." refresh_devices() dropping
-        the cache and the TTL both narrow this, neither closes it completely
-        -- this genuinely needs exercising against a real batch run + a real
-        roll change to know how much it matters in practice.
+        Nothing here can tell "same settings, same roll" from "same settings, a different
+        roll loaded since". The TTL and refresh_devices() dropping the cache narrow that
+        window without closing it.
         """
         key = (int(params.dpi), bool(params.capture_ir))
         fresh = self._cache_frames is not None and time.monotonic() - self._cache_at < _CACHE_TTL_S
@@ -441,11 +381,9 @@ class PlusteckBackend:
             return self._cache_frames
 
         tier = _resolve_dpi_tier(params.dpi)
-        # plusteck's mode is its capture colorspace (color/gray/ir), a
-        # different axis entirely from NegPy's own ScanMode (the film
-        # holder type -- negative/positive/transparency, see params.py).
-        # This adapter only ever requests Color, +IR when asked -- NegPy's
-        # ScanParams has no "grayscale capture" concept to map Gray from.
+        # plusteck's mode is the capture colorspace, a different axis from NegPy's
+        # ScanMode (the holder type, see params.py). ScanParams has no grayscale
+        # capture, so this asks for Color, plus IR when requested.
         mode_value = "ir" if params.capture_ir else "color"
         session_id = f"negpy_{int(time.time() * 1000)}"
         response = _http_json(

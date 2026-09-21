@@ -97,10 +97,9 @@ _SENSOR_FIELDS = (
     "crosstalk_strength",
     "hue_trim",
 )
-# ProcessConfig is split across four cards. Each tuple is both the card's reset scope
-# and its modified count, so a field counted on one card is resettable from that same
-# card and no other. locked_floors/locked_ceils are in none of them: they stay Batch
-# Analysis's own measured result, not a tuning choice a reset undoes.
+# ProcessConfig is split across four cards. Each tuple is both the card's reset scope and
+# its modified count, so a field is resettable from the one card that counts it.
+# locked_floors/locked_ceils are in none: they are Batch Analysis's measured result.
 _FILM_FIELDS = (
     "process_mode",
     "positive_source",
@@ -187,10 +186,9 @@ _DEFAULT_FINISH = FinishConfig()
 _DEFAULT_FLATFIELD = FlatFieldConfig()
 _DEFAULT_CONFIG = WorkspaceConfig()
 
-# Frame cards whose settings can be pushed to other frames, and the fields each owns.
-# A card keyed by its own config section needs no tuple. Roll-tab cards are absent: their
-# scope pair drives the roll defaults instead. Dodge & Burn is absent because a mask drawn
-# on one frame means nothing on the next, and has no catalog row.
+# Frame cards whose settings can be pushed to other frames, and the fields each owns. A
+# card keyed by its own config section needs no tuple. Roll-tab cards drive roll defaults
+# instead, and Dodge & Burn has no catalog row: a mask means nothing on the next frame.
 _APPLY_FIELDS: dict[str, tuple | None] = {
     "geometry": _GEOMETRY_FIELDS,
     "color": _COLOR_FIELDS,
@@ -303,12 +301,10 @@ class ControlsPanel(QWidget):
         )
 
         self.roll_sidebar = RollAnalysisSidebar(self.controller)
-        # Roll Analysis (the batch meter) and Normalization (per-frame bounds, White/
-        # Black Point) are one feature -- getting a negative to a correctly normalized
-        # positive -- so they share a card. The buffer/region controls that feed
-        # Batch Analysis come first, then the roll picker they feed; Lock Bounds
-        # moves from the buffer row onto the picker's own row, since it is about
-        # this frame's relationship to Batch Analysis, not the buffer itself.
+        # Roll Analysis and Normalization are one job, getting a negative to a correctly
+        # normalized positive, so they share a card: the buffer and region controls first,
+        # then the roll picker they feed, with Lock Bounds on the picker's row because it
+        # is about this frame's relationship to Batch Analysis.
         self.roll_sidebar.insert_lock_button(self.process_sidebar.lock_bounds_btn)
         normalization_body = QWidget()
         normalization_layout = QVBoxLayout(normalization_body)

@@ -259,18 +259,17 @@ class NormalizationProcessor:
             )
             prefiltered = unmix_log_image(prefilter_log_grid(linear, an_roi, an_buffer), unmix)
 
-        # Cast Removal's neutral axis, metered on the working-space log image the curve
-        # itself consumes — the camera matrix above is a colour transform, so a meter run
-        # ahead of it would read a different space than the GPU's. Pre-trim bounds, like the
-        # measured path, so a creative White/Black Point nudge does not perturb it.
+        # Cast Removal's neutral axis is metered on the working-space log image the curve
+        # consumes, since the camera matrix above would leave a meter reading a different
+        # space than the GPU's. Pre-trim bounds, so a White/Black Point nudge cannot
+        # perturb it.
         if needs_axis:
             assert prefiltered is not None
             context.metrics["neutral_axis_refs"] = measure_neutral_axis_from_log(prefiltered, pre_trim_bounds, None, 0.0)
 
-        # Auto Density/Auto Grade: metered the same way as the measured path, against the
-        # fixed pre-trim window so a creative White/Black Point nudge does not perturb
-        # them either. A raw un-normalized slide never reaches here -- is_transfer_path's
-        # bracket-preservation guarantee holds only because these stay unmeasured for it.
+        # Auto Density and Auto Grade meter against the same fixed pre-trim window. A raw
+        # un-normalized slide never reaches here: is_transfer_path preserves its bracket
+        # only while these stay unmeasured.
         if self.config.positive_source:
             assert prefiltered is not None
             context.metrics["metered_anchor"] = measure_anchor_from_log(

@@ -1003,10 +1003,8 @@ class AppController(QObject):
             return
         hashes = [f["hash"] for f in self.state.uploaded_files]
         self.state.embeddings.update(self.session.repo.load_embeddings_for(hashes, semantic_model.MODEL_VERSION))
-        # An active in-session semantic filter excludes any file absent from
-        # state.embeddings, so a batch of already-indexed files (e.g. a whole-library
-        # search's own hand-off) needs a refresh right here -- missing being empty below
-        # means no later _apply_embeddings will ever fire one.
+        # A live semantic filter excludes any file absent from state.embeddings, and an
+        # already-indexed batch leaves `missing` empty, so nothing below refreshes it.
         self.session.asset_model.refresh()
         missing = [f for f in self.state.uploaded_files if f["hash"] not in self.state.embeddings]
         if not missing:
@@ -1063,12 +1061,10 @@ class AppController(QObject):
             self.set_status("Type a search first" if not query.strip() else "Search by meaning is not ready yet", 3000)
             return
         candidates = self.session.repo.load_all_embeddings(semantic_model.MODEL_VERSION)
-        # A file embedded whole before it was ever split keeps that embedding once its
-        # two halves get their own -- unrotated, both subjects at once, a worse
-        # candidate than either half and never the one shown once split. Its own two
-        # half-hash companions actually being embedded (not merely split_scans() saying
-        # so, which is written from a roll-wide toggle and not a per-file fact) is what
-        # proves the whole embedding is superseded.
+        # A whole-scan embedding holds both subjects unrotated, so it ranks worse than
+        # either half and is never the frame shown. Both half hashes being embedded is
+        # what proves it superseded; split_scans() is a roll-wide toggle, not a per-file
+        # fact, so it cannot answer this.
         vectors = {
             file_hash: vec
             for file_hash, (path, vec) in candidates.items()
@@ -1083,12 +1079,9 @@ class AppController(QObject):
         self.set_status(f"{len(paths)} frame{'s' if len(paths) != 1 else ''} found", 3000)
         self.state.active_roll_id = None
         self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(None))
-        # rank_by_similarity already picked these out as the standouts against the whole
-        # library; re-running the same outlier check in-session, against just this small,
-        # now mutually-similar set, has no background left to stand out from and can
-        # exclude the lot. A stale plain-text filter left over from an earlier, unrelated
-        # search is just as capable of zeroing this batch once the semantic query above
-        # is no longer masking it. The hand-off already is the filtered result.
+        # These paths are the filtered result. Re-running the outlier check over this
+        # small, mutually-similar set has no background to stand out from and can exclude
+        # every frame, and a stale text filter can empty the batch just as easily.
         self.session.asset_model.clear_filters()
         self.request_asset_discovery(paths, auto_open=True, replace_existing=True)
 
@@ -1329,12 +1322,9 @@ class AppController(QObject):
             replace_existing=replace_existing,
             reselect_path=reselect_path,
             rgb_scan=bool(self.session.repo.get_global_setting("rgbscan_mode", False)),
-            # No roll is active for a batch with no single shared roll (a library-wide
-            # search's mixed results, a restored session that disagrees) -- there is no
-            # roll-wide toggle to apply, and "confirmed diptych" hashes are recorded by
-            # whatever roll's toggle was on at the time, not verified per file, so they
-            # are not a safe signal here either. Nothing splits until the file is opened
-            # through a roll that says so.
+            # A batch spanning several rolls has no roll-wide toggle to apply, and a
+            # "confirmed diptych" hash records whichever roll's toggle was on at the
+            # time rather than a per-file fact. Splitting waits for a roll that says so.
             half_frame=self.half_frame_mode_for_roll(active_roll_id) if active_roll_id else False,
             half_frame_profile=self.half_frame_profile(),
             half_frame_overrides=self.half_frame_overrides(),

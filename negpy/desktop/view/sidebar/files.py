@@ -1036,10 +1036,9 @@ class FileBrowser(QWidget):
             self._section_sizes[index] = sizes[index]
         self._apply_section_constraints(index, expanded)
 
-        # A QVBoxLayout stretch factor sizes the *widget*, not its content: a splitter both
-        # of whose panes are pinned small still gets stretched into the layout's full
-        # leftover space. Capping the splitter's own maximum height, mirroring the
-        # per-pane constraint above, is what actually keeps the leftover space out of it.
+        # A stretch factor sizes the widget, not its content, so a splitter whose panes are
+        # both pinned small still takes the layout's leftover space. Its own maximum height
+        # is what keeps that space out.
         other_header = sections[other].toggle_button.height()
         if expanded or sections[other].toggle_button.isChecked():
             self.sections_splitter.setMaximumHeight(_UNBOUNDED_HEIGHT)
@@ -1116,10 +1115,9 @@ class FileBrowser(QWidget):
 
     def search_library(self) -> None:
         """Run the box's query against the library folders instead of the loaded roll."""
-        # A keystroke just before Enter/click leaves the live-filter debounce pending;
-        # left running, it fires _apply_filter on whatever the hand-off just loaded --
-        # for search-by-meaning, the same in-session query the hand-off itself clears,
-        # right back on. One action, one rebuild, same as _clear_frame_filters.
+        # A keystroke just before Enter leaves the live-filter debounce pending, and it
+        # would fire _apply_filter over whatever the hand-off loaded, putting back the
+        # in-session query the hand-off clears. One action, one rebuild.
         self.filter_timer.stop()
         if self.semantic_btn.isChecked():
             self.controller.request_library_semantic_search(self.search_input.text())

@@ -1,6 +1,6 @@
-"""One tab's own header: a bar above the cards that reads how many of them hold
-something other than their defaults, and acts on all of them at once. A tab with a
-single card has none -- that card's own header already is it."""
+"""One tab's own header: a bar above the cards that reads how many of them hold something
+other than their defaults, and acts on all of them at once. A tab holding one card has no
+bar, since that card's header covers the same ground."""
 
 from typing import Iterable
 

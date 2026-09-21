@@ -336,17 +336,13 @@ def diptych_configs(repo: Any, file_hash: Optional[str]) -> Optional[tuple[Any, 
 def detect_gutter(buf: np.ndarray) -> tuple[float, float]:
     """Normalized (split_x, gutter_thickness) of the unexposed band between the two frames.
 
-    The gutter is a narrow column extremal against its surroundings in either
-    polarity (bright film base on negatives, dark on positives), so pick the
-    column whose smoothed luma deviates most from a local running-median
-    background — a window much wider than the gutter, so broad brightness
-    differences between the two frames don't register. Its two edges are then
-    the steepest slope on each side of that peak, in a window sized to the
-    smoothing itself rather than to the deviation band: an in-scene gradient
-    blending into the gutter (an overexposed sky, say) widens the deviation
-    band on one side only, and searching that whole widened band for "the
-    edge" is what pulls the center toward it. Falls back to ``(0.5, 0.0)``
-    when no clear gutter stands out in the central band.
+    The gutter is a narrow column extremal against its surroundings in either polarity,
+    bright film base on a negative and dark on a positive, so the pick is the column whose
+    smoothed luma deviates most from a local running-median background, over a window much
+    wider than the gutter. Its edges are the steepest slope on each side of that peak,
+    searched in a window sized to the smoothing rather than to the deviation band, since an
+    in-scene gradient blending into the gutter widens that band on one side and drags the
+    center with it. Returns ``(0.5, 0.0)`` when no gutter stands out.
     """
     a = np.asarray(buf)
     if a.ndim == 3:

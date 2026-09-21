@@ -2,18 +2,15 @@
 photo and a plain-language description of it land close together, so a query becomes a
 nearest-neighbour lookup over cached image vectors instead of a keyword match.
 
-Nothing here costs anything until the feature is turned on: the ONNX sessions and the
-tokenizer are built lazily on first use, and the model weights are fetched on
-demand (download_clip_model) rather than bundled into the app -- only the small
-`onnxruntime` inference engine itself ships in every install.
+The feature costs nothing until it is turned on: the ONNX sessions and tokenizer build
+lazily, and the weights download on demand (download_clip_model) rather than shipping with
+the app, which carries only the `onnxruntime` engine.
 
-Model: Xenova/clip-vit-base-patch16 on Hugging Face, the quantized per-tower ONNX
-exports (vision_model_quantized.onnx, text_model_quantized.onnx) plus the tokenizer's
-merges.txt. Preprocessing constants below (image size, mean/std, resample) come from
-that repo's own preprocessor_config.json -- a different model swap would need new
-constants, not just new file names, hence MODEL_VERSION also naming the cache
-directory: a stale download from a retired model can never be mistaken for the
-current one under the same generic filenames.
+Model: Xenova/clip-vit-base-patch16 on Hugging Face, the quantized per-tower ONNX exports
+plus the tokenizer's merges.txt. The preprocessing constants below come from that repo's
+preprocessor_config.json, so a model swap needs new constants rather than new file names.
+MODEL_VERSION names the cache directory for that reason: a retired model's download cannot
+pass for the current one under the same generic filenames.
 """
 
 from __future__ import annotations
@@ -34,10 +31,9 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Bumped whenever the model or preprocessing changes, so cached embeddings from a
-# retired model don't silently get compared against ones from a new one -- see
-# repository.py's image_embeddings.model_version column. Also names the download
-# cache directory below, for the same reason.
+# Bumped whenever the model or preprocessing changes, so a retired model's cached
+# embeddings are never compared against a new model's (repository.py's
+# image_embeddings.model_version). It also names the download cache directory below.
 MODEL_VERSION = "clip-vit-base-patch16-v1"
 # Named once here, for the two surfaces that warn about the download before it starts.
 MODEL_DOWNLOAD_SIZE = "about 150 MB"
@@ -153,14 +149,10 @@ def _l2_normalize(vec: np.ndarray) -> np.ndarray:
     return vec / norm if norm > 1e-12 else vec
 
 
-# CLIP cosine similarities run low even for a good match, and cluster tightly around a
-# baseline that shifts with the query and the library -- a fixed cutoff either lets
-# almost everything through or excludes everything, never a real match from noise. A
-# genuine match stands out from that baseline rather than sitting at a fixed score, so
-# the cutoff is relative: how many standard deviations above this query's own mean score
-# a candidate sits. Tuned against a real library across a spread of plain-word queries:
-# loose enough that a query with a genuine cluster of matches still returns them, tight
-# enough that a common word stops reading as "the whole library, reordered."
+# CLIP cosine similarities run low even for a good match and cluster around a baseline
+# that shifts with the query and the library, so a fixed cutoff cannot separate a match
+# from noise. The cutoff is relative instead: how many standard deviations above this
+# query's own mean score a candidate sits.
 SIMILARITY_Z_SCORE = 3.0
 
 

@@ -106,12 +106,11 @@ to clear. Applying to a selection is not roll-wide and leaves the card on Frame.
 
 A tab holding more than one card — Roll, Exposure, Lab & Toning, Finish and Metadata —
 carries one bar above them all. It reads **3 of 5 cards edited** (or **No cards edited**),
-and acts on every card at once: the reset arrow, which appears once something is edited
-and asks before putting them all back; the roll button, which offers every setting on the
-tab in one picker, for the selected frames or the whole roll; and the double chevron,
-which collapses or expands every card. A card the film mode has retired is none of the
-bar's business — it is not counted, not reset and not carried. Geometry holds a single
-card, so it has no bar: that card's own header already is one.
+and its three buttons act on every card at once: the reset arrow, which appears once
+something is edited and asks before putting them all back; the roll button, which offers
+every setting on the tab in one picker, for the selected frames or the whole roll; and the
+double chevron, which collapses or expands the cards. A card the film mode has retired is
+left out of all of this. Geometry holds a single card, so it has no bar of its own.
 
 ### Menu bar (macOS)
 

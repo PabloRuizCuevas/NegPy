@@ -1,16 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """RollSession over plusteck: one real low-res tray pass, sliced into per-slot previews.
 
-Mirrors nkscan_roll.py's shape (measure the whole strip once, cut previews out of
-that one pass) but for plusteck's Plustek OpticFilm 135i, where "measuring" means
-running plusteck's own Preview (Color, Low 600 dpi -- the fastest tier with a real
-capture) and letting plusteck's own per-slot half-frame split do the boundary
-detection, rather than reimplementing that heuristic a second time here.
+Takes nkscan_roll.py's shape, measuring the whole strip once and cutting previews out of
+that pass, for the Plustek OpticFilm 135i. Measuring here means plusteck's own Preview
+(Color, Low 600 dpi, its fastest real capture) with plusteck's per-slot half-frame split
+finding the boundaries, instead of a second copy of that heuristic.
 
-No boundary nudging yet (set_offset/approve are no-ops): plusteck's own auto-split
-is what this reads, and re-splitting with an explicit left_end/right_start via
-plusteck's own POST .../split endpoint would be the natural way to add it later,
-not something to build blind against a UI this adapter can't drive to verify.
+set_offset and approve are no-ops: the boundaries are plusteck's auto-split. Nudging them
+would go through its POST .../split endpoint with an explicit left_end/right_start.
 """
 
 from __future__ import annotations
@@ -75,10 +72,9 @@ class PlusteckRollSession:
                 logger.warning("Preview of slot %s failed: %s", slot, error)
                 yield RollPreview(slot=slot, error=str(error), needs_approval=True)
                 continue
-            # needs_approval=True unconditionally: plusteck's own split boundary is
-            # content-based auto-detection, explicitly documented (plusteck's
-            # split_output.py) as unreliable on real photo content -- never
-            # measured/exact the way nkscan's strip pass is.
+            # Every preview needs approval: plusteck's split boundary is content-based
+            # auto-detection, documented in its split_output.py as unreliable on real photo
+            # content, rather than the measured boundary nkscan's strip pass gives.
             yield RollPreview(slot=slot, rgb=rgb, needs_approval=True)
 
     def discover(self, cancel: threading.Event) -> int:

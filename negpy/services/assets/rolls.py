@@ -300,10 +300,10 @@ ROLL_DEFAULT_FIELDS: Dict[str, tuple] = {
     # profile_id also has a rig-global fallback, applied upstream of roll defaults, so a
     # roll that names no profile of its own still gets the active one.
     "flatfield": ("flatfield", ("apply", "profile_id")),
-    # Metadata describes the roll almost by definition -- one camera, one stock, one
-    # development, one scanning rig. capture_frame is the exception and is absent: a frame
-    # number is unique to one frame. So are protect_original_metadata and
-    # description_fields, which are export decisions rather than capture facts.
+    # Metadata describes the roll almost by definition: one camera, one stock, one
+    # development, one scanning rig. capture_frame is unique to one frame, and
+    # protect_original_metadata and description_fields are export decisions, so all three
+    # stay off the list.
     "metadata_gear": ("metadata", GEAR_FIELDS),
     "metadata_capture": (
         "metadata",
