@@ -56,21 +56,32 @@ _DEMOSAIC_FIELDS = (
     "demosaic_export",
 )
 _SENSOR_FIELDS = (
+    "linear_raw",
     "sensor_profile",
     "crosstalk_profile",
     "crosstalk_strength",
     "hue_trim",
 )
-# Normalization's own fields -- not process_mode (Film Mode, shared above every card)
-# or positive_source (beside Film Mode now, not a Normalization setting), and not
-# locked_floors/locked_ceils, which stay Batch Analysis's own measured result, not a
-# tuning choice a reset undoes.
+# ProcessConfig is split across four cards. Each tuple is both the card's reset scope
+# and its modified count, so a field counted on one card is resettable from that same
+# card and no other. locked_floors/locked_ceils are in none of them: they stay Batch
+# Analysis's own measured result, not a tuning choice a reset undoes.
+_FILM_FIELDS = (
+    "process_mode",
+    "positive_source",
+)
 _NORMALIZATION_FIELDS = (
     "analysis_buffer",
     "analysis_rect",
     "lock_bounds",
     "luma_range_clip",
     "color_range_clip",
+    "e6_normalize",
+    "use_luma_average",
+    "use_color_average",
+)
+# White/Black Point live on ProcessConfig but sit in Tone's Tonal Range block.
+_TONAL_RANGE_FIELDS = (
     "white_point_offset",
     "black_point_offset",
     "white_point_trim_red",
@@ -79,9 +90,6 @@ _NORMALIZATION_FIELDS = (
     "black_point_trim_red",
     "black_point_trim_green",
     "black_point_trim_blue",
-    "e6_normalize",
-    "use_luma_average",
-    "use_color_average",
 )
 _TONE_FIELDS = (
     "density",
@@ -407,7 +415,7 @@ class ControlsPanel(QWidget):
         self.controller.image_updated.connect(self._update_histogram)
 
         self.color_section.reset_requested.connect(lambda: self._reset_exposure_fields(_COLOR_FIELDS))
-        self.tone_section.reset_requested.connect(lambda: self._reset_exposure_fields(_TONE_FIELDS))
+        self.tone_section.reset_requested.connect(self._reset_tone_fields)
         self.lab_section.reset_requested.connect(lambda: self.controller.session.reset_section("lab"))
         self.altproc_section.reset_requested.connect(lambda: self.controller.session.reset_section("altproc"))
         self.toning_section.reset_requested.connect(lambda: self.controller.session.reset_section("toning"))
@@ -416,6 +424,7 @@ class ControlsPanel(QWidget):
         self.retouch_section.reset_requested.connect(lambda: self.controller.session.reset_section("retouch"))
         self.local_section.reset_requested.connect(lambda: self.controller.session.reset_section("local"))
         self.finish_section.reset_requested.connect(lambda: self.controller.session.reset_section("finish"))
+        self.film_section.reset_requested.connect(self._reset_film_fields)
         self.sensor_section.reset_requested.connect(self._reset_sensor_fields)
         self.demosaic_section.reset_requested.connect(lambda: self._reset_process_fields(_DEMOSAIC_FIELDS))
         self.flatfield_section.reset_requested.connect(self._reset_flatfield)
@@ -882,6 +891,22 @@ class ControlsPanel(QWidget):
     def _reset_sensor_fields(self) -> None:
         self._reset_process_fields(_SENSOR_FIELDS)
 
+    def _reset_film_fields(self) -> None:
+        """Film Mode and Positive both carry side effects their plain fields do not
+        describe (a decode, the auto-meter defaults, the card's roll lock), so the reset
+        goes through the same controller calls the two controls use."""
+        proc = self.controller.state.config.process
+        if proc.positive_source != _DEFAULT_PROCESS.positive_source:
+            self.controller.set_positive_source(_DEFAULT_PROCESS.positive_source)
+        if proc.process_mode != _DEFAULT_PROCESS.process_mode:
+            self.controller.set_process_mode(_DEFAULT_PROCESS.process_mode)
+
+    def _reset_tone_fields(self) -> None:
+        """Tone spans both configs: the print controls on ExposureConfig, the Tonal Range
+        block on ProcessConfig."""
+        self._reset_exposure_fields(_TONE_FIELDS)
+        self._reset_process_fields(_TONAL_RANGE_FIELDS)
+
     def _reset_process_fields(self, fields) -> None:
         """Calibration, Demosaic and Normalization all live on ProcessConfig, so each
         reset is scoped to its own fields -- a plain session.reset_section("process")
@@ -990,36 +1015,11 @@ class ControlsPanel(QWidget):
         )
 
         proc = cfg.process
-        process_count = sum(
-            [
-                proc.process_mode != _proc.process_mode,
-                proc.linear_raw != _proc.linear_raw,
-                proc.analysis_buffer != _proc.analysis_buffer,
-                proc.analysis_rect is not None,
-                proc.luma_range_clip != _proc.luma_range_clip,
-                proc.color_range_clip != _proc.color_range_clip,
-                proc.white_point_offset != _proc.white_point_offset,
-                proc.black_point_offset != _proc.black_point_offset,
-                proc.white_point_trim_red != _proc.white_point_trim_red,
-                proc.white_point_trim_green != _proc.white_point_trim_green,
-                proc.white_point_trim_blue != _proc.white_point_trim_blue,
-                proc.black_point_trim_red != _proc.black_point_trim_red,
-                proc.black_point_trim_green != _proc.black_point_trim_green,
-                proc.black_point_trim_blue != _proc.black_point_trim_blue,
-            ]
-        )
-
-        # Calibration's and Demosaic's fields live on ProcessConfig but belong to their own
-        # sections, so they are counted here and left out of process_count above.
+        film_count = sum(getattr(proc, f) != getattr(_proc, f) for f in _FILM_FIELDS)
+        process_count = sum(getattr(proc, f) != getattr(_proc, f) for f in _NORMALIZATION_FIELDS)
         demosaic_count = sum(getattr(proc, f) != getattr(_proc, f) for f in _DEMOSAIC_FIELDS)
-        sensor_count = sum(
-            [
-                proc.sensor_profile != _proc.sensor_profile,
-                proc.crosstalk_profile != _proc.crosstalk_profile,
-                proc.crosstalk_strength != _proc.crosstalk_strength,
-                proc.hue_trim != _proc.hue_trim,
-            ]
-        )
+        sensor_count = sum(getattr(proc, f) != getattr(_proc, f) for f in _SENSOR_FIELDS)
+        tone_count += sum(getattr(proc, f) != getattr(_proc, f) for f in _TONAL_RANGE_FIELDS)
 
         ff = cfg.flatfield
         _ff = _DEFAULT_FLATFIELD
@@ -1054,23 +1054,15 @@ class ControlsPanel(QWidget):
             ]
         )
 
-        roll_count = sum(
-            [
-                bool(proc.use_luma_average),
-                bool(proc.use_color_average),
-                proc.roll_name is not None,
-            ]
-        )
-
+        self.film_section.set_modified(film_count)
         self.color_section.set_modified(color_count)
         self.tone_section.set_modified(tone_count)
         self.lab_section.set_modified(lab_count)
         self.altproc_section.set_modified(altproc_count)
         self.toning_section.set_modified(toning_count)
         self.geometry_section.set_modified(geometry_count)
-        # roll_count (Batch Analysis's averaging axes) counts against the same card now
-        # that Roll Analysis and Normalization share one.
-        self.process_section.set_modified(process_count + roll_count)
+        # The picked Roll Baseline counts against Normalization, the card it sits on.
+        self.process_section.set_modified(process_count + (proc.roll_name is not None))
         self.retouch_section.set_modified(retouch_count)
         # Presets and the two Scan sections stay out: they own no WorkspaceConfig fields.
         self.sensor_section.set_modified(sensor_count)

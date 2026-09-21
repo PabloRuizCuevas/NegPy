@@ -10,9 +10,9 @@ from dataclasses import replace
 from unittest.mock import MagicMock
 
 from negpy.desktop.session import AppState
-from negpy.desktop.view.sidebar.controls_panel import ControlsPanel
+from negpy.desktop.view.sidebar.controls_panel import _TONAL_RANGE_FIELDS, _TONE_FIELDS, ControlsPanel
 from negpy.features.exposure.models import ExposureConfig
-from negpy.features.process.models import ProcessConfig
+from negpy.features.process.models import ProcessConfig, ProcessMode
 
 
 def _panel_stub(*, active_roll_id="roll1", locked_cards=()) -> MagicMock:
@@ -145,3 +145,91 @@ def test_sync_modified_dots_does_not_flag_a_positive_frames_own_auto_default():
     ControlsPanel._sync_modified_dots(panel)
 
     panel.tone_section.set_modified.assert_called_once_with(0)
+
+
+def test_sync_modified_dots_counts_film_mode_on_its_own_card():
+    """Film Mode and Positive live on ProcessConfig with Normalization's own fields,
+    so a badge that counts the whole config lights the wrong card."""
+    panel = MagicMock()
+    panel.controller.state = AppState()
+    cfg = panel.controller.state.config
+    panel.controller.state.config = replace(
+        cfg,
+        process=replace(cfg.process, process_mode=ProcessMode.BW, positive_source=True),
+    )
+    panel.film_section = MagicMock()
+    panel.process_section = MagicMock()
+
+    ControlsPanel._sync_modified_dots(panel)
+
+    panel.film_section.set_modified.assert_called_once_with(2)
+    panel.process_section.set_modified.assert_called_once_with(0)
+
+
+def test_sync_modified_dots_counts_tonal_range_on_tone():
+    """White/Black Point sit in Tone's Tonal Range block but live on ProcessConfig."""
+    panel = MagicMock()
+    panel.controller.state = AppState()
+    cfg = panel.controller.state.config
+    panel.controller.state.config = replace(
+        cfg,
+        process=replace(cfg.process, white_point_offset=0.2, black_point_trim_red=0.1),
+    )
+    panel.tone_section = MagicMock()
+    panel.process_section = MagicMock()
+
+    ControlsPanel._sync_modified_dots(panel)
+
+    panel.tone_section.set_modified.assert_called_once_with(2)
+    panel.process_section.set_modified.assert_called_once_with(0)
+
+
+def test_sync_modified_dots_counts_linear_raw_on_calibration():
+    panel = MagicMock()
+    panel.controller.state = AppState()
+    cfg = panel.controller.state.config
+    panel.controller.state.config = replace(cfg, process=replace(cfg.process, linear_raw=True))
+    panel.sensor_section = MagicMock()
+    panel.process_section = MagicMock()
+
+    ControlsPanel._sync_modified_dots(panel)
+
+    panel.sensor_section.set_modified.assert_called_once_with(1)
+    panel.process_section.set_modified.assert_called_once_with(0)
+
+
+def test_reset_tone_fields_clears_both_configs():
+    panel = MagicMock()
+    panel.controller.state = AppState()
+
+    ControlsPanel._reset_tone_fields(panel)
+
+    assert panel._reset_exposure_fields.call_args[0][0] == _TONE_FIELDS
+    assert panel._reset_process_fields.call_args[0][0] == _TONAL_RANGE_FIELDS
+
+
+def test_reset_film_fields_routes_through_the_controls_own_setters():
+    """Positive rewrites the auto-meter defaults and Film Mode rewrites Cast Removal,
+    so a plain field reset would leave both behind."""
+    panel = MagicMock()
+    panel.controller.state = AppState()
+    cfg = panel.controller.state.config
+    panel.controller.state.config = replace(
+        cfg,
+        process=replace(cfg.process, process_mode=ProcessMode.BW, positive_source=True),
+    )
+
+    ControlsPanel._reset_film_fields(panel)
+
+    panel.controller.set_positive_source.assert_called_once_with(False)
+    panel.controller.set_process_mode.assert_called_once_with(ProcessConfig().process_mode)
+
+
+def test_reset_film_fields_does_nothing_at_the_defaults():
+    panel = MagicMock()
+    panel.controller.state = AppState()
+
+    ControlsPanel._reset_film_fields(panel)
+
+    panel.controller.set_positive_source.assert_not_called()
+    panel.controller.set_process_mode.assert_not_called()
