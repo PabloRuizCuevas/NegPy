@@ -30,7 +30,16 @@ from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 # ControlsPanel sections built into the Roll tab (_build_roll_page), not a Frame sub-tab --
 # reveal_section routes these to the Roll group instead of Frame's inner tab switcher.
 _ROLL_SECTION_ATTRS = frozenset(
-    {"sensor_section", "demosaic_section", "process_section", "autocrop_section", "lens_section", "flatfield_section"}
+    {
+        "trichrome_section",
+        "half_frame_section",
+        "sensor_section",
+        "demosaic_section",
+        "process_section",
+        "autocrop_section",
+        "lens_section",
+        "flatfield_section",
+    }
 )
 
 
@@ -261,10 +270,10 @@ class RightPanel(QWidget):
 
     def _build_roll_page(self) -> QWidget:
         """Facts the whole roll shares, not one frame's own edit: what film it is (Film
-        Mode), what rig scanned it and how (Calibration, Demosaic, Auto Crop, Lens
-        Correction, Flat Field), its shared exposure baseline (Normalization) and
-        reusable presets. Film Mode leads, since it decides which of the others even
-        apply."""
+        Mode), how its files become frames (Trichrome, Half Frame), what rig scanned it
+        and how (Calibration, Demosaic, Auto Crop, Lens Correction, Flat Field), its
+        shared exposure baseline (Normalization) and reusable presets. Film Mode leads,
+        since it decides which of the others even apply."""
         cp = self.controls_panel
         page = QWidget()
         page_layout = QVBoxLayout(page)
@@ -273,6 +282,8 @@ class RightPanel(QWidget):
         page_layout.addWidget(cp.roll_override_summary)
         for section in (
             cp.film_section,
+            cp.trichrome_section,
+            cp.half_frame_section,
             cp.sensor_section,
             cp.demosaic_section,
             cp.process_section,

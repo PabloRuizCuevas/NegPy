@@ -47,10 +47,10 @@ def build(window: "MainWindow") -> list[TutorialStep]:
         return w.right_panel.export_sidebar
 
     def _rgbscan(w: "MainWindow") -> Optional[QWidget]:
-        return w.session_panel.file_browser.rgb_scan_btn
+        return w.controls_panel.trichrome_sidebar.enable_btn
 
     def _half_frame(w: "MainWindow") -> Optional[QWidget]:
-        return w.session_panel.file_browser.half_frame_btn
+        return w.controls_panel.half_frame_sidebar.enable_btn
 
     def _flatfield(w: "MainWindow") -> Optional[QWidget]:
         return w.controls_panel.flatfield_sidebar.enable_btn
@@ -145,23 +145,24 @@ def build(window: "MainWindow") -> list[TutorialStep]:
             target=lambda w: w.session_panel,
         ),
         TutorialStep(
-            title="Trichrome Scan: Merging Triplets",
+            title="Trichrome Mode: Merging Triplets",
             body=(
                 "Shot a negative as three separate frames under red, green and blue light? "
-                "<b>Trichrome Scan</b> merges them into one clean, low-noise color scan.<br><br>"
-                "Toggle the <b>Trichrome Scan</b> button in the Files toolbar. Folders are grouped "
-                "into triplets automatically, and <b>Edit RGB Triplet…</b> (right-click a frame) "
+                "<b>Trichrome Mode</b> merges them into one clean, low-noise color scan.<br><br>"
+                "Toggle <b>Trichrome Mode</b> on the Roll tab. Folders are grouped "
+                "into triplets automatically, and <b>Edit Triplet…</b> beside the toggle "
                 "fixes the grouping. Frames are sub-pixel aligned to kill color fringing, then "
                 "run through the normal conversion."
             ),
             target=_rgbscan,
+            section_attr="trichrome_section",
         ),
         TutorialStep(
             title="Half Frame: Two Photos per Scan",
             body=(
                 "Shooting a half-frame camera, a Pentax 17 or an Olympus Pen? Each scan "
                 "holds <b>two photos side by side</b>.<br><br>"
-                "Toggle <b>Half Frame</b> in the Files toolbar and every scan appears as "
+                "Toggle <b>Half Frame Mode</b> on the Roll tab and every scan appears as "
                 "two frames on the contact sheet, split automatically at the gutter "
                 "between them. Each half is a full citizen: its own exposure metering, "
                 "its own edits and history, its own sidecar, and exports as "
@@ -170,6 +171,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "return when you switch it back on."
             ),
             target=_half_frame,
+            section_attr="half_frame_section",
         ),
         TutorialStep(
             title="Keep & Reject: Culling the Roll",
@@ -332,7 +334,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "The <b>Narrowband Scan</b> toggle corrects for that light source. It applies "
                 "to the preview <i>and</i> every export, so what you judge is what you "
                 "deliver.<br><br>"
-                "Turning on <b>Trichrome Scan</b> mode switches it on for you, on the current frame "
+                "Turning on <b>Trichrome Mode</b> switches it on for you, on the current frame "
                 "and as the default for new ones. If you have set a custom <b>Input ICC</b> "
                 "profile, that takes precedence and this toggle steps aside."
             ),

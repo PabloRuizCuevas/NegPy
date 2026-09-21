@@ -100,6 +100,29 @@ class TestAppController(unittest.TestCase):
         self.controller.clear_half_frame_override("h2")
         self.controller.session.repo.save_global_setting.assert_not_called()
 
+    def test_current_base_file_returns_the_base_hash_for_a_split_asset(self):
+        """Both halves share one path, so matching by path alone would always return
+        whichever comes first in the list -- never necessarily the active one -- and its
+        own #1/#2 hash, which save_half_frame_override does not key by."""
+        self.controller.state.uploaded_files = [
+            {"path": "/tmp/scan.tif", "hash": "h1#1", "half": 1},
+            {"path": "/tmp/scan.tif", "hash": "h1#2", "half": 2},
+        ]
+        self.controller.state.current_file_path = "/tmp/scan.tif"
+        self.controller.state.current_file_hash = "h1#2"  # the active half, listed second
+
+        self.assertEqual(self.controller.current_base_file(), ("/tmp/scan.tif", "h1"))
+
+    def test_selected_base_hashes_dedupes_both_halves_and_drops_composites(self):
+        self.controller.state.uploaded_files = [
+            {"path": "/tmp/scan.tif", "hash": "h1#1", "half": 1},
+            {"path": "/tmp/scan.tif", "hash": "h1#2", "half": 2},
+            {"path": "/tmp/pano.tif", "hash": "hc", "stitch_paths": ("/tmp/a.tif",)},
+        ]
+        self.controller.state.selected_indices = [0, 1, 2]
+
+        self.assertEqual(self.controller.selected_base_hashes(), ["h1"])
+
     def _patch_dialog(self, crop_rect=(0.1, 0.0, 0.9, 1.0), split_x=0.42, gutter=0.01, scope="current"):
         import numpy as np
 

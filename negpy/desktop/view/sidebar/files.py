@@ -20,9 +20,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import QActionGroup, QColor, QKeySequence, QPainter, QPainterPath, QPen, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
-    QCheckBox,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -60,12 +58,12 @@ from negpy.desktop.view.styles.templates import (
     ICON_BUTTON_WIDTH,
     TOOLBAR_BUTTON_HEIGHT,
     TOOLBAR_ICON_SIZE,
-    labeled_action,
     tool_toggle,
     wrap_tooltip,
 )
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog, open_paste_dialog
+from negpy.desktop.view.widgets.rgb_triplet_dialog import open_triplet_dialog
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
 from negpy.services.assets import rolls
 from negpy.services.assets.gear import GearProfiles
@@ -75,7 +73,7 @@ from negpy.infrastructure.filesystem.watcher import FolderWatchService
 from negpy.infrastructure.loaders.helpers import get_supported_raw_wildcards
 from negpy.desktop.view.sidebar.library_tree import LibraryTree
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
-from negpy.desktop.view.widgets.file_dialogs import last_open_folder, pick_start_dir
+from negpy.desktop.view.widgets.file_dialogs import last_open_folder
 from negpy.services.assets.library import folder_counts, folder_label
 from negpy.services.assets.thumbnails import asset_thumbnail_key
 
@@ -752,37 +750,6 @@ class FileBrowser(QWidget):
         self.hot_folder_btn.setToolTip("Hot Folder — automatically load new images from the current folder")
         self._update_hot_folder_style(False)
 
-        self.rgb_scan_btn = QToolButton()
-        self.rgb_scan_btn.setCheckable(True)
-        self.rgb_scan_btn.setIcon(qta.icon("mdi.google-circles-communities", color=THEME.text_primary))
-        self.rgb_scan_btn.setToolTip(
-            "Trichrome Scan — assemble each frame from red/green/blue exposures; groups a folder into triplets on load"
-        )
-        self.rgb_scan_btn.setChecked(bool(self.session.repo.get_global_setting("rgbscan_mode", False)))
-        self._update_rgb_scan_style(self.rgb_scan_btn.isChecked())
-
-        self.half_frame_btn = QToolButton()
-        self.half_frame_btn.setCheckable(True)
-        self.half_frame_btn.setIcon(qta.icon("mdi.view-split-vertical", color=THEME.text_primary))
-        self.half_frame_btn.setChecked(self.controller.half_frame_mode_for_roll(self.session.state.active_roll_id))
-        self._update_half_frame_style(self.half_frame_btn.isChecked())
-        self._sync_half_frame_availability()
-
-        # One button for every half-frame action, rather than one icon apiece: the menu
-        # is rebuilt on each open, so "Unsplit Diptych" only enables for the active frame's
-        # diptych state without a separate sync path.
-        self.half_frame_menu_btn = QToolButton()
-        self.half_frame_menu_btn.setIcon(qta.icon("mdi.tune-variant", color=THEME.text_primary))
-        self.half_frame_menu_btn.setToolTip("Half Frame actions — adjust a split, auto-detect every frame, or unsplit a diptych")
-        self.half_frame_menu_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        half_frame_menu = QMenu(self.half_frame_menu_btn)
-        half_frame_menu.addAction("Adjust Split…").triggered.connect(self._on_half_frame_adjust)
-        half_frame_menu.addAction("Auto-detect All Splits").triggered.connect(self._on_half_frame_auto_all)
-        self._unsplit_diptych_action = half_frame_menu.addAction("Unsplit Diptych")
-        self._unsplit_diptych_action.triggered.connect(self.prompt_undiptych)
-        half_frame_menu.aboutToShow.connect(self._sync_half_frame_menu)
-        self.half_frame_menu_btn.setMenu(half_frame_menu)
-
         self.apply_btn = QToolButton()
         self.apply_btn.setIcon(qta.icon("fa5s.clone", color=THEME.text_primary))
         self.apply_btn.setToolTip("Apply settings from the current frame to selected frames or the whole roll")
@@ -854,9 +821,6 @@ class FileBrowser(QWidget):
             self.add_btn,
             self.unload_btn,
             self.hot_folder_btn,
-            self.rgb_scan_btn,
-            self.half_frame_btn,
-            self.half_frame_menu_btn,
             self.apply_btn,
             self.roll_settings_btn,
             self.save_roll_btn,
@@ -880,9 +844,6 @@ class FileBrowser(QWidget):
             (None, None),
             (self.hot_folder_btn, "Hot Folder"),
             (None, None),
-            (self.rgb_scan_btn, "Trichrome Scan"),
-            (self.half_frame_btn, "Half Frame"),
-            (self.half_frame_menu_btn, "Half Frame actions"),
             (self.apply_btn, "Apply settings"),
             (self.roll_settings_btn, "Roll Settings"),
             (self.update_thumbnails_btn, "Update thumbnails"),
@@ -1130,10 +1091,6 @@ class FileBrowser(QWidget):
         self.list_view.customContextMenuRequested.connect(self._show_context_menu)
         self.list_view.selectionModel().selectionChanged.connect(self._on_selection_changed)
         self.hot_folder_btn.toggled.connect(self._on_hot_folder_toggled)
-        self.rgb_scan_btn.toggled.connect(self._on_rgb_scan_toggled)
-        self.controller.rgb_scan_mode_changed.connect(self._sync_rgb_scan_button)
-        self.half_frame_btn.toggled.connect(self._on_half_frame_toggled)
-        self.controller.half_frame_mode_changed.connect(self._sync_half_frame_button)
         self.controller.thumbnail_refresh_state_changed.connect(self._on_thumbnail_refresh_state_changed)
         self.session.state_changed.connect(self.sync_ui)
         self.session.files_changed.connect(self._on_files_changed)
@@ -1221,11 +1178,6 @@ class FileBrowser(QWidget):
         multi = len(self.session.state.selected_indices) > 1
         self.unload_btn.setToolTip("Unload Selected…" if multi else "Unload…")
 
-    def _sync_half_frame_menu(self) -> None:
-        state = self.session.state
-        active = state.uploaded_files[state.selected_file_idx] if 0 <= state.selected_file_idx < len(state.uploaded_files) else {}
-        self._unsplit_diptych_action.setEnabled(bool(active.get("diptych")))
-
     def sync_ui(self) -> None:
         """Updates list selection to match session state."""
         model = self.session.asset_model
@@ -1233,7 +1185,6 @@ class FileBrowser(QWidget):
         self.semantic_btn.setVisible(self.session.state.semantic_search_enabled)
         if not self.session.state.semantic_search_enabled and self.semantic_btn.isChecked():
             self.semantic_btn.setChecked(False)  # reverts to the plain filter via _on_semantic_toggled
-        self._sync_half_frame_availability()
         self.library_tree.sync_ui()
         self._update_unload_button()
         self._update_tally()
@@ -1462,125 +1413,16 @@ class FileBrowser(QWidget):
         icon_color = "white" if checked else THEME.text_primary
         self.hot_folder_btn.setIcon(qta.icon("fa5s.fire", color=icon_color))
 
-    def _update_rgb_scan_style(self, checked: bool) -> None:
-        icon_color = "white" if checked else THEME.text_primary
-        self.rgb_scan_btn.setIcon(qta.icon("mdi.google-circles-communities", color=icon_color))
-
-    def _on_rgb_scan_toggled(self, checked: bool) -> None:
-        self._update_rgb_scan_style(checked)
-        self.controller.set_rgb_scan_mode(checked)
-
-    def _sync_rgb_scan_button(self, enabled: bool) -> None:
-        """Follow a mode change the button did not make. Signals are blocked because
-        the controller has already applied it; letting toggled through would ask for it
-        a second time and re-run discovery."""
-        self.rgb_scan_btn.blockSignals(True)
-        self.rgb_scan_btn.setChecked(enabled)
-        self.rgb_scan_btn.blockSignals(False)
-        self._update_rgb_scan_style(enabled)
-
-    def _update_half_frame_style(self, checked: bool) -> None:
-        icon_color = "white" if checked else THEME.text_primary
-        self.half_frame_btn.setIcon(qta.icon("mdi.view-split-vertical", color=icon_color))
-
-    def _sync_half_frame_availability(self) -> None:
-        """The toggle is a roll-wide fact -- one film type, split or not -- so it has
-        nothing to apply to a batch with no single active roll (a library-wide search's
-        mixed results, a restored session with no shared roll). Nothing in such a batch
-        splits: the roll itself is where a scan becomes two frames."""
-        has_roll = bool(self.session.state.active_roll_id)
-        self.half_frame_btn.setEnabled(has_roll)
-        self.half_frame_btn.setToolTip(
-            wrap_tooltip("Half Frame — split each scan into two frames, edited and measured separately")
-            if has_roll
-            else wrap_tooltip("Half Frame is a roll-wide setting, and this isn't one roll. Open the roll itself to split its scans.")
-        )
-
-    def _sync_half_frame_button(self, enabled: bool) -> None:
-        """Follow the active roll's own toggle state. Signals are blocked because
-        request_asset_discovery already applied it for this roll; letting toggled
-        through would ask for it a second time and re-run discovery."""
-        self.half_frame_btn.blockSignals(True)
-        self.half_frame_btn.setChecked(enabled)
-        self.half_frame_btn.blockSignals(False)
-        self._update_half_frame_style(enabled)
-
-    def _current_file(self) -> tuple[Optional[str], Optional[str]]:
-        """The current frame's (path, base hash), falling back to the first loaded file.
-
-        Both halves of a half-frame asset share one path, so matching by path alone
-        would always return whichever half comes first in the list — never the one
-        actually active — and its own suffixed hash, which save_half_frame_override
-        does not key by. base_hash() makes either mistake harmless.
-        """
-        from negpy.services.assets.half_frame import base_hash
-
-        current = self.session.state.current_file_path
-        for f in self.session.state.uploaded_files:
-            if f.get("path") == current:
-                return f.get("path"), base_hash(f.get("hash"))
-        if self.session.state.uploaded_files:
-            f = self.session.state.uploaded_files[0]
-            return f.get("path"), base_hash(f.get("hash"))
-        return None, None
-
-    def _selected_base_hashes(self) -> list[str]:
-        """Base hashes of the filmstrip selection, deduped (a half-frame asset's two
-        halves can both be selected) and composites excluded."""
-        from negpy.services.assets.half_frame import base_hash, is_composite
-
-        files = self.session.state.uploaded_files
-        seen: dict[str, None] = {}
-        for i in self.session.state.selected_indices:
-            if 0 <= i < len(files) and not is_composite(files[i]):
-                h = base_hash(files[i]["hash"])
-                if h:
-                    seen.setdefault(h, None)
-        return list(seen)
-
-    def _on_half_frame_toggled(self, checked: bool) -> None:
-        """A plain toggle: no editor pops up. Turning it on splits every loaded scan at
-        its auto-detected gutter directly; the odd frame it gets wrong is fixed
-        afterward from the Half Frame actions menu (Adjust Split…)."""
-        self._update_half_frame_style(checked)
-        self.controller.set_half_frame_mode(checked)
-        if checked and self.session.state.uploaded_files:
-            self.controller.auto_detect_all_half_frame_splits()
-
-    def _on_half_frame_adjust(self) -> None:
-        """Open the half-frame rectangle editor on the current image; its own
-        Apply ▾ picks what the result gets saved to."""
-        path, file_hash = self._current_file()
-        if not path or not file_hash:
-            return
-        result = self.controller.open_half_frame_dialog(path, file_hash, selected_hashes=self._selected_base_hashes())
-        if result is not None:
-            self._reload_after_half_frame_change()
-
-    def _on_half_frame_auto_all(self) -> None:
-        """Detection runs off the GUI thread; the controller saves the results and
-        reloads once it reports back, tracked by the status bar's progress readout."""
-        self.controller.auto_detect_all_half_frame_splits()
-
-    def _reload_after_half_frame_change(self) -> None:
-        """Re-discover so a profile/override change takes effect immediately."""
-        files = self.session.state.uploaded_files
-        self.controller.request_asset_discovery(
-            [f["path"] for f in files if "path" in f],
-            replace_existing=True,
-            reselect_path=self.session.state.current_file_path,
-        )
-
     def _on_adjust_half_frame_split(self, path: str, base_hash: str) -> None:
         """Open the rectangle editor for one file, defaulting Apply to just that
         frame — for the odd frame the roll-wide split still gets wrong."""
         result = self.controller.open_half_frame_dialog(path, base_hash, initial_scope="current")
         if result is not None:
-            self._reload_after_half_frame_change()
+            self.controller.reload_after_half_frame_change()
 
     def _on_reset_half_frame_split(self, base_hash: str) -> None:
         self.controller.clear_half_frame_override(base_hash)
-        self._reload_after_half_frame_change()
+        self.controller.reload_after_half_frame_change()
 
     def _scan_folder(self) -> None:
         if not self.session.state.uploaded_files:
@@ -1926,23 +1768,7 @@ class FileBrowser(QWidget):
             act.triggered.connect(lambda _=False, p=path: self.controller.set_hdr_anchor(p))
 
     def _on_edit_triplet(self) -> None:
-        idx = self.session.state.selected_file_idx
-        files = self.session.state.uploaded_files
-        if not (0 <= idx < len(files)):
-            return
-        info = files[idx]
-        dlg = _RgbTripletDialog(
-            self,
-            info["path"],
-            info.get("green_path", ""),
-            info.get("blue_path", ""),
-            info.get("align", True),
-            start_dir=last_open_folder(self.session.repo),
-        )
-        if dlg.exec():
-            red, green, blue = dlg.paths()
-            if red and green and blue:
-                self.session.set_triplet(idx, red, green, blue, dlg.align())
+        open_triplet_dialog(self, self.session)
 
     def _on_remove_from_menu(self) -> None:
         count = len(self.session.state.selected_indices)
@@ -1959,49 +1785,3 @@ class FileBrowser(QWidget):
         if not state.uploaded_files or state.selected_file_idx < 0:
             return
         self._on_remove_from_menu()
-
-
-class _RgbTripletDialog(QDialog):
-    """Manually assign the red/green/blue exposure files for one RGB-scan frame."""
-
-    def __init__(self, parent, red: str, green: str, blue: str, align: bool = True, start_dir: str = "") -> None:
-        super().__init__(parent)
-        self._start_dir = start_dir
-        self.setWindowTitle("Edit RGB Triplet")
-        layout = QVBoxLayout(self)
-        self._edits: dict[str, QLineEdit] = {}
-        for label, path in (("Red", red), ("Green", green), ("Blue", blue)):
-            row = QHBoxLayout()
-            row.addWidget(QLabel(label, minimumWidth=48))
-            edit = QLineEdit(path)
-            row.addWidget(edit, 1)
-            browse = labeled_action("", "Browse…", "Pick the file for this channel")
-            browse.clicked.connect(lambda _=False, e=edit: self._browse(e))
-            row.addWidget(browse)
-            layout.addLayout(row)
-            self._edits[label] = edit
-
-        self._align = QCheckBox("Align channels (sub-pixel)")
-        self._align.setChecked(align)
-        self._align.setToolTip("Register green/blue to the red exposure to remove fringing from capture drift.")
-        layout.addWidget(self._align)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def _browse(self, edit: QLineEdit) -> None:
-        # An empty row starts where its siblings are: the three exposures of a triplet
-        # are shot in one go and live together.
-        siblings = [self._edits[label].text() for label in ("Red", "Green", "Blue")]
-        start = pick_start_dir(edit.text(), *siblings, self._start_dir)
-        path, _ = QFileDialog.getOpenFileName(self, "Select exposure", start, f"Supported Images ({get_supported_raw_wildcards()})")
-        if path:
-            edit.setText(path)
-
-    def paths(self) -> tuple[str, str, str]:
-        return (self._edits["Red"].text(), self._edits["Green"].text(), self._edits["Blue"].text())
-
-    def align(self) -> bool:
-        return self._align.isChecked()

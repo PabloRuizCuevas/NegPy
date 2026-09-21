@@ -54,7 +54,6 @@ def session(qapp):
 def browser(session):
     controller = MagicMock()
     controller.session = session
-    controller.half_frame_mode_for_roll.return_value = False
     controller.thumbnail_refresh_running = False
     return FileBrowser(controller)
 
@@ -177,20 +176,6 @@ def test_context_menu_offers_unsplit_only_for_a_diptych(browser, session):
     assert "Unsplit Diptych" in _action_labels(browser._build_context_menu())
 
 
-def test_unsplit_diptych_menu_action_only_enabled_for_a_diptych(browser, session):
-    """A right-click context menu was the only other way in, easy to miss when the
-    panel just looks locked with no clue why. Synced on the Half Frame menu's own
-    aboutToShow rather than the general sync_ui, so it reflects whichever frame is
-    active at the moment the menu actually opens."""
-    session.state.selected_file_idx = 0
-    browser._sync_half_frame_menu()
-    assert not browser._unsplit_diptych_action.isEnabled()
-
-    session.state.uploaded_files[0]["diptych"] = True
-    browser._sync_half_frame_menu()
-    assert browser._unsplit_diptych_action.isEnabled()
-
-
 def test_context_menu_offers_per_frame_split_only_for_a_half(browser, session):
     session.state.selected_indices = [0]
     session.state.selected_file_idx = 0
@@ -255,67 +240,6 @@ def test_context_menu_offers_unfork_once_forked(browser, session):
     assert "Edit Independently in This Roll" not in labels
 
 
-def test_current_file_returns_the_base_hash_for_a_split_asset(browser, session):
-    """Both halves share one path, so matching by path alone would always return
-    whichever comes first in the list -- never necessarily the active one -- and its
-    own #1/#2 hash, which save_half_frame_override does not key by."""
-    session.state.uploaded_files = [
-        {"path": "/tmp/scan.tif", "hash": "h1#1", "half": 1},
-        {"path": "/tmp/scan.tif", "hash": "h1#2", "half": 2},
-    ]
-    session.state.current_file_path = "/tmp/scan.tif"
-    session.state.current_file_hash = "h1#2"  # the active half, listed second
-    assert browser._current_file() == ("/tmp/scan.tif", "h1")
-
-
-def test_half_frame_toggle_on_auto_detects_without_opening_a_dialog(browser, session):
-    """A plain toggle: turning it on runs the same batch detection Auto-detect All
-    Splits does, never the rectangle editor."""
-    browser._on_half_frame_toggled(True)
-
-    browser.controller.open_half_frame_dialog.assert_not_called()
-    browser.controller.set_half_frame_mode.assert_called_once_with(True)
-    browser.controller.auto_detect_all_half_frame_splits.assert_called_once_with()
-
-
-def test_half_frame_toggle_off_does_not_auto_detect(browser, session):
-    browser._on_half_frame_toggled(False)
-
-    browser.controller.set_half_frame_mode.assert_called_once_with(False)
-    browser.controller.auto_detect_all_half_frame_splits.assert_not_called()
-
-
-def test_half_frame_toggle_on_skips_auto_detect_with_nothing_loaded(browser, session):
-    session.state.uploaded_files = []
-    browser._on_half_frame_toggled(True)
-
-    browser.controller.set_half_frame_mode.assert_called_once_with(True)
-    browser.controller.auto_detect_all_half_frame_splits.assert_not_called()
-
-
-def test_sync_half_frame_button_follows_the_active_rolls_state_without_retoggling(browser, session):
-    """Mirrors _sync_rgb_scan_button: a roll switch drives the button, not a click, so
-    it must not run set_half_frame_mode a second time."""
-    browser.half_frame_btn.setChecked(False)
-    browser.controller.set_half_frame_mode.reset_mock()
-
-    browser._sync_half_frame_button(True)
-
-    assert browser.half_frame_btn.isChecked() is True
-    browser.controller.set_half_frame_mode.assert_not_called()
-
-
-def test_half_frame_toggle_disabled_with_no_active_roll(browser, session):
-    """A batch with no single active roll (a library-wide search's mixed results) has
-    no roll-wide toggle to apply -- nothing in it splits, so the button has nothing
-    left to turn on or off."""
-    session.state.active_roll_id = None
-
-    browser.sync_ui()
-
-    assert browser.half_frame_btn.isEnabled() is False
-
-
 def test_hot_folder_stops_re_offering_a_duplicate_it_already_turned_away(browser, session):
     """The poll decided what was new by path while add_files turns files away by content
     hash, so a byte-identical copy under another name was never in the file list to
@@ -331,29 +255,21 @@ def test_hot_folder_stops_re_offering_a_duplicate_it_already_turned_away(browser
     browser.controller.request_asset_discovery.assert_not_called()
 
 
-def test_half_frame_toggle_enabled_with_an_active_roll(browser, session):
-    session.state.active_roll_id = "r1"
-
-    browser.sync_ui()
-
-    assert browser.half_frame_btn.isEnabled() is True
-
-
 def test_adjust_half_frame_split_reloads_only_on_apply(browser, session):
     browser.controller.open_half_frame_dialog.return_value = None
     browser._on_adjust_half_frame_split("/tmp/scan.tif", "h1")
-    browser.controller.request_asset_discovery.assert_not_called()
+    browser.controller.reload_after_half_frame_change.assert_not_called()
 
     browser.controller.open_half_frame_dialog.return_value = {"split_x": 0.4}
     browser._on_adjust_half_frame_split("/tmp/scan.tif", "h1")
     browser.controller.open_half_frame_dialog.assert_called_with("/tmp/scan.tif", "h1", initial_scope="current")
-    browser.controller.request_asset_discovery.assert_called_once()
+    browser.controller.reload_after_half_frame_change.assert_called_once()
 
 
 def test_reset_half_frame_split_clears_and_reloads(browser, session):
     browser._on_reset_half_frame_split("h1")
     browser.controller.clear_half_frame_override.assert_called_once_with("h1")
-    browser.controller.request_asset_discovery.assert_called_once()
+    browser.controller.reload_after_half_frame_change.assert_called_once()
 
 
 def test_unsplit_diptych_needs_the_confirm(browser):

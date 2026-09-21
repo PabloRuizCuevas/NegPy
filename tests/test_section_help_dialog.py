@@ -18,6 +18,8 @@ GUIDED_KEYS = (
     "analysis",
     "presets",
     "film",
+    "trichrome",
+    "half_frame",
     "sensor",
     "demosaic",
     "process",

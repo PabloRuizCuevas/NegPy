@@ -34,6 +34,8 @@ from negpy.desktop.view.sidebar.color import ColorSidebar
 from negpy.desktop.view.sidebar.tone import ToneSidebar
 from negpy.desktop.view.sidebar.geometry import GeometrySidebar
 from negpy.desktop.view.sidebar.autocrop import AutocropSidebar
+from negpy.desktop.view.sidebar.trichrome import TrichromeSidebar
+from negpy.desktop.view.sidebar.half_frame import HalfFrameSidebar
 from negpy.desktop.view.sidebar.lens import LensSidebar
 from negpy.desktop.view.sidebar.lab import LabSidebar
 from negpy.desktop.view.sidebar.altprocess import AltProcessSidebar
@@ -282,6 +284,23 @@ class ControlsPanel(QWidget):
             icon_name="mdi6.film",
             collapsible=False,
         )
+        # How the files become frames, which is upstream of every rig card below.
+        self.trichrome_sidebar = TrichromeSidebar(self.controller)
+        self.trichrome_section = self._make_section(
+            "Trichrome",
+            "trichrome",
+            self.trichrome_sidebar,
+            icon_name="mdi.google-circles-communities",
+        )
+
+        self.half_frame_sidebar = HalfFrameSidebar(self.controller)
+        self.half_frame_section = self._make_section(
+            "Half Frame",
+            "half_frame",
+            self.half_frame_sidebar,
+            icon_name="mdi.view-split-vertical",
+        )
+
         self.roll_sidebar = RollAnalysisSidebar(self.controller)
         # Roll Analysis (the batch meter) and Normalization (per-frame bounds, White/
         # Black Point) are one feature -- getting a negative to a correctly normalized
@@ -882,7 +901,7 @@ class ControlsPanel(QWidget):
             )
         )
 
-    _DIPTYCH_HINT = "Diptych — the edits live on the halves. Turn Half Frame on to edit either one."
+    _DIPTYCH_HINT = "Diptych — the edits live on the halves. Turn Half Frame Mode on to edit either one."
 
     def _set_read_only(self, read_only: bool) -> None:
         """A diptych renders from the two halves' own configs, so this panel drives nothing.
@@ -919,6 +938,8 @@ class ControlsPanel(QWidget):
         self.flatfield_sidebar.sync_ui()
         self.autocrop_sidebar.sync_ui()
         self.lens_sidebar.sync_ui()
+        self.trichrome_sidebar.sync_ui()
+        self.half_frame_sidebar.sync_ui()
         self.sensor_sidebar.sync_ui()
         self.demosaic_sidebar.sync_ui()
         self._sync_modified_dots()

@@ -10,6 +10,8 @@ from negpy.desktop.view.widgets.tutorial_steps import build
 
 # Section attrs that reveal_section can actually resolve (registered in RightPanel).
 _VALID_SECTION_ATTRS = {
+    "trichrome_section",
+    "half_frame_section",
     "flatfield_section",
     "geometry_section",
     "process_section",

@@ -134,6 +134,24 @@ def confirm_clear_heals(parent, count: int) -> bool:
     return box.exec() == QMessageBox.StandardButton.Yes
 
 
+def confirm_assembly_mode(parent, mode: str, count: int) -> bool:
+    """Ask before Trichrome or Half Frame mode goes on.
+
+    Turning one on regroups or splits every loaded scan, so the whole roll is read and
+    thumbnailed again. Nothing is lost, but it is a long beat to start by accident.
+    """
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle(f"{mode} Mode")
+    box.setText(f"Turn {mode} Mode on for {count_of(count, 'loaded frame')}?")
+    box.setInformativeText("Every loaded frame is read and thumbnailed again. Your saved edits stay.")
+    turn_on = box.addButton("Turn On", QMessageBox.ButtonRole.AcceptRole)
+    box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(turn_on)
+    box.exec()
+    return box.clickedButton() is turn_on
+
+
 def _confirm_with_verb(parent, title: str, text: str, informative: str, verb: str) -> bool:
     """A destructive confirmation whose accept button is named after the act, not Yes.
     Enter confirms; Esc cancels."""

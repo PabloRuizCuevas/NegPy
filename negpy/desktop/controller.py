@@ -1695,6 +1695,44 @@ class AppController(QObject):
     def _path_for_base_hash(self, file_hash: str) -> str:
         return next((a["path"] for a in self.session.state.uploaded_files if base_hash(a.get("hash", "")) == file_hash), "")
 
+    def current_base_file(self) -> tuple[Optional[str], Optional[str]]:
+        """The current frame's (path, base hash), falling back to the first loaded file.
+
+        Both halves of a half-frame asset share one path, so matching by path alone
+        would always return whichever half comes first in the list — never the one
+        actually active — and its own suffixed hash, which save_half_frame_override
+        does not key by. base_hash() makes either mistake harmless.
+        """
+        current = self.state.current_file_path
+        for f in self.session.state.uploaded_files:
+            if f.get("path") == current:
+                return f.get("path"), base_hash(f.get("hash"))
+        if self.session.state.uploaded_files:
+            f = self.session.state.uploaded_files[0]
+            return f.get("path"), base_hash(f.get("hash"))
+        return None, None
+
+    def selected_base_hashes(self) -> list[str]:
+        """Base hashes of the filmstrip selection, deduped (a half-frame asset's two
+        halves can both be selected) and composites excluded."""
+        files = self.session.state.uploaded_files
+        seen: dict[str, None] = {}
+        for i in self.session.state.selected_indices:
+            if 0 <= i < len(files) and not is_composite(files[i]):
+                h = base_hash(files[i]["hash"])
+                if h:
+                    seen.setdefault(h, None)
+        return list(seen)
+
+    def reload_after_half_frame_change(self) -> None:
+        """Re-discover so a profile/override change takes effect immediately."""
+        files = self.session.state.uploaded_files
+        self.request_asset_discovery(
+            [f["path"] for f in files if "path" in f],
+            replace_existing=True,
+            reselect_path=self.state.current_file_path,
+        )
+
     def _half_frame_geometry_for(self, file_hash: str, file_path: str = "") -> HalfGeometry:
         """This file's currently effective half geometry: its own override, else the
         roll's saved profile, else — with no profile yet — the same per-file
@@ -1927,7 +1965,7 @@ class AppController(QObject):
                 self.session.repo.save_global_setting("rgbscan_hide_empty_warning", True)
             return
 
-        turn_off = box.addButton("Turn Off Trichrome Scan", QMessageBox.ButtonRole.AcceptRole)
+        turn_off = box.addButton("Turn Off Trichrome Mode", QMessageBox.ButtonRole.AcceptRole)
         keep = box.addButton("Keep It On", QMessageBox.ButtonRole.RejectRole)
         box.setDefaultButton(turn_off)
         box.exec()
