@@ -246,9 +246,7 @@ def test_hot_folder_stops_re_offering_a_duplicate_it_already_turned_away(browser
     compare against: hashed, rejected and offered again every 2s, forever."""
     session.state.duplicate_paths.add("/tmp/IMG_0001 copy.cr2")
 
-    with patch(
-        "negpy.desktop.view.sidebar.files.FolderWatchService.scan_for_new_files", return_value=[]
-    ) as scan:
+    with patch("negpy.desktop.view.sidebar.files.FolderWatchService.scan_for_new_files", return_value=[]) as scan:
         browser._scan_folder()
 
     assert "/tmp/IMG_0001 copy.cr2" in scan.call_args[0][1]
