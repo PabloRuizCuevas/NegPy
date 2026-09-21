@@ -316,6 +316,21 @@ def test_half_frame_toggle_disabled_with_no_active_roll(browser, session):
     assert browser.half_frame_btn.isEnabled() is False
 
 
+def test_hot_folder_stops_re_offering_a_duplicate_it_already_turned_away(browser, session):
+    """The poll decided what was new by path while add_files turns files away by content
+    hash, so a byte-identical copy under another name was never in the file list to
+    compare against: hashed, rejected and offered again every 2s, forever."""
+    session.state.duplicate_paths.add("/tmp/IMG_0001 copy.cr2")
+
+    with patch(
+        "negpy.desktop.view.sidebar.files.FolderWatchService.scan_for_new_files", return_value=[]
+    ) as scan:
+        browser._scan_folder()
+
+    assert "/tmp/IMG_0001 copy.cr2" in scan.call_args[0][1]
+    browser.controller.request_asset_discovery.assert_not_called()
+
+
 def test_half_frame_toggle_enabled_with_an_active_roll(browser, session):
     session.state.active_roll_id = "r1"
 

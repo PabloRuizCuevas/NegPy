@@ -1670,6 +1670,25 @@ class TestTriageMarks(unittest.TestCase):
         self.assertTrue(files[1]["excluded"])
         self.assertFalse(files[0]["keeper"] or files[0]["excluded"])
 
+    def test_a_path_turned_away_as_a_duplicate_is_recorded(self):
+        """A duplicate never reaches uploaded_files, so a caller that decides what is
+        new by path (the Hot Folder poll) has nothing to learn from the file list and
+        would re-offer it every round. The rejected path is kept for them instead."""
+        loaded = self.session.state.uploaded_files[0]
+
+        self.session.add_files([], validated_info=[{"name": "copy.dng", "path": "/hot/copy.dng", "hash": loaded["hash"]}])
+
+        self.assertNotIn("/hot/copy.dng", [f["path"] for f in self.session.state.uploaded_files])
+        self.assertIn("/hot/copy.dng", self.session.state.duplicate_paths)
+
+    def test_clearing_the_session_forgets_the_duplicates_it_turned_away(self):
+        """The rejection only held while the frame it clashed with was loaded."""
+        self.session.state.duplicate_paths.add("/hot/copy.dng")
+
+        self.session.clear_files()
+
+        self.assertEqual(self.session.state.duplicate_paths, set())
+
 
 class TestRollActionRecoveryRoundTrip(unittest.TestCase):
     """End-to-end with a real repository: a roll-wide sync is recoverable on each

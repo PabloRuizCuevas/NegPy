@@ -1588,7 +1588,9 @@ class FileBrowser(QWidget):
 
         last_file = self.session.state.uploaded_files[-1]
         folder_path = os.path.dirname(last_file["path"])
-        existing = {f["path"] for f in self.session.state.uploaded_files}
+        # A duplicate of a loaded frame never reaches uploaded_files, so counting only
+        # what is loaded would re-offer it every poll: hash it, turn it away, repeat.
+        existing = {f["path"] for f in self.session.state.uploaded_files} | self.session.state.duplicate_paths
 
         new_files = FolderWatchService.scan_for_new_files(folder_path, existing)
         if new_files:

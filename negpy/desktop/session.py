@@ -83,6 +83,10 @@ class AppState:
     # Keys whose cached bitmap predates a settings write that reached the file without a
     # render (a bulk apply, not the active canvas). Cleared once a render refreshes it.
     stale_thumbnails: Set[str] = field(default_factory=set)
+    # Paths add_files turned away because a loaded frame already holds their content. They
+    # are absent from uploaded_files by design, so a caller that decides what is new by
+    # path (the Hot Folder poll) would otherwise offer the same file every round forever.
+    duplicate_paths: Set[str] = field(default_factory=set)
     source_exif: Dict[str, Any] = field(default_factory=dict)  # file_hash -> piexif dict
     selected_file_idx: int = -1
     selected_indices: List[int] = field(default_factory=list)
@@ -1826,6 +1830,7 @@ class DesktopSessionManager(QObject):
                 clash = next((f for f in self.state.uploaded_files if f["hash"] == info["hash"]), None)
                 if clash is not None:
                     logger.info("Skipping %s: same content hash as %s", info["path"], clash["path"])
+                    self.state.duplicate_paths.add(info["path"])
                     continue
                 migrate_asset_hash(self.repo, info)
                 self.state.uploaded_files.append(info)
@@ -1839,6 +1844,7 @@ class DesktopSessionManager(QObject):
                     clash = next((f for f in self.state.uploaded_files if f["hash"] == f_hash), None)
                     if clash is not None:
                         logger.info("Skipping %s: same content hash as %s", path, clash["path"])
+                        self.state.duplicate_paths.add(path)
                         continue
 
                     info = {"name": os.path.basename(path), "path": path, "hash": f_hash, "legacy_hash": legacy}
@@ -1931,6 +1937,7 @@ class DesktopSessionManager(QObject):
         self.state.rendered_thumbnails.clear()
         self.state.active_roll_id = None
         self.state.stale_thumbnails.clear()
+        self.state.duplicate_paths.clear()
         self.state.embeddings.clear()
         self._reset_active_image_state()
 
