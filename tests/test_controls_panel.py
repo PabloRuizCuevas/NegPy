@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from negpy.desktop.session import AppState
 from negpy.desktop.settings_catalog import rows_for_fields
-from negpy.desktop.view.sidebar.controls_panel import _TONAL_RANGE_FIELDS, _TONE_FIELDS, ControlsPanel
+from negpy.desktop.view.sidebar.controls_panel import _TONE_FIELDS, ControlsPanel
 from negpy.features.exposure.models import ExposureConfig
 from negpy.features.process.models import ProcessConfig, ProcessMode
 
@@ -243,8 +243,8 @@ def test_sync_modified_dots_counts_film_mode_on_its_own_card():
     panel.process_section.set_modified.assert_called_once_with(0)
 
 
-def test_sync_modified_dots_counts_tonal_range_on_tone():
-    """White/Black Point sit in Tone's Tonal Range block but live on ProcessConfig."""
+def test_sync_modified_dots_counts_tonal_range_on_normalization():
+    """White/Black Point are Normalization's Tonal Range block, counted with that card."""
     panel = MagicMock()
     panel.controller.state = AppState()
     cfg = panel.controller.state.config
@@ -257,8 +257,8 @@ def test_sync_modified_dots_counts_tonal_range_on_tone():
 
     ControlsPanel._sync_modified_dots(panel)
 
-    panel.tone_section.set_modified.assert_called_once_with(2)
-    panel.process_section.set_modified.assert_called_once_with(0)
+    panel.tone_section.set_modified.assert_called_once_with(0)
+    panel.process_section.set_modified.assert_called_once_with(2)
 
 
 def test_sync_modified_dots_counts_linear_raw_on_calibration():
@@ -275,14 +275,15 @@ def test_sync_modified_dots_counts_linear_raw_on_calibration():
     panel.process_section.set_modified.assert_called_once_with(0)
 
 
-def test_reset_tone_fields_clears_both_configs():
+def test_reset_tone_fields_clears_the_print_controls_alone():
+    """Tonal Range resets with Normalization, the card it sits on."""
     panel = MagicMock()
     panel.controller.state = AppState()
 
     ControlsPanel._reset_tone_fields(panel)
 
     assert panel._reset_exposure_fields.call_args[0][0] == _TONE_FIELDS
-    assert panel._reset_process_fields.call_args[0][0] == _TONAL_RANGE_FIELDS
+    panel._reset_process_fields.assert_not_called()
 
 
 def test_reset_film_fields_routes_through_the_controls_own_setters():

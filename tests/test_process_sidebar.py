@@ -223,3 +223,99 @@ def test_highlight_reconstruction_greyed_without_a_camera_matrix(qapp):
     controller.state.preview_cam_xyz = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
     sidebar.sync_ui()
     assert sidebar.highlight_combo.isEnabled()
+
+
+def test_white_black_point_retarget_and_sync(qapp):
+    """The Tonal Range block retargets through its own Global/R/G/B selector."""
+    controller, sidebar = _sidebar()
+
+    cfg = controller.state.config
+    controller.state.config = replace(
+        cfg,
+        process=replace(
+            cfg.process,
+            white_point_offset=0.1,
+            black_point_offset=-0.05,
+            white_point_trim_red=0.08,
+            black_point_trim_red=-0.02,
+        ),
+    )
+    sidebar.sync_ui()
+
+    assert sidebar._wp_field() == "white_point_offset"
+    assert sidebar._bp_field() == "black_point_offset"
+    assert abs(sidebar.white_point_slider.value() - 0.1) < 1e-9
+    assert abs(sidebar.black_point_slider.value() - (-0.05)) < 1e-9
+
+    sidebar.ch_r_btn.setChecked(True)
+
+    assert sidebar._wp_field() == "white_point_trim_red"
+    assert sidebar._bp_field() == "black_point_trim_red"
+    assert abs(sidebar.white_point_slider.value() - 0.08) < 1e-9
+    assert abs(sidebar.black_point_slider.value() - (-0.02)) < 1e-9
+    assert sidebar.white_point_slider.label.text() == "White Point R"
+    assert sidebar.ch_r_btn.edited_dot.isVisibleTo(sidebar.ch_r_btn)
+
+    sidebar.ch_global_btn.setChecked(True)
+    assert abs(sidebar.white_point_slider.value() - 0.1) < 1e-9
+    assert sidebar.white_point_slider.label.text() == "White Point"
+
+
+def test_tonal_range_header_sits_directly_above_white_point(qapp):
+    """Marks the frame's own bounds nudge off from the roll-eligible controls above."""
+    _controller, sidebar = _sidebar()
+
+    header_i = sidebar.layout.indexOf(sidebar.tonal_range_header)
+    assert header_i >= 0
+    row_i = _row_index_containing(sidebar.layout, sidebar.white_point_slider)
+    assert header_i == row_i - 2  # the channel selector row sits between them
+
+
+def test_white_black_point_stay_visible_on_the_transparency_transfer(qapp):
+    """They deviate the transfer path's fixed window the same way they deviate a
+    measured one (NormalizationProcessor._process_transparency), unlike the metering
+    controls above, which have nothing to act on there."""
+    controller, sidebar = _sidebar()
+
+    cfg = controller.state.config
+    controller.state.config = replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.E6, e6_normalize=False))
+    sidebar.sync_ui()
+
+    assert not sidebar.white_point_slider.isHidden()
+    assert not sidebar.black_point_slider.isHidden()
+    assert not sidebar.tonal_range_header.isHidden()
+    assert sidebar.analysis_buffer_slider.isHidden()
+
+
+def test_white_black_point_disabled_when_bounds_are_locked(qapp):
+    """Trims shift the frozen bounds themselves, so nudging stops once locked."""
+    controller, sidebar = _sidebar()
+
+    cfg = controller.state.config
+    controller.state.config = replace(cfg, process=replace(cfg.process, lock_bounds=True))
+    sidebar.sync_ui()
+
+    assert not sidebar.white_point_slider.isEnabled()
+    assert not sidebar.black_point_slider.isEnabled()
+
+
+def test_white_black_point_ignore_the_lock_on_the_transparency_transfer(qapp):
+    """The transfer path's window is fixed, never measured, so a Lock Bounds left on
+    from another frame or mode has nothing there to freeze."""
+    controller, sidebar = _sidebar()
+
+    cfg = controller.state.config
+    controller.state.config = replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.E6, e6_normalize=False, lock_bounds=True))
+    sidebar.sync_ui()
+
+    assert sidebar.white_point_slider.isEnabled()
+    assert sidebar.black_point_slider.isEnabled()
+
+
+def test_white_black_point_write_to_process(qapp):
+    controller, sidebar = _sidebar()
+
+    sidebar._on_white_point_changed(0.15, persist=True)
+
+    args, _kwargs = controller.apply_config.call_args
+    assert args[0].process.white_point_offset == 0.15

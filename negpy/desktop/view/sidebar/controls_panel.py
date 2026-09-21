@@ -114,7 +114,7 @@ _NORMALIZATION_FIELDS = (
     "use_luma_average",
     "use_color_average",
 )
-# White/Black Point live on ProcessConfig but sit in Tone's Tonal Range block.
+# Normalization's Tonal Range block: counted and reset with that card, never a roll default.
 _TONAL_RANGE_FIELDS = (
     "white_point_offset",
     "black_point_offset",
@@ -192,7 +192,7 @@ _DEFAULT_CONFIG = WorkspaceConfig()
 _APPLY_FIELDS: dict[str, tuple | None] = {
     "geometry": _GEOMETRY_FIELDS,
     "color": _COLOR_FIELDS,
-    "tone": _TONE_FIELDS + _TONAL_RANGE_FIELDS,
+    "tone": _TONE_FIELDS,
     "lab": None,
     "altproc": None,
     "toning": None,
@@ -549,7 +549,7 @@ class ControlsPanel(QWidget):
         self.geometry_section.reset_requested.connect(self._reset_geometry_fields)
         self.autocrop_section.reset_requested.connect(lambda: self._reset_card_fields("autocrop"))
         self.lens_section.reset_requested.connect(lambda: self._reset_card_fields("lens"))
-        self.process_section.reset_requested.connect(lambda: self._reset_process_fields(_NORMALIZATION_FIELDS))
+        self.process_section.reset_requested.connect(lambda: self._reset_process_fields(_NORMALIZATION_FIELDS + _TONAL_RANGE_FIELDS))
         self.retouch_section.reset_requested.connect(lambda: self.controller.session.reset_section("retouch"))
         self.local_section.reset_requested.connect(lambda: self.controller.session.reset_section("local"))
         self.finish_section.reset_requested.connect(lambda: self.controller.session.reset_section("finish"))
@@ -760,14 +760,14 @@ class ControlsPanel(QWidget):
                 ["color_range_clip_inc", "color_range_clip_dec"],
             )
         )
-        exp.white_point_slider.setToolTip(
+        proc.white_point_slider.setToolTip(
             tooltip_with_shortcut(
                 "Shifts the normalization floor (scan white point). Positive = brighter; negative = pull highlights "
                 "back. In R/G/B mode: this layer's trim — per-layer film-base correction",
                 ["white_point_inc", "white_point_dec"],
             )
         )
-        exp.black_point_slider.setToolTip(
+        proc.black_point_slider.setToolTip(
             tooltip_with_shortcut(
                 "Shifts the normalization ceiling (scan black point). Positive = lifted blacks; negative = deeper "
                 "blacks. In R/G/B mode: this layer's trim — per-layer Dmax correction",
@@ -1068,10 +1068,7 @@ class ControlsPanel(QWidget):
             self.controller.set_process_mode(_DEFAULT_PROCESS.process_mode)
 
     def _reset_tone_fields(self) -> None:
-        """Tone spans both configs: the print controls on ExposureConfig, the Tonal Range
-        block on ProcessConfig."""
         self._reset_exposure_fields(_TONE_FIELDS)
-        self._reset_process_fields(_TONAL_RANGE_FIELDS)
 
     def _reset_process_fields(self, fields) -> None:
         """Calibration, Demosaic and Normalization all live on ProcessConfig, so each
@@ -1188,10 +1185,9 @@ class ControlsPanel(QWidget):
 
         proc = cfg.process
         film_count = sum(getattr(proc, f) != getattr(_proc, f) for f in _FILM_FIELDS)
-        process_count = sum(getattr(proc, f) != getattr(_proc, f) for f in _NORMALIZATION_FIELDS)
+        process_count = sum(getattr(proc, f) != getattr(_proc, f) for f in _NORMALIZATION_FIELDS + _TONAL_RANGE_FIELDS)
         demosaic_count = sum(getattr(proc, f) != getattr(_proc, f) for f in _DEMOSAIC_FIELDS)
         sensor_count = sum(getattr(proc, f) != getattr(_proc, f) for f in _SENSOR_FIELDS)
-        tone_count += sum(getattr(proc, f) != getattr(_proc, f) for f in _TONAL_RANGE_FIELDS)
 
         ff = cfg.flatfield
         _ff = _DEFAULT_FLATFIELD

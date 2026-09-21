@@ -12,7 +12,8 @@ from PyQt6.QtWidgets import (
 
 from negpy.desktop.session import ToolMode
 from negpy.desktop.view.sidebar.base import BaseSidebar
-from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, field_label, hint_label, wrap_tooltip
+from negpy.desktop.view.sidebar.tone import _CH_COLORS, _CH_LABEL, _CH_SUFFIX
+from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, field_label, hint_label, section_subheader, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.sliders import CompactSlider
 from negpy.features.exposure.models import EXPOSURE_CONSTANTS
@@ -227,6 +228,36 @@ class ProcessSidebar(BaseSidebar):
         clip_row.addWidget(self.color_range_clip_slider)
         self.layout.addLayout(clip_row)
 
+        # This frame's nudge to the bounds measured above, per-frame while the rest of the
+        # card follows the roll.
+        self.tonal_range_header = section_subheader("TONAL RANGE")
+        self.layout.addWidget(self.tonal_range_header)
+
+        self.ch_global_btn = self._labeled_toggle("fa5s.globe", " Global", True, "Global — shared white/black point offsets (all layers)")
+        self.ch_r_btn = self._labeled_toggle("fa5s.circle", " Red", False, "Red layer — white/black point trim for the cyan-dye emulsion")
+        self.ch_g_btn = self._labeled_toggle(
+            "fa5s.circle", " Green", False, "Green layer — white/black point trim for the magenta-dye emulsion"
+        )
+        self.ch_b_btn = self._labeled_toggle(
+            "fa5s.circle", " Blue", False, "Blue layer — white/black point trim for the yellow-dye emulsion"
+        )
+        for btn, color in zip((self.ch_r_btn, self.ch_g_btn, self.ch_b_btn), _CH_COLORS):
+            btn.setIcon(qta.icon("fa5s.circle", color=color))
+        self.ch_btn_group = QButtonGroup(self)
+        self.ch_btn_group.setExclusive(True)
+        ch_row = QHBoxLayout()
+        for i, btn in enumerate((self.ch_global_btn, self.ch_r_btn, self.ch_g_btn, self.ch_b_btn)):
+            self.ch_btn_group.addButton(btn, i)
+            ch_row.addWidget(btn, 1)
+        self.layout.addLayout(ch_row)
+
+        self.white_point_slider = CompactSlider("White Point", -0.25, 0.25, conf.white_point_offset, has_neutral=True)
+        self.black_point_slider = CompactSlider("Black Point", -0.25, 0.25, conf.black_point_offset, has_neutral=True)
+        wp_bp_row = QHBoxLayout()
+        wp_bp_row.addWidget(self.white_point_slider)
+        wp_bp_row.addWidget(self.black_point_slider)
+        self.layout.addLayout(wp_bp_row)
+
         # Render exposure for a merged bracket, continuous rather than snapped to the frames that
         # happen to have been shot. The menu still offers those and writes a frame name; this
         # writes a value and wins. 0 = the reference, the brightest unclipped frame, which is the
@@ -334,7 +365,30 @@ class ProcessSidebar(BaseSidebar):
         self.use_luma_avg_btn.toggled.connect(self._on_use_luma_average_toggled)
         self.use_color_avg_btn.toggled.connect(self._on_use_color_average_toggled)
         self.highlight_combo.currentIndexChanged.connect(self._on_highlight_reconstruction_changed)
+
+        self.white_point_slider.valueChanged.connect(lambda v: self._on_white_point_changed(v, persist=False))
+        self.white_point_slider.valueCommitted.connect(lambda v: self._on_white_point_changed(v, persist=True))
+        self.black_point_slider.valueChanged.connect(lambda v: self._on_black_point_changed(v, persist=False))
+        self.black_point_slider.valueCommitted.connect(lambda v: self._on_black_point_changed(v, persist=True))
+        self.ch_btn_group.idToggled.connect(lambda _i, checked: self.sync_ui() if checked else None)
         self.sync_ui()
+
+    def _channel_index(self) -> int:
+        return max(self.ch_btn_group.checkedId(), 0)
+
+    def _wp_field(self) -> str:
+        idx = self._channel_index()
+        return "white_point_offset" if idx == 0 else f"white_point_trim_{_CH_SUFFIX[idx - 1]}"
+
+    def _bp_field(self) -> str:
+        idx = self._channel_index()
+        return "black_point_offset" if idx == 0 else f"black_point_trim_{_CH_SUFFIX[idx - 1]}"
+
+    def _on_white_point_changed(self, val: float, persist: bool = True) -> None:
+        self.update_config_section("process", persist=persist, readback_metrics=persist, **{self._wp_field(): val})
+
+    def _on_black_point_changed(self, val: float, persist: bool = True) -> None:
+        self.update_config_section("process", persist=persist, readback_metrics=persist, **{self._bp_field(): val})
 
     def _on_lock_bounds_toggled(self, checked: bool) -> None:
         self.update_config_section("process", lock_bounds=checked, persist=True, render=False)
@@ -487,6 +541,25 @@ class ProcessSidebar(BaseSidebar):
             ):
                 w.setVisible(not transfer)
 
+            idx = self._channel_index()
+            suffix = _CH_LABEL[idx]
+            self.white_point_slider.label.setText("White Point" + suffix)
+            self.black_point_slider.label.setText("Black Point" + suffix)
+            if idx == 0:
+                self.white_point_slider.setValue(conf.white_point_offset)
+                self.black_point_slider.setValue(conf.black_point_offset)
+            else:
+                ch = _CH_SUFFIX[idx - 1]
+                self.white_point_slider.setValue(getattr(conf, f"white_point_trim_{ch}"))
+                self.black_point_slider.setValue(getattr(conf, f"black_point_trim_{ch}"))
+            for btn, ch in zip((self.ch_r_btn, self.ch_g_btn, self.ch_b_btn), _CH_SUFFIX):
+                btn.edited_dot.set_active(getattr(conf, f"white_point_trim_{ch}") != 0.0 or getattr(conf, f"black_point_trim_{ch}") != 0.0)
+
+            # Locked bounds are frozen, so there is nothing left to nudge. The transfer path's
+            # window is never measured, so Lock Bounds does not reach it.
+            for w in (self.white_point_slider, self.black_point_slider):
+                w.setEnabled(transfer or not conf.lock_bounds)
+
             locked = conf.lock_bounds
             # Each clip slider is disabled when its axis rides the roll baseline. The analysis buffer
             # matters only when at least one axis still analyzes locally, and a freehand analysis
@@ -517,6 +590,13 @@ class ProcessSidebar(BaseSidebar):
             self.normalize_e6_btn,
             self.positive_source_btn,
             self.highlight_combo,
+            self.ch_btn_group,
+            self.ch_global_btn,
+            self.ch_r_btn,
+            self.ch_g_btn,
+            self.ch_b_btn,
+            self.white_point_slider,
+            self.black_point_slider,
         ]
         for w in widgets:
             w.blockSignals(blocked)

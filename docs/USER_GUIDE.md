@@ -442,9 +442,7 @@ The paper's response, plus this frame's own tonal window ahead of it. A **Global
 
 **Rotating a proof**: a patch shows only the slice of the frame at its own grid slot, so the part you want to judge is stuck at whichever rung sits over it. While either proof is up, the 90° **rotate** buttons and `[` / `]` turn the *ladder* instead of the image: each press moves the dense or hard end onto a different edge, and the axis labels follow. The image's own rotation is untouched, and turning is instant, because printing a proof assembles all four orientations at once. The orientation you land on is kept for the rest of the session.
 
-**Tonal Range**, marked off with its own subheader: unlike the print-curve controls below, these come from a different pipeline stage (Normalization) and only share this panel's Global/R/G/B selector, not its subject.
-
-*   **White Point** / **Black Point** (-0.25 to 0.25): manual offsets on top of the auto-detected normalization bounds ([§10.6](#106-normalization-negative--positive)). A positive white point brightens; a positive black point lifts blacks. In R/G/B mode these become per-layer trims: per-dye-layer film-base (Dmin) and Dmax corrections, scanner-style per-channel levels. Unlike everything below, these never join the roll — the same category as Density/Grade, a per-shot call rather than a rig or baseline fact. On the Transparency transfer path (Normalize off) they deviate that path's fixed window the same way, instead of an auto-detected one; disabled while **Lock Bounds** freezes this frame's own bounds, except there, where Lock Bounds has nothing to freeze.
+**White Point** and **Black Point**, the manual offsets on the normalization bounds, sit on the **Normalization** card beside the bounds they move ([§10.6](#106-normalization-negative--positive)).
 
 **Exposure:**
 
@@ -826,7 +824,9 @@ How the negative is measured into a positive's tonal bounds. The film mode that 
 *   **Luma Range Clip** (-100 to 100): how aggressively the tonal range, the black/white-point span, is set. Neutral already applies a small robust clip. Positive tightens it, which is good for dense or fogged negatives where a few stray pixels would push the bounds to extremes. Negative pushes the bounds *outward*, for lifted blacks and unclipped highlights.
 *   **Color Clip** (-100 to 100): the per-channel color-balance clip (orange-mask removal), independent of the tonal range. Positive tightens channel balance; negative samples nearer the extremes.
 
-**White Point** and **Black Point**, the manual offsets on top of these bounds, live in **Exposure → Tone** ([§5.2](#52-tone-density-contrast-and-the-print-curve)) beside Density/Grade — they are this frame's own exposure call, not a roll-shared fact, so they sit with everything else in that category rather than on this card.
+**Tonal Range**, marked off with its own subheader below the controls above, with its own **Global** / **R** / **G** / **B** selector:
+
+*   **White Point** / **Black Point** (-0.25 to 0.25): manual offsets on top of the auto-detected bounds. A positive white point brightens; a positive black point lifts blacks. In R/G/B mode they become per-layer trims: per-dye-layer film-base (Dmin) and Dmax corrections, scanner-style per-channel levels. Unlike the rest of this card they never join the roll — a per-shot call rather than a rig or baseline fact — so editing them does not move the card off **Roll**. On the Transparency transfer path (Normalize off) they deviate that path's fixed window instead of a measured one; **Lock Bounds** disables them everywhere else, having nothing to freeze there.
 
 **Crosstalk**, **Hue Trim** and the sensor unmix all live in **Calibration** (§10.4). They correct the capture rather than the negative-to-positive conversion.
 

@@ -38,11 +38,12 @@ def test_no_two_cards_claim_the_same_row():
             seen[row.id] = key
 
 
-def test_tone_carries_both_of_its_halves():
-    """The Tone card is the catalog's "Tone" plus the Tonal Range rows filed under
-    "Process", and Contrast Mask, which no card's field tuple used to name."""
+def test_tone_carries_its_print_rows_but_not_the_tonal_range():
+    """Tone is the catalog's own "Tone" plus Contrast Mask, which no card's field tuple
+    names. White/Black Point belong to Normalization."""
     labels = {r.label for r in _rows_for("tone")}
-    assert {"Print Density", "White Point", "Black Trim", "Contrast Mask"} <= labels
+    assert {"Print Density", "Contrast Mask"} <= labels
+    assert {"White Point", "Black Trim"} & labels == set()
 
 
 def test_geometry_excludes_the_rows_that_moved_to_the_roll_tab():

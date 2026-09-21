@@ -73,21 +73,6 @@ class ToneSidebar(BaseSidebar):
             ch_row.addWidget(btn, 1)
         self.layout.addLayout(ch_row)
 
-        # This frame's own tonal window, before density and grade act on it. White Point
-        # and Black Point never join a roll, being meant to differ frame to frame, and they
-        # come from Normalization rather than the print curve, so they carry their own
-        # subheader and share only this card's Global/R/G/B selector.
-        self.tonal_range_header = section_subheader("TONAL RANGE")
-        self.layout.addWidget(self.tonal_range_header)
-
-        proc = self.state.config.process
-        self.white_point_slider = CompactSlider("White Point", -0.25, 0.25, proc.white_point_offset, has_neutral=True)
-        self.black_point_slider = CompactSlider("Black Point", -0.25, 0.25, proc.black_point_offset, has_neutral=True)
-        wp_bp_row = QHBoxLayout()
-        wp_bp_row.addWidget(self.white_point_slider)
-        wp_bp_row.addWidget(self.black_point_slider)
-        self.layout.addLayout(wp_bp_row)
-
         self.auto_density_btn = self._small_toggle(
             "fa5s.magic",
             "Auto Density",
@@ -305,14 +290,6 @@ class ToneSidebar(BaseSidebar):
         idx = self._channel_index()
         return base if idx == 0 else f"{base}_trim_{_CH_SUFFIX[idx - 1]}"
 
-    def _wp_field(self) -> str:
-        idx = self._channel_index()
-        return "white_point_offset" if idx == 0 else f"white_point_trim_{_CH_SUFFIX[idx - 1]}"
-
-    def _bp_field(self) -> str:
-        idx = self._channel_index()
-        return "black_point_offset" if idx == 0 else f"black_point_trim_{_CH_SUFFIX[idx - 1]}"
-
     def _populate_paper_combo(self, process_mode: str) -> None:
         """Fill the paper dropdown with the papers valid for the current process
         mode (neutral default + the mode's kind)."""
@@ -331,12 +308,6 @@ class ToneSidebar(BaseSidebar):
         if key is None:  # separator row
             return
         self.update_config_section("exposure", render=True, persist=True, readback_metrics=True, paper_profile=key)
-
-    def _on_white_point_changed(self, val: float, persist: bool = True) -> None:
-        self.update_config_section("process", persist=persist, readback_metrics=persist, **{self._wp_field(): val})
-
-    def _on_black_point_changed(self, val: float, persist: bool = True) -> None:
-        self.update_config_section("process", persist=persist, readback_metrics=persist, **{self._bp_field(): val})
 
     @staticmethod
     def _test_strip_tooltip(printing: bool = False) -> str:
@@ -369,10 +340,6 @@ class ToneSidebar(BaseSidebar):
 
         # White Point/Black Point live on ProcessConfig, not ExposureConfig like the rest of
         # this panel, so they write to a different config section than the loop below.
-        self.white_point_slider.valueChanged.connect(lambda v: self._on_white_point_changed(v, persist=False))
-        self.white_point_slider.valueCommitted.connect(lambda v: self._on_white_point_changed(v, persist=True))
-        self.black_point_slider.valueChanged.connect(lambda v: self._on_black_point_changed(v, persist=False))
-        self.black_point_slider.valueCommitted.connect(lambda v: self._on_black_point_changed(v, persist=True))
 
         for slider, field in (
             (self.density_slider, "density"),
@@ -493,10 +460,6 @@ class ToneSidebar(BaseSidebar):
             auto_hidden = transfer and not proc.positive_source
             for w in (self.auto_density_btn, self.auto_grade_btn):
                 w.setVisible(not auto_hidden)
-            # Tonal Range stays: White/Black Point deviate the transfer path's fixed
-            # window the same way they deviate a measured one (NormalizationProcessor.
-            # _process_transparency), so they still have something to act on.
-
             # Per-layer trims are meaningless on a single-emulsion B&W paper.
             is_bw = mode == ProcessMode.BW
             if is_bw and self._channel_index() != 0:
@@ -525,24 +488,18 @@ class ToneSidebar(BaseSidebar):
             self.midtone_gamma_slider.label.setText("Snap" + suffix)
             self.shadow_grade_slider.label.setText("Shadows Grade" + suffix)
             self.highlight_grade_slider.label.setText("Highlights Grade" + suffix)
-            self.white_point_slider.label.setText("White Point" + suffix)
-            self.black_point_slider.label.setText("Black Point" + suffix)
             if global_mode:
                 self.toe_slider.setValue(conf.toe)
                 self.sh_slider.setValue(conf.shoulder)
                 self.midtone_gamma_slider.setValue(conf.midtone_gamma)
                 self.shadow_grade_slider.setValue(conf.shadow_grade)
                 self.highlight_grade_slider.setValue(conf.highlight_grade)
-                self.white_point_slider.setValue(proc.white_point_offset)
-                self.black_point_slider.setValue(proc.black_point_offset)
             else:
                 ch = _CH_SUFFIX[idx - 1]
                 self.grade_trim_slider.label.setText("Grade" + suffix)
                 self.grade_trim_slider.setValue(getattr(conf, f"grade_trim_{ch}"))
                 self.toe_slider.setValue(getattr(conf, f"toe_trim_{ch}"))
                 self.sh_slider.setValue(getattr(conf, f"shoulder_trim_{ch}"))
-                self.white_point_slider.setValue(getattr(proc, f"white_point_trim_{ch}"))
-                self.black_point_slider.setValue(getattr(proc, f"black_point_trim_{ch}"))
                 self.midtone_gamma_slider.setValue(getattr(conf, f"midtone_gamma_trim_{ch}"))
                 self.shadow_grade_slider.setValue(getattr(conf, f"shadow_grade_trim_{ch}"))
                 self.highlight_grade_slider.setValue(getattr(conf, f"highlight_grade_trim_{ch}"))
@@ -557,18 +514,6 @@ class ToneSidebar(BaseSidebar):
 
             for btn, fields in self._channel_buttons:
                 btn.edited_dot.set_active(any(getattr(conf, f) != 0.0 for f in fields))
-            # White/Black Point live on ProcessConfig, so their trims can't sit in the
-            # ExposureConfig-only tuple above -- only ever adds the dot, never clears it.
-            for btn, ch in zip((self.ch_r_btn, self.ch_g_btn, self.ch_b_btn), _CH_SUFFIX):
-                if getattr(proc, f"white_point_trim_{ch}") != 0.0 or getattr(proc, f"black_point_trim_{ch}") != 0.0:
-                    btn.edited_dot.set_active(True)
-
-            # Trims shift the bounds Batch Analysis measured, so they are disabled once this
-            # frame's bounds are locked, unlike Grade, Toe and Shoulder. The transfer path's
-            # window is never measured, so Lock Bounds has nothing to freeze there.
-            self.white_point_slider.setEnabled(transfer or not proc.lock_bounds)
-            self.black_point_slider.setEnabled(transfer or not proc.lock_bounds)
-
             self.density_slider.setValue(conf.density)
             self.grade_slider.setValue(conf.grade)
             self.toe_w_slider.setValue(conf.toe_width)
@@ -605,8 +550,6 @@ class ToneSidebar(BaseSidebar):
             self.ch_g_btn,
             self.ch_b_btn,
             self.density_slider,
-            self.white_point_slider,
-            self.black_point_slider,
             self.grade_slider,
             self.grade_trim_slider,
             self.toe_slider,
