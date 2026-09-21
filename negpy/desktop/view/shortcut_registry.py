@@ -230,6 +230,7 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "copy": ShortcutEntry("Ctrl+C", "Copy settings", "Actions"),
     "copy_with_bounds": ShortcutEntry("Ctrl+Shift+C", "Copy settings (with bounds)", "Actions"),
     "paste": ShortcutEntry("Ctrl+V", "Paste settings", "Actions"),
+    "sync_bounds": ShortcutEntry("", "Sync bounds to other frames…", "Actions"),
     "reset_roll": ShortcutEntry("", "Reset roll to defaults", "Actions"),
     "reset_tab": ShortcutEntry("", "Reset this tab to defaults", "Actions"),
     "apply_tab": ShortcutEntry("", "Apply this tab to the roll…", "Actions"),

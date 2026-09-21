@@ -46,8 +46,7 @@ def test_picker_owns_its_batch_analysis_subheader(qapp):
     Point) isn't Batch Analysis, and labeling it that way would mislead."""
     _, sidebar, _ids = _sidebar()
     assert sidebar.layout.itemAt(0).widget() is not sidebar.roll_combo
-    picker_row = sidebar.layout.itemAt(1).layout()
-    assert picker_row.itemAt(0).widget() is sidebar.roll_combo
+    assert sidebar.layout.itemAt(1).widget() is sidebar.roll_combo
 
 
 def test_picker_defaults_to_the_active_roll_and_lists_every_library_roll(qapp):
@@ -81,7 +80,25 @@ def test_reanalyze_button_disabled_with_no_roll_loaded(qapp):
     assert not sidebar.reanalyze_btn.isEnabled()
 
 
-def test_insert_lock_button_sits_between_the_combo_and_reanalyze(qapp):
+def test_use_this_frame_writes_the_frames_bounds_as_the_baseline(qapp):
+    controller, sidebar, ids = _sidebar(roll_names=["Tri-X"], active_name="Tri-X")
+    sidebar.from_frame_btn.click()
+    controller.set_roll_baseline_from_frame.assert_called_once_with(ids["Tri-X"])
+
+
+def test_use_this_frame_is_gated_the_same_way_reanalyze_is(qapp):
+    """Both write onto the files currently loaded, so neither is offered for a roll
+    that is only being looked at."""
+    _, sidebar, ids = _sidebar(roll_names=["Portra 400", "Tri-X"], active_name="Tri-X")
+    assert sidebar.from_frame_btn.isEnabled()
+
+    sidebar._on_roll_picked(ids["Portra 400"])
+
+    assert not sidebar.from_frame_btn.isEnabled()
+    assert "Open this roll first" in sidebar.from_frame_btn.toolTip()
+
+
+def test_the_three_baseline_buttons_share_one_row_under_the_picker(qapp):
     from PyQt6.QtWidgets import QPushButton
 
     _, sidebar, _ids = _sidebar()
@@ -89,10 +106,15 @@ def test_insert_lock_button_sits_between_the_combo_and_reanalyze(qapp):
 
     sidebar.insert_lock_button(lock_btn)
 
-    picker_row = sidebar.layout.itemAt(1).layout()
-    assert picker_row.itemAt(0).widget() is sidebar.roll_combo
-    assert picker_row.itemAt(1).widget() is lock_btn
-    assert picker_row.itemAt(2).widget() is sidebar.reanalyze_btn
+    button_row = sidebar.layout.itemAt(2).layout()
+    widgets = [button_row.itemAt(i).widget() for i in range(button_row.count())]
+    assert widgets == [sidebar.reanalyze_btn, lock_btn, sidebar.from_frame_btn]
+
+
+def test_the_baseline_buttons_carry_their_names(qapp):
+    _, sidebar, _ids = _sidebar()
+    assert sidebar.reanalyze_btn.text().strip() == "Reanalyze"
+    assert sidebar.from_frame_btn.text().strip() == "Use This Frame"
 
 
 def test_the_loaded_roll_is_pinned_first_in_the_dropdown(qapp):

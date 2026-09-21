@@ -62,7 +62,7 @@ from negpy.desktop.view.styles.templates import (
     wrap_tooltip,
 )
 from negpy.desktop.view.styles.theme import THEME
-from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog, open_paste_dialog
+from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog, open_paste_dialog, open_sync_bounds_dialog
 from negpy.desktop.view.widgets.rgb_triplet_dialog import open_triplet_dialog
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
 from negpy.services.assets import rolls
@@ -1649,6 +1649,9 @@ class FileBrowser(QWidget):
         act_reject.triggered.connect(lambda: self.session.toggle_mark("excluded"))
         menu.addSeparator()
         menu.addAction("Apply Settings…").triggered.connect(self._open_apply_dialog)
+        menu.addAction(label_with_shortcut("Sync Bounds…", "sync_bounds")).triggered.connect(
+            lambda: open_sync_bounds_dialog(self, self.session)
+        )
         if self.controller.thumbnail_refresh_running:
             menu.addAction("Cancel Thumbnail Update").triggered.connect(lambda: self.controller.cancel_thumbnail_refresh())
         else:

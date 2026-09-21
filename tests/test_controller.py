@@ -2759,6 +2759,34 @@ class TestPresetExportSelected(unittest.TestCase):
         self.assertNotIn("h1", saved)  # locked frame keeps its own exposure
         self.assertIn("h3", saved)
 
+    def test_set_roll_baseline_from_frame_saves_the_frames_own_bounds(self):
+        cfg = WorkspaceConfig()
+        self.mock_session_manager.state.config = replace(
+            cfg, process=replace(cfg.process, local_floors=(0.1, 0.2, 0.3), local_ceils=(0.9, 0.8, 0.7))
+        )
+
+        with (
+            patch.object(rolls, "set_roll_normalization") as mock_set,
+            patch.object(self.controller, "apply_normalization_roll") as mock_apply,
+        ):
+            self.controller.set_roll_baseline_from_frame("roll-1")
+
+        mock_set.assert_called_once_with(self.mock_session_manager.repo, "roll-1", (0.1, 0.2, 0.3), (0.9, 0.8, 0.7))
+        mock_apply.assert_called_once_with("roll-1")
+
+    def test_set_roll_baseline_from_frame_needs_a_metered_frame(self):
+        """An unrendered frame has all-zero bounds; writing those would blank the roll."""
+        self.mock_session_manager.state.config = WorkspaceConfig()
+
+        with (
+            patch.object(rolls, "set_roll_normalization") as mock_set,
+            patch.object(self.controller, "apply_normalization_roll") as mock_apply,
+        ):
+            self.controller.set_roll_baseline_from_frame("roll-1")
+
+        mock_set.assert_not_called()
+        mock_apply.assert_not_called()
+
     def test_set_process_mode_locks_the_film_card_when_a_roll_is_active(self):
         """Editing is a plain per-frame write now, same as any other Roll-tab card
         (set_roll_default) -- Apply to Whole Roll is the only thing that pushes it out."""

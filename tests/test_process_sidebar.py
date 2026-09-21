@@ -111,13 +111,50 @@ def _row_index_containing(layout, widget) -> int:
     raise AssertionError(f"{widget} not found in layout")
 
 
-def test_average_toggles_sit_above_the_clip_sliders(qapp):
-    """Which baseline each axis' bounds come from sits right above the sliders it
-    disables when on -- both moved here from the old Roll Analysis panel."""
+def test_the_analysis_bar_holds_everything_that_meters_this_frame(qapp):
+    """One ANALYSIS block above the Roll Baseline picker: what the meters read, then
+    how the measurement is clipped, then the nudge on what came out."""
     _, sidebar = _sidebar()
-    avg_i = _row_index_containing(sidebar.layout, sidebar.use_luma_avg_btn)
-    clip_i = _row_index_containing(sidebar.layout, sidebar.luma_range_clip_slider)
-    assert avg_i == clip_i - 1
+    col = sidebar.analysis_bar.layout()
+
+    order = [
+        _row_index_containing(col, w)
+        for w in (
+            sidebar.analysis_buffer_slider,
+            sidebar.analysis_region_btn,
+            sidebar.luma_range_clip_slider,
+            sidebar.ch_global_btn,
+            sidebar.white_point_slider,
+        )
+    ]
+    assert order == sorted(order)
+    assert col.itemAt(0).widget().text() == "ANALYSIS"
+    assert _row_index_containing(col, sidebar.clear_analysis_region_btn) == _row_index_containing(col, sidebar.analysis_region_btn)
+
+
+def test_the_tonal_range_header_opens_the_clip_and_point_controls(qapp):
+    """Marks off what shapes the measurement from what the measurement reads."""
+    _, sidebar = _sidebar()
+    col = sidebar.analysis_bar.layout()
+
+    header_i = col.indexOf(sidebar.tonal_range_header)
+    assert header_i == _row_index_containing(col, sidebar.luma_range_clip_slider) - 1
+    assert header_i > _row_index_containing(col, sidebar.analysis_region_btn)
+
+
+def test_the_region_buttons_carry_their_names(qapp):
+    _, sidebar = _sidebar()
+    assert sidebar.analysis_region_btn.text().strip() == "Draw Region"
+    assert sidebar.clear_analysis_region_btn.text().strip() == "Clear Region"
+
+
+def test_average_toggles_follow_the_roll_picker_they_read(qapp):
+    """Use Luma/Color Average is about the roll baseline, so it stays below the picker
+    while the metering controls sit above it."""
+    _, sidebar = _sidebar()
+    _row_index_containing(sidebar.layout, sidebar.use_luma_avg_btn)
+    for widget in (sidebar.luma_range_clip_slider, sidebar.white_point_slider):
+        assert sidebar.layout.indexOf(widget) == -1
 
 
 def test_average_toggles_sync_from_config(qapp):
@@ -261,16 +298,6 @@ def test_white_black_point_retarget_and_sync(qapp):
     assert sidebar.white_point_slider.label.text() == "White Point"
 
 
-def test_tonal_range_header_sits_directly_above_white_point(qapp):
-    """Marks the frame's own bounds nudge off from the roll-eligible controls above."""
-    _controller, sidebar = _sidebar()
-
-    header_i = sidebar.layout.indexOf(sidebar.tonal_range_header)
-    assert header_i >= 0
-    row_i = _row_index_containing(sidebar.layout, sidebar.white_point_slider)
-    assert header_i == row_i - 2  # the channel selector row sits between them
-
-
 def test_white_black_point_stay_visible_on_the_transparency_transfer(qapp):
     """They deviate the transfer path's fixed window the same way they deviate a
     measured one (NormalizationProcessor._process_transparency), unlike the metering
@@ -283,7 +310,6 @@ def test_white_black_point_stay_visible_on_the_transparency_transfer(qapp):
 
     assert not sidebar.white_point_slider.isHidden()
     assert not sidebar.black_point_slider.isHidden()
-    assert not sidebar.tonal_range_header.isHidden()
     assert sidebar.analysis_buffer_slider.isHidden()
 
 

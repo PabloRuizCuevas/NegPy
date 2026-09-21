@@ -122,7 +122,7 @@ class ProcessSidebar(BaseSidebar):
 
         # The "Film Mode" Roll-tab card's content -- ControlsPanel wraps it in a section
         # with that title, so it carries no header of its own; deliberately not in
-        # self.layout, the same reason analysis_buffer_bar below is not.
+        # self.layout, the same reason analysis_bar below is not.
         self.mode_bar = QWidget()
         mode_col = QVBoxLayout(self.mode_bar)
         mode_col.setContentsMargins(0, 0, 0, 0)
@@ -167,53 +167,39 @@ class ProcessSidebar(BaseSidebar):
         )
         mode_col.addWidget(self.positive_source_btn)
 
-        # Adopted into the Roll Baseline row by RollAnalysisSidebar.insert_lock_button.
+        # Adopted into the Roll Baseline button row by RollAnalysisSidebar.insert_lock_button.
         self.lock_bounds_btn = self._small_toggle(
             "fa5s.lock",
-            "",
+            " Lock Bounds",
             False,
             "Lock Bounds — freeze normalization bounds so crop and analysis sliders no longer re-analyze",
         )
 
-        buf_row = QHBoxLayout()
+        # Everything that measures this frame, or nudges what the measurement produced.
+        # Lives above the Roll Baseline picker, so ControlsPanel places it outside
+        # self.layout -- the same reason mode_bar sits above every Roll-tab card.
+        self.analysis_bar = QWidget()
+        analysis_col = QVBoxLayout(self.analysis_bar)
+        analysis_col.setContentsMargins(0, 0, 0, 0)
+        analysis_col.setSpacing(THEME.space_sm)
+        analysis_col.addWidget(section_subheader("ANALYSIS"))
+
         self.analysis_buffer_slider = CompactSlider("Analysis Buffer", 0.0, 0.25, conf.analysis_buffer)
+        analysis_col.addWidget(self.analysis_buffer_slider)
+
         self.analysis_region_btn = self._tool_toggle(
             "fa5s.vector-square",
-            "",
+            " Draw Region",
             "Draw a freehand analysis region on the image — the meters read exactly that area "
             "(overrides the Analysis Buffer). Double-click inside it to confirm.",
         )
-        self.clear_analysis_region_btn = self._icon_action(
-            "fa5s.times", "Clear the freehand analysis region (fall back to the Analysis Buffer)", width=None
+        self.clear_analysis_region_btn = self._labeled_action(
+            "fa5s.times", " Clear Region", "Clear the freehand analysis region (fall back to the Analysis Buffer)"
         )
-        # The slider takes half the row and the two buttons split the other half. Equal stretch,
-        # not fixed widths, is what keeps them the same size.
-        buf_row.addWidget(self.analysis_buffer_slider, 3)
+        region_row = QHBoxLayout()
         for btn in (self.analysis_region_btn, self.clear_analysis_region_btn):
-            buf_row.addWidget(btn, 1)
-        # Lives above the Roll Baseline picker, so ControlsPanel places it outside
-        # self.layout -- the same reason mode_bar sits above every Roll-tab card.
-        self.analysis_buffer_bar = QWidget()
-        self.analysis_buffer_bar.setLayout(buf_row)
-
-        # Which baseline each axis' bounds come from: the roll's shared meter (picked in
-        # Roll Baseline above) or this frame's own analysis below.
-        avg_row = QHBoxLayout()
-        self.use_luma_avg_btn = self._small_toggle(
-            "mdi6.film",
-            "Use Luma Average",
-            conf.use_luma_average,
-            "Take the tonal-range (black/white-point) baseline from the picked roll; color still re-derives per frame",
-        )
-        self.use_color_avg_btn = self._small_toggle(
-            "mdi6.film",
-            "Use Color Average",
-            conf.use_color_average,
-            "Take the per-channel color-balance baseline from the picked roll; luma range still re-derives per frame",
-        )
-        avg_row.addWidget(self.use_luma_avg_btn)
-        avg_row.addWidget(self.use_color_avg_btn)
-        self.layout.addLayout(avg_row)
+            region_row.addWidget(btn, 1)
+        analysis_col.addLayout(region_row)
 
         clip_row = QHBoxLayout()
         initial_luma_slider_val = _luma_range_value_to_slider(conf.luma_range_clip)
@@ -226,12 +212,9 @@ class ProcessSidebar(BaseSidebar):
         )
         clip_row.addWidget(self.luma_range_clip_slider)
         clip_row.addWidget(self.color_range_clip_slider)
-        self.layout.addLayout(clip_row)
-
-        # This frame's nudge to the bounds measured above, per-frame while the rest of the
-        # card follows the roll.
         self.tonal_range_header = section_subheader("TONAL RANGE")
-        self.layout.addWidget(self.tonal_range_header)
+        analysis_col.addWidget(self.tonal_range_header)
+        analysis_col.addLayout(clip_row)
 
         self.ch_global_btn = self._labeled_toggle("fa5s.globe", " Global", True, "Global — shared white/black point offsets (all layers)")
         self.ch_r_btn = self._labeled_toggle("fa5s.circle", " Red", False, "Red layer — white/black point trim for the cyan-dye emulsion")
@@ -249,14 +232,34 @@ class ProcessSidebar(BaseSidebar):
         for i, btn in enumerate((self.ch_global_btn, self.ch_r_btn, self.ch_g_btn, self.ch_b_btn)):
             self.ch_btn_group.addButton(btn, i)
             ch_row.addWidget(btn, 1)
-        self.layout.addLayout(ch_row)
+        analysis_col.addLayout(ch_row)
 
         self.white_point_slider = CompactSlider("White Point", -0.25, 0.25, conf.white_point_offset, has_neutral=True)
         self.black_point_slider = CompactSlider("Black Point", -0.25, 0.25, conf.black_point_offset, has_neutral=True)
         wp_bp_row = QHBoxLayout()
         wp_bp_row.addWidget(self.white_point_slider)
         wp_bp_row.addWidget(self.black_point_slider)
-        self.layout.addLayout(wp_bp_row)
+        analysis_col.addLayout(wp_bp_row)
+
+        # Which baseline each axis' bounds come from: the roll's shared meter (picked in
+        # Roll Baseline above) or the frame's own analysis. Sits under the picker it reads,
+        # not with the analysis controls.
+        avg_row = QHBoxLayout()
+        self.use_luma_avg_btn = self._small_toggle(
+            "mdi6.film",
+            "Use Luma Average",
+            conf.use_luma_average,
+            "Take the tonal-range (black/white-point) baseline from the picked roll; color still re-derives per frame",
+        )
+        self.use_color_avg_btn = self._small_toggle(
+            "mdi6.film",
+            "Use Color Average",
+            conf.use_color_average,
+            "Take the per-channel color-balance baseline from the picked roll; luma range still re-derives per frame",
+        )
+        avg_row.addWidget(self.use_luma_avg_btn)
+        avg_row.addWidget(self.use_color_avg_btn)
+        self.layout.addLayout(avg_row)
 
         # Render exposure for a merged bracket, continuous rather than snapped to the frames that
         # happen to have been shot. The menu still offers those and writes a frame name; this

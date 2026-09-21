@@ -5,7 +5,7 @@ from PyQt6.QtGui import QKeySequence, QShortcut
 
 from negpy.desktop.session import ToolMode
 from negpy.desktop.view.confirm import confirm_reset_frames
-from negpy.desktop.view.widgets.granular_settings_dialog import open_paste_dialog, open_sticky_dialog
+from negpy.desktop.view.widgets.granular_settings_dialog import open_paste_dialog, open_sticky_dialog, open_sync_bounds_dialog
 from negpy.desktop.view.shortcut_registry import (
     REGISTRY,
     load_bindings,
@@ -259,6 +259,7 @@ class ShortcutManager:
             "copy": controller.session.copy_settings,
             "copy_with_bounds": controller.session.copy_settings_with_bounds,
             "paste": lambda: open_paste_dialog(self.window, controller),
+            "sync_bounds": lambda: open_sync_bounds_dialog(self.window, controller.session),
             "reset_roll": lambda: _reset_roll(self.window, controller),
             "reset_tab": lambda: _fire_tab_header(right, "reset"),
             "apply_tab": lambda: _fire_tab_header(right, "apply"),

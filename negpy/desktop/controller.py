@@ -20,6 +20,7 @@ from negpy.desktop.session import (
     AppState,
     DesktopSessionManager,
     ToolMode,
+    _source_effective_bounds,
     resolve_asset_hdr,
     resolve_asset_rgbscan,
     resolve_asset_stitch,
@@ -4154,6 +4155,18 @@ class AppController(QObject):
         self.session.reset_roll(visible)
         self.set_status(f"Reset {count_of(len(visible), 'frame')} to defaults", timeout=3000)
         self.request_render()
+
+    def set_roll_baseline_from_frame(self, roll_id: str) -> None:
+        """Save the active frame's rendered bounds as the roll's baseline, then push them
+        out the way a Batch Analysis result is pushed. A standing rule, not a one-shot
+        copy: a frame loaded later reads the same baseline."""
+        bounds = _source_effective_bounds(self.state.config.process)
+        if bounds is None:
+            self.set_status("Render this frame before taking its bounds", 3000)
+            return
+        floors, ceils = bounds
+        rolls.set_roll_normalization(self.session.repo, roll_id, floors, ceils)
+        self.apply_normalization_roll(roll_id)
 
     def apply_normalization_roll(self, roll_id: str) -> None:
         """

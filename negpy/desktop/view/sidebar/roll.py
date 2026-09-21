@@ -15,6 +15,11 @@ _TICK = "✓ "
 # menu item runs the same action, so it reads these rather than restating them.
 BATCH_ANALYSIS_TOOLTIP = "Batch Analysis — measures every loaded frame's exposure and saves the average as this roll's baseline"
 BATCH_ANALYSIS_DISABLED_TOOLTIP = "Open this roll first — Batch Analysis measures the files currently loaded."
+FROM_FRAME_TOOLTIP = (
+    "Use This Frame — save the current frame's bounds as this roll's baseline, in place of a measured "
+    "average. Every frame on Use Luma/Color Average follows it, including one loaded later."
+)
+FROM_FRAME_DISABLED_TOOLTIP = "Open this roll first — the baseline is written onto the files currently loaded."
 
 
 class RollAnalysisSidebar(BaseSidebar):
@@ -25,21 +30,26 @@ class RollAnalysisSidebar(BaseSidebar):
     Reanalyze, beside the picker, runs Batch Analysis itself (the metering pass that
     fills the tick in) -- the same action the Library's own "Batch Analysis" offers,
     reachable here too since this is where you notice a roll has never been measured.
-    Enabled only for the loaded roll, since Batch Analysis measures the files
-    currently open, not just whichever one this picker happens to show.
+    Use This Frame, beside it, writes the current frame's own bounds there instead, for
+    a roll that wants one chosen frame as its reference rather than an average. Both are
+    enabled only for the loaded roll, since both act on the files currently open, not on
+    whichever one this picker happens to show.
     """
 
     def _init_ui(self) -> None:
         self.layout.addWidget(section_subheader("ROLL BASELINE"))
-        row = QHBoxLayout()
         self.roll_combo = SearchableGearCombo(placeholder="Search rolls…")
         self.roll_combo.setToolTip(wrap_tooltip("Picking a roll loads its saved baseline onto the loaded files."))
-        row.addWidget(self.roll_combo, 1)
-        self.reanalyze_btn = self._icon_action("fa5s.search", BATCH_ANALYSIS_TOOLTIP)
-        row.addWidget(self.reanalyze_btn)
+        self.layout.addWidget(self.roll_combo)
+
+        row = QHBoxLayout()
+        self.reanalyze_btn = self._labeled_action("fa5s.tachometer-alt", " Reanalyze", BATCH_ANALYSIS_TOOLTIP)
+        self.from_frame_btn = self._labeled_action("fa5s.crosshairs", " Use This Frame", FROM_FRAME_TOOLTIP)
+        for btn in (self.reanalyze_btn, self.from_frame_btn):
+            row.addWidget(btn, 1)
         self.layout.addLayout(row)
-        # Lock Bounds is adopted into this same row (between the combo and Reanalyze) once
-        # ControlsPanel wires it in -- see insert_lock_button.
+        # Lock Bounds is adopted into this row (between the two) once ControlsPanel wires
+        # it in -- see insert_lock_button.
         self._picker_row = row
 
         self.roll_status_hint = hint_label("", "muted")
@@ -50,15 +60,16 @@ class RollAnalysisSidebar(BaseSidebar):
         self.layout.addStretch()
 
     def insert_lock_button(self, lock_bounds_btn) -> None:
-        """Adopts ProcessSidebar's Lock Bounds toggle into this row, between the roll
-        picker and Reanalyze. Lock Bounds is specifically about this frame's
-        relationship to Batch Analysis, so it belongs beside the action it exempts
+        """Adopts ProcessSidebar's Lock Bounds toggle into the button row, between
+        Reanalyze and Use This Frame. Lock Bounds is specifically about this frame's
+        relationship to Batch Analysis, so it belongs beside the actions it exempts
         the frame from."""
-        self._picker_row.insertWidget(1, lock_bounds_btn)
+        self._picker_row.insertWidget(1, lock_bounds_btn, 1)
 
     def _connect_signals(self) -> None:
         self.roll_combo.selection_changed.connect(self._on_roll_picked)
         self.reanalyze_btn.clicked.connect(self.controller.request_batch_normalization)
+        self.from_frame_btn.clicked.connect(self._on_from_frame_clicked)
         self.sync_ui()
 
     def _on_roll_picked(self, roll_id: str) -> None:
@@ -69,6 +80,11 @@ class RollAnalysisSidebar(BaseSidebar):
         active_id = self.controller.state.active_roll_id
         self._update_roll_status_hint(active_id, roll_id)
         self._update_reanalyze_btn(active_id, roll_id)
+
+    def _on_from_frame_clicked(self) -> None:
+        active_id = self.controller.state.active_roll_id
+        if active_id:
+            self.controller.set_roll_baseline_from_frame(active_id)
 
     def _name_for_id(self, roll_id: str) -> str:
         entry = rolls.roll_for_id(self.controller.session.repo, roll_id)
@@ -112,11 +128,16 @@ class RollAnalysisSidebar(BaseSidebar):
             self.roll_status_hint.setText("")
 
     def _update_reanalyze_btn(self, active_id: Optional[str], selected_id: str) -> None:
-        """Reanalyze only ever measures the loaded roll, same as the Library's own
-        "Batch Analysis" -- grayed out otherwise, with the same explanation."""
+        """Both ways of filling a baseline write onto the loaded roll, same as the
+        Library's own "Batch Analysis" -- grayed out otherwise, with the same
+        explanation."""
         is_active = bool(selected_id) and selected_id == active_id
-        self.reanalyze_btn.setEnabled(is_active)
-        self.reanalyze_btn.setToolTip(wrap_tooltip(BATCH_ANALYSIS_TOOLTIP if is_active else BATCH_ANALYSIS_DISABLED_TOOLTIP))
+        for btn, on, off in (
+            (self.reanalyze_btn, BATCH_ANALYSIS_TOOLTIP, BATCH_ANALYSIS_DISABLED_TOOLTIP),
+            (self.from_frame_btn, FROM_FRAME_TOOLTIP, FROM_FRAME_DISABLED_TOOLTIP),
+        ):
+            btn.setEnabled(is_active)
+            btn.setToolTip(wrap_tooltip(on if is_active else off))
 
     def sync_ui(self) -> None:
         self.block_signals(True)

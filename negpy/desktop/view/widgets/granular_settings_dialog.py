@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from negpy.desktop.settings_catalog import SettingRow, catalog_sections
-from negpy.desktop.view.styles.templates import pin_dialog_default
+from negpy.desktop.view.styles.templates import pin_dialog_default, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection
 
@@ -411,6 +411,101 @@ class GranularSettingsDialog(QDialog):
         return "overlay"
 
 
+class SyncBoundsDialog(QDialog):
+    """The active frame's metering bounds and nothing else. The Apply picker reaches the
+    same two axes, but only once every edited row has been unticked by hand."""
+
+    def __init__(self, parent, floors, ceils, source_name: str, sel_count: int, roll_count: int):
+        super().__init__(parent)
+        self.setWindowTitle("Sync Bounds")
+        self.apply_btn = QPushButton("Apply")
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(THEME.space_2xl, THEME.space_2xl, THEME.space_2xl, THEME.space_2xl)
+        root.setSpacing(THEME.space_xl)
+
+        header = QLabel(f'From "{source_name}"' if source_name else "From this frame")
+        header.setStyleSheet(f"color: {THEME.text_primary}; font-weight: bold;")
+        root.addWidget(header)
+        value = QLabel(f"{_triplet(floors)} → {_triplet(ceils)}")
+        value.setStyleSheet(f"color: {THEME.text_hint};")
+        root.addWidget(value)
+
+        row, self._scope_radios = build_scope_row(self, sel_count, roll_count)
+        root.addLayout(row)
+
+        self.luma_box = QCheckBox("Tonal span")
+        self.luma_box.setToolTip(wrap_tooltip("Take the black/white-point span from this frame"))
+        self.color_box = QCheckBox("Color balance")
+        self.color_box.setToolTip(wrap_tooltip("Take the per-channel color balance from this frame"))
+        for box in (self.luma_box, self.color_box):
+            box.setChecked(True)
+            box.stateChanged.connect(self._update_apply_enabled)
+            root.addWidget(box)
+
+        footer = QHBoxLayout()
+        footer.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        self.apply_btn.clicked.connect(self.accept)
+        footer.addWidget(cancel_btn)
+        footer.addWidget(self.apply_btn)
+        pin_dialog_default(self.apply_btn, cancel_btn)
+        root.addLayout(footer)
+
+    def _update_apply_enabled(self) -> None:
+        self.apply_btn.setEnabled(self.luma_box.isChecked() or self.color_box.isChecked())
+
+    def bounds_flags(self) -> tuple[bool, bool]:
+        return self.luma_box.isChecked(), self.color_box.isChecked()
+
+    def scope(self) -> str:
+        return self._scope_radios.value()
+
+
+def _apply_targets(session) -> tuple[int, int, int] | None:
+    """(source index, selected targets, roll targets) for a frame-to-frames apply, or
+    None when there is nothing to apply to.
+
+    "Whole roll" means the visible (filtered) frames, not every loaded file: a filename
+    filter is a non-destructive view, so hidden files are not counted.
+    """
+    state = session.state
+    src = state.selected_file_idx
+    if src == -1:
+        return None
+    visible = session.asset_model.visible_actual_indices()
+    sel_targets = len([i for i in set(state.selected_indices) if i != src and i in visible])
+    roll_targets = len([i for i in visible if i != src])
+    if not sel_targets and not roll_targets:
+        session.settings_synced.emit("Only one frame here — nothing to apply to")
+        return None
+    return src, sel_targets, roll_targets
+
+
+def _source_name(session, src: int) -> str:
+    files = session.state.uploaded_files
+    return os.path.basename(files[src]["path"]) if src < len(files) else ""
+
+
+def open_sync_bounds_dialog(parent, session) -> None:
+    """Push the active frame's metering bounds onto other frames, leaving every other
+    setting where it is."""
+    from negpy.desktop.session import _source_effective_bounds
+
+    bounds = _source_effective_bounds(session.state.config.process)
+    if bounds is None:
+        session.settings_synced.emit("Render this frame before syncing its bounds")
+        return
+    targets = _apply_targets(session)
+    if targets is None:
+        return
+    src, sel_targets, roll_targets = targets
+    dlg = SyncBoundsDialog(parent, bounds[0], bounds[1], _source_name(session, src), sel_targets, roll_targets)
+    if dlg.exec() == QDialog.DialogCode.Accepted:
+        session.sync_selected_settings([], dlg.bounds_flags(), dlg.scope())
+
+
 def open_apply_dialog(parent, session, rows=None, title: str = "") -> tuple[list, str] | None:
     """Apply the active frame's settings to the selection or the whole roll.
 
@@ -423,21 +518,13 @@ def open_apply_dialog(parent, session, rows=None, title: str = "") -> tuple[list
     """
     from negpy.desktop.session import _source_effective_bounds
 
-    state = session.state
-    src = state.selected_file_idx
-    if src == -1:
+    targets = _apply_targets(session)
+    if targets is None:
         return None
-    # "Whole roll" means the visible (filtered) frames, not every loaded file: a filename
-    # filter is a non-destructive view, so hidden files are not counted.
-    visible = session.asset_model.visible_actual_indices()
-    sel_targets = len([i for i in set(state.selected_indices) if i != src and i in visible])
-    roll_targets = len([i for i in visible if i != src])
-    if not sel_targets and not roll_targets:
-        session.settings_synced.emit("Only one frame here — nothing to apply to")
-        return None
+    src, sel_targets, roll_targets = targets
 
-    source_cfg = state.config
-    source_name = os.path.basename(state.uploaded_files[src]["path"]) if src < len(state.uploaded_files) else ""
+    source_cfg = session.state.config
+    source_name = _source_name(session, src)
     bounds_mode = "axes" if rows is None and _source_effective_bounds(source_cfg.process) is not None else ""
     dlg = GranularSettingsDialog(
         parent,
