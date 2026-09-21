@@ -87,8 +87,10 @@ reset arrow: **Frame** (a picture, amber) and **Roll** (a film roll, red). The l
 where that card's values live right now; clicking the other moves them there. A card
 holding something other than its defaults carries that same color as a stripe down the
 left of its header, so a glance across the panel says which cards are in play and where
-each one's values live. The pair appears once a roll is open, since there is nothing to be
-roll-wide about before that.
+each one's values live. Frames that are not one roll — a library search's results, several
+folders opened at once — read **Frame** on every card with **Roll** greyed out: no roll
+spans them, so every value there is that frame's own and there is nothing to make
+roll-wide. Save as Roll gives them a roll, and the Roll buttons come back.
 
 On a **Roll tab** or **Metadata** card the pair is a latch. Roll is the normal state, and
 the card follows the roll's own value — a frame opened into the roll inherits it. Edit a slider and it flips to Frame, meaning this frame has stopped

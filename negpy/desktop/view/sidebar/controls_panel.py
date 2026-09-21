@@ -7,7 +7,7 @@ from PyQt6.QtCore import QTimer, pyqtSignal
 from negpy.desktop.controller import AppController
 from negpy.desktop.view.shortcut_registry import tooltip_with_shortcut
 from negpy.desktop.view.styles.templates import hint_label, set_hint_kind, wrap_tooltip
-from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
+from negpy.desktop.view.widgets.collapsible import NO_ROLL_SCOPE_HINT, CollapsibleSection, make_section
 from negpy.desktop.view.widgets.charts import MiniHistogramWidget, MiniRGBHistogramWidget
 from negpy.desktop.view.styles.theme import THEME
 from negpy.features.exposure.models import ExposureConfig
@@ -1003,24 +1003,39 @@ class ControlsPanel(QWidget):
     def _sync_scope_buttons(self) -> None:
         """Each card's Frame/Roll pair, and roll_override_summary's one-line answer to
         "roll-wide or this frame's own" alongside it. A Roll-tab card reads its own lock;
-        a frame card is always Frame, since a sync is a copy rather than a binding. The
-        pair hides with no roll open: there is nothing to be roll-wide about."""
+        a frame card is always Frame, since a sync is a copy rather than a binding.
+
+        Frames that are not one roll (a library search's results, several folders at once)
+        read Frame with Roll disabled: every value there is the frame's own, since no roll
+        spans them to hold a shared one. Save as Roll gives them one."""
         has_roll = self.controller.state.active_roll_id is not None
         overridden = []
         for card_key, section in self._roll_sections():
             locked = self.controller.roll_card_locked(card_key)
             label = self._ROLL_CARD_LABELS[card_key]
             section.set_scope_buttons(
-                has_roll,
-                "frame" if locked else "roll",
-                roll_tooltip=f"{label} follows the roll — click to give the roll this frame's value",
-                frame_tooltip=f"{label} follows this frame alone — click to rejoin the roll",
+                True,
+                "frame" if locked or not has_roll else "roll",
+                roll_tooltip=(
+                    f"{label} follows the roll — click to give the roll this frame's value" if has_roll else NO_ROLL_SCOPE_HINT
+                ),
+                frame_tooltip=(
+                    f"{label} follows this frame alone — click to rejoin the roll"
+                    if has_roll
+                    else f"{label} is this frame's own"
+                ),
+                roll_enabled=has_roll,
             )
             if locked:
                 overridden.append(label)
 
         for key, section in self._frame_sections():
-            section.set_scope_buttons(has_roll, self.controller.frame_section_scope(key))
+            section.set_scope_buttons(
+                True,
+                self.controller.frame_section_scope(key),
+                roll_tooltip="" if has_roll else NO_ROLL_SCOPE_HINT,
+                roll_enabled=has_roll,
+            )
 
         if overridden:
             set_hint_kind(self.roll_override_summary, "warning")

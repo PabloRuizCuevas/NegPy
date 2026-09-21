@@ -16,6 +16,10 @@ from negpy.desktop.view.styles.templates import HEADER_BUTTON_SIZE, HEADER_HEIGH
 from negpy.desktop.view.styles.theme import THEME
 import qtawesome as qta
 
+# Said by every card's Roll half where no roll spans the loaded frames, so the disabled
+# control carries the reason once rather than each sidebar wording it again.
+NO_ROLL_SCOPE_HINT = "These frames are not one roll, so there is no roll to hold a shared value. Save as Roll to make one."
+
 
 class CollapsibleSection(QWidget):
     """
@@ -239,12 +243,18 @@ class CollapsibleSection(QWidget):
         self.actions_btn.setToolTip(tooltip)
         self.actions_btn.setMenu(menu)
 
-    def set_scope_buttons(self, visible: bool, scope: str, roll_tooltip: str = "", frame_tooltip: str = "") -> None:
+    def set_scope_buttons(
+        self, visible: bool, scope: str, roll_tooltip: str = "", frame_tooltip: str = "", roll_enabled: bool = True
+    ) -> None:
         """The header's Frame/Roll pair: which scope this card's values live at, and the
         one click that moves them to the other. The active half is colored and checked,
         the other is the affordance; clicking the active one does nothing. A Roll-tab card
         reads its lock here, a frame card is always Frame and uses Roll as a one-shot
-        push."""
+        push.
+
+        `roll_enabled=False` keeps the pair readable where there is no roll to move values
+        to: the frames are not one roll, which is a fact worth showing rather than hiding
+        the pair and leaving the scope unsaid."""
         if self.frame_btn is None:
             self.frame_btn = self._build_scope_button("fa5s.image", "frame")
             self.roll_btn = self._build_scope_button("fa5s.film", "roll")
@@ -257,6 +267,7 @@ class CollapsibleSection(QWidget):
             btn.setVisible(visible)
             btn.setChecked(active)
             btn.setIcon(qta.icon(btn.property("scope_icon"), color=color if active else THEME.text_muted))
+        self.roll_btn.setEnabled(roll_enabled)
         self.frame_btn.setToolTip(frame_tooltip or f"{self._title_text} is this frame's own")
         self.roll_btn.setToolTip(roll_tooltip or f"Give the roll this frame's {self._title_text}…")
         self._scope_visible = visible

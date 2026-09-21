@@ -84,6 +84,26 @@ class TestScopeButtons:
         section.set_scope_buttons(visible=True, scope="frame")
         assert (section.roll_btn.isChecked(), section.frame_btn.isChecked()) == (False, True)
 
+    def test_roll_can_be_shown_disabled_rather_than_hidden(self) -> None:
+        """Frames that are not one roll have no roll to move values to. The pair still
+        reads Frame so the scope is stated, rather than vanishing and leaving it unsaid."""
+        section = CollapsibleSection("Calibration")
+
+        section.set_scope_buttons(visible=True, scope="frame", roll_enabled=False)
+
+        assert section.roll_btn.isHidden() is False
+        assert section.roll_btn.isEnabled() is False
+        assert section.frame_btn.isEnabled() is True
+        assert (section.frame_btn.isChecked(), section.roll_btn.isChecked()) == (True, False)
+
+    def test_a_disabled_roll_half_is_enabled_again_once_there_is_a_roll(self) -> None:
+        section = CollapsibleSection("Calibration")
+        section.set_scope_buttons(visible=True, scope="frame", roll_enabled=False)
+
+        section.set_scope_buttons(visible=True, scope="roll")
+
+        assert section.roll_btn.isEnabled() is True
+
     def test_clicking_the_inactive_half_emits_its_scope(self) -> None:
         section = CollapsibleSection("Calibration")
         section.set_scope_buttons(visible=True, scope="roll")

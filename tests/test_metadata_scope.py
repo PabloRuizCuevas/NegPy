@@ -76,12 +76,18 @@ def test_the_hint_is_blank_with_nothing_overridden():
     panel.metadata_scope_hint.setText.assert_called_with("")
 
 
-def test_the_pair_hides_with_no_roll_open():
+def test_the_pair_reads_frame_with_roll_disabled_when_no_roll_spans_the_frames():
+    """Metadata is roll-wide by default, but frames that are not one roll have no shared
+    camera or stock to read: each is the frame's own. The pair stays visible so that is
+    stated rather than left unsaid, with only the unusable half turned off."""
     panel = _stub(active_roll_id=None)
 
     MetadataSidebar._sync_scope_buttons(panel)
 
-    assert panel.gear_section.set_scope_buttons.call_args[0][0] is False
+    call = panel.gear_section.set_scope_buttons.call_args
+    assert call[0][0] is True
+    assert call[0][1] == "frame"
+    assert call.kwargs["roll_enabled"] is False
 
 
 def test_a_cards_count_covers_only_its_own_fields():

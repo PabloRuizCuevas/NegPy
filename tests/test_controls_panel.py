@@ -46,6 +46,38 @@ def test_sync_scope_buttons_blank_summary_without_an_active_roll():
     panel.roll_override_summary.setText.assert_called_once_with("")
 
 
+def test_every_card_reads_frame_with_no_roll_spanning_the_frames():
+    """A library search's results are not one roll, so no card can hold a value shared
+    across them: every one is that frame's own. Reading Roll there would promise a
+    shared value that cannot exist, and the click would have no roll to act on."""
+    panel = _panel_stub(active_roll_id=None)
+
+    ControlsPanel._sync_scope_buttons(panel)
+
+    for _key, section in panel._roll_sections():
+        assert _scope(section) == "frame"
+        assert section.set_scope_buttons.call_args.kwargs["roll_enabled"] is False
+
+
+def test_the_pair_stays_visible_with_no_roll_so_the_scope_is_still_stated():
+    panel = _panel_stub(active_roll_id=None)
+
+    ControlsPanel._sync_scope_buttons(panel)
+
+    for _key, section in panel._roll_sections():
+        assert section.set_scope_buttons.call_args[0][0] is True
+
+
+def test_an_active_roll_leaves_the_roll_half_usable():
+    panel = _panel_stub(locked_cards=())
+
+    ControlsPanel._sync_scope_buttons(panel)
+
+    for _key, section in panel._roll_sections():
+        assert _scope(section) == "roll"
+        assert section.set_scope_buttons.call_args.kwargs["roll_enabled"] is True
+
+
 def test_sync_scope_buttons_blank_summary_when_nothing_is_overridden():
     panel = _panel_stub(locked_cards=())
 
@@ -92,13 +124,16 @@ def test_sync_scope_buttons_reads_each_frame_cards_own_scope():
     assert _scope(panel.finish_section) == "frame"
 
 
-def test_sync_scope_buttons_hides_the_pair_with_no_roll_open():
+def test_sync_scope_buttons_disables_rather_than_hides_the_pair_with_no_roll_open():
+    """Frame cards answer the same way Roll-tab cards do: the pair stays readable so the
+    scope is stated, and only the half with nothing to act on is turned off."""
     panel = _panel_stub(active_roll_id=None)
 
     ControlsPanel._sync_scope_buttons(panel)
 
-    assert panel.tone_section.set_scope_buttons.call_args[0][0] is False
-    assert panel.sensor_section.set_scope_buttons.call_args[0][0] is False
+    for section in (panel.tone_section, panel.sensor_section):
+        assert section.set_scope_buttons.call_args[0][0] is True
+        assert section.set_scope_buttons.call_args.kwargs["roll_enabled"] is False
 
 
 def test_sync_scope_buttons_names_the_geometry_and_flat_field_cards():

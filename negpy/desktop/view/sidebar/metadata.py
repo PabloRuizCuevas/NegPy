@@ -25,7 +25,7 @@ from negpy.desktop.view.styles.templates import field_label, hint_label, set_hin
 from negpy.desktop.view.styles.fonts import mono_font_family
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.controller import AppController
-from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_section
+from negpy.desktop.view.widgets.collapsible import NO_ROLL_SCOPE_HINT, CollapsibleSection, make_section
 from negpy.services.assets.rolls import ROLL_DEFAULT_FIELDS
 from negpy.desktop.view.widgets.tab_header import TabHeader
 from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog
@@ -406,7 +406,8 @@ class MetadataSidebar(BaseSidebar):
     def _sync_scope_buttons(self) -> None:
         """Each card's Frame/Roll pair and its "· N" count. Metadata is roll-wide by
         default -- one camera, one stock, one development -- so a card reads Roll until
-        this frame is given something of its own."""
+        this frame is given something of its own. Frames that are not one roll have no
+        shared camera or stock to read, so they are the frame's own with Roll disabled."""
         has_roll = self.state.active_roll_id is not None
         conf = self.state.config.metadata
         default = MetadataConfig()
@@ -417,10 +418,15 @@ class MetadataSidebar(BaseSidebar):
             locked = self.controller.roll_card_locked(card_key)
             label = AppController._ROLL_CARD_LABELS[card_key]
             section.set_scope_buttons(
-                has_roll,
-                "frame" if locked else "roll",
-                roll_tooltip=f"{label} follows the roll — click to give the roll this frame's value",
-                frame_tooltip=f"{label} is this frame's own — click to rejoin the roll",
+                True,
+                "frame" if locked or not has_roll else "roll",
+                roll_tooltip=(
+                    f"{label} follows the roll — click to give the roll this frame's value" if has_roll else NO_ROLL_SCOPE_HINT
+                ),
+                frame_tooltip=(
+                    f"{label} is this frame's own — click to rejoin the roll" if has_roll else f"{label} is this frame's own"
+                ),
+                roll_enabled=has_roll,
             )
             if locked:
                 overridden.append(label)
