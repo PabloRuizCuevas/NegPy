@@ -65,12 +65,16 @@ def test_tree_is_shown_when_the_library_has_rolls(panel):
     assert panel.library_tree.isVisibleTo(panel)
 
 
-def test_tree_hidden_when_no_rolls(qapp, tmp_path, monkeypatch):
+def test_the_library_shows_even_with_no_rolls(qapp, tmp_path, monkeypatch):
+    """The section is where rolls arrive, so hiding it when empty hides the only route
+    to a first one. Its own empty label says what to do."""
     monkeypatch.setattr("negpy.desktop.view.widgets.update_dialog.find_update", lambda *a, **k: None)
 
     panel = SessionPanel(_controller(tmp_path, []))
 
-    assert not panel.library_tree.isVisibleTo(panel)
+    assert panel.library_tree.isVisibleTo(panel)
+    assert panel.file_browser.library_section.isVisibleTo(panel)
+    assert panel.library_tree.empty_label.isVisibleTo(panel.library_tree)
 
 
 def test_a_collapsed_section_keeps_only_its_header(panel):
@@ -156,11 +160,12 @@ def test_a_new_panel_restores_the_saved_split(qapp, tmp_path, monkeypatch):
     assert [111, 222] in [list(c.args[0]) for c in set_sizes.call_args_list]
 
 
-def test_the_library_button_shows_the_section_when_rolls_exist(panel):
-    panel.file_browser.library_section.setVisible(False)
+def test_the_library_button_expands_a_collapsed_section(panel):
+    panel.file_browser.library_section.toggle_button.setChecked(False)
 
     panel.file_browser.library_requested.emit(True)
 
+    assert panel.file_browser.library_section.toggle_button.isChecked()
     assert panel.file_browser.library_section.isVisibleTo(panel)
 
 
@@ -287,3 +292,9 @@ def test_the_version_button_offers_the_update_once_one_is_found(panel):
 
     assert "update" in panel.header.update_button.toolTip().lower()
     assert panel.header.update_button.isEnabled()
+
+
+def test_clearing_the_library_leaves_the_section_in_place(panel):
+    panel.controller.library_cleared.emit()
+
+    assert panel.file_browser.library_section.isVisibleTo(panel)

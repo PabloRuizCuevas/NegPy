@@ -58,9 +58,6 @@ class SessionPanel(QWidget):
         self.library_tree = self.file_browser.library_tree
         layout.addWidget(self.file_browser, 1)
 
-        # Hidden until the user has a library: an empty section is just clutter.
-        self.file_browser.library_section.setVisible(self.controller.has_rolls())
-
     def _connect_signals(self) -> None:
         self.library_tree.rolls_changed.connect(self._on_rolls_changed)
         self.file_browser.library_requested.connect(self.show_library)
@@ -68,28 +65,23 @@ class SessionPanel(QWidget):
         self.controller.library_cleared.connect(self._on_library_cleared)
 
     def show_library(self, ask_if_unset: bool = True) -> None:
-        """Reveal the library section, importing a first roll when there isn't one yet.
+        """Expand the library section, offering an import when there is no roll yet.
 
-        The panel's resting state: with nothing loaded there is nothing else to show,
-        and a list of rolls beats a blank sheet.
+        The section itself is always there, empty or not: it is where rolls arrive, so
+        hiding it hides the only route to a first one.
         """
-        if not self.controller.has_rolls():
-            if not ask_if_unset or not self.library_tree.prompt_import_folder():
-                return
-        self.file_browser.library_section.setVisible(True)
+        if ask_if_unset and not self.controller.has_rolls():
+            self.library_tree.prompt_import_folder()
         self.file_browser.library_section.expand()
 
     def _on_rolls_changed(self) -> None:
         # A roll was imported, renamed or deleted, so the cached search walk describes a
         # library that no longer exists.
         self.controller.invalidate_library_walk()
-        if self.controller.has_rolls():
-            self.file_browser.library_section.setVisible(True)
 
     def _on_library_cleared(self) -> None:
         self.library_tree.reload()
         self.controller.invalidate_library_walk()
-        self.file_browser.library_section.setVisible(False)
 
     def toggle_library_tree(self) -> None:
         """Fold the folder section away, or bring it back."""

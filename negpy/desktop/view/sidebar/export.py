@@ -584,8 +584,8 @@ class ExportSidebar(BaseSidebar):
         )
         self.flat_peek_btn.setChecked(self.state.flat_peek)
         self.flat_bake_btn = labeled_action(
-            "fa5s.link",
-            " Roll Baseline",
+            "fa5s.search",
+            " Batch Analysis",
             "Measure every visible frame's exposure bounds and apply their shared average, so flat "
             "masters render consistently across the roll.",
         )
@@ -1297,20 +1297,21 @@ class ExportSidebar(BaseSidebar):
         # content themselves, so they live beside the Export button rather than on
         # that tab. Both are stored on the Metadata config.
         meta = self.state.config.metadata
-        self.protect_check = QCheckBox("Protect original metadata")
-        self.protect_check.setChecked(meta.protect_original_metadata)
-        self.protect_check.setToolTip(
-            "When enabled, NegPy copies EXIF and XMP from the source file onto exports "
-            "without adding or changing metadata. Gear and process fields are ignored."
+        self.protect_check = self._small_toggle(
+            "fa5s.shield-alt",
+            " Protect Original Metadata",
+            meta.protect_original_metadata,
+            "Copy EXIF and XMP from the source file onto exports without adding or changing metadata. Gear and process fields are ignored.",
         )
         self.layout.addWidget(self.protect_check)
 
-        self.sync_check = QCheckBox("Sync custom metadata to all files in batch export")
-        self.sync_check.setChecked(meta.sync_to_batch)
-        self.sync_check.setEnabled(not meta.protect_original_metadata)
-        self.sync_check.setToolTip(
-            "Batch and preset exports write this frame's capture, gear and process values to every file, instead of each file's own."
+        self.sync_check = self._small_toggle(
+            "fa5s.copy",
+            " Sync Metadata to Batch",
+            meta.sync_to_batch,
+            "Batch and preset exports write this frame's capture, gear and process values to every file, instead of each file's own.",
         )
+        self.sync_check.setEnabled(not meta.protect_original_metadata)
         self.layout.addWidget(self.sync_check)
 
     def _set_export_scope(self, key: str, persist: bool = True) -> None:

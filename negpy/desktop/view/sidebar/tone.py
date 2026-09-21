@@ -79,7 +79,7 @@ class ToneSidebar(BaseSidebar):
         # off with its own subheader, the same device Paper Response uses below, since
         # they come from a different pipeline stage (Normalization) and only share this
         # card's Global/R/G/B selector rather than its print-curve subject.
-        self.tonal_range_header = section_subheader("Tonal Range")
+        self.tonal_range_header = section_subheader("TONAL RANGE")
         self.layout.addWidget(self.tonal_range_header)
 
         proc = self.state.config.process

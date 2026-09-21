@@ -7,7 +7,7 @@ from typing import Callable, Optional, Sequence
 
 from PyQt6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QVBoxLayout
 
-from negpy.desktop.view.styles.templates import field_label, hint_label, pin_dialog_default
+from negpy.desktop.view.styles.templates import field_label, hint_label, pin_dialog_default, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.searchable_gear_combo import SearchableGearCombo
 from negpy.features.metadata.gear_logic import (
@@ -37,6 +37,7 @@ class GearCatalogDialog(QDialog):
 
         root.addWidget(field_label(singular))
         self.combo = SearchableGearCombo(placeholder=placeholder)
+        self.combo.setToolTip(wrap_tooltip(f"Search the built-in {singular.lower()} catalog. Click and type to search."))
         self.combo.set_gear_items(catalog, "", label_fn)
         self.combo.selection_changed.connect(self._update_add_enabled)
         root.addWidget(self.combo)
@@ -48,12 +49,15 @@ class GearCatalogDialog(QDialog):
     def _build_footer(self) -> QHBoxLayout:
         row = QHBoxLayout()
         custom_btn = QPushButton("Add Custom")
+        custom_btn.setToolTip(wrap_tooltip("Add a blank entry to fill in by hand, for gear the catalog does not carry"))
         custom_btn.clicked.connect(self._pick_custom)
         row.addWidget(custom_btn)
         row.addStretch()
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setToolTip(wrap_tooltip("Close without adding anything"))
         cancel_btn.clicked.connect(self.reject)
         self.add_btn = QPushButton("Add")
+        self.add_btn.setToolTip(wrap_tooltip("Add the picked entry to your own gear"))
         self.add_btn.clicked.connect(self.accept)
         row.addWidget(cancel_btn)
         row.addWidget(self.add_btn)

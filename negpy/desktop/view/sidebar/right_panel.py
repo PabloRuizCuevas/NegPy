@@ -22,7 +22,7 @@ from negpy.desktop.view.sidebar.export import ExportSidebar
 from negpy.desktop.view.sidebar.favourites import FavouritesSidebar
 from negpy.desktop.view.sidebar.history import HistoryPanel
 from negpy.desktop.view.sidebar.metadata import MetadataSidebar
-from negpy.desktop.view.styles.templates import EditedDot, labeled_toggle
+from negpy.desktop.view.styles.templates import EditedDot, labeled_toggle, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.charts import PhotometricCurveWidget, StepWedgeWidget, ZoneStripWidget
 from negpy.desktop.view.widgets.collapsible import make_section
@@ -31,13 +31,12 @@ from negpy.desktop.view.widgets.split_button import make_split_button
 from negpy.desktop.view.widgets.stats import DensitometerRow, NegativeStatsWidget, ZonePlacementRows
 from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 
-# key -> (menu label, split-button label) -- current/all, the same vocabulary Export's
-# own scope button uses minus "current": editing a Calibration/Demosaic/Normalization
-# card already makes it current-frame-only the instant it changes, so there is nothing
-# left for a separate "apply to current" action to do.
+# key -> (menu label, split-button label). The scope words are build_scope_row's, minus
+# "Current frame": editing a Calibration/Demosaic/Normalization card already makes it
+# current-frame-only the instant it changes, so there is nothing for it to do here.
 _ROLL_EDIT_SCOPES = {
-    "all": ("Apply to all frames in the roll", " Apply to All Roll"),
-    "selected": ("Apply to the selected frames", " Apply to Selected"),
+    "all": ("Apply to Whole Roll", " Apply to Whole Roll"),
+    "selected": ("Apply to Selected Frames", " Apply to Selected Frames"),
 }
 
 # ControlsPanel sections built into the Roll tab (_build_roll_page), not a Frame sub-tab --
@@ -46,21 +45,10 @@ _ROLL_SECTION_ATTRS = frozenset({"sensor_section", "demosaic_section", "process_
 
 
 class RightPanel(QWidget):
-    """
-    Right sidebar panel: a flat tab switcher across Roll / Frame / Metadata / Gear /
-    Export / Scan. Roll leads, since it's what you settle before working a frame:
-    Calibration and Demosaic decide how the rig's files decode, Normalization (which
-    holds Roll Analysis, the batch meter, as well) sets one shared exposure baseline,
-    Presets stores reusable field sets -- none of it is a per-frame edit. Frame holds
-    a sticky Analysis section pinned
-    above the per-image workflow control groups (Geometry / Tone / Color / Finish),
-    Favorites and History -- every tab that changes what the canvas shows for the one
-    loaded frame. Metadata pins its own Preview above its per-frame cards the same way
-    Frame pins Analysis. Gear pins its own Items/Presets switcher the same way; Export
-    and Scan are plain pages, with no pinned section. Export sits after Gear, not Scan:
-    every roll ends with an export, but few ever touch Scan at all -- it captures new
-    film, not something already in the session.
-    """
+    """Right sidebar panel: a flat tab switcher across Roll / Frame / Metadata / Gear /
+    Export / Scan, in the order an edit moves through them. Frame, Metadata and Gear pin
+    a section above their own scroll area (Analysis, Preview, the Items/Presets
+    switcher); Export and Scan are plain pages."""
 
     def __init__(self, controller: AppController):
         super().__init__()
@@ -283,15 +271,14 @@ class RightPanel(QWidget):
 
     def _build_roll_page(self) -> QWidget:
         """Facts the whole roll shares, not one frame's own edit: what film it is (Film
-        Mode), what rig scanned it and how (Calibration, Demosaic), the roll's shared
-        exposure baseline (Normalization, which holds Roll Analysis's batch meter too),
-        and reusable edit presets. Film Mode leads, since it decides which of the
-        others even apply -- an always-expanded card like the rest, not an exception."""
+        Mode), what rig scanned it and how (Calibration, Demosaic), its shared exposure
+        baseline (Normalization) and reusable presets. Film Mode leads, since it decides
+        which of the others even apply."""
         cp = self.controls_panel
         page = QWidget()
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
-        page_layout.setSpacing(8)
+        page_layout.setSpacing(THEME.space_lg)
         page_layout.addWidget(cp.roll_override_summary)
         page_layout.addWidget(self._build_roll_scope_control())
         for section in (cp.film_section, cp.sensor_section, cp.demosaic_section, cp.process_section, cp.presets_section):
@@ -300,17 +287,17 @@ class RightPanel(QWidget):
         return page
 
     def _build_roll_scope_control(self) -> QWidget:
-        """Apply to All Roll / Apply to Selected: pushes whatever Film Mode, Calibration,
+        """Apply: pushes whatever Film Mode, Calibration,
         Demosaic or Normalization cards the active frame has diverged (editing a card
         locks it the instant it changes -- see set_roll_default) out to the roll or a
         chosen set of frames. The chevron picks which one the button's main half does next,
         the same split-button convention Export's own button uses; clicking the main
         half runs it now. Force Settings sits beside it, not below -- it only modifies
-        what All Roll does, not a separate choice of its own."""
+        what Whole Roll does, not a separate choice of its own."""
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(8)
+        row_layout.setSpacing(THEME.space_lg)
 
         menu = QMenu(self)
         group = QActionGroup(menu)
@@ -323,7 +310,8 @@ class RightPanel(QWidget):
             group.addAction(action)
             self._roll_scope_actions[key] = action
 
-        container, self.roll_scope_btn, _roll_scope_menu_btn = make_split_button("", "fa5s.crosshairs", menu, primary=True)
+        container, self.roll_scope_btn, roll_scope_menu_btn = make_split_button("", "fa5s.crosshairs", menu, primary=True)
+        roll_scope_menu_btn.setToolTip(wrap_tooltip("Choose what the Apply button does"))
         self.roll_scope_btn.clicked.connect(self._on_roll_apply_clicked)
         row_layout.addWidget(container, 1)
 
@@ -331,7 +319,10 @@ class RightPanel(QWidget):
             "fa5s.eraser",
             " Force Settings",
             self.controller.roll_override_locked_frames(),
-            "With All Roll, also overwrite and unlock any frame that already has this card set to its own value",
+            tooltip_with_shortcut(
+                "With Whole Roll, also overwrite and unlock any frame that already has this card set to its own value",
+                "roll_force_settings",
+            ),
         )
         self.roll_force_btn.toggled.connect(self._on_roll_force_toggled)
         row_layout.addWidget(self.roll_force_btn)
@@ -358,7 +349,8 @@ class RightPanel(QWidget):
         menu_label, _btn_label = _ROLL_EDIT_SCOPES[self.controller.roll_edit_scope()]
         can_apply = self.controller.can_apply_roll_cards()
         self.roll_scope_btn.setEnabled(can_apply)
-        self.roll_scope_btn.setToolTip(menu_label if can_apply else "Nothing to apply — every card already follows the roll")
+        tip = menu_label if can_apply else "Nothing to apply — every card already follows the roll"
+        self.roll_scope_btn.setToolTip(wrap_tooltip(tooltip_with_shortcut(tip, "roll_apply")))
 
     def _on_roll_apply_clicked(self) -> None:
         if self.controller.roll_edit_scope() == "selected":
@@ -377,7 +369,7 @@ class RightPanel(QWidget):
         page_layout = QVBoxLayout(page)
         page_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         page_layout.setContentsMargins(0, 0, 0, 0)
-        page_layout.setSpacing(8)
+        page_layout.setSpacing(THEME.space_lg)
         page_layout.addWidget(self.scan_sane_section)
         page_layout.addWidget(self.scan_rgb_section)
         return page

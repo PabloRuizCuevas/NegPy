@@ -10,11 +10,11 @@ from typing import Optional
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
 
-from negpy.desktop.view.styles.templates import pin_dialog_default
+from negpy.desktop.view.styles.templates import pin_dialog_default, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.update_dialog import _own
 from negpy.kernel.system.logging import get_logger
-from negpy.services.assets.semantic_model import ClipDownloadError, download_clip_model
+from negpy.services.assets.semantic_model import MODEL_DOWNLOAD_SIZE, ClipDownloadError, download_clip_model
 
 logger = get_logger(__name__)
 
@@ -69,11 +69,11 @@ class ClipDownloadDialog(QDialog):
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(THEME.space_xl)
 
-        heading = QLabel("Download the Search Model")
+        heading = QLabel("Download the Model")
         heading.setStyleSheet(f"color: {THEME.text_primary}; font-size: {THEME.font_size_title}px; font-weight: bold;")
         root.addWidget(heading)
 
-        self.subtitle = QLabel("A one-time download (about 150 MB) lets the Files sidebar search by plain-language description.")
+        self.subtitle = QLabel(f"A one-time download ({MODEL_DOWNLOAD_SIZE}) lets the Film Strip search by plain-language description.")
         self.subtitle.setWordWrap(True)
         self.subtitle.setStyleSheet(f"color: {THEME.text_secondary}; font-size: {THEME.font_size_base}px;")
         root.addWidget(self.subtitle)
@@ -98,9 +98,11 @@ class ClipDownloadDialog(QDialog):
         actions = QHBoxLayout()
         actions.addStretch()
         self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setToolTip(wrap_tooltip("Stop the download and close. Search by meaning stays off."))
         self.cancel_button.clicked.connect(self.reject)
         actions.addWidget(self.cancel_button)
         self.download_button = QPushButton("Download")
+        self.download_button.setToolTip(wrap_tooltip("Fetch the model once; it is cached for every later search"))
         self.download_button.clicked.connect(self._on_download)
         actions.addWidget(self.download_button)
         pin_dialog_default(self.download_button, self.cancel_button)

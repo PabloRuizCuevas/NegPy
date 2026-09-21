@@ -945,8 +945,8 @@ class TestAppController(unittest.TestCase):
         self.assertFalse(self.controller.can_apply_roll_cards())
 
     def test_can_apply_roll_cards_false_for_a_stray_lock_with_selected_scope(self):
-        """Apply to Selected never sweeps stray locks -- Force Settings is documented
-        as All Roll only."""
+        """Apply to Selected Frames never sweeps stray locks -- Force Settings is documented
+        as Whole Roll only."""
         from negpy.services.assets import rolls
 
         self._wire_repo_store()
@@ -2941,7 +2941,7 @@ class TestPresetExportSelected(unittest.TestCase):
 
     def test_set_process_mode_locks_the_film_card_when_a_roll_is_active(self):
         """Editing is a plain per-frame write now, same as any other Roll-tab card
-        (set_roll_default) -- Apply to All Roll is the only thing that pushes it out."""
+        (set_roll_default) -- Apply to Whole Roll is the only thing that pushes it out."""
         from negpy.features.process.models import ProcessMode
 
         self.mock_session_manager.state.active_roll_id = "roll-1"

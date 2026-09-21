@@ -20,7 +20,7 @@ Actions with no default key are not listed; every one of them can still be bound
 | `Right` | Next file |
 | `Ctrl + L` | Open the library |
 | `Ctrl + F` | Focus the film strip search box |
-| `Ctrl + Shift + F` | Search every library folder and load the matches |
+| `Ctrl + Shift + F` | Search the whole library and load the matches |
 
 ## Triage
 | Key | Action |

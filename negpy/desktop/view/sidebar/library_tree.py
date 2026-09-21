@@ -1,13 +1,11 @@
 import qtawesome as qta
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QFileDialog,
-    QHBoxLayout,
     QHeaderView,
-    QInputDialog,
     QMenu,
     QMessageBox,
     QToolButton,
@@ -17,10 +15,18 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from negpy.desktop.view.confirm import confirm_delete_named, confirm_delete_several, confirm_load_roll
+from negpy.desktop.view.sidebar.roll import BATCH_ANALYSIS_DISABLED_TOOLTIP, BATCH_ANALYSIS_TOOLTIP
+from negpy.desktop.view.confirm import (
+    confirm_delete_named,
+    confirm_delete_several,
+    confirm_load_roll,
+    warn_invalid_roll_name,
+)
 from negpy.desktop.view.widgets.rename_roll_dialog import RenameRollDialog
-from negpy.desktop.view.styles.templates import hint_label
+from negpy.desktop.view.styles.templates import TOOLBAR_BUTTON_HEIGHT, TOOLBAR_ICON_SIZE, hint_label, wrap_tooltip
+from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 from negpy.desktop.view.styles.theme import THEME
+from negpy.kernel.system.text import count_of
 from negpy.services.assets import rolls
 from negpy.services.assets.library import folder_counts, folder_label, summarize_counts
 from negpy.services.assets.presets import is_valid_preset_name
@@ -44,13 +50,13 @@ class LibraryTree(QWidget):
     rolls_changed = pyqtSignal()  # a roll was imported, renamed or deleted
     folder_roll_created = pyqtSignal(str)  # a folder was recognized as a roll for the first time
 
-    def __init__(self, controller, leading_widgets: tuple[QWidget, ...] = ()):
+    def __init__(self, controller, trailing_widgets: tuple[QWidget, ...] = ()):
         super().__init__()
         self.controller = controller
         self.repo = controller.session.repo
         self._sort_order = "name"
         self._sort_descending = False
-        self._leading_widgets = leading_widgets
+        self._trailing_widgets = trailing_widgets
         self._init_ui()
         self.reload()
 
@@ -59,19 +65,14 @@ class LibraryTree(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        # No title of its own: the section header above already names it.
-        header = QHBoxLayout()
-        header.setSpacing(4)
-        header.addStretch(1)
-
-        # Sized by the caller to match this row's own mini-button convention.
-        for widget in self._leading_widgets:
-            header.addWidget(widget)
+        # No title of its own: the section header above already names it. The same
+        # OverflowBar of toolbar buttons the Film Strip uses, so both sections' rows read
+        # as one control set.
+        self.toolbar = OverflowBar(height=TOOLBAR_BUTTON_HEIGHT, spacing=4)
 
         self.import_btn = QToolButton()
         self.import_btn.setIcon(qta.icon("fa5s.plus", color=THEME.text_primary))
-        self.import_btn.setToolTip("Import a folder as a roll")
-        self.import_btn.setFixedSize(20, 20)
+        self.import_btn.setToolTip(wrap_tooltip("Import — a folder as a roll, or its subfolders as one roll each"))
         self.import_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         import_menu = QMenu(self.import_btn)
         import_menu.addAction("Import Folder as a Roll…").triggered.connect(self.prompt_import_folder)
@@ -80,8 +81,7 @@ class LibraryTree(QWidget):
 
         self.refresh_btn = QToolButton()
         self.refresh_btn.setIcon(qta.icon("fa5s.sync-alt", color=THEME.text_primary))
-        self.refresh_btn.setToolTip("Re-read every roll's frame count from disk")
-        self.refresh_btn.setFixedSize(20, 20)
+        self.refresh_btn.setToolTip(wrap_tooltip("Re-read every roll's frame count from disk"))
         self.refresh_btn.clicked.connect(self.reload)
 
         # Opt-in (Preferences); hidden until then. Decodes and embeds every photo
@@ -89,15 +89,24 @@ class LibraryTree(QWidget):
         # not just the open roll -- an explicit action, never automatic.
         self.index_btn = QToolButton()
         self.index_btn.setIcon(qta.icon("fa5s.database", color=THEME.text_primary))
-        self.index_btn.setToolTip("Index Library for Search by Meaning…")
-        self.index_btn.setFixedSize(20, 20)
-        self.index_btn.setVisible(False)
+        self.index_btn.setToolTip(wrap_tooltip("Index the library so search by meaning can rank every roll, not just the loaded one"))
         self.index_btn.clicked.connect(self.controller.index_library)
 
-        header.addWidget(self.import_btn)
-        header.addWidget(self.refresh_btn)
-        header.addWidget(self.index_btn)
-        layout.addLayout(header)
+        for btn in (self.import_btn, self.refresh_btn, self.index_btn):
+            btn.setIconSize(QSize(TOOLBAR_ICON_SIZE, TOOLBAR_ICON_SIZE))
+            btn.setFixedHeight(TOOLBAR_BUTTON_HEIGHT)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        for widget, label in (
+            (self.import_btn, "Import"),
+            (self.refresh_btn, "Refresh"),
+            (self.index_btn, "Index Library"),
+            *((w, "Sort") for w in self._trailing_widgets),
+        ):
+            self.toolbar.add_button(widget, label)
+        # Opt-in, so it starts off; sync_ui turns it on with the feature.
+        self.toolbar.set_button_visible(self.index_btn, False)
+        layout.addWidget(self.toolbar)
 
         self.tree = QTreeWidget()
         self.tree.setColumnCount(2)
@@ -170,7 +179,7 @@ class LibraryTree(QWidget):
         if not roll_ids:
             self.controller.set_status(f"No subfolders found in “{folder_label(parent)}”", 4000)
             return False
-        self.controller.set_status(f"Imported {len(roll_ids)} roll{'s' if len(roll_ids) != 1 else ''}", 3000)
+        self.controller.set_status(f"Imported {count_of(len(roll_ids), 'roll')}", 3000)
         self.reload()
         self.rolls_changed.emit()
         return True
@@ -196,7 +205,7 @@ class LibraryTree(QWidget):
         from negpy.services.assets import semantic_model
 
         enabled = self.controller.state.semantic_search_enabled
-        self.index_btn.setVisible(enabled)
+        self.toolbar.set_button_visible(self.index_btn, enabled)
         self.index_btn.setEnabled(enabled and semantic_model.clip_model_ready())
 
     def reload(self) -> None:
@@ -213,7 +222,9 @@ class LibraryTree(QWidget):
         is_folder = entry.get("kind") == "folder"
         item = QTreeWidgetItem([entry.get("name", ""), summarize_counts(self._frame_count(entry), 0)])
         item.setData(0, _ROLL_ID_ROLE, roll_id)
-        item.setIcon(0, qta.icon("fa5s.folder", color=THEME.mode_c41 if is_folder else THEME.roll_virtual))
+        # Roll kind reads off the icon's shape: a folder roll is a folder, a virtual one
+        # the search it was built from. Colour is spoken for elsewhere (film mode, channels).
+        item.setIcon(0, qta.icon("fa5s.folder" if is_folder else "fa5s.search", color=THEME.text_secondary))
         item.setForeground(1, QColor(THEME.text_muted))
         item.setToolTip(0, entry.get("folder_path", "") if is_folder else "Built from a search or a hand-picked set of frames")
         return item
@@ -270,13 +281,9 @@ class LibraryTree(QWidget):
                 name = item.text(0)
                 menu.addAction("Open").triggered.connect(lambda: self.controller.open_roll(roll_id))
                 is_active = roll_id == self.controller.state.active_roll_id
-                analyze_action = menu.addAction("Analyze Roll…")
+                analyze_action = menu.addAction("Batch Analysis")
                 analyze_action.setEnabled(is_active)
-                analyze_action.setToolTip(
-                    "Measures every file's exposure bounds and saves their average as this roll's baseline."
-                    if is_active
-                    else "Open this roll first — Batch Analysis measures the files currently loaded."
-                )
+                analyze_action.setToolTip(BATCH_ANALYSIS_TOOLTIP if is_active else BATCH_ANALYSIS_DISABLED_TOOLTIP)
                 analyze_action.triggered.connect(self.controller.request_batch_normalization)
                 menu.addAction("Rename…").triggered.connect(lambda: self._rename_roll(roll_id, name))
                 menu.addAction("Delete…").triggered.connect(lambda: self._delete_roll(roll_id, name))
@@ -289,21 +296,15 @@ class LibraryTree(QWidget):
         entry = rolls.roll_for_id(self.repo, roll_id)
         is_folder = bool(entry) and entry.get("kind") == "folder"
 
-        if is_folder:
-            dlg = RenameRollDialog(current_name, self)
-            if dlg.exec() != QDialog.DialogCode.Accepted:
-                return
-            name, rename_folder = dlg.name(), dlg.rename_folder()
-        else:
-            name, ok = QInputDialog.getText(self, "Rename Roll", "Name:", text=current_name)
-            name, rename_folder = name.strip(), False
-            if not ok:
-                return
+        dlg = RenameRollDialog(current_name, self, folder_backed=is_folder)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        name, rename_folder = dlg.name(), dlg.rename_folder()
 
         if not name or (name == current_name and not rename_folder):
             return
         if not is_valid_preset_name(name):
-            QMessageBox.warning(self, "Roll Name", 'A roll name cannot contain / \\ : * ? " < > | or start or end with a dot.')
+            warn_invalid_roll_name(self, "Rename Roll")
             return
 
         if rename_folder:

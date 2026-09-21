@@ -14,6 +14,12 @@ ICON_BUTTON_WIDTH = 36
 FIELD_LABEL_WIDTH = 90
 # The Scan buttons: the one control that moves a transport and writes files, so taller than a row button.
 SCAN_BUTTON_HEIGHT = 40
+# Section-header buttons: the ⓘ/reset/lock row.
+HEADER_BUTTON_SIZE = 20
+# The section toolbars (Film Strip, Library): one height and one icon size, so the two
+# rows read as one control set.
+TOOLBAR_BUTTON_HEIGHT = 28
+TOOLBAR_ICON_SIZE = 16
 
 _default_btn_height: int | None = None
 

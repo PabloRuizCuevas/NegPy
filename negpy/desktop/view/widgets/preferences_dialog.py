@@ -314,12 +314,18 @@ class PreferencesDialog(QDialog):
             row,
             "Search by meaning",
             self.session.state.semantic_search_enabled,
-            "Type a plain-language description in the Files search box to find frames, instead of field:value terms.",
+            "Type a plain-language description in the Film Strip search box to find frames, instead of field:value terms",
         )
         self.semantic_box.toggled.connect(self._on_semantic_search_changed)
         row += 1
         if not semantic_model.clip_model_ready():
-            grid.addWidget(hint_label("Downloads a small model (about 150 MB) the first time this is turned on."), row, 0, 1, 2)
+            grid.addWidget(
+                hint_label(f"Downloads a small model ({semantic_model.MODEL_DOWNLOAD_SIZE}) the first time this is turned on."),
+                row,
+                0,
+                1,
+                2,
+            )
             row += 1
 
         self.parallel_box = self._add_checkbox(

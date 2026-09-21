@@ -42,7 +42,13 @@ Migrations that rewrite *rows* rather than a config payload need a repository, s
 
 **Composite membership** (`services/assets/composites.py`) — which files a stitch or an HDR merge is made of is a user decision that nothing in the files records, so it is stored per primary path and lives until the composite is dissolved, not until the file list changes. Every asset discovery re-attaches from it and drops the parts it consumed. `_persist_session` upserts, never rewrites: the open files are one folder, the store is all of them.
 
+**Rolls** (`services/assets/rolls.py`) — a Roll is a named, openable group of frames and the Library's only unit: a recognized folder, or a virtual roll built by hand from whatever the Film Strip holds. Folders are an import mechanism, not a live view. A roll also carries roll-wide defaults for the Calibration, Demosaic, Normalization and Film Mode cards (`ROLL_DEFAULT_FIELDS`); a frame that diverges is *locked* on that card until an Apply pushes it back out (`AppController.apply_roll_cards_to_roll` / `_to_selected`).
+
 **Roll-scoped edit fork** (`services/assets/rolls.py`) — a photo shared by more than one Roll normally has one edit, the same wherever it is opened from. An explicit per-frame fork gives it an independent edit for one Roll alone, keyed the same way a half-frame scan's two halves already are: the content hash suffixed (`roll_edit_hash`, `#roll:<id>`), not a new column. `AppController._apply_roll_forks()` rewrites a discovered asset's hash to its fork on open; `load_or_promote()`'s `forked` flag keeps a fork from ever falling back to the shared edit's path-based recovery or sidecar. Triage marks and legacy-hash migration read the roll suffix back off (`unforked_hash`), since a keep/reject judgement and a superseded-hash carry-over both belong to the physical scan, not to one Roll's fork of it.
+
+**Search by meaning** (`services/assets/semantic_model.py`, `embeddings.py`, `clip_tokenizer.py`) — opt-in CLIP (ONNX) search over one vector per frame in the `image_embeddings` table, keyed by `MODEL_VERSION` so a model swap leaves old vectors unread. Only the inference engine ships; the weights download on first use. `workers/embedding.py` indexes exactly like `ThumbnailWorker`.
+
+**Gear catalog** (`features/metadata/gear_*.py`, `services/assets/gear_match.py`) — bundled reference gear plus the user's own. A newly imported roll's folder name is matched against it (shared words, and a delimiter-free run for abbreviations); more than one candidate for a field counts as no match.
 
 ### Pipeline
 

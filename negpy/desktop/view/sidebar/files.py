@@ -31,7 +31,6 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListView,
     QMenu,
-    QMessageBox,
     QSlider,
     QSplitter,
     QStyle,
@@ -45,13 +44,26 @@ from PyQt6.QtWidgets import (
 from negpy.kernel.system.text import count_of
 from negpy.desktop.controller import AppController
 from negpy.desktop.session import AppState, _source_effective_bounds, composite_kind
-from negpy.desktop.view.confirm import confirm_reset_roll, confirm_unload
+from negpy.desktop.view.confirm import (
+    confirm_reset_frames,
+    confirm_undiptych,
+    confirm_unfork_edit,
+    confirm_unload,
+    warn_invalid_roll_name,
+)
 from negpy.desktop.view.keyboard_shortcuts import _reset_roll, _reset_selected
 from negpy.features.hdr.logic import anchor_choices
 from negpy.features.hdr.models import hdr_frame_paths
 from negpy.desktop.view.widgets.overflow_bar import OverflowBar
 from negpy.desktop.view.shortcut_registry import label_with_shortcut
-from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, labeled_action, tool_toggle, wrap_tooltip
+from negpy.desktop.view.styles.templates import (
+    ICON_BUTTON_WIDTH,
+    TOOLBAR_BUTTON_HEIGHT,
+    TOOLBAR_ICON_SIZE,
+    labeled_action,
+    tool_toggle,
+    wrap_tooltip,
+)
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettingsDialog, open_paste_dialog
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
@@ -713,8 +725,8 @@ class FileBrowser(QWidget):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(6)
 
-        icon_size = QSize(16, 16)
-        btn_height = 28
+        icon_size = QSize(TOOLBAR_ICON_SIZE, TOOLBAR_ICON_SIZE)
+        btn_height = TOOLBAR_BUTTON_HEIGHT
 
         # No top-level toolbar: every action lives in the row of the section it acts on --
         # Library's own +/refresh corner, or film_strip_toolbar next to the loaded frames.
@@ -779,13 +791,13 @@ class FileBrowser(QWidget):
         self.roll_settings_btn = QToolButton()
         self.roll_settings_btn.setIcon(qta.icon("fa5s.tags", color=THEME.text_primary))
         self.roll_settings_btn.setToolTip(
-            "Roll Settings — tag gear, capture and process metadata across the current frame, a selection or the whole roll"
+            wrap_tooltip("Roll Settings — tag gear, capture and process metadata across the current frame, a selection or the whole roll")
         )
         self.roll_settings_btn.clicked.connect(self._open_roll_settings_dialog)
 
         self.save_roll_btn = QToolButton()
-        self.save_roll_btn.setIcon(qta.icon("fa5s.folder", color=THEME.roll_virtual))
-        self.save_roll_btn.setToolTip("Save these frames as a roll — a named, reopenable group, not tied to a folder")
+        self.save_roll_btn.setIcon(qta.icon("fa5s.search", color=THEME.text_primary))
+        self.save_roll_btn.setToolTip(wrap_tooltip("Save these frames as a roll — a named, reopenable group, not tied to a folder"))
         self.save_roll_btn.clicked.connect(self._on_save_roll_clicked)
         self.update_thumbnails_btn = QToolButton()
         self.update_thumbnails_btn.setIcon(qta.icon("fa5s.sync-alt", color=THEME.text_primary))
@@ -855,9 +867,10 @@ class FileBrowser(QWidget):
             btn.setFixedHeight(btn_height)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Sort joins LibraryTree's own +/refresh corner row instead of a top-level toolbar:
-        # mini-button sized (20x20), matching that row's own convention.
-        self.sort_btn.setFixedSize(20, 20)
+        # Sort joins LibraryTree's own toolbar instead of this one, sized the same as
+        # every other section-toolbar button.
+        self.sort_btn.setIconSize(icon_size)
+        self.sort_btn.setFixedHeight(btn_height)
         self.sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
         for widget, label in (
@@ -965,7 +978,7 @@ class FileBrowser(QWidget):
         self.empty_label.setVisible(False)
         self.empty_label.linkActivated.connect(lambda _: self._clear_frame_filters())
 
-        self.library_tree = LibraryTree(self.controller, leading_widgets=(self.sort_btn,))
+        self.library_tree = LibraryTree(self.controller, trailing_widgets=(self.sort_btn,))
         self.library_section = self._make_section("Library", "library", "fa5s.folder-open", self.library_tree)
 
         frames = QWidget()
@@ -986,7 +999,7 @@ class FileBrowser(QWidget):
         # header has room a wrapping toolbar row does not.
         frames_menu = QMenu(self.frames_section)
         frames_menu.addAction("New Roll…").triggered.connect(self._on_clear_all)
-        frames_menu.addAction("Reset Roll to Defaults…").triggered.connect(self._on_reset_roll)
+        frames_menu.addAction(label_with_shortcut("Reset Roll to Defaults…", "reset_roll")).triggered.connect(self._on_reset_roll)
         self.frames_section.set_actions_menu(
             frames_menu,
             "New Roll clears the film strip so you can drag in a fresh batch of frames. "
@@ -1187,7 +1200,7 @@ class FileBrowser(QWidget):
         """Reset every visible frame back to its own defaults, from the Film Strip
         header's ⋮ menu."""
         count = len(self.session.asset_model.visible_actual_indices_ordered())
-        if count and confirm_reset_roll(self, count):
+        if count and confirm_reset_frames(self, count, roll=True):
             self.controller.request_reset_roll()
 
     def _on_save_roll_clicked(self) -> None:
@@ -1198,7 +1211,7 @@ class FileBrowser(QWidget):
         if not ok or not name:
             return
         if not is_valid_preset_name(name):
-            QMessageBox.warning(self, "Roll Name", 'A roll name cannot contain / \\ : * ? " < > | or start or end with a dot.')
+            warn_invalid_roll_name(self, "Save as Roll")
             return
         if self.controller.create_roll_from_session(name):
             self.library_tree.reload()
@@ -1386,18 +1399,18 @@ class FileBrowser(QWidget):
         # The strip shows the model, the tally counts the session, so a filter that hides
         # every frame reads as an empty panel under a full count unless it is named here.
         visible = self.session.asset_model.rowCount()
-        text = f"{visible} of {n} frames" if visible != n else f"{n} frame{'s' if n != 1 else ''}"
+        text = f"{visible} of {n} frames" if visible != n else count_of(n, "frame")
         for name in self._active_frame_filters():
             text += f" · {name} filter"
         if keepers:
-            text += f" · {keepers} keeper{'s' if keepers != 1 else ''}"
+            text += f" · {count_of(keepers, 'keeper')}"
         if rejected:
             text += f" · {rejected} rejected"
         roll_name = self._active_roll_name()
         # The prefix slot holds the roll's name. Frames that are not one roll get named
         # as what they are instead: an edit here reaches the roll each frame came from,
         # which a strip that looks identical either way gives no sign of.
-        text = f"{roll_name or 'Collection'} — {text}"
+        text = f"{roll_name or 'No roll'} — {text}"
         self.tally_label.setText(text)
         self.tally_label.setToolTip(
             ""
@@ -1605,22 +1618,16 @@ class FileBrowser(QWidget):
 
     def open_or_browse(self, folder: str) -> None:
         """Load a folder's images into the session, or point at Library's own import
-        when it only holds subfolders.
-
-        Picking the one directory everything lives under used to dead-end on "no
-        supported assets found", because the importer looks in that folder and not
-        through it.
-        """
+        when it only holds subfolders: the importer looks in the folder, not through it."""
         images, subfolders = folder_counts(folder)
         if images:
             self.controller.request_asset_discovery([folder], auto_open=True, announce_rgb=True)
         elif subfolders:
             self.controller.set_status(
                 f"No images directly in “{folder_label(folder)}” — use Library's Import Subfolders as Rolls for its "
-                f"{subfolders} subfolder{'s' if subfolders != 1 else ''}",
+                f"{count_of(subfolders, 'subfolder')}",
                 5000,
             )
-            self.controller.set_status(f"No images directly in that folder — showing its {subfolders} subfolders", 5000)
         else:
             self.controller.set_status("That folder has no images in it", 4000)
 
@@ -1857,7 +1864,7 @@ class FileBrowser(QWidget):
                     menu.addAction("Reset Split to Roll Default").triggered.connect(lambda: self._on_reset_half_frame_split(base))
             if state.active_roll_id and active.get("path"):
                 if rolls.is_forked(self.session.repo, state.active_roll_id, active.get("hash") or ""):
-                    menu.addAction("Use the Shared Edit Again").triggered.connect(self.prompt_unfork_edit)
+                    menu.addAction("Use the Shared Edit Again…").triggered.connect(self.prompt_unfork_edit)
                 elif len(rolls.rolls_containing_path(self.session.repo, active["path"])) >= 2:
                     menu.addAction("Edit Independently in This Roll").triggered.connect(
                         lambda: self.controller.request_fork_edit_for_roll()
@@ -1868,30 +1875,11 @@ class FileBrowser(QWidget):
         return menu
 
     def prompt_undiptych(self) -> None:
-        """Confirm before the halves' edits go, then hand the frame back as one plain scan."""
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Unsplit Diptych")
-        box.setText("Turn this diptych back into one plain frame?")
-        box.setInformativeText("Both halves' edits are deleted. Splitting the scan again starts from defaults.")
-        unsplit = box.addButton("Unsplit", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-        box.exec()
-        if box.clickedButton() is unsplit:
+        if confirm_undiptych(self):
             self.controller.request_undiptych()
 
     def prompt_unfork_edit(self) -> None:
-        """Confirm before this roll's own edit goes, then hand the frame back to the
-        shared edit every other roll it belongs to already uses."""
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Use the Shared Edit Again")
-        box.setText("Drop this roll's own edit for this frame?")
-        box.setInformativeText("Its independent edit is deleted. The frame goes back to the edit shared with every other roll.")
-        use_shared = box.addButton("Use Shared Edit", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-        box.exec()
-        if box.clickedButton() is use_shared:
+        if confirm_unfork_edit(self):
             self.controller.request_unfork_edit_for_roll()
 
     def _add_hdr_merge_action(self, menu, state) -> None:

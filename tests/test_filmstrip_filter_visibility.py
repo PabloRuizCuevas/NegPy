@@ -43,7 +43,7 @@ def browser(qapp):
 
 
 def test_the_tally_counts_every_frame_when_nothing_is_filtered(browser):
-    assert browser.tally_label.text() == "Collection — 36 frames"
+    assert browser.tally_label.text() == "No roll — 36 frames"
     assert browser.list_view.isVisible()
     assert not browser.empty_label.isVisible()
 
@@ -53,7 +53,7 @@ def test_the_tally_names_the_filter_that_emptied_the_strip(qapp):
     left a blank strip under a full count, with the funnel tint the only clue."""
     browser = _browser(qapp, repo=_Repo(sheet_filter="keepers"))
     assert browser.session.asset_model.rowCount() == 0
-    assert browser.tally_label.text() == "Collection — 0 of 36 frames · Keepers filter"
+    assert browser.tally_label.text() == "No roll — 0 of 36 frames · Keepers filter"
 
 
 def test_the_strip_gives_way_to_a_message_when_a_filter_hides_everything(qapp):
@@ -68,7 +68,7 @@ def test_clearing_from_the_empty_state_brings_every_frame_back(qapp):
     browser._clear_frame_filters()
     qapp.processEvents()
     assert browser.session.asset_model.rowCount() == 36
-    assert browser.tally_label.text() == "Collection — 36 frames"
+    assert browser.tally_label.text() == "No roll — 36 frames"
     assert browser.list_view.isVisible()
     assert not browser.empty_label.isVisible()
 
@@ -76,7 +76,7 @@ def test_clearing_from_the_empty_state_brings_every_frame_back(qapp):
 def test_a_filter_that_still_shows_frames_reports_the_shortfall(qapp):
     browser = _browser(qapp, repo=_Repo(sheet_filter="keepers"), files=_files(36, keepers=(0, 1, 2)))
     assert browser.session.asset_model.rowCount() == 3
-    assert browser.tally_label.text() == "Collection — 3 of 36 frames · Keepers filter · 3 keepers"
+    assert browser.tally_label.text() == "No roll — 3 of 36 frames · Keepers filter · 3 keepers"
     assert browser.list_view.isVisible()
     assert not browser.empty_label.isVisible()
 
@@ -85,7 +85,7 @@ def test_the_search_filter_is_named_too(browser):
     browser.search_input.setText("nothing-matches-this")
     browser._apply_filter()
     assert browser.session.asset_model.rowCount() == 0
-    assert browser.tally_label.text() == "Collection — 0 of 36 frames · search filter"
+    assert browser.tally_label.text() == "No roll — 0 of 36 frames · search filter"
     assert "No frames match the search filter" in browser.empty_label.text()
 
 
@@ -93,7 +93,7 @@ def test_both_filters_are_named_together(qapp):
     browser = _browser(qapp, repo=_Repo(sheet_filter="keepers"))
     browser.search_input.setText("nothing-matches-this")
     browser._apply_filter()
-    assert browser.tally_label.text() == "Collection — 0 of 36 frames · search filter · Keepers filter"
+    assert browser.tally_label.text() == "No roll — 0 of 36 frames · search filter · Keepers filter"
     assert "search and Keepers filter" in browser.empty_label.text()
 
 
@@ -117,7 +117,7 @@ def test_frames_that_are_not_one_roll_lead_with_collection_and_say_what_that_cos
 
     browser._update_tally()
 
-    assert browser.tally_label.text().startswith("Collection — ")
+    assert browser.tally_label.text().startswith("No roll — ")
     assert "also shows in the roll the frame came from" in browser.tally_label.toolTip()
 
 

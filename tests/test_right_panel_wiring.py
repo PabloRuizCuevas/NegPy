@@ -151,7 +151,7 @@ def test_set_roll_edit_scope_checks_the_matching_action_and_labels_the_button():
     RightPanel._set_roll_edit_scope(panel, "selected")
 
     panel._roll_scope_actions["selected"].setChecked.assert_called_once_with(True)
-    panel.roll_scope_btn.setText.assert_called_once_with(" Apply to Selected")
+    panel.roll_scope_btn.setText.assert_called_once_with(" Apply to Selected Frames")
     panel.controller.set_roll_edit_scope.assert_called_once_with("selected")
 
 
@@ -221,7 +221,7 @@ def test_sync_roll_apply_enabled_enables_the_button_when_something_can_apply():
     RightPanel._sync_roll_apply_enabled(panel)
 
     panel.roll_scope_btn.setEnabled.assert_called_once_with(True)
-    panel.roll_scope_btn.setToolTip.assert_called_once_with("Apply to all frames in the roll")
+    panel.roll_scope_btn.setToolTip.assert_called_once_with("<qt>Apply to Whole Roll</qt>")
 
 
 def test_sync_roll_apply_enabled_disables_and_explains_when_nothing_can_apply():
@@ -232,4 +232,4 @@ def test_sync_roll_apply_enabled_disables_and_explains_when_nothing_can_apply():
     RightPanel._sync_roll_apply_enabled(panel)
 
     panel.roll_scope_btn.setEnabled.assert_called_once_with(False)
-    panel.roll_scope_btn.setToolTip.assert_called_once_with("Nothing to apply — every card already follows the roll")
+    panel.roll_scope_btn.setToolTip.assert_called_once_with("<qt>Nothing to apply — every card already follows the roll</qt>")

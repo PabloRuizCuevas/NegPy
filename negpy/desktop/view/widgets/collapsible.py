@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from negpy.desktop.view.styles.templates import HEADER_BUTTON_SIZE
 from negpy.desktop.view.styles.theme import THEME
 import qtawesome as qta
 
@@ -85,7 +86,7 @@ class CollapsibleSection(QWidget):
 
         self.title_label = QLabel(self._title_text)
         self.title_label.setStyleSheet(
-            f"font-weight: 600; font-size: {THEME.font_size_header}px; letter-spacing: 0.01em; background: transparent;"
+            f"font-weight: {THEME.weight_semibold}; font-size: {THEME.font_size_header}px; letter-spacing: 0.01em; background: transparent;"
         )
         btn_layout.addWidget(self.title_label)
 
@@ -97,7 +98,7 @@ class CollapsibleSection(QWidget):
             # does not also collapse the section.
             self.info_btn = QPushButton()
             self.info_btn.setIcon(qta.icon("fa5s.info-circle", color=THEME.text_muted))
-            self.info_btn.setFixedSize(20, 20)
+            self.info_btn.setFixedSize(HEADER_BUTTON_SIZE, HEADER_BUTTON_SIZE)
             self.info_btn.setIconSize(QSize(11, 11))
             self.info_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.info_btn.setToolTip(f"What am I looking at? — {title} guide")
@@ -107,7 +108,7 @@ class CollapsibleSection(QWidget):
 
         self.reset_btn = QPushButton()
         self.reset_btn.setIcon(qta.icon("fa5s.undo", color=THEME.text_muted))
-        self.reset_btn.setFixedSize(20, 20)
+        self.reset_btn.setFixedSize(HEADER_BUTTON_SIZE, HEADER_BUTTON_SIZE)
         self.reset_btn.setIconSize(QSize(10, 10))
         self.reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.reset_btn.setToolTip(f"Reset {title} to defaults")
@@ -216,12 +217,13 @@ class CollapsibleSection(QWidget):
             self.toggle_button.setChecked(True)
 
     def set_actions_menu(self, menu: QMenu, tooltip: str) -> None:
-        """An always-visible header menu button, for section-level housekeeping that
-        is not a settings reset (reset_btn) -- Film Strip's New Roll, for one."""
+        """An always-visible header menu button, for section-level actions that reach
+        past the section's own settings -- Film Strip's New Roll and its roll-wide
+        reset, for one. reset_btn stays the affordance for resetting this section."""
         if self.actions_btn is None:
             self.actions_btn = QPushButton()
             self.actions_btn.setIcon(qta.icon("fa5s.ellipsis-v", color=THEME.text_muted))
-            self.actions_btn.setFixedSize(20, 20)
+            self.actions_btn.setFixedSize(HEADER_BUTTON_SIZE, HEADER_BUTTON_SIZE)
             self.actions_btn.setIconSize(QSize(10, 10))
             self.actions_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.actions_btn.setObjectName("collapsible_reset_btn")
@@ -239,7 +241,7 @@ class CollapsibleSection(QWidget):
         roll's). Unlocked, when shown at all, stays a plain muted icon."""
         if self.lock_btn is None:
             self.lock_btn = QPushButton()
-            self.lock_btn.setFixedHeight(20)
+            self.lock_btn.setFixedHeight(HEADER_BUTTON_SIZE)
             self.lock_btn.setIconSize(QSize(10, 10))
             self.lock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.lock_btn.setObjectName("collapsible_reset_btn")
@@ -251,7 +253,9 @@ class CollapsibleSection(QWidget):
         icon_name = "fa5s.lock" if locked else "fa5s.lock-open"
         color = THEME.warn_amber if locked else THEME.text_muted
         self.lock_btn.setIcon(qta.icon(icon_name, color=color))
-        self.lock_btn.setStyleSheet(f"color: {THEME.warn_amber}; font-size: {THEME.font_size_small}px; font-weight: 600;" if locked else "")
+        self.lock_btn.setStyleSheet(
+            f"color: {THEME.warn_amber}; font-size: {THEME.font_size_small}px; font-weight: {THEME.weight_semibold};" if locked else ""
+        )
         self.lock_btn.setToolTip(
             f"{self._title_text} follows this frame's own value, not the roll's — click to use the roll's again"
             if locked

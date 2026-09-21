@@ -155,8 +155,8 @@ class AppState:
     # the GPU; the display then reads every frame back to the CPU.
     gpu_viewport_failed: str = ""
 
-    # Search by meaning (CLIP). Off by default: the model is a few hundred MB and
-    # downloads on first opt-in, not bundled.
+    # Search by meaning (CLIP). Off by default: the model downloads on first opt-in,
+    # not bundled (semantic_model.MODEL_DOWNLOAD_SIZE).
     semantic_search_enabled: bool = False
     # In-session cache of cached vectors already loaded from the DB or just computed,
     # file_hash -> L2-normalized embedding. Scoped to uploaded_files, like thumbnails.

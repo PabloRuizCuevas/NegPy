@@ -139,6 +139,11 @@ def _push_pull_index(value: int) -> int:
     return PUSH_PULL_VALUES.index(value) if value in PUSH_PULL_VALUES else PUSH_PULL_VALUES.index(0)
 
 
+# Gear list panes: tall enough for a handful of rows, short enough to leave the
+# detail form on screen beside them.
+_LIST_MAX_HEIGHT = 160
+
+
 class GearItemsPanel(QWidget):
     """Cameras, lenses, film stocks, processes and scan setups: one searchable,
     user-extendable list per category, shared by Roll Settings, Metadata and every
@@ -168,22 +173,24 @@ class GearItemsPanel(QWidget):
         root.setContentsMargins(THEME.space_xl, 0, THEME.space_xl, 5)
         root.setSpacing(THEME.space_lg)
 
-        root.addWidget(section_subheader("My Gear"))
+        root.addWidget(section_subheader("MY GEAR"))
         root.addWidget(hint_label("Cameras, lenses, film stocks and processes you own. Catalog shows the full shipped list."))
 
         root.addWidget(field_label("Category"))
         self.category_list = QComboBox()
+        self.category_list.setToolTip(wrap_tooltip("Which kind of gear this pane lists"))
         for key, label in _CATEGORIES:
             self.category_list.addItem(qta.icon(_CATEGORY_ICONS[key], color=THEME.text_primary), label, key)
         root.addWidget(self.category_list)
 
         self.item_search = QLineEdit()
         self.item_search.setPlaceholderText("Search cameras…")
+        self.item_search.setToolTip(wrap_tooltip("Filter the list below by name"))
         self.item_search.textChanged.connect(self._on_item_search_changed)
         root.addWidget(self.item_search)
 
         self.item_list = QListWidget()
-        self.item_list.setMaximumHeight(160)
+        self.item_list.setMaximumHeight(_LIST_MAX_HEIGHT)
         self.item_list.currentRowChanged.connect(self._on_item_changed)
         root.addWidget(self.item_list)
 
@@ -648,16 +655,17 @@ class GearPresetsPanel(QWidget):
         root.setContentsMargins(THEME.space_xl, 0, THEME.space_xl, 5)
         root.setSpacing(THEME.space_lg)
 
-        root.addWidget(section_subheader("Presets"))
+        root.addWidget(section_subheader("PRESETS"))
         root.addWidget(hint_label("Saved metadata field sets, applied to any frame from the Metadata tab."))
 
         self.item_search = QLineEdit()
         self.item_search.setPlaceholderText("Search presets…")
+        self.item_search.setToolTip(wrap_tooltip("Filter the list below by name"))
         self.item_search.textChanged.connect(self._on_item_search_changed)
         root.addWidget(self.item_search)
 
         self.item_list = QListWidget()
-        self.item_list.setMaximumHeight(160)
+        self.item_list.setMaximumHeight(_LIST_MAX_HEIGHT)
         self.item_list.currentRowChanged.connect(self._on_item_changed)
         root.addWidget(self.item_list)
 
@@ -1229,7 +1237,6 @@ class GearLibraryPanel(QWidget):
             btn.setObjectName("right_tab_btn")
             btn.setIcon(qta.icon(icon_name, color=THEME.text_secondary))
             btn.setIconSize(QSize(18, 18))
-            btn.setToolTip(wrap_tooltip(tooltip))
             btn.setCheckable(True)
             btn.setFixedHeight(38)
             btn.clicked.connect(lambda _checked=False, idx=i: self._switch_subtab(idx))
@@ -1264,4 +1271,4 @@ class GearLibraryPanel(QWidget):
 
     def apply_shortcut_tooltips(self) -> None:
         for btn, key, base in zip(self._sub_buttons, self._sub_keys, self._sub_tooltips):
-            btn.setToolTip(tooltip_with_shortcut(base, f"tab_gear_{key}"))
+            btn.setToolTip(wrap_tooltip(tooltip_with_shortcut(base, f"tab_gear_{key}")))

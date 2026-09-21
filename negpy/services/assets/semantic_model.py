@@ -3,7 +3,7 @@ photo and a plain-language description of it land close together, so a query bec
 nearest-neighbour lookup over cached image vectors instead of a keyword match.
 
 Nothing here costs anything until the feature is turned on: the ONNX sessions and the
-tokenizer are built lazily on first use, and the ~150MB of model weights are fetched on
+tokenizer are built lazily on first use, and the model weights are fetched on
 demand (download_clip_model) rather than bundled into the app -- only the small
 `onnxruntime` inference engine itself ships in every install.
 
@@ -39,6 +39,8 @@ logger = get_logger(__name__)
 # repository.py's image_embeddings.model_version column. Also names the download
 # cache directory below, for the same reason.
 MODEL_VERSION = "clip-vit-base-patch16-v1"
+# Named once here, for the two surfaces that warn about the download before it starts.
+MODEL_DOWNLOAD_SIZE = "about 150 MB"
 
 _REPO = "Xenova/clip-vit-base-patch16"
 _BASE_URL = f"https://huggingface.co/{_REPO}/resolve/main"

@@ -15,12 +15,13 @@ def confirm_load_roll(parent, repo, image_count: int, label: str) -> bool:
     box = QMessageBox(parent)
     box.setIcon(QMessageBox.Icon.Question)
     box.setWindowTitle("Load Roll")
-    box.setText(f"Load {n} image{'s' if n != 1 else ''} from “{label}”?")
+    box.setText(f"Load {count_of(n, 'image')} from “{label}”?")
     box.setInformativeText("They are hashed and thumbnailed on load, which takes a moment on a large roll.")
     remember = QCheckBox("Always load without asking")
     box.setCheckBox(remember)
     load = box.addButton("Load", QMessageBox.ButtonRole.AcceptRole)
     box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(load)
     box.exec()
     if box.clickedButton() is not load:
         return False
@@ -42,7 +43,7 @@ def confirm_unload(parent, *, clear_all: bool = False, count: int = 1) -> bool:
         text = "Remove all loaded images from the session?"
     elif count > 1:
         title = "Unload Selected"
-        text = f"Unload the {count} selected images from the session?"
+        text = f"Unload the {count_of(count, 'selected image')} from the session?"
     else:
         title = "Unload"
         text = "Unload this image from the session?"
@@ -52,21 +53,6 @@ def confirm_unload(parent, *, clear_all: bool = False, count: int = 1) -> bool:
     box.setWindowTitle(title)
     box.setText(text)
     box.setInformativeText("Your saved edits stay in the database — this only removes the frames from the list.")
-    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
-    box.setDefaultButton(QMessageBox.StandardButton.Yes)
-    return box.exec() == QMessageBox.StandardButton.Yes
-
-
-def confirm_reset_roll(parent, count: int) -> bool:
-    """Ask before resetting every visible frame to its own defaults. Each frame's
-    reset is still an ordinary undo step, but doing it to a whole roll at once is
-    easy to fire by accident. Enter confirms (default button); Esc cancels.
-    """
-    box = QMessageBox(parent)
-    box.setIcon(QMessageBox.Icon.Question)
-    box.setWindowTitle("Reset Roll to Defaults")
-    box.setText(f"Reset all {count} loaded frame{'s' if count != 1 else ''} to their own defaults?")
-    box.setInformativeText("Every frame's edit is undone at once. Each one is still a normal undo step, frame by frame.")
     box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
     box.setDefaultButton(QMessageBox.StandardButton.Yes)
     return box.exec() == QMessageBox.StandardButton.Yes
@@ -141,8 +127,51 @@ def confirm_clear_heals(parent, count: int) -> bool:
     box = QMessageBox(parent)
     box.setIcon(QMessageBox.Icon.Question)
     box.setWindowTitle("Clear All Heals")
-    box.setText(f"Remove all {count} manual heal{'s' if count != 1 else ''} from this image?")
+    box.setText(f"Remove all {count_of(count, 'manual heal')} from this image?")
     box.setInformativeText("Every heal and scratch repair placed on this frame will be removed.")
     box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
     box.setDefaultButton(QMessageBox.StandardButton.Yes)
     return box.exec() == QMessageBox.StandardButton.Yes
+
+
+def _confirm_with_verb(parent, title: str, text: str, informative: str, verb: str) -> bool:
+    """A destructive confirmation whose accept button is named after the act, not Yes.
+    Enter confirms; Esc cancels."""
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setWindowTitle(title)
+    box.setText(text)
+    box.setInformativeText(informative)
+    accept = box.addButton(verb, QMessageBox.ButtonRole.AcceptRole)
+    box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(accept)
+    box.exec()
+    return box.clickedButton() is accept
+
+
+def confirm_unfork_edit(parent) -> bool:
+    """Ask before this roll's own edit for a frame goes and the frame returns to the
+    edit every other roll it belongs to already shares."""
+    return _confirm_with_verb(
+        parent,
+        "Use the Shared Edit Again",
+        "Drop this roll's own edit for this frame?",
+        "Its independent edit is deleted. The frame goes back to the edit shared with every other roll.",
+        "Use Shared Edit",
+    )
+
+
+def confirm_undiptych(parent) -> bool:
+    """Ask before a half-frame diptych's two halves, and both their edits, go."""
+    return _confirm_with_verb(
+        parent,
+        "Unsplit Diptych",
+        "Turn this diptych back into one plain frame?",
+        "Both halves' edits are deleted. Splitting the scan again starts from defaults.",
+        "Unsplit",
+    )
+
+
+def warn_invalid_roll_name(parent, title: str) -> None:
+    """The one wording for a roll name the library cannot store, wherever it is typed."""
+    QMessageBox.warning(parent, title, 'A roll name cannot contain / \\ : * ? " < > | or start or end with a dot.')

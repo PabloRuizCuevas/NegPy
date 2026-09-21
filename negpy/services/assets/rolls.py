@@ -248,9 +248,9 @@ def virtual_rolls(repo: Any) -> List[tuple]:
 #
 # ProcessConfig fields the Roll tab's Calibration, Demosaic and Normalization cards
 # edit, grouped by the card that owns them -- the same grouping a per-card lock button
-# unlocks. White/Black Point and their trims stay off this list on purpose: they are
-# exposure choices that can legitimately vary shot to shot within a roll, unlike these,
-# which describe the rig or the roll's own shared baseline.
+# unlocks. White/Black Point and their trims stay off this list: they are exposure
+# choices that legitimately vary shot to shot within a roll, unlike these, which
+# describe the rig or the roll's own shared baseline.
 ROLL_DEFAULT_FIELDS: Dict[str, tuple] = {
     # Which film type the roll is, and whether it is already a finished positive --
     # edited and locked away from the roll exactly like every other card here, even

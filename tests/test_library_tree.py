@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from negpy.desktop.view.sidebar.library_tree import LibraryTree
 from negpy.desktop.view.styles.theme import THEME
@@ -56,31 +56,28 @@ def test_folder_and_virtual_rolls_appear_together_sorted_by_name(widget, tree_di
     assert not widget.empty_label.isVisibleTo(widget)
 
 
-def test_a_folder_roll_shows_an_amber_icon_and_its_live_count(widget, tree_dirs, monkeypatch):
-    recognize_folder(widget.repo, str(tree_dirs / "roll_a"))
-    colors = []
+def _icon_names(widget, monkeypatch) -> list:
+    names = []
     monkeypatch.setattr(
         "negpy.desktop.view.sidebar.library_tree.qta.icon",
-        lambda name, color=None: colors.append(color) or QIcon(),
+        lambda name, color=None: names.append(name) or QIcon(),
     )
-
     widget.reload()
+    return names
 
-    assert colors == [THEME.mode_c41]
+
+def test_a_folder_roll_shows_a_folder_icon_and_its_live_count(widget, tree_dirs, monkeypatch):
+    recognize_folder(widget.repo, str(tree_dirs / "roll_a"))
+
+    assert _icon_names(widget, monkeypatch) == ["fa5s.folder"]
     assert widget.tree.topLevelItem(0).text(1) == "2 photos"
 
 
-def test_a_virtual_roll_shows_a_red_icon_and_its_member_count(widget, monkeypatch):
+def test_a_virtual_roll_shows_a_search_icon_and_its_member_count(widget, monkeypatch):
+    """Roll kind reads off the icon's shape: colour carries other meanings already."""
     create_virtual_roll(widget.repo, "Portra", ["/a.nef", "/b.nef"])
-    colors = []
-    monkeypatch.setattr(
-        "negpy.desktop.view.sidebar.library_tree.qta.icon",
-        lambda name, color=None: colors.append(color) or QIcon(),
-    )
 
-    widget.reload()
-
-    assert colors == [THEME.roll_virtual]
+    assert _icon_names(widget, monkeypatch) == ["fa5s.search"]
     assert widget.tree.topLevelItem(0).text(1) == "2 photos"
 
 
@@ -159,7 +156,8 @@ def test_enter_with_nothing_selected_opens_nothing(widget):
 
 def test_renaming_a_roll(widget, monkeypatch):
     roll_id = create_virtual_roll(widget.repo, "Portra", [])
-    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("Portra 400", True)))
+    _FakeRenameDialog._outcome = ("Portra 400", False)
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.RenameRollDialog", _FakeRenameDialog)
 
     widget._rename_roll(roll_id, "Portra")
 
@@ -169,7 +167,8 @@ def test_renaming_a_roll(widget, monkeypatch):
 
 def test_renaming_to_an_invalid_name_is_rejected(widget, monkeypatch):
     roll_id = create_virtual_roll(widget.repo, "Portra", [])
-    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("bad/name", True)))
+    _FakeRenameDialog._outcome = ("bad/name", False)
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.RenameRollDialog", _FakeRenameDialog)
     monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
 
     widget._rename_roll(roll_id, "Portra")
@@ -248,7 +247,7 @@ def test_right_click_on_the_loaded_roll_offers_an_enabled_analyze_action(widget,
 
     widget._show_context_menu(QPoint(0, 0))
 
-    actions["Analyze Roll…"].setEnabled.assert_called_once_with(True)
+    actions["Batch Analysis"].setEnabled.assert_called_once_with(True)
 
 
 def test_right_click_on_a_different_roll_offers_a_disabled_analyze_action(widget, monkeypatch):
@@ -261,7 +260,7 @@ def test_right_click_on_a_different_roll_offers_a_disabled_analyze_action(widget
 
     widget._show_context_menu(QPoint(0, 0))
 
-    actions["Analyze Roll…"].setEnabled.assert_called_once_with(False)
+    actions["Batch Analysis"].setEnabled.assert_called_once_with(False)
 
 
 def test_analyze_action_reaches_the_controller(widget, monkeypatch):
@@ -274,7 +273,7 @@ def test_analyze_action_reaches_the_controller(widget, monkeypatch):
 
     widget._show_context_menu(QPoint(0, 0))
 
-    actions["Analyze Roll…"].triggered.connect.assert_called_once_with(widget.controller.request_batch_normalization)
+    actions["Batch Analysis"].triggered.connect.assert_called_once_with(widget.controller.request_batch_normalization)
 
 
 def test_rename_roll_dialog_checkbox_defaults_off(qapp):
@@ -386,18 +385,42 @@ def test_renaming_a_folder_roll_disk_failure_warns_and_does_not_reload(widget, t
     assert reloaded == []
 
 
-def test_renaming_a_virtual_roll_never_shows_the_folder_dialog(widget, monkeypatch):
+def test_renaming_a_virtual_roll_uses_the_same_dialog_without_the_folder_row(widget, monkeypatch):
+    """One action, one dialog: only the disk-rename row differs by roll kind."""
     roll_id = create_virtual_roll(widget.repo, "Portra", [])
-    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("Portra 400", True)))
+    _FakeRenameDialog._outcome = ("Portra 400", False)
+    built = []
 
-    def _boom(*_a, **_k):
-        raise AssertionError("RenameRollDialog must not be used for a virtual roll")
+    class _Recording(_FakeRenameDialog):
+        def __init__(self, *_a, **kwargs):
+            built.append(kwargs.get("folder_backed"))
 
-    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.RenameRollDialog", _boom)
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.RenameRollDialog", _Recording)
 
     widget._rename_roll(roll_id, "Portra")
 
+    assert built == [False]
     assert roll_for_id(widget.repo, roll_id)["name"] == "Portra 400"
+
+
+def test_renaming_a_virtual_roll_never_renames_a_folder(widget, monkeypatch):
+    roll_id = create_virtual_roll(widget.repo, "Portra", [])
+    _FakeRenameDialog._outcome = ("Portra 400", False)
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.RenameRollDialog", _FakeRenameDialog)
+
+    widget._rename_roll(roll_id, "Portra")
+
+    widget.controller.request_rename_roll.assert_not_called()
+
+
+def test_the_rename_dialog_hides_the_disk_row_for_a_virtual_roll(qapp):
+    from negpy.desktop.view.widgets.rename_roll_dialog import RenameRollDialog
+
+    dlg = RenameRollDialog("Portra", folder_backed=False)
+
+    assert dlg.rename_folder_check.isHidden()
+    dlg.rename_folder_check.setChecked(True)
+    assert dlg.rename_folder() is False
 
 
 # --- importing ------------------------------------------------------------------

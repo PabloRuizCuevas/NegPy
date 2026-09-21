@@ -1,5 +1,6 @@
 import pytest
 
+from negpy.desktop.view.styles.templates import TOOLBAR_BUTTON_HEIGHT
 from negpy.desktop.session import AssetListModel
 from negpy.desktop.view.sidebar.session_panel import SessionPanel
 
@@ -17,14 +18,24 @@ def panel(qapp):
     return panel
 
 
-def test_sort_joins_the_library_tree_corner_row(panel):
-    """No top-level toolbar: Sort sits with LibraryTree's own +/refresh, sized to match
-    (20x20), not the taller film-strip-toolbar convention."""
+def test_sort_joins_the_library_toolbar(panel):
+    """No top-level toolbar: Sort sits in LibraryTree's own row, sized like every other
+    section-toolbar button rather than as a one-off."""
     browser = panel.file_browser
     tree = panel.library_tree
 
     assert tree.isAncestorOf(browser.sort_btn)
-    assert (browser.sort_btn.width(), browser.sort_btn.height()) == (20, 20)
+    assert browser.sort_btn.height() == TOOLBAR_BUTTON_HEIGHT
+    assert browser.sort_btn in tree.toolbar.buttons
+
+
+def test_both_section_toolbars_size_their_buttons_the_same(panel):
+    browser = panel.file_browser
+    tree = panel.library_tree
+
+    heights = {b.height() for b in tree.toolbar.buttons + browser.film_strip_toolbar.buttons}
+
+    assert heights == {TOOLBAR_BUTTON_HEIGHT}
 
 
 def test_film_strip_toolbar_holds_roll_scoped_actions(panel):
@@ -107,3 +118,25 @@ def test_film_strip_toolbar_minimum_is_not_the_sum_of_its_buttons(panel):
 
 def test_session_panel_shrinks_below_the_old_button_row_floor(panel):
     assert panel.minimumSizeHint().width() < 268
+
+
+def test_a_switched_off_toolbar_button_stays_off_across_a_resize(panel):
+    """_relayout shows whatever fits, so an opt-in button hidden with a bare
+    setVisible would come back on the next resize."""
+    tree = panel.library_tree
+
+    assert not tree.index_btn.isVisible()
+
+    tree.toolbar.resize(600, tree.toolbar.height())
+
+    assert not tree.index_btn.isVisible()
+    assert [a.text() for a in tree.toolbar.build_overflow_menu().actions()] == []
+
+
+def test_turning_an_opt_in_button_on_places_it(panel):
+    tree = panel.library_tree
+
+    tree.toolbar.set_button_visible(tree.index_btn, True)
+    tree.toolbar.resize(600, tree.toolbar.height())
+
+    assert tree.index_btn.isVisible()

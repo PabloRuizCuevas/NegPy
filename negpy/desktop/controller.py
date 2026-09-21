@@ -319,6 +319,9 @@ def history_step_label(prev: Optional[WorkspaceConfig], config: WorkspaceConfig,
     return f"{index} · {', '.join(changed)}" if changed else f"{index} · —"
 
 
+_NOTHING_TO_APPLY = "Nothing to apply — every card already follows the roll"
+
+
 class AppController(QObject):
     """
     Main application orchestrator.
@@ -1471,7 +1474,7 @@ class AppController(QObject):
         by_roll[roll_id] = self.half_frame_mode_for_roll(None)
         self.session.repo.save_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, by_roll)
         self.state.active_roll_id = roll_id
-        self.set_status(f'Saved as roll "{name}"', 3000)
+        self.set_status(f"Saved as roll “{name}”", 3000)
         return roll_id
 
     def request_rename_roll(self, roll_id: str, new_name: str, rename_folder: bool) -> bool:
@@ -2356,14 +2359,9 @@ class AppController(QObject):
     def _on_splash_preview(self, file_path: str, raw: Any, dims: Any) -> None:
         if self._requested_file_path != file_path:
             return
-        # A backlogged splash-decode worker can land after the real render for this
-        # same file already has -- e.g. a prefetched neighbour whose full pipeline
-        # finishes before its own splash request even reaches the front of the
-        # queue. Painting it now would stomp the correct positive with the raw,
-        # un-inverted embedded thumbnail: on a negative that reads as a strong
-        # orange-masked cast, glaringly wrong, since that literally is what an
-        # un-inverted negative looks like. Splash only ever bridges the gap before
-        # the real render arrives, never replaces it once it has.
+        # A backlogged splash-decode worker can land after the real render for this same
+        # file already has. Splash only ever bridges the gap before the real render
+        # arrives, never replaces it once it has.
         target_hash = self._file_hash_for_path(file_path)
         with self.state.metrics_lock:
             if (
@@ -4194,14 +4192,14 @@ class AppController(QObject):
 
     def diverged_roll_cards(self) -> List[str]:
         """Every Roll-tab card locked away from the roll on the active frame -- what
-        Apply to All Roll / Apply to Selected act on."""
+        Apply to Whole Roll / Apply to Selected Frames act on."""
         return [key for key in self._ROLL_CARDS if self.roll_card_locked(key)]
 
     def can_apply_roll_cards(self) -> bool:
         """Whether the Roll tab's Apply button, at its current scope, would touch
         anything right now -- so it can go dark instead of a no-op click needing the
         status line to explain itself. "Selected" only ever pushes diverged_roll_cards();
-        "All Roll" with Force Settings also counts a stray lock elsewhere in the roll
+        "Whole Roll" with Force Settings also counts a stray lock elsewhere in the roll
         that _reclaim_fields_for can actually reclaim toward something."""
         roll_id = self.state.active_roll_id
         if roll_id is None:
@@ -4224,7 +4222,7 @@ class AppController(QObject):
 
     def roll_edit_scope(self) -> str:
         """Which action the Roll tab's split button's main half currently performs:
-        "all" (default, Apply to All Roll) or "selected" (Apply to Selected) -- sticky
+        "all" (default, Apply to Whole Roll) or "selected" (Apply to Selected Frames) -- sticky
         across sessions, the same convention export_scope already uses. Picking one
         only decides what the next click does; editing a card never reads this."""
         scope = self.session.repo.get_global_setting(self._ROLL_EDIT_SCOPE_KEY, "all")
@@ -4234,7 +4232,7 @@ class AppController(QObject):
         self.session.repo.save_global_setting(self._ROLL_EDIT_SCOPE_KEY, scope)
 
     def roll_override_locked_frames(self) -> bool:
-        """Whether Apply to All Roll also reclaims frames already locked away from the
+        """Whether Apply to Whole Roll also reclaims frames already locked away from the
         card it touches, instead of leaving them on their own value."""
         return bool(self.session.repo.get_global_setting(self._ROLL_OVERRIDE_LOCKED_KEY, False))
 
@@ -4265,7 +4263,7 @@ class AppController(QObject):
     def set_process_mode(self, mode: str) -> None:
         """Switches Film Mode for the active frame, locking the "film" card away from
         the roll the instant it changes and was not already -- same as any other
-        Roll-tab card (set_roll_default). Apply to All Roll pushes it out."""
+        Roll-tab card (set_roll_default). Apply to Whole Roll pushes it out."""
         exp = self.state.config.exposure
         strength = cast_removal_for_mode(mode, exp.cast_removal_strength)
         new_exposure = replace(exp, cast_removal_strength=strength) if strength != exp.cast_removal_strength else exp
@@ -4306,7 +4304,7 @@ class AppController(QObject):
         """Edits *card_key* for the active frame alone, same as any other control --
         marking it locked away from the roll the instant it changes and was not
         already, since the frame no longer matches whatever the roll currently says.
-        Apply to All Roll / Apply to Selected (apply_roll_cards_to_roll /
+        Apply to Whole Roll / Apply to Selected Frames (apply_roll_cards_to_roll /
         apply_roll_cards_to_selected) are the only things that push a value back out;
         editing alone never does, here or on an already-locked card.
 
@@ -4320,7 +4318,7 @@ class AppController(QObject):
             self._lock_roll_card(card_key)
 
     def apply_roll_cards_to_roll(self) -> int:
-        """Apply to All Roll: pushes every card diverged_roll_cards() names out to the
+        """Apply to Whole Roll: pushes every card diverged_roll_cards() names out to the
         roll's shared default and clears its lock, so the active frame rejoins the
         roll on each.
 
@@ -4336,7 +4334,7 @@ class AppController(QObject):
         way -- clicking Apply with nothing to do anywhere is a no-op worth saying so."""
         roll_id = self.state.active_roll_id
         if roll_id is None:
-            self.set_status("Nothing to apply — every card already follows the roll", 2500)
+            self.set_status(_NOTHING_TO_APPLY, 2500)
             return 0
         pushed = self.diverged_roll_cards()
         active_hash = self.state.current_file_hash
@@ -4352,7 +4350,7 @@ class AppController(QObject):
                     touched.add(card_key)
 
         if not touched:
-            self.set_status("Nothing to apply — every card already follows the roll", 2500)
+            self.set_status(_NOTHING_TO_APPLY, 2500)
             return 0
         for f in self.state.uploaded_files:
             if f.get("hash") != active_hash:
@@ -4364,12 +4362,12 @@ class AppController(QObject):
         return len(touched)
 
     def apply_roll_cards_to_selected(self) -> int:
-        """Apply to Selected: pushes every card diverged_roll_cards() names onto every
+        """Apply to Selected Frames: pushes every card diverged_roll_cards() names onto every
         film strip selected frame, locking each to it -- the roll's own default is
         untouched. Returns how many cards it touched."""
         cards = self.diverged_roll_cards() if self.state.active_roll_id else []
         if not cards:
-            self.set_status("Nothing to apply — every card already follows the roll", 2500)
+            self.set_status(_NOTHING_TO_APPLY, 2500)
             return 0
         for card_key in cards:
             self._apply_roll_card_to_selected(card_key)

@@ -251,7 +251,7 @@ def test_context_menu_offers_unfork_once_forked(browser, session):
     }
     _set_rolls_store(session, rolls_store)
     labels = _action_labels(browser._build_context_menu())
-    assert "Use the Shared Edit Again" in labels
+    assert "Use the Shared Edit Again…" in labels
     assert "Edit Independently in This Roll" not in labels
 
 
@@ -342,8 +342,8 @@ def test_reset_half_frame_split_clears_and_reloads(browser, session):
 
 
 def test_unsplit_diptych_needs_the_confirm(browser):
-    with patch("negpy.desktop.view.sidebar.files.QMessageBox.exec"):
-        browser.prompt_undiptych()  # no button clicked: rejected
+    with patch("negpy.desktop.view.sidebar.files.confirm_undiptych", return_value=False):
+        browser.prompt_undiptych()
     browser.controller.request_undiptych.assert_not_called()
 
 
@@ -927,14 +927,14 @@ def test_new_roll_menu_action_clears_the_session_like_clear_all(browser, session
 def test_reset_roll_menu_action_resets_every_visible_frame(browser, session):
     menu = browser.frames_section.actions_btn.menu()
     action = next(a for a in menu.actions() if a.text() == "Reset Roll to Defaults…")
-    with patch("negpy.desktop.view.sidebar.files.confirm_reset_roll", return_value=True) as confirm:
+    with patch("negpy.desktop.view.sidebar.files.confirm_reset_frames", return_value=True) as confirm:
         action.trigger()
-    confirm.assert_called_once_with(browser, 4)  # the session fixture's 4 uploaded_files
+    confirm.assert_called_once_with(browser, 4, roll=True)  # the session fixture's 4 uploaded_files
     browser.controller.request_reset_roll.assert_called_once()
 
 
 def test_reset_roll_menu_action_cancelled_does_nothing(browser, session):
-    with patch("negpy.desktop.view.sidebar.files.confirm_reset_roll", return_value=False):
+    with patch("negpy.desktop.view.sidebar.files.confirm_reset_frames", return_value=False):
         browser._on_reset_roll()
     browser.controller.request_reset_roll.assert_not_called()
 
@@ -942,7 +942,7 @@ def test_reset_roll_menu_action_cancelled_does_nothing(browser, session):
 def test_reset_roll_with_nothing_loaded_never_prompts(browser, session):
     session.state.uploaded_files = []
     session.asset_model.refresh()
-    with patch("negpy.desktop.view.sidebar.files.confirm_reset_roll") as confirm:
+    with patch("negpy.desktop.view.sidebar.files.confirm_reset_frames") as confirm:
         browser._on_reset_roll()
     confirm.assert_not_called()
     browser.controller.request_reset_roll.assert_not_called()
@@ -1001,7 +1001,7 @@ def test_save_roll_rejects_an_invalid_name(browser):
     browser.controller.create_roll_from_session = MagicMock()
     with (
         patch("negpy.desktop.view.sidebar.files.QInputDialog.getText", return_value=("bad/name", True)),
-        patch("negpy.desktop.view.sidebar.files.QMessageBox.warning"),
+        patch("negpy.desktop.view.sidebar.files.warn_invalid_roll_name"),
     ):
         browser._on_save_roll_clicked()
 

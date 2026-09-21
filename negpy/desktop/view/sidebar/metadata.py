@@ -101,9 +101,9 @@ class MetadataSidebar(BaseSidebar):
         self._exif_locked = {"exposure": True}
         self._description_fields: tuple[str, ...] = conf.description_fields or DEFAULT_DESCRIPTION_FIELDS
 
-        self.metadata_title_label = section_subheader("Metadata")
+        self.metadata_title_label = section_subheader("METADATA")
         self.layout.addWidget(self.metadata_title_label)
-        self.metadata_scope_hint = hint_label("Applies to the current frame only.")
+        self.metadata_scope_hint = hint_label("This frame only.")
         self.layout.addWidget(self.metadata_scope_hint)
 
         self._metadata_controls = QWidget()
@@ -150,7 +150,7 @@ class MetadataSidebar(BaseSidebar):
         gear_actions_row.addWidget(self.gear_clear_btn)
         self.gear_infer_btn = self._labeled_action(
             "fa5s.magic",
-            "Infer from folder name",
+            " Infer from Folder Name",
             "Fill camera, film stock, ISO and capture date from this roll's folder name",
         )
         gear_actions_row.addWidget(self.gear_infer_btn)

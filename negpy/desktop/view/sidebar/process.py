@@ -155,7 +155,7 @@ class ProcessSidebar(BaseSidebar):
             conf.positive_source,
             (
                 "This source is already a finished positive, not a raw scanner or camera "
-                "capture -- a print, a scan already inverted by other software, or a "
+                "capture — a print, a scan already inverted by other software, or a "
                 "negative the scanner positivized itself. Decodes its embedded profile "
                 "(sRGB if it has none) instead of reading it as literal linear data, and "
                 "skips metering, negative inversion and the exposure lift a raw capture "
@@ -166,10 +166,7 @@ class ProcessSidebar(BaseSidebar):
         )
         mode_col.addWidget(self.positive_source_btn)
 
-        # Lock Bounds lives beside the Batch Analysis picker instead, once RollAnalysisSidebar
-        # adopts it (ControlsPanel wires this after both sidebars exist): it is specifically
-        # about this frame's relationship to Batch Analysis, not the buffer/region controls
-        # below, and the roll picker is where that relationship is otherwise decided.
+        # Adopted into the Roll Baseline row by RollAnalysisSidebar.insert_lock_button.
         self.lock_bounds_btn = self._small_toggle(
             "fa5s.lock",
             "",
@@ -193,14 +190,13 @@ class ProcessSidebar(BaseSidebar):
         buf_row.addWidget(self.analysis_buffer_slider, 3)
         for btn in (self.analysis_region_btn, self.clear_analysis_region_btn):
             buf_row.addWidget(btn, 1)
-        # Lives above the Batch Analysis picker, so ControlsPanel places it outside
-        # self.layout -- the same reason mode_bar sits above every Setup collapsible.
+        # Lives above the Roll Baseline picker, so ControlsPanel places it outside
+        # self.layout -- the same reason mode_bar sits above every Roll-tab card.
         self.analysis_buffer_bar = QWidget()
         self.analysis_buffer_bar.setLayout(buf_row)
 
-        # Which baseline each axis' bounds come from: the roll's shared Batch Analysis
-        # meter (picked in the Roll Baseline field above) or this frame's own
-        # analysis below. Sits right above the sliders it disables when on.
+        # Which baseline each axis' bounds come from: the roll's shared meter (picked in
+        # Roll Baseline above) or this frame's own analysis below.
         avg_row = QHBoxLayout()
         self.use_luma_avg_btn = self._small_toggle(
             "mdi6.film",
@@ -437,8 +433,8 @@ class ProcessSidebar(BaseSidebar):
             self.normalize_e6_btn.setChecked(conf.e6_normalize)
             self.normalize_e6_btn.setEnabled(not merged)
 
-            # Live for every mode now; on Slide it still steps aside for Normalize's own
-            # metered stretch, which already decodes on the source's own profile.
+            # On Slide it steps aside for Normalize's own metered stretch, which already
+            # decodes on the source's own profile.
             self.positive_source_btn.setChecked(conf.positive_source)
             self.positive_source_btn.setEnabled(not (is_e6 and conf.e6_normalize))
 
