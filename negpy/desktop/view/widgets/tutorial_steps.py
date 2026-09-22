@@ -19,6 +19,25 @@ def _k(action_id: str) -> str:
 def build(window: "MainWindow") -> list[TutorialStep]:
     """Return the ordered list of tutorial steps for *window*."""
 
+    def _library(w: "MainWindow") -> Optional[QWidget]:
+        return w.session_panel.library_tree.tree
+
+    def _search(w: "MainWindow") -> Optional[QWidget]:
+        return w.session_panel.file_browser.search_input
+
+    def _scope(w: "MainWindow") -> Optional[QWidget]:
+        # The pair is built on first use, so with nothing loaded the card itself is the target.
+        return w.controls_panel.tone_section.roll_btn or w.controls_panel.tone_section
+
+    def _tab_header(w: "MainWindow") -> Optional[QWidget]:
+        return next((p["header"] for p in w.controls_panel.pages if p["key"] == "tone"), None)
+
+    def _roll_settings(w: "MainWindow") -> Optional[QWidget]:
+        return w.session_panel.file_browser.roll_settings_btn
+
+    def _autocrop(w: "MainWindow") -> Optional[QWidget]:
+        return w.controls_panel.autocrop_sidebar.auto_crop_all_btn
+
     def _process(w: "MainWindow") -> Optional[QWidget]:
         return w.controls_panel.process_sidebar
 
@@ -54,6 +73,9 @@ def build(window: "MainWindow") -> list[TutorialStep]:
 
     def _flatfield(w: "MainWindow") -> Optional[QWidget]:
         return w.controls_panel.flatfield_sidebar.enable_btn
+
+    def _lens(w: "MainWindow") -> Optional[QWidget]:
+        return w.controls_panel.lens_sidebar.distortion_slider
 
     def _crop(w: "MainWindow") -> Optional[QWidget]:
         return w.controls_panel.geometry_sidebar.manual_crop_btn
@@ -127,8 +149,10 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "of film transmittance. It is converted to log density, film's native "
                 "scale, and printed through a model of real photographic paper "
                 "(the H&amp;D curve). This is not a curves-and-levels editor.<br><br>"
-                "Edits follow a fixed pipeline:<br><br>"
-                "<b>Import → Process → Exposure → Lab → Export</b><br><br>"
+                "Work runs from the roll inward. The <b>Roll</b> tab holds what the whole roll "
+                "shares (film type, calibration, normalization); the <b>Frame</b> tabs beside it "
+                "follow the pipeline for one picture:<br><br>"
+                "<b>Geometry → Exposure → Lab &amp; Toning → Finish → Export</b><br><br>"
                 "Everything runs on the GPU for near-instant previews. "
                 "All edits are stored in a local database keyed by file hash, so you can "
                 "move or rename files freely without losing your work."
@@ -136,13 +160,81 @@ def build(window: "MainWindow") -> list[TutorialStep]:
             target=lambda w: None,
         ),
         TutorialStep(
-            title="Session Panel: Loading Files",
+            title="The Library: Rolls",
             body=(
-                "Load RAW files or folders here. "
-                "The filmstrip lets you flip through your roll quickly. "
-                "All loaded files can be batch-processed or batch-exported at once."
+                f"The left panel holds two sections. <b>Library</b> ({_k('show_library')}) lists your "
+                "<b>rolls</b>; <b>Film Strip</b> below it holds the frames you have open.<br><br>"
+                "A roll is a named, openable group of frames, and the Library's only unit. "
+                "<b>+</b> imports one folder as a roll, or every folder inside a parent as a roll "
+                "each. Importing only recognizes a folder: nothing is decoded until you "
+                "double-click a roll to open it. NegPy never creates, renames, moves or deletes "
+                "your files, and edits are keyed to the image itself, so reorganizing folders "
+                "loses nothing.<br><br>"
+                "A roll does not have to be a folder. Assemble any set of frames in the Film "
+                "Strip and <b>Save as Roll…</b> keeps it beside the folder rolls. A photo may "
+                "belong to several rolls and shares one edit across them; right-click it for "
+                "<b>Edit Independently in This Roll</b> when one roll needs its own.<br><br>"
+                "Right-click a roll for <b>Rename…</b> (optionally renaming the folder on disk), "
+                "<b>Delete…</b> (which forgets the roll, never the files) and <b>Batch "
+                "Analysis</b>."
             ),
-            target=lambda w: w.session_panel,
+            target=_library,
+        ),
+        TutorialStep(
+            title="Finding Frames: Filters & Search",
+            body=(
+                f"The filter box ({_k('focus_search')}) narrows what is open. A plain word matches "
+                "the filename; <code>field:value</code> terms match what a frame <i>is</i>, for "
+                "example <code>film:portra iso:&gt;=400 -rejected:</code>. The <b>.*</b> toggle "
+                "switches to a plain regex over filenames.<br><br>"
+                "The <b>magnifier-over-folder</b> button beside it "
+                f"({_k('search_library')}) runs the same search across your whole library and loads "
+                "what it finds, without opening a thing first.<br><br>"
+                "Turn on <b>Search by meaning</b> in Preferences → Performance (it downloads a "
+                "small model once) and a fourth toggle joins the row. With it on, type what is in "
+                'the picture, for example "a photo of a dog", and the frames that stand out as a '
+                "match come first. It ranks the frames already open; the <b>index</b> button in "
+                "the Library row embeds every file under your library folders so the same query "
+                "reaches the rest of it."
+            ),
+            target=_search,
+        ),
+        TutorialStep(
+            title="Frame or Roll: Where a Setting Lives",
+            body=(
+                "Every settings card carries the same pair on its header, beside the reset "
+                "arrow: <b>Frame</b> (a picture, amber) and <b>Roll</b> (a film roll, red). The lit "
+                "one says where that card's values live; clicking the other moves them there. An "
+                "edited card stripes its header in the same color, so a glance says which cards "
+                "are in play and at which scope.<br><br>"
+                "On a <b>Roll tab</b> or <b>Metadata</b> card the pair is a latch: Roll is the "
+                "normal state and the card follows the roll, so a frame opened into the roll "
+                "inherits it. Move a slider and it flips to Frame, meaning this frame has stopped "
+                "following. Click <b>Roll</b> to hand the roll this frame's value and rejoin.<br><br>"
+                "On a <b>frame</b> card (Geometry, Filtration, Tone, Lab, Toning, Retouch, "
+                "Finishing) <b>Roll</b> is a one-shot push instead: it opens a picker of that "
+                "card's settings for the selected frames or the whole roll.<br><br>"
+                "Frames that are not one roll, a library search's results or several folders "
+                "opened at once, read Frame everywhere with Roll grayed out. <b>Save as Roll</b> "
+                "gives them a roll and the Roll buttons come back."
+            ),
+            target=_scope,
+            section_attr="tone_section",
+        ),
+        TutorialStep(
+            title="The Tab Header",
+            body=(
+                "A tab holding more than one card, Roll, Exposure, Lab &amp; Toning, Finish and "
+                "Metadata, carries one bar above them all. It reads <b>3 of 5 cards edited</b>, "
+                "and its buttons act on every card at once: the <b>reset arrow</b> (which appears "
+                "once something is edited, and asks first), the <b>roll button</b>, which offers "
+                "every setting on the tab in one picker for the selected frames or the whole "
+                "roll, and the <b>double chevron</b>, which collapses or expands the cards.<br><br>"
+                "A card the film mode has retired is left out of all three. Geometry holds one "
+                "card, so it has no bar."
+            ),
+            target=_tab_header,
+            section_attr="tone_section",
         ),
         TutorialStep(
             title="Trichrome Mode: Merging Triplets",
@@ -189,6 +281,20 @@ def build(window: "MainWindow") -> list[TutorialStep]:
             target=_triage,
         ),
         TutorialStep(
+            title="Lens Correction",
+            body=(
+                "The scanning lens, not the picture: one rig, one correction for every frame it "
+                "shot, so this is a <b>Roll tab</b> card.<br><br>"
+                "<b>Distortion Correction</b> straightens curved lines by hand — positive "
+                "corrects barrel, negative pincushion, and the film rebate is your straight "
+                "edge. Where the file carries a lens profile, <b>Embedded Distortion</b> and "
+                "<b>Embedded CA</b> use it instead, the second killing color fringes along "
+                "edges. Correct before cropping or retouching."
+            ),
+            target=_lens,
+            section_attr="lens_section",
+        ),
+        TutorialStep(
             title="Flat Field Correction",
             body=(
                 "Corrects uneven illumination, meaning vignetting or falloff from your light "
@@ -203,28 +309,44 @@ def build(window: "MainWindow") -> list[TutorialStep]:
             title="Geometry: Crop & Straighten",
             body=(
                 "The unified <b>Crop</b> tool: drag corners to resize, drag inside to move, "
-                "click outside to draw a fresh rectangle. <b>Auto</b> detects the film edge, "
-                "<b>Fine Rot</b> straightens tilted scans, and <b>Detect Aspect Ratio</b> snaps "
-                "to the nearest standard ratio.<br><br>"
+                "click outside to draw a fresh rectangle. <b>Auto</b> detects the film edge and "
+                "<b>Fine Rot</b> straightens tilted scans.<br><br>"
                 "The <b>Guide</b> dropdown swaps the overlay grid: Thirds, Phi Grid, Diagonals, "
                 f"Golden Spiral and more ({_k('crop_guide_next')} cycles guides, {_k('crop_guide_orient')} flips "
                 "orientation). Four <b>rotation handles</b> just outside the crop box spin "
                 "the frame freehand (±45°), composing with Fine Rot for fine-tuning.<br><br>"
+                "<b>Tilt</b> and <b>Swing</b> are the easel movements, for converging verticals "
+                "and horizontals. They and Fine Rot leave a wedge along the squeezed edge; "
+                "<b>Crop by Default</b> trims it live, so no edge shows extrapolated pixels. A "
+                "crop you draw or detect always takes over from it.<br><br>"
                 "Crop matters for more than framing, because the conversion <b>meters what is "
                 "inside the crop</b> to find the black and white points. Unexposed rebate sits at "
                 "film-base density, a false brightest highlight, while sprocket holes and scanner "
                 "bed sit at the opposite extreme. None of it is picture. Left in frame, it drags "
                 "the detected bounds, giving milky blacks and a wrong mask estimate.<br><br>"
                 "Crop tight to the image, or use the <b>Analysis Buffer</b> (next) when you "
-                "want to keep a border.<br><br>"
+                "want to keep a border."
+            ),
+            target=_crop,
+            section_attr="geometry_section",
+        ),
+        TutorialStep(
+            title="Auto Crop: What the Detector Looks For",
+            body=(
+                "The rectangle is each frame's own, but what the detector hunts for belongs to "
+                "the rig and the roll, so it sits on its own <b>Roll tab</b> card. <b>Ratio</b> "
+                "forces a shape (on <b>Free</b> each format keeps its own), <b>Detect</b> snaps "
+                "to the nearest standard one, <b>Mode</b> picks the exposed image or the full "
+                "film edge, and <b>Crop Offset</b> and <b>Rebate Trim</b> decide how far in to "
+                "cut.<br><br>"
                 "<b>Batch Autocrop</b> does the whole roll at once. It analyses every visible "
                 "landscape frame together, letting the confident detections calibrate the weak "
                 "ones, so camera-scan crops come out consistent instead of frame-by-frame. It "
                 "runs in the background with progress and cancel, and leaves your manual crops "
-                "alone. Available in Image-only autocrop mode."
+                "alone. Image-only mode."
             ),
-            target=_crop,
-            section_attr="geometry_section",
+            target=_autocrop,
+            section_attr="autocrop_section",
         ),
         TutorialStep(
             title="Analysis Buffer: Keep the Meter on the Image",
@@ -253,6 +375,12 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "<b>B&amp;W</b> (panchromatic negative) or <b>Slide</b> (transparency/reversal). "
                 "Each swaps the core conversion math and re-runs the pipeline from scratch, and "
                 "the wand beside them <b>auto-detects</b> the mode when a file loads.<br><br>"
+                "<b>Positive</b>, beside them, is for a source that is <i>already</i> a finished "
+                "positive in any mode: a scanned print, an export from other software, a scan "
+                "the scanner positivized itself. NegPy then decodes the file's own profile and "
+                "skips metering, inversion and the filmic roll-off a raw capture needs, so the "
+                "print controls shape the image directly. Leave it off for a scanner or camera "
+                "capture of a negative.<br><br>"
                 "In <b>Calibration</b> below, <b>Linear RAW</b> decodes with neutral multipliers, "
                 "bypassing the camera's as-shot white balance so the orange mask arrives untouched. "
                 "Toggling it reloads the file. Off (the default) decodes with the as-shot balance "
@@ -351,7 +479,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
                 "Pick a profile matching your film stock and blend it in with the "
                 "<b>Strength</b> slider.<br><br>"
                 "Changed the matrix or strength? Right-click your loaded roll in the Library "
-                "and run <b>Analyze Roll…</b> again, because bounds measured under a "
+                "and run <b>Batch Analysis</b> again, because bounds measured under a "
                 "different matrix are invalid."
             ),
             target=_crosstalk,
@@ -361,7 +489,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
             title="Roll Consistency: Batch Analysis",
             body=(
                 "One enlarger setting for the whole roll. Right-click your loaded roll in "
-                "the Library and choose <b>Analyze Roll…</b> to meter every loaded frame "
+                "the Library and choose <b>Batch Analysis</b> to meter every loaded frame "
                 "and save the result as that roll's baseline, automatically, for this "
                 "session and every later one.<br><br>"
                 "Two toggles further down borrow it on independent axes: <b>Use Luma "
@@ -745,6 +873,23 @@ def build(window: "MainWindow") -> list[TutorialStep]:
             pre_hook=lambda w: w.right_panel.show_tab_by_key("gear"),
         ),
         TutorialStep(
+            title="Roll Settings: Tag the Whole Roll",
+            body=(
+                "Typing the same camera and film stock into 36 frames is not work. The <b>Roll "
+                "Settings</b> button (tag icon) in the Film Strip's row tags gear, capture, "
+                "place, process and scanning metadata for the current frame, a selection or the "
+                "whole roll in one dialog, defaulting to the roll.<br><br>"
+                "Fields start filled from the active frame; type or pick new values, or "
+                "<b>Load</b> a metadata preset to fill and tick its fields, then tick which "
+                "groups to write.<br><br>"
+                "Import a folder whose name matches gear you already own, say a word or a run "
+                'like "penf" for "Pen F", and this dialog opens pre-filled with the match. It '
+                "guesses only from your own Gear library, and never overwrites a camera or film "
+                "stock you have already tagged."
+            ),
+            target=_roll_settings,
+        ),
+        TutorialStep(
             title="Export",
             body=(
                 "The <b>Export</b> tab is where you save your results.<br><br>"
@@ -784,6 +929,8 @@ def build(window: "MainWindow") -> list[TutorialStep]:
             body=(
                 "That is the core workflow. A few more things worth knowing:<br><br>"
                 f"• Press {_k('show_shortcuts')} or use the ⋯ menu for keyboard shortcuts.<br>"
+                f"• {_k('show_library')} opens the Library, {_k('focus_search')} the filter box, "
+                f"{_k('search_library')} searches every roll in it.<br>"
                 "• Canvas tools share one grammar: the first <b>Esc</b> clears the points "
                 f"you are placing, the second puts the tool down. {_k('pick_scratch')} Scratch, "
                 f"{_k('local_draw')} Dodge &amp; Burn, {_k('analysis_draw')} Analysis Region, "
