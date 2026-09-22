@@ -4,6 +4,7 @@ from dataclasses import replace
 import pytest
 
 from negpy.domain.models import WorkspaceConfig
+from negpy.features.process.models import ProcessMode
 from negpy.infrastructure.storage.repository import StorageRepository
 from negpy.services.assets import rolls
 from negpy.services.assets.positive_auto_migration import migrate_auto_meter_for_positive_frames
@@ -19,8 +20,9 @@ def repo(tmp_path):
 
 
 def _config(**process_overrides):
+    """A Slide frame, since only Slide can carry Positive."""
     cfg = WorkspaceConfig()
-    return replace(cfg, process=replace(cfg.process, **process_overrides))
+    return replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.E6, **process_overrides))
 
 
 def _load(repo, file_hash):

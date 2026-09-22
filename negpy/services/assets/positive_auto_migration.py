@@ -13,6 +13,7 @@ import json
 import sqlite3
 from contextlib import closing
 
+from negpy.features.process.models import ProcessMode
 from negpy.kernel.system.logging import get_logger
 from negpy.services.assets import rolls
 
@@ -37,8 +38,10 @@ def migrate_auto_meter_for_positive_frames(repo) -> None:
                     data = json.loads(settings_json)
                 except (ValueError, TypeError):
                     continue
-                effective_positive = bool(data.get("positive_source")) or (
-                    bool(file_path) and bool(positive_rolls & set(rolls.rolls_containing_path(repo, file_path)))
+                # A negative-mode row loses the flag on load, so it meters again.
+                effective_positive = str(data.get("process_mode", "")) == ProcessMode.E6 and (
+                    bool(data.get("positive_source"))
+                    or (bool(file_path) and bool(positive_rolls & set(rolls.rolls_containing_path(repo, file_path))))
                 )
                 if not effective_positive:
                     continue

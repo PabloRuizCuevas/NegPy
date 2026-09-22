@@ -59,14 +59,13 @@ def test_lock_bounds_sits_in_the_analysis_row_and_hides_on_the_transparency_tran
     assert sidebar.lock_bounds_btn.isHidden()
 
 
-def test_positive_is_visible_for_any_mode_but_grays_out_with_normalize_on(qapp):
-    """Positive is not Slide-only: it stays visible for every mode, only stepping
-    aside when Normalize's own metered stretch already decodes on the source's own
-    profile."""
+def test_positive_is_slide_only_and_grays_out_with_normalize_on(qapp):
+    """Positive is a Slide-only fact, so it is hidden in the negative modes and steps
+    aside on Slide when Normalize's own metered stretch already decodes on the source's
+    own profile."""
     controller, sidebar = _sidebar()
     sidebar.sync_ui()
-    assert not sidebar.positive_source_btn.isHidden()
-    assert sidebar.positive_source_btn.isEnabled()
+    assert sidebar.positive_source_btn.isHidden()
 
     cfg = controller.state.config
     controller.state.config = replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.E6, e6_normalize=False))
@@ -80,11 +79,16 @@ def test_positive_is_visible_for_any_mode_but_grays_out_with_normalize_on(qapp):
     assert not sidebar.positive_source_btn.isHidden()
     assert not sidebar.positive_source_btn.isEnabled()
 
+    cfg = controller.state.config
+    controller.state.config = replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.BW))
+    sidebar.sync_ui()
+    assert sidebar.positive_source_btn.isHidden()
+
 
 def test_positive_lives_in_mode_bar_not_the_normalization_body(qapp):
-    """Whether the source is already a finished positive is a fact about the file,
-    true for any mode, not a Normalization setting -- it lives beside Film Mode in
-    mode_bar, the "Film Mode" card's own content, not inside Normalization's."""
+    """Whether the source is already a finished positive is a fact about the file, not
+    a Normalization setting -- it lives beside Film Mode in mode_bar, the "Film Mode"
+    card's own content, not inside Normalization's."""
     _, sidebar = _sidebar()
     assert sidebar.positive_source_btn.parentWidget() is sidebar.mode_bar
 

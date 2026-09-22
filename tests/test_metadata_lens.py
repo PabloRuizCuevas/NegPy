@@ -13,6 +13,7 @@ from negpy.domain.models import WorkspaceConfig
 from negpy.features.flatfield.models import FlatFieldConfig
 from negpy.features.geometry.models import GeometryConfig
 from negpy.features.lens.logic import apply_lens
+from negpy.features.process.models import ProcessMode
 from negpy.features.lens.models import LensCorrections, LensMetadata, LensWarp
 from negpy.features.lens.warps import IDENTITY, RectilinearWarp, SonyWarp
 from negpy.infrastructure.loaders.lens_metadata import bind_decode, parse_opcodes, read_lens_metadata
@@ -567,7 +568,7 @@ def test_positive_source_and_lens_mode_have_independent_preview_cache_entries(tm
         config = replace(
             config,
             geometry=GeometryConfig(lens_distortion_from_metadata=corrections.distortion, lens_ca_from_metadata=corrections.ca),
-            process=replace(config.process, linear_raw=True, positive_source=positive),
+            process=replace(config.process, process_mode=ProcessMode.E6, linear_raw=True, positive_source=positive),
         )
         exported, _, _ = processor._load_source_f32(path, config)
         np.testing.assert_allclose(preview, exported, atol=1e-6)

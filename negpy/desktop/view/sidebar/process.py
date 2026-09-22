@@ -148,8 +148,8 @@ class ProcessSidebar(BaseSidebar):
             self.mode_btns.append(btn)
 
         # Lives beside Film Mode, not inside Normalization: whether the source is
-        # already a finished positive is a fact about the file, true for any mode, not
-        # a Normalization setting to dig for.
+        # already a finished positive is a fact about the file, not a Normalization
+        # setting to dig for.
         self.positive_source_btn = self._labeled_toggle(
             "fa5s.image",
             " Positive",
@@ -161,7 +161,7 @@ class ProcessSidebar(BaseSidebar):
                 "(sRGB if it has none) instead of reading it as literal linear data, and "
                 "skips metering, negative inversion and the exposure lift a raw capture "
                 "needs, so the Print/tone controls shape the image directly.<br><br>"
-                "On Slide, only applies with Normalize off: a metered stretch already "
+                "Slide only, and only with Normalize off: a metered stretch already "
                 "decodes on the source's own profile."
             ),
         )
@@ -490,10 +490,10 @@ class ProcessSidebar(BaseSidebar):
             self.normalize_e6_btn.setChecked(conf.e6_normalize)
             self.normalize_e6_btn.setEnabled(not merged)
 
-            # On Slide it steps aside for Normalize's own metered stretch, which already
-            # decodes on the source's own profile.
+            # Normalize's metered stretch already decodes on the source's own profile.
+            self.positive_source_btn.setVisible(is_e6)
             self.positive_source_btn.setChecked(conf.positive_source)
-            self.positive_source_btn.setEnabled(not (is_e6 and conf.e6_normalize))
+            self.positive_source_btn.setEnabled(not conf.e6_normalize)
 
             # Reconstruction only means anything against a slide's own blown highlights (see
             # effective_highlight_reconstruction); hidden rather than greyed, matching Normalize

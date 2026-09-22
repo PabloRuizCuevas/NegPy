@@ -421,7 +421,9 @@ class TestRollDefaults:
         set_frame_override(repo, roll_id, "h1", "demosaic", locked=True)
         set_frame_override(repo, roll_id, "h1", "process", locked=True)
 
-        resolved = resolve_roll_config(repo, roll_id, "h1", WorkspaceConfig(process=ProcessConfig(positive_source=False)))
+        resolved = resolve_roll_config(
+            repo, roll_id, "h1", WorkspaceConfig(process=ProcessConfig(process_mode=ProcessMode.E6, positive_source=False))
+        )
 
         assert resolved.process.positive_source is True
 
@@ -465,7 +467,9 @@ class TestRollDefaults:
         set_roll_defaults(repo, roll_id, positive_source=True)
         set_frame_override(repo, roll_id, "h1", "film", locked=True)
 
-        resolved = resolve_roll_config(repo, roll_id, "h1", WorkspaceConfig(process=ProcessConfig(positive_source=False)))
+        resolved = resolve_roll_config(
+            repo, roll_id, "h1", WorkspaceConfig(process=ProcessConfig(process_mode=ProcessMode.E6, positive_source=False))
+        )
 
         assert resolved.process.positive_source is False
 

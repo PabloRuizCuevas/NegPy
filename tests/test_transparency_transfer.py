@@ -97,11 +97,13 @@ class TestModeSelection(unittest.TestCase):
         self.assertFalse(is_transfer_path(ProcessMode.C41, False))
         self.assertFalse(is_transfer_path(ProcessMode.BW, False))
 
-    def test_positive_source_takes_the_transfer_path_on_any_mode(self):
+    def test_positive_source_is_slide_only(self):
         """A file already positivized before NegPy saw it has nothing left to meter or
-        invert, in Color and B&W exactly as much as on a slide."""
-        self.assertTrue(is_transfer_path(ProcessMode.C41, False, positive_source=True))
-        self.assertTrue(is_transfer_path(ProcessMode.BW, False, positive_source=True))
+        invert, and only Slide can carry that: a config built in any other mode drops
+        the flag, so the negative path is never reached with it set."""
+        for mode in (ProcessMode.C41, ProcessMode.BW):
+            self.assertFalse(ProcessConfig(process_mode=mode, positive_source=True).positive_source)
+        self.assertTrue(ProcessConfig(process_mode=ProcessMode.E6, positive_source=True).positive_source)
         # On Slide, Normalize on still wins: a metered rescue stretch, not a raw passthrough.
         self.assertFalse(is_transfer_path(ProcessMode.E6, True, positive_source=True))
 
@@ -243,9 +245,9 @@ class TestPositiveSourceSkipsDisplayRendering(unittest.TestCase):
         out_off, _ = _run_stages(img, off)
         self.assertLess(float(np.abs(np.asarray(out_on) - np.asarray(out_off)).max()), 1e-6)
 
-    def test_takes_the_transfer_path_on_color_and_bw_too(self):
-        """Positive is not Slide-only: a C-41 or B&W scan already positivized by the
-        scanner has nothing left to meter or invert either."""
+    def test_a_negative_mode_frame_cannot_be_positive(self):
+        """Positive is Slide-only: a C-41 or B&W config drops the flag, so the negative
+        path renders identically whether it was asked for or not."""
         rng = np.random.default_rng(5)
         img = (rng.random((16, 16, 3)) * 0.3 + 0.02).astype(np.float32)
         for mode in (ProcessMode.C41, ProcessMode.BW):
@@ -255,10 +257,10 @@ class TestPositiveSourceSkipsDisplayRendering(unittest.TestCase):
                 exposure = replace(cfg.exposure, cast_removal_strength=cast_removal_for_mode(mode, cfg.exposure.cast_removal_strength))
                 base_cfg = replace(cfg, process=process, exposure=exposure)
                 on = replace(base_cfg, process=replace(base_cfg.process, positive_source=True))
-                off = replace(base_cfg, process=replace(base_cfg.process, positive_source=False))
+                self.assertFalse(on.process.positive_source)
                 out_on, _ = _run_stages(img, on)
-                out_off, _ = _run_stages(img, off)
-                self.assertGreater(float(np.abs(np.asarray(out_on) - np.asarray(out_off)).max()), 1e-3)
+                out_off, _ = _run_stages(img, base_cfg)
+                self.assertLess(float(np.abs(np.asarray(out_on) - np.asarray(out_off)).max()), 1e-6)
 
 
 class TestExposureFaithfulness(unittest.TestCase):

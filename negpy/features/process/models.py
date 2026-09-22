@@ -93,10 +93,10 @@ class ProcessConfig:
     # (applied at preview soft-proof / export; an explicit Input ICC overrides it).
     narrowband_scan: bool = False
     # The source is a finished positive (a scanned print, an export from other software, a
-    # scanner's own positive) rather than a raw capture, in any mode. It decodes on its
-    # embedded profile, sRGB when untagged, instead of as literal linear data, and skips
-    # metering, negative inversion, the baseline lift and the filmic curve. See
-    # effective_linear_raw and is_transfer_path.
+    # scanner's own positive) rather than a raw capture. Slide only, held in __post_init__.
+    # It decodes on its embedded profile, sRGB when untagged, instead of as literal linear
+    # data, and skips metering, negative inversion, the baseline lift and the filmic curve.
+    # See effective_linear_raw and is_transfer_path.
     positive_source: bool = False
     # See loaders/helpers.get_best_demosaic_algorithm for what AUTO resolves to on each path.
     demosaic_preview: DemosaicMode = DemosaicMode.AUTO
@@ -170,6 +170,10 @@ class ProcessConfig:
         # Not a MIGRATIONS entry: the old mode names also reach us from sticky settings
         # and asset dicts, not only a loaded flat config, so this runs on every build.
         object.__setattr__(self, "process_mode", ProcessMode(self.process_mode))
+        # Slide-only, and every path into a config -- saved row, sticky settings, roll
+        # default, asset dict -- has to land where the panel does.
+        if self.positive_source and self.process_mode != ProcessMode.E6:
+            object.__setattr__(self, "positive_source", False)
         object.__setattr__(self, "locked_floors", tuple(self.locked_floors))
         object.__setattr__(self, "locked_ceils", tuple(self.locked_ceils))
         object.__setattr__(self, "local_floors", tuple(self.local_floors))

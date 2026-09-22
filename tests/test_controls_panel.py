@@ -192,7 +192,7 @@ def test_reset_process_fields_only_touches_the_given_fields():
     cfg = panel.controller.state.config
     panel.controller.state.config = replace(
         cfg,
-        process=replace(cfg.process, analysis_buffer=0.2, positive_source=True, sensor_profile="Custom"),
+        process=replace(cfg.process, process_mode=ProcessMode.E6, analysis_buffer=0.2, positive_source=True, sensor_profile="Custom"),
     )
 
     ControlsPanel._reset_process_fields(panel, ("analysis_buffer",))
@@ -212,7 +212,7 @@ def test_reset_exposure_fields_turns_auto_off_for_a_positive_frame():
     cfg = panel.controller.state.config
     panel.controller.state.config = replace(
         cfg,
-        process=replace(cfg.process, positive_source=True),
+        process=replace(cfg.process, process_mode=ProcessMode.E6, positive_source=True),
         exposure=replace(cfg.exposure, auto_exposure=True, auto_normalize_contrast=True, density=1.4),
     )
 
@@ -249,7 +249,7 @@ def test_sync_modified_dots_does_not_flag_a_positive_frames_own_auto_default():
     cfg = panel.controller.state.config
     panel.controller.state.config = replace(
         cfg,
-        process=replace(cfg.process, positive_source=True),
+        process=replace(cfg.process, process_mode=ProcessMode.E6, positive_source=True),
         exposure=replace(cfg.exposure, auto_exposure=False, auto_normalize_contrast=False),
     )
     panel.tone_section = MagicMock()
@@ -267,7 +267,7 @@ def test_sync_modified_dots_counts_film_mode_on_its_own_card():
     cfg = panel.controller.state.config
     panel.controller.state.config = replace(
         cfg,
-        process=replace(cfg.process, process_mode=ProcessMode.BW, positive_source=True),
+        process=replace(cfg.process, process_mode=ProcessMode.E6, positive_source=True),
     )
     panel.film_section = MagicMock()
     panel.process_section = MagicMock()
@@ -329,7 +329,7 @@ def test_reset_film_fields_routes_through_the_controls_own_setters():
     cfg = panel.controller.state.config
     panel.controller.state.config = replace(
         cfg,
-        process=replace(cfg.process, process_mode=ProcessMode.BW, positive_source=True),
+        process=replace(cfg.process, process_mode=ProcessMode.E6, positive_source=True),
     )
 
     ControlsPanel._reset_film_fields(panel)

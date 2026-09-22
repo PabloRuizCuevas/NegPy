@@ -36,6 +36,22 @@ if not QApplication.instance():
     _app = QApplication(sys.argv)
 
 
+def _slide_config(cfg):
+    from negpy.features.process.models import ProcessMode
+
+    return replace(cfg, process=replace(cfg.process, process_mode=ProcessMode.E6))
+
+
+def _positive_slide_config(cfg):
+    """A Positive frame, which only Slide can be."""
+    cfg = _slide_config(cfg)
+    return replace(
+        cfg,
+        process=replace(cfg.process, positive_source=True),
+        exposure=replace(cfg.exposure, auto_exposure=False, auto_normalize_contrast=False),
+    )
+
+
 class TestAppController(unittest.TestCase):
     def setUp(self):
         self.mock_session_manager = MagicMock(spec=DesktopSessionManager)
@@ -883,11 +899,12 @@ class TestAppController(unittest.TestCase):
 
         self._wire_repo_store()
         roll_id = rolls.create_virtual_roll(self.controller.session.repo, "Portra", [])
-        rolls.set_roll_defaults(self.controller.session.repo, roll_id, process_mode=ProcessMode.C41, positive_source=True)
+        rolls.set_roll_defaults(self.controller.session.repo, roll_id, process_mode=ProcessMode.E6, positive_source=True)
         rolls.set_frame_override(self.controller.session.repo, roll_id, "h2", "film", locked=True)
         state = self.mock_session_manager.state
         state.active_roll_id = roll_id
         state.current_file_hash = "h2"
+        state.config = _slide_config(self.mock_session_manager.state.config)
 
         self.controller.set_positive_source(True)
 
@@ -2827,6 +2844,7 @@ class TestPresetExportSelected(unittest.TestCase):
 
     def test_set_positive_source_locks_the_film_card_when_a_roll_is_active(self):
         self.mock_session_manager.state.active_roll_id = "roll-1"
+        self.mock_session_manager.state.config = _slide_config(self.mock_session_manager.state.config)
 
         with (
             patch.object(rolls, "set_frame_override") as mock_lock,
@@ -2838,6 +2856,7 @@ class TestPresetExportSelected(unittest.TestCase):
 
     def test_set_positive_source_does_not_touch_the_roll_without_an_active_roll(self):
         self.mock_session_manager.state.active_roll_id = None
+        self.mock_session_manager.state.config = _slide_config(self.mock_session_manager.state.config)
 
         with patch.object(rolls, "set_frame_override") as mock_lock:
             self.controller.set_positive_source(True)
@@ -2848,6 +2867,7 @@ class TestPresetExportSelected(unittest.TestCase):
         """A raw negative starts metered; a finished positive starts unmetered, same
         as White/Black Point and every other per-shot control (auto_meter_for_positive_source)."""
         self.mock_session_manager.state.active_roll_id = None
+        self.mock_session_manager.state.config = _slide_config(self.mock_session_manager.state.config)
         cfg = self.mock_session_manager.state.config
         self.assertTrue(cfg.exposure.auto_exposure)
         self.assertTrue(cfg.exposure.auto_normalize_contrast)
@@ -2860,7 +2880,7 @@ class TestPresetExportSelected(unittest.TestCase):
 
     def test_set_positive_source_leaves_a_deliberate_auto_choice_alone(self):
         self.mock_session_manager.state.active_roll_id = None
-        cfg = self.mock_session_manager.state.config
+        cfg = _slide_config(self.mock_session_manager.state.config)
         self.mock_session_manager.state.config = replace(
             cfg, exposure=replace(cfg.exposure, auto_exposure=False, auto_normalize_contrast=False)
         )
@@ -2873,16 +2893,26 @@ class TestPresetExportSelected(unittest.TestCase):
 
     def test_set_positive_source_off_restores_auto_density_grade_when_untouched(self):
         self.mock_session_manager.state.active_roll_id = None
-        cfg = self.mock_session_manager.state.config
-        self.mock_session_manager.state.config = replace(
-            cfg,
-            process=replace(cfg.process, positive_source=True),
-            exposure=replace(cfg.exposure, auto_exposure=False, auto_normalize_contrast=False),
-        )
+        self.mock_session_manager.state.config = _positive_slide_config(self.mock_session_manager.state.config)
 
         self.controller.set_positive_source(False)
 
         passed = self.mock_session_manager.update_config.call_args.args[0]
+        self.assertTrue(passed.exposure.auto_exposure)
+        self.assertTrue(passed.exposure.auto_normalize_contrast)
+
+    def test_leaving_slide_drops_positive_and_restores_the_autos(self):
+        """Positive is Slide-only, so a mode switch away from Slide clears it and puts
+        Auto Density/Auto Grade back exactly as switching the toggle off would."""
+        from negpy.features.process.models import ProcessMode
+
+        self.mock_session_manager.state.active_roll_id = None
+        self.mock_session_manager.state.config = _positive_slide_config(self.mock_session_manager.state.config)
+
+        self.controller.set_process_mode(ProcessMode.C41)
+
+        passed = self.mock_session_manager.update_config.call_args.args[0]
+        self.assertFalse(passed.process.positive_source)
         self.assertTrue(passed.exposure.auto_exposure)
         self.assertTrue(passed.exposure.auto_normalize_contrast)
 

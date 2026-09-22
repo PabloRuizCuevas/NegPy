@@ -4314,9 +4314,18 @@ class AppController(QObject):
         strength = cast_removal_for_mode(mode, exp.cast_removal_strength)
         new_exposure = replace(exp, cast_removal_strength=strength) if strength != exp.cast_removal_strength else exp
         proc = self.state.config.process
+        # Leaving Slide drops Positive, and restores the autos as the toggle would.
+        drops_positive = proc.positive_source and mode != ProcessMode.E6
+        if drops_positive:
+            new_exposure = replace(
+                new_exposure,
+                auto_exposure=auto_meter_for_positive_source(False, new_exposure.auto_exposure),
+                auto_normalize_contrast=auto_meter_for_positive_source(False, new_exposure.auto_normalize_contrast),
+            )
         new_process = replace(
             proc,
             process_mode=mode,
+            positive_source=proc.positive_source and not drops_positive,
             **invalidate_local_bounds(proc),
         )
         self.apply_config(replace(self.state.config, process=new_process, exposure=new_exposure), persist=True)
@@ -4332,6 +4341,9 @@ class AppController(QObject):
         default they last matched, so this only moves them when the user never
         touched them."""
         proc = self.state.config.process
+        if proc.process_mode != ProcessMode.E6:
+            # The shortcut still reaches the hidden button; the autos must not move.
+            return
         new_process = replace(
             proc,
             positive_source=checked,

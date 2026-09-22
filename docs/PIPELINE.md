@@ -250,7 +250,7 @@ Both are fixed, with no per-frame metering, so an evenly exposed roll renders id
 ### Transparency transfer, "the slide as captured"
 **Code**: `negpy.features.exposure.transfer` (+ `shaders/transfer.wgsl`), `negpy.features.process.capture_color`
 
-For **Transparency with Normalize off**, the default (`is_transfer_path`), the Print stage is replaced by a **transfer curve** that is exactly the identity at default settings, so the render *is* the capture. A transparency was exposed deliberately, and the assumption here is that the user wants to start from what they shot and adjust, not to re-print it. **Positive** takes this same path on Color and B&W too: a file already positivized before NegPy saw it has nothing left to meter or invert either, whatever mode it is loaded as.
+For **Transparency with Normalize off**, the default (`is_transfer_path`), the Print stage is replaced by a **transfer curve** that is exactly the identity at default settings, so the render *is* the capture. A transparency was exposed deliberately, and the assumption here is that the user wants to start from what they shot and adjust, not to re-print it. **Positive** takes the same path with Normalize off: a file already positivized before NegPy saw it has nothing left to meter or invert either. It is a Slide-only setting, so no negative mode reaches this stage.
 
 Two things change, one per stage.
 

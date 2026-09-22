@@ -448,10 +448,11 @@ def transfer_bounds(density_range: float = TRANSFER_DENSITY_RANGE) -> Tuple[Tupl
 def is_transfer_path(process_mode: str, e6_normalize: bool, positive_source: bool = False, render_intent: Optional[str] = None) -> bool:
     """Single source of truth for the mode test, so CPU/GPU/UI cannot drift apart.
 
-    True on an as-captured Slide (Normalize off), and on any mode explicitly marked
-    Positive: a file already positivized before NegPy saw it -- a scanned print, an
-    export from other software, a negative the scanner inverted itself -- has nothing
-    left to meter or invert, in Color and B&W exactly as much as on a slide."""
+    True on an as-captured Slide (Normalize off), and on a frame marked Positive: a
+    file already positivized before NegPy saw it -- a scanned print, an export from
+    other software, a negative the scanner inverted itself -- has nothing left to meter
+    or invert. Only a Slide config carries Positive (ProcessConfig.__post_init__); the
+    flag is read here for callers that pass the fields apart."""
     from negpy.features.exposure.models import RenderIntent
     from negpy.features.process.models import ProcessMode
 
