@@ -639,7 +639,7 @@ class CanvasOverlay(QWidget):
         buf = self._host_buffer()
         if buf is None:
             return None
-        key = (id(buf), self._display_cs, self._proof)
+        key = (id(buf), self._display_cs, self._monitor_icc_bytes, self._proof)
         if self._host_qimage_cache is not None and self._host_qimage_cache[0] == key:
             return self._host_qimage_cache[1]
         img = ImageConverter.to_qimage(buf, self._display_cs, self._monitor_icc_bytes, self._proof)
@@ -917,7 +917,7 @@ class CanvasOverlay(QWidget):
         buf = self.state.compare_before
         if not isinstance(buf, np.ndarray):
             return None
-        key = (id(buf), self._display_cs, self._proof)
+        key = (id(buf), self._display_cs, self._monitor_icc_bytes, self._proof)
         if self._compare_qimage_cache is not None and self._compare_qimage_cache[0] == key:
             return self._compare_qimage_cache[1]
         img = ImageConverter.to_qimage(buf, self._display_cs, self._monitor_icc_bytes, self._proof)
@@ -1300,7 +1300,7 @@ class CanvasOverlay(QWidget):
         mosaic = self.state.test_strip_mosaic
         if mosaic is None:
             return None
-        key = (id(mosaic), self._display_cs, self._proof)
+        key = (id(mosaic), self._display_cs, self._monitor_icc_bytes, self._proof)
         if self._strip_cache is not None and self._strip_cache[0] == key:
             return self._strip_cache[1]
         img = ImageConverter.to_qimage(mosaic, self._display_cs, self._monitor_icc_bytes, self._proof)
@@ -2112,10 +2112,13 @@ class CanvasOverlay(QWidget):
 
     def printing_notes_sheet(self) -> Optional[QImage]:
         """The exportable notes sheet: the frame the canvas rendered, the map baked on
-        it, and the recipe in a band below. None when there is nothing to annotate."""
-        img = self._host_qimage()
-        if img is None:
+        it, and the recipe in a band below. None when there is nothing to annotate.
+
+        Converted for sRGB, not the monitor: the sheet is saved as an untagged JPEG."""
+        buf = self._host_buffer()
+        if buf is None:
             return None
+        img = ImageConverter.to_qimage(buf, self._display_cs, None, self._proof)
         with self.state.metrics_lock:
             uv_grid = self.state.last_metrics.get("uv_grid")
         if uv_grid is None and self.state.config.local.masks:
