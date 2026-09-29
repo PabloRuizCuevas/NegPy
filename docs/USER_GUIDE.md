@@ -78,11 +78,11 @@ An unedited frame gets the rig and roll settings: film process, crop ratio, flip
 
 **Preferences → Session & Storage → Persistent Settings…** edits that list, grouped by panel, with values from your last saved edit. Tick a setting or a group header to make it carry. The **Carry settings between frames** checkbox is the master switch; off, new frames get bare defaults and your ticks stay saved.
 
-An edited frame keeps its look; only export and metadata settings reach it. **Reset Settings** ignores the list and returns bare defaults, except for the scanning setup: Linear RAW, Narrowband and the demosaic choices stay as a new frame gets them. In a roll, a reset also sets every Roll-tab card back to **Roll**, so the frame takes the roll's values.
+An edited frame keeps its look; only export and metadata settings reach it. **Reset Settings** ignores the list and returns bare defaults, except for the scanning setup: Linear RAW, Narrowband and the demosaic choices stay as a new frame gets them. In a roll, a reset also sets every Roll-tab card back to **Roll**, so the frame takes the roll's values. No reset changes the scanning setup, a card's arrow included: they describe your rig, so **Scanning setup** is what sets them.
 
 ### Frame or roll: the scope pair
 
-Each section header has **Frame** (picture, amber) and **Roll** (film roll, red) beside its reset arrow. The lit one shows where the card's values live; click the other to move them. A card with non-default values has a stripe in that color down its header. Frames that are not one roll (search results, several folders) show **Frame** everywhere and **Roll** grayed out, until Save as Roll.
+Each section header has **Frame** (picture, amber) and **Roll** (film roll, red) beside its reset arrow, which returns that card alone to defaults; the **· 2** after a card's name counts the settings it holds away from them. The lit one shows where the card's values live; click the other to move them. A card with non-default values has a stripe in that color down its header. Frames that are not one roll (search results, several folders) show **Frame** everywhere and **Roll** grayed out, until Save as Roll.
 
 On a **Roll tab** or **Metadata** card the pair is a latch. On Roll, the card follows the roll's value, and new frames in the roll inherit it. Edit a slider and it flips to Frame. Click **Roll** to push this frame's value to the roll; click **Frame** to pin the current value to this frame.
 
