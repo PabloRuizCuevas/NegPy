@@ -1322,6 +1322,16 @@ class DesktopSessionManager(QObject):
         self.asset_model.refresh()
         self.files_changed.emit()
 
+    def _scope_indices(self, scope: str) -> List[int]:
+        """Frames a scoped apply targets, for "roll" (every visible frame) or "selection"
+        (the file-list selection). A filename filter is a non-destructive view, so a
+        hidden frame is never a target in either scope."""
+        ordered = self.asset_model.visible_actual_indices_ordered()
+        if scope == "roll":
+            return ordered
+        visible = set(ordered)
+        return [i for i in self.state.selected_indices if i in visible]
+
     def sync_selected_settings(self, rows, bounds_flags: tuple[bool, bool] = (False, False), scope: str = "selection") -> int:
         """
         Apply the active frame's chosen settings to other frames. Returns the count changed.
@@ -1348,7 +1358,7 @@ class DesktopSessionManager(QObject):
             rides = src_bounds == (source_config.process.locked_floors, source_config.process.locked_ceils)
             src_source = source_config.process.baseline_source if rides else f"frame:{os.path.basename(self.state.current_file_path or '')}"
 
-        target_indices = self.asset_model.visible_actual_indices_ordered() if scope == "roll" else self.state.selected_indices
+        target_indices = self._scope_indices(scope)
 
         count = 0
         changed_hashes: list[str] = []
@@ -1392,10 +1402,8 @@ class DesktopSessionManager(QObject):
         if not rows or self.state.selected_file_idx == -1:
             return 0
 
-        if scope == "roll":
-            target_indices = self.asset_model.visible_actual_indices_ordered()
-        elif scope == "selection":
-            target_indices = self.state.selected_indices
+        if scope in ("roll", "selection"):
+            target_indices = self._scope_indices(scope)
         else:
             target_indices = [self.state.selected_file_idx]
 
@@ -1431,7 +1439,7 @@ class DesktopSessionManager(QObject):
         scope is "roll" (every visible frame) or "selection" (the file-list selection)."""
         if self.state.selected_file_idx == -1:
             return 0
-        target_indices = self.asset_model.visible_actual_indices_ordered() if scope == "roll" else self.state.selected_indices
+        target_indices = self._scope_indices(scope)
         count = 0
         changed_hashes: list[str] = []
         for idx in target_indices:

@@ -44,6 +44,8 @@ class TestDesktopSessionSync(unittest.TestCase):
             {"name": "file1.dng", "path": "path1", "hash": "hash1"},
             {"name": "file2.dng", "path": "path2", "hash": "hash2"},
         ]
+        # A scoped apply reads the visible set, which a real load always builds.
+        self.session.asset_model.refresh()
 
     def test_update_selection(self):
         self.session.update_selection([0, 1])
@@ -1339,6 +1341,40 @@ class TestDesktopSessionSync(unittest.TestCase):
         self.assertEqual(count, 2)
         saved = {c.args[0] for c in self.mock_repo.save_file_settings.call_args_list}
         self.assertEqual(saved, {"hash1", "hash2"})  # c.jpg filtered out, not touched
+
+    def test_reset_roll_settings_selection_scope_respects_active_filter(self):
+        # A hidden frame is not a target in either scope, so a stale selection entry
+        # cannot reach past the filter (#1220).
+        self._seed_roll()
+        self.session.asset_model.set_filter(".arw", regex=False)  # hides c.jpg
+        self.session.state.selected_indices = [0, 1, 2]
+
+        count = self.session.reset_roll_settings(scope="selection")
+
+        self.assertEqual(count, 2)
+        saved = {c.args[0] for c in self.mock_repo.save_file_settings.call_args_list}
+        self.assertNotIn("hash3", saved)
+
+    def test_sync_selection_scope_respects_active_filter(self):
+        self._seed_roll()
+        self.session.asset_model.set_filter(".arw", regex=False)  # hides c.jpg
+        self.session.state.selected_indices = [0, 1, 2]
+
+        self.session.sync_selected_settings([_row("Print Density")], scope="selection")
+
+        saved = {c.args[0] for c in self.mock_repo.save_file_settings.call_args_list}
+        self.assertEqual(saved, {"hash2"})  # hash1 is the source, hash3 is filtered out
+
+    def test_apply_preset_fields_selection_scope_respects_active_filter(self):
+        self._seed_roll()
+        self.session.asset_model.set_filter(".arw", regex=False)  # hides c.jpg
+        self.session.state.selected_indices = [0, 1, 2]
+
+        count = self.session.apply_preset_fields(WorkspaceConfig(), [_row("Print Density")], scope="selection")
+
+        self.assertEqual(count, 2)
+        saved = {c.args[0] for c in self.mock_repo.save_file_settings.call_args_list}
+        self.assertNotIn("hash3", saved)
 
     def test_reset_roll_settings_preserves_asset_derived_process_mode(self):
         # A composite's inherited film process is what it *is*, not an edit — a blind
