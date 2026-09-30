@@ -1238,3 +1238,33 @@ def test_film_strip_menu_offers_close_roll(browser, session):
     with patch("negpy.desktop.view.sidebar.files._close_roll") as close:
         browser.close_roll_action.trigger()
     close.assert_called_once_with(browser, browser.controller)
+
+
+def test_context_menu_offers_merge_to_tiff_only_for_an_assembled_frame(browser, session):
+    session.state.selected_indices = [0]
+    session.state.selected_file_idx = 0
+    assert "Merge Frame to TIFF Negative…" not in _action_labels(browser._build_context_menu())
+
+    session.state.uploaded_files[0].update(green_path="/g.ARW", blue_path="/b.ARW")
+    assert "Merge Frame to TIFF Negative…" in _action_labels(browser._build_context_menu())
+
+    session.state.uploaded_files[0].update(green_path="", blue_path="", stitch_paths=("/p.ARW",))
+    assert "Merge Frame to TIFF Negative…" in _action_labels(browser._build_context_menu())
+
+    # Not for a bracket: the item would always fail, like Unstitch on a plain frame. A mixed
+    # roll still reports it, in the confirm dialog's skip list.
+    session.state.uploaded_files[0].update(stitch_paths=(), hdr_paths=("/e.ARW",))
+    assert "Merge Frame to TIFF Negative…" not in _action_labels(browser._build_context_menu())
+
+
+def test_context_menu_scopes_merge_to_tiff_by_selection(browser, session):
+    session.state.uploaded_files[1].update(green_path="/g.ARW", blue_path="/b.ARW")
+    session.state.selected_indices = [0, 1]
+    session.state.selected_file_idx = 0
+    labels = _action_labels(browser._build_context_menu())
+    assert "Merge Selected to TIFF Negative…" in labels
+    assert "Merge Frame to TIFF Negative…" not in labels
+
+    session.state.selected_indices = [0]
+    labels = _action_labels(browser._build_context_menu())
+    assert "Merge Selected to TIFF Negative…" not in labels

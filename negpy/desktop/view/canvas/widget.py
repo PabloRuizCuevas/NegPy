@@ -12,6 +12,7 @@ from negpy.desktop.view.canvas.overlay import CanvasOverlay
 from negpy.desktop.view.widgets.granular_settings_dialog import open_paste_dialog, open_sync_bounds_dialog
 from negpy.infrastructure.gpu.device import GPUDevice
 from negpy.infrastructure.gpu.resources import GPUTexture
+from negpy.desktop.view.frame_merge_action import ACTION_IDS, LABELS, SCOPE_FRAME, merge_to_tiff, mergeable_in
 from negpy.desktop.view.shortcut_registry import label_with_shortcut
 from negpy.desktop.view.styles.theme import THEME
 from negpy.kernel.system.config import APP_CONFIG
@@ -742,9 +743,19 @@ class ImageCanvas(QWidget):
         act_sticky_zoom.setChecked(self.state.sticky_zoom)
         act_sticky_zoom.toggled.connect(self._controller.session.set_sticky_zoom)  # type: ignore[union-attr]
         menu.addSeparator()
+        self._add_merge_to_tiff_action(menu)
         act_unload = menu.addAction("Unload…")
         act_unload.triggered.connect(self._unload_current_file)
         menu.exec(global_pos)
+
+    def _add_merge_to_tiff_action(self, menu: QMenu) -> None:
+        """Merge to TIFF Negative for the frame on the canvas. Frame scope only: the canvas shows one
+        frame, and a selection-scoped item here would act on frames the user cannot see."""
+        if self._controller is None or not mergeable_in(self.state, SCOPE_FRAME):
+            return
+        menu.addAction(label_with_shortcut(LABELS[SCOPE_FRAME], ACTION_IDS[SCOPE_FRAME])).triggered.connect(
+            lambda: merge_to_tiff(self, self._controller, SCOPE_FRAME)
+        )
 
     def _add_reset_actions(self, menu: QMenu) -> None:
         """The Film Strip's frame resets, for the frame on the canvas."""

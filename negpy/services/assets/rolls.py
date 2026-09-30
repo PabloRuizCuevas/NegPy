@@ -308,6 +308,46 @@ def rolls_containing_path(repo: Any, path: str) -> List[str]:
     return out
 
 
+def adopt_replacement(
+    repo: Any,
+    old_hash: str,
+    new_hash: str,
+    old_path: str,
+    new_path: str,
+    dropped_paths: List[str],
+    keep_source: bool = False,
+) -> List[str]:
+    """Give *new_path* the roll records of the file it replaces: its membership, its card
+    locks, its scene and its forks. *dropped_paths* leave every roll. The old hash keeps
+    its locks, scene and forks, so a file restored from the Trash keeps them. With
+    *keep_source* the old path stays a member beside the new one, for a replacement whose
+    sources are left on disk and stay frames of their own. Returns the ids of
+    the rolls whose fork of *old_hash* the caller must copy."""
+    store = _read(repo)
+    gone = set(dropped_paths)
+    forked_in = []
+    for roll_id, entry in store.items():
+        for key in ("extra_paths", "member_paths"):
+            if key in entry:
+                paths = [p for p in entry[key] if p not in gone]
+                if old_path in paths:
+                    paths = [*paths, new_path] if keep_source else [new_path if p == old_path else p for p in paths]
+                entry[key] = list(dict.fromkeys(paths))
+        overrides = entry.get("frame_overrides", {})
+        if old_hash in overrides and new_hash not in overrides:
+            entry["frame_overrides"] = {**overrides, new_hash: list(overrides[old_hash])}
+        for scene_id, scene in entry.get("scenes", {}).items():
+            if old_hash in scene["member_hashes"] and new_hash not in scene["member_hashes"]:
+                entry["scenes"][scene_id] = {**scene, "member_hashes": [*scene["member_hashes"], new_hash]}
+        forked = entry.get("forked_hashes", [])
+        if old_hash in forked:
+            forked_in.append(roll_id)
+            if new_hash not in forked:
+                entry["forked_hashes"] = [*forked, new_hash]
+    _write(repo, store)
+    return forked_in
+
+
 def rename_roll(repo: Any, roll_id: str, name: str) -> None:
     store = _read(repo)
     if roll_id in store:

@@ -907,6 +907,23 @@ class DesktopSessionManager(QObject):
         self.state.stale_thumbnails.discard(key)
         self.state.embeddings.pop(asset.get("hash"), None)
 
+    def _carry_thumbnail(self, old: Dict[str, Any], new: Dict[str, Any]) -> None:
+        """Give a replacement frame the thumbnail of the frame it was made from.
+
+        A merged file renders the same picture as the assembly it replaces, so the icon is
+        already right. The background pass that would otherwise fill it reads no geometry
+        (`get_thumbnail_worker`), so a rotated frame would come back unrotated beside
+        neighbours that kept a real render.
+        """
+        old_key, new_key = asset_thumbnail_key(old), asset_thumbnail_key(new)
+        icon = self.state.thumbnails.get(old_key)
+        if icon is None or new_key in self.state.thumbnails:
+            return
+        self.state.thumbnails[new_key] = icon
+        for flags in (self.state.rendered_thumbnails, self.state.stale_thumbnails):
+            if old_key in flags:
+                flags.add(new_key)
+
     def search_facts(self) -> Dict[str, Dict[str, Any]]:
         """Searchable facts per asset hash, rebuilt on first use after any change.
 
@@ -1996,6 +2013,58 @@ class DesktopSessionManager(QObject):
         self.files_changed.emit()
         self._persist_session()
         self.select_file(pos)
+
+    def save_active_edit(self) -> None:
+        """Write the open frame's unsaved edit, so a batch reading the DB sees it."""
+        if self.state.current_file_hash and self._config_dirty:
+            self.repo.save_file_settings(self.state.current_file_hash, self.state.config, file_path=self.state.current_file_path or "")
+            self.settings_saved.emit()
+            self._config_dirty = False
+
+    def replace_assets(self, replacements: Dict[int, dict]) -> None:
+        """Swap Film Strip entries in place ({index: new asset}) and reopen the active frame
+        when it is one of them."""
+        valid = {i: a for i, a in replacements.items() if 0 <= i < len(self.state.uploaded_files)}
+        if not valid:
+            return
+        marks = self.repo.load_file_marks()
+        for i, asset in valid.items():
+            self._carry_thumbnail(self.state.uploaded_files[i], asset)
+            self._drop_thumbnail(self.state.uploaded_files[i])
+            m = marks.get(unforked_hash(asset["hash"]))
+            self.state.uploaded_files[i] = {**asset, "keeper": m == "keeper", "excluded": m == "excluded"}
+        self._stamp_scenes()
+        self.asset_model.refresh()
+        self.files_changed.emit()
+        self._persist_session()
+        if self.state.selected_file_idx in valid:
+            self._config_dirty = False
+            self.select_file(self.state.selected_file_idx, selection_override=list(self.state.selected_indices))
+
+    def insert_assets(self, insertions: Dict[int, dict]) -> None:
+        """Add Film Strip entries ({index: new asset}) just after the ones they came from,
+        which stay. The selection does not move: the frame the user was on is still there."""
+        valid = {i: a for i, a in insertions.items() if 0 <= i < len(self.state.uploaded_files)}
+        if not valid:
+            return
+        marks = self.repo.load_file_marks()
+        for i in sorted(valid, reverse=True):
+            asset = valid[i]
+            self._carry_thumbnail(self.state.uploaded_files[i], asset)
+            m = marks.get(unforked_hash(asset["hash"]))
+            self.state.uploaded_files.insert(i + 1, {**asset, "keeper": m == "keeper", "excluded": m == "excluded"})
+
+        # Every insertion pushes the frames after it along, so a selection recorded as an
+        # index has to move with them or it names a different frame.
+        def shifted(idx: int) -> int:
+            return idx + sum(1 for i in valid if i < idx)
+
+        self.state.selected_file_idx = shifted(self.state.selected_file_idx)
+        self.state.selected_indices = [shifted(i) for i in self.state.selected_indices]
+        self._stamp_scenes()
+        self.asset_model.refresh()
+        self.files_changed.emit()
+        self._persist_session()
 
     def set_triplet(self, index: int, red_path: str, green_path: str, blue_path: str, align: bool = True) -> None:
         """Reassign the R/G/B exposures of an RGB-scan asset, then reload it."""

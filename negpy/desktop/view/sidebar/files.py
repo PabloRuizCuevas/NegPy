@@ -51,6 +51,14 @@ from negpy.desktop.view.confirm import (
     confirm_unload,
     warn_invalid_roll_name,
 )
+from negpy.desktop.view.frame_merge_action import (
+    ACTION_IDS,
+    LABELS,
+    SCOPE_FRAME,
+    SCOPE_SELECTION,
+    merge_to_tiff,
+    mergeable_in,
+)
 from negpy.desktop.view.keyboard_shortcuts import _close_roll, _reset_roll, _reset_selected, close_roll_label
 from negpy.features.hdr.logic import anchor_choices
 from negpy.features.hdr.models import hdr_frame_paths
@@ -1815,9 +1823,11 @@ class FileBrowser(QWidget):
             menu.addSeparator()
             menu.addAction("Stitch Selected Frames").triggered.connect(lambda: self.controller.request_stitch_selected())
             self._add_hdr_merge_action(menu, state)
+            self._add_merge_to_tiff_action(menu, state, SCOPE_SELECTION)
         else:
             menu.addSeparator()
             menu.addAction("Edit RGB Triplet…").triggered.connect(self._on_edit_triplet)
+            self._add_merge_to_tiff_action(menu, state, SCOPE_FRAME)
             active = state.uploaded_files[state.selected_file_idx] if 0 <= state.selected_file_idx < len(state.uploaded_files) else {}
             if active.get("stitch_paths"):
                 menu.addAction("Unstitch").triggered.connect(lambda: self.controller.request_unstitch())
@@ -1919,6 +1929,18 @@ class FileBrowser(QWidget):
             act.setToolTip("Merging is for transparencies; black-and-white reversal film is not supported yet")
             return
         act.triggered.connect(lambda: self.controller.request_hdr_merge_selected())
+
+    def _add_merge_to_tiff_action(self, menu, state, scope: str) -> None:
+        """Merge to TIFF Negative for *scope*, hidden when nothing in scope is an assembled frame.
+
+        Why a frame is refused belongs in the confirm dialog, which can say it in a
+        sentence, not in a tooltip on a greyed-out item.
+        """
+        if not mergeable_in(state, scope):
+            return
+        menu.addAction(label_with_shortcut(LABELS[scope], ACTION_IDS[scope])).triggered.connect(
+            lambda: merge_to_tiff(self, self.controller, scope)
+        )
 
     def _add_hdr_anchor_menu(self, menu, asset: dict) -> None:
         """ "Render exposure": which frame of the bracket the merged result opens at.

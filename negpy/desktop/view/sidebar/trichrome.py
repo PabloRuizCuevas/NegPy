@@ -43,6 +43,7 @@ class TrichromeSidebar(BaseSidebar):
         self.enable_btn.toggled.connect(self._on_toggled)
         self.controller.rgb_scan_mode_changed.connect(self._follow_mode)
         self.edit_btn.clicked.connect(lambda: open_triplet_dialog(self, self.controller.session))
+        self.controller.session.files_changed.connect(self.sync_ui)
         self.sync_ui()
 
     def _on_toggled(self, checked: bool) -> None:

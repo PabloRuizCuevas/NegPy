@@ -1,3 +1,5 @@
+from typing import Optional
+
 from PyQt6.QtWidgets import QCheckBox, QMessageBox
 from negpy.kernel.system.text import count_of
 from negpy.services.assets import rolls
@@ -189,6 +191,50 @@ def confirm_assembly_mode(parent, mode: str, count: int) -> bool:
     box.setDefaultButton(turn_on)
     box.exec()
     return box.clickedButton() is turn_on
+
+
+def confirm_frame_merge(parent, title: str, counts: dict, skipped: list) -> Optional[bool]:
+    """Ask before a Merge to TIFF Negative. None on Cancel, else whether the sources go to the Trash.
+
+    *counts* is mergeable frames per composite kind, so the question names what it found.
+    """
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle(title)
+    one = sum(counts.values()) == 1
+    box.setText(f"Merge {_merge_subject(counts)} into {'a TIFF negative' if one else 'TIFF negatives'}?")
+    lines = [
+        "Each one is a linear negative, not a positive export: it is written next to its primary source "
+        "file and takes over the frame's edit. The export demosaic is fixed in the file."
+    ]
+    if counts.get("stitch"):
+        lines.append(
+            "A stitch also bakes in its flat field and per-part sensor correction, and its parts stop "
+            "being one composite. Unstitch is not available afterward."
+        )
+    if skipped:
+        shown = skipped[:8]
+        more = f"\n…and {len(skipped) - len(shown)} more" if len(skipped) > len(shown) else ""
+        lines.append("Skipped:\n" + "\n".join(shown) + more)
+    box.setInformativeText("\n\n".join(lines))
+    trash = QCheckBox("Move each merged frame's source files to the Trash")
+    trash.setToolTip("Off keeps the source files, and the frame they make stays in the film strip beside the merged file")
+    trash.setChecked(True)
+    box.setCheckBox(trash)
+    merge = box.addButton("Merge", QMessageBox.ButtonRole.AcceptRole)
+    box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(merge)
+    box.exec()
+    if box.clickedButton() is not merge:
+        return None
+    return trash.isChecked()
+
+
+def _merge_subject(counts: dict) -> str:
+    """ "4 triplets and 1 stitch", in a fixed kind order so the wording is stable."""
+    names = {"rgb": ("triplet", ""), "stitch": ("stitch", "stitches")}
+    parts = [count_of(counts[k], *names[k]) for k in ("rgb", "stitch") if counts.get(k)]
+    return " and ".join(parts) if parts else count_of(0, "frame")
 
 
 def _confirm_with_verb(parent, title: str, text: str, informative: str, verb: str) -> bool:
