@@ -388,10 +388,32 @@ def test_open_roll_settings_dialog_routes_rows_and_scope_to_session(browser, ses
     with patch("negpy.desktop.view.sidebar.files.RollSettingsDialog", return_value=mock_dlg) as ctor:
         browser._open_roll_settings_dialog()
 
-    assert ctor.call_args.kwargs["sel_count"] == 1  # 1 other selected
-    assert ctor.call_args.kwargs["roll_count"] == 3  # 3 other on roll
+    assert ctor.call_args.kwargs["sel_count"] == 2  # both selected frames
+    assert ctor.call_args.kwargs["roll_count"] == 4  # every visible frame
     session.apply_preset_fields.assert_called_once_with(mock_dlg.selected_config.return_value, rows, "selection")
     browser.controller.request_render.assert_called_once()
+
+
+def test_roll_settings_scope_counts_include_the_active_frame(browser, session):
+    """The dialog's fields are the source, so the active frame is a target too and the
+    counts must match what apply_preset_fields will change (#1188)."""
+    session.state.selected_indices = [0, 1, 2]
+    session.state.selected_file_idx = 0
+    with patch("negpy.desktop.view.sidebar.files.RollSettingsDialog") as ctor:
+        browser._build_roll_settings_dialog()
+    assert ctor.call_args.kwargs["sel_count"] == 3
+    assert ctor.call_args.kwargs["roll_count"] == 4
+
+
+def test_roll_settings_scope_counts_respect_the_filter(browser, session):
+    browser.search_input.setText("IMG")
+    browser._apply_filter()
+    session.state.selected_indices = [0, 1, 3]
+    session.state.selected_file_idx = 0
+    with patch("negpy.desktop.view.sidebar.files.RollSettingsDialog") as ctor:
+        browser._build_roll_settings_dialog()
+    assert ctor.call_args.kwargs["sel_count"] == 2  # note.txt is filtered out
+    assert ctor.call_args.kwargs["roll_count"] == 2
 
 
 def test_open_roll_settings_dialog_noop_without_active_file(browser, session):

@@ -1683,10 +1683,12 @@ class FileBrowser(QWidget):
         src = state.selected_file_idx
         if src == -1:
             return None
+        # The dialog's own fields are the source, so the active frame is a target like
+        # any other and counts toward both scopes (apply_preset_fields, not
+        # sync_selected_settings).
         visible = self.session.asset_model.visible_actual_indices()
-        sel_targets = len([i for i in set(state.selected_indices) if i != src and i in visible])
-        roll_targets = len([i for i in visible if i != src])
-        return RollSettingsDialog(self, state.config, GearProfiles.load_library(), sel_count=sel_targets, roll_count=roll_targets)
+        sel_count = len([i for i in set(state.selected_indices) if i in visible])
+        return RollSettingsDialog(self, state.config, GearProfiles.load_library(), sel_count=sel_count, roll_count=len(visible))
 
     def _exec_roll_settings_dialog(self, dlg: RollSettingsDialog) -> None:
         if dlg.exec() != QDialog.DialogCode.Accepted:
