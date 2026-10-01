@@ -591,6 +591,14 @@ Spotting, as done with a brush on a finished print. Marks are found by local con
 *   **Brush Size** (2 to 64 px): diameter of the heal, scratch and exclusion brushes, as the cursor shows. Live while the Heal or Scratch tool is active or Optical Removal is on. Hold `Alt` and scroll on the canvas, or pinch while a brush is live.
 *   **Undo Last** / **Clear All** (undo and bin icons, on the MANUAL HEAL header): remove the last or all manual heals and traced lines; auto-detected dust is unaffected.
 
+**Clone** (the header shows the stroke count). Copies film from another area over a defect the heal cannot rebuild, such as a large blotch or a mark across texture.
+
+*   **Clone**: `Alt`-click the area to copy from, then click or paint over the defect. The source follows the brush and keeps its offset for later strokes until you `Alt`-click a new one. A dashed circle shows where it copies from. Uses **Brush Size**. Right-click a stroke to delete it.
+*   **Match Tone** (default on): keeps the source's grain and detail but takes the brightness and color of the film around the destination, so the patch does not show as a lighter or darker area.
+*   **Strength** (0 to 100%, default 100%): how much of the source covers the destination.
+*   **Feather** (0 to 100%, default 50%): how far in from the brush edge the copy fades in, as a share of the brush radius. 0 is a hard edge.
+*   A stroke keeps the Strength, Feather and Match Tone it was painted with. **Undo Last** / **Clear All** on the CLONE header remove the last or all clone strokes.
+
 <!-- panel:finish -->
 ### 7.2 Finishing: vignette, carrier, border
 

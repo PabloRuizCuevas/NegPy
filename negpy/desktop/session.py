@@ -51,6 +51,7 @@ class ToolMode(Enum):
     DUST_PICK = auto()
     SCRATCH_PICK = auto()
     SCRATCH_LINE = auto()
+    CLONE = auto()
     LOCAL_DRAW = auto()
     LOCAL_OVAL = auto()
     LOCAL_GRADIENT = auto()
@@ -76,6 +77,10 @@ class AppState:
     workspace_color_space: str = WORKING_COLOR_SPACE
     is_processing: bool = False
     active_tool: ToolMode = ToolMode.NONE
+    # Clone tool source on the open frame, raw-normalized: the point Alt-click set, and once a
+    # stroke starts, the destination-to-source offset every later stroke keeps (aligned).
+    clone_source: Optional[Tuple[float, float]] = None
+    clone_offset: Optional[Tuple[float, float]] = None
     # Color page region (0 Global, 1 Shadows, 2 Highlights): scopes the WB
     # picker so a pick writes the selected region's CMY fields.
     wb_pick_region: int = 0

@@ -25,9 +25,11 @@ from negpy.desktop.view.widgets.collapsible import hidden_by_gating
 
 
 def _context_undo(controller) -> None:
-    """Ctrl+Z targets what the user is working on: while a heal/scratch tool is
-    active it removes the last placed heal; otherwise it's the normal edit undo."""
-    if controller.session.state.active_tool in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK, ToolMode.SCRATCH_LINE):
+    """Ctrl+Z targets what the user is working on: while a heal/scratch or Clone tool
+    is active it removes the last stroke that tool placed; otherwise it's the normal edit undo."""
+    if controller.session.state.active_tool == ToolMode.CLONE:
+        controller.undo_last_clone()
+    elif controller.session.state.active_tool in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK, ToolMode.SCRATCH_LINE):
         controller.undo_last_retouch()
     else:
         controller.session.undo()
@@ -344,6 +346,7 @@ class ShortcutManager:
             "lens_ca_from_metadata": lambda: controls.lens_sidebar.metadata_ca_btn.click(),
             "pick_dust": lambda: _toggle_tool_button(self.window, "finish", controls.retouch_sidebar.pick_dust_btn),
             "pick_scratch": lambda: _toggle_tool_button(self.window, "finish", controls.retouch_sidebar.pick_scratch_btn),
+            "clone_tool": lambda: _toggle_tool_button(self.window, "finish", controls.retouch_sidebar.clone_btn),
             "pick_scratch_line": lambda: _toggle_tool_button(self.window, "finish", controls.retouch_sidebar.pick_line_btn),
             "local_draw": lambda: _toggle_tool_button(self.window, "tone", controls.local_sidebar.draw_btn),
             "local_oval": lambda: _toggle_tool_button(self.window, "tone", controls.local_sidebar.oval_btn),

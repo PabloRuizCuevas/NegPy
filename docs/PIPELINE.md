@@ -394,6 +394,9 @@ This is not a pipeline stage. Every repair is baked into the **linear source bef
 
     A click gives a start point. The frame is band-passed *across* the scratch and normalized by a **local** noise scale. The line's **slope** is fitted, pulled toward the click. **Extent and width are measured**: the repair covers the stretch where the ridge holds, and the band grows outward by the same hysteresis as the brush, so a stored line stays valid at any resolution. The mask takes the same skirt pad and fill, original-floor rule off. **Line Sensitivity** sets the ridge bar for both and re-measures placed lines. There is no auto-detection, because a full-length ridge is as likely a horizon, and telling them apart needs a cross-frame pass.
 
+*   **Clone strokes (the Clone tool)**:
+    The last source bake, after every repair, so a clone copies clean film. Each stroke stores raw-frame points, a destination-to-source offset and its own strength, feather and tone match; strokes apply in order, so a later one can copy from an earlier one. The patch is the source shifted by the offset, blended over a capsule mask whose edge ramps over `feather` × the radius, times strength. Source pixels off the frame carry no weight. **Match Tone** multiplies the source by $\bar d / \bar s$, the Gaussian means ($\sigma$ = the brush radius) of destination and source read only outside the brush, clamped to ±6 stops, so the source keeps its grain and takes the destination's level. A new stroke on top of the last bake applies only that stroke.
+
 *   **Resolution independence**:
     Coordinates and sizes are relative to the full-resolution RAW. A half frame reports the cropped and split full-resolution dimensions even when its preview uses a half-size RAW decode. Strokes are in raw-frame coordinates and the repair runs before geometry, so rotations, flips and distortion correction need no mapping.
 
