@@ -20,6 +20,10 @@ If Windows blocks the default data folder, NegPy suggests `%LOCALAPPDATA%\NegPy\
 
 Drag a panel by its top edge (the thin strip above Session, the margin around the Controls panel's **Find** box) to float it; its pin button docks it again. **Shift+H** hides both panels, and brings both back. NegPy remembers the layout. **Reset Panel Layout** in the **⋯** menu restores the default layout. Each dialog opens at the size and position it had when you last closed it.
 
+### The tour
+
+**Take the Tour** (**⋯** menu, or Find) walks through NegPy in eight chapters, from the Library to the Scan tab; the chapter menu on its card jumps to any of them. Each step lights a whole card, which stays live, and the picture stays undimmed, so an edit shows as you make it. A step with a circle is a task, such as dragging Print Density or pressing a view key; a check marks it done when you do it, and **Next** moves on when you are ready. **Skip Step** moves on without it. With nothing open, **Load Demo Negative** opens a synthetic color negative to practice on. **Read More…** opens the panel's full guide. Esc ends the tour, and the next one offers **Resume Where You Left Off**.
+
 ### Find
 
 **Ctrl+K**, or **Find Control or Action…** in the **⋯** menu, opens one box for every slider, card and action. Type a name, or another editor's word for the job: *contrast* finds **ISO-R Grade**, *white balance* **Filtration**, *exposure* **Print Density**. Up and Down pick a row and Enter opens it on its tab. A slider row is the live control, so you can drag it without leaving the list.
@@ -92,7 +96,7 @@ On a **frame** card (Geometry, Filtration, Tone, Lab, Alternative Processes, Ton
 
 ### The tab header
 
-Tabs with several cards (Roll, Exposure, Color, Finish, Metadata) have a bar reading **3 of 5 cards edited** (or **No cards edited**). Its buttons act on all cards: reset arrow (appears once something is edited, asks first), **Reset to Roll** (appears once a card differs from the roll, one undo step), roll button (one picker for the whole tab, selected frames or whole roll) and double chevron (collapse/expand). Cards the film mode has retired are skipped. Geometry has one card and no bar.
+Tabs with several cards (Roll, Exposure, Look, Finish, Metadata) have a bar reading **3 of 5 cards edited** (or **No cards edited**). Its buttons act on all cards: reset arrow (appears once something is edited, asks first), **Reset to Roll** (appears once a card differs from the roll, one undo step), roll button (one picker for the whole tab, selected frames or whole roll) and double chevron (collapse/expand). Cards the film mode has retired are skipped. Geometry has one card and no bar.
 
 ### Menu bar (macOS)
 
@@ -462,7 +466,7 @@ Draw masks and lighten or darken only those areas. The **MASKS** header shows ho
 
 Handles can go into the gray area outside the frame. A tilted Card Edge usually must start past the corner it burns.
 
-*   **Mask list**: shape icon, Dodge (lighten), Burn (darken) or Grade (contrast only), and values. Click the shape icon to enable or disable the mask (its row grays out). The yin-yang inverts the mask, so it acts everywhere except inside its shape (red while on). The eye toggles the outline; the trash deletes it.
+*   **Mask list**: shape icon, Dodge (lighten), Burn (darken) or Grade (contrast only), and values. Click the shape icon to enable or disable the mask (its row grays out). The yin-yang inverts the mask, so it acts everywhere except inside its shape (red while on). The eye toggles the outline; the trash deletes it. Outlines show only while the Exposure tab is open.
 *   The canvas tint of the current mask, and of masks that **intersect** it, goes while you hold **Burn**, **Feather** or **Grade** or drag a vertex. A Card Edge or an inverted mask intersects anything on its side.
 *   **SELECTED MASK**: the controls below act on the mask selected in the list, and gray out with none selected.
 *   **Burn** (-2 to 2 stops, default 0): **positive burns** (darker), **negative dodges** (brighter), like Print Density and the Finishing edge burn.

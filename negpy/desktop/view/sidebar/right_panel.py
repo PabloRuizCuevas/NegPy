@@ -438,6 +438,7 @@ class RightPanel(QWidget):
         for i, btn in enumerate(self._tab_buttons):
             btn.setChecked(i == index)
         self.switcher.set_pinned(index)
+        self._sync_local_masks()
 
         # The heal and scratch tools live on the tab hosting the Retouch section. Navigating to
         # another tab suspends the active one, so clicks on the canvas do not keep placing heals
@@ -464,6 +465,7 @@ class RightPanel(QWidget):
         for i, btn in enumerate(self._group_buttons):
             btn.setChecked(i == index)
         self.group_switcher.set_pinned(index)
+        self._sync_local_masks()
 
         # Trigger device detection and a gating refresh when the Scan tab is selected. It hosts
         # both the SANE scanner and the RGB-Scan capture as collapsible sections.
@@ -472,6 +474,17 @@ class RightPanel(QWidget):
                 self.scan_sidebar.on_activated()
             if hasattr(self.scanlight_sidebar, "on_activated"):
                 self.scanlight_sidebar.on_activated()
+
+    def _sync_local_masks(self) -> None:
+        """Mask outlines are the Dodge & Burn card's editing handles, so they leave the canvas with its tab."""
+        # The frame page switches its first tab while it is built, before the groups exist.
+        if not getattr(self, "_group_keys", None):
+            return
+        shown = self._group_keys[self._active_group] == "frame" and self._active_index == self._section_tab_index.get("local_section")
+        state = self.controller.session.state
+        if state.local_masks_shown != shown:
+            state.local_masks_shown = shown
+            self.controller.config_updated.emit()
 
     def reveal_section(self, section_attr: str) -> None:
         """Switch to the tab containing the given ControlsPanel section."""
@@ -522,14 +535,16 @@ class RightPanel(QWidget):
 
     def scroll_to(self, widget: QWidget, centered: bool = False) -> None:
         """Ensure *widget* is visible within its enclosing scroll area; centered puts it a third
-        of the way down, which ensureWidgetVisible never does for a widget already in view."""
+        of the way down, or higher so a tall one fits, which ensureWidgetVisible never does for a
+        widget already in view."""
         parent = widget.parent()
         while parent is not None:
             if isinstance(parent, QScrollArea):
                 if centered and parent.widget() is not None:
                     bar = parent.verticalScrollBar()
                     y = widget.mapTo(parent.widget(), QPoint(0, 0)).y()
-                    bar.setValue(max(0, min(bar.maximum(), y - parent.viewport().height() // 3)))
+                    vh = parent.viewport().height()
+                    bar.setValue(max(0, min(bar.maximum(), y - max(0, min(vh // 3, vh - widget.height())))))
                 else:
                     parent.ensureWidgetVisible(widget)
                 return
