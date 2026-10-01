@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 from PyQt6.QtCore import Q_ARG, QFile, QMetaObject, QObject, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QTransform
-from PyQt6.QtWidgets import QCheckBox, QMessageBox
+from PyQt6.QtWidgets import QApplication, QCheckBox, QMessageBox
 
 from negpy.kernel.system.memory import available_system_memory_bytes
 from negpy.kernel.system.text import count_of, plural
@@ -134,7 +134,10 @@ from negpy.features.exposure.logic import (
 )
 from negpy.features.altprocess.models import AltProcess
 from negpy.features.finish.models import FinishConfig
+from negpy.features.flatfield.logic import apply_flatfield
 from negpy.features.geometry.logic import (
+    AUTOCROP_DETECT_RES,
+    _normalize_detection_input,
     apply_fine_rotation,
     autocrop_detection_key,
     detect_closest_aspect_ratio,
@@ -144,6 +147,7 @@ from negpy.features.geometry.logic import (
 )
 from negpy.features.geometry.models import FINE_ROTATION_LIMIT, AutocropMode
 from negpy.features.geometry.processor import CropProcessor, GeometryProcessor
+from negpy.features.geometry.skew import trusted_frame_skew
 from negpy.domain.interfaces import PipelineContext
 from negpy.features.lab.models import LabConfig
 from negpy.features.local.models import LocalAdjustmentsConfig
@@ -3234,6 +3238,67 @@ class AppController(QObject):
         self.session.update_config(replace(self.state.config, geometry=new_geo), persist=True)
         self.rotation_guide_requested.emit()
         self.set_active_tool(ToolMode.NONE)
+        self.request_render()
+
+    def auto_skew_frame(self) -> None:
+        """Square the frame to its own film and gate edges: Fine Rotation, and Tilt and Swing
+        where an opposite pair of edges measured them. Unmeasured ones keep their value."""
+        raw = self.state.preview_raw
+        if raw is None:
+            return
+        config = self.state.config
+        geo = config.geometry
+        # The fit reads gradients off the flat-fielded source, like every detection path.
+        source = raw if metadata_lens_corrections(config) else apply_flatfield(raw, config.flatfield)
+        # Detection resolution up front: the transforms below are scale-invariant and the
+        # fit resamples to this size anyway, so the warp never runs at full resolution.
+        source, _ = _normalize_detection_input(source, AUTOCROP_DETECT_RES)
+        # Measured before any fine rotation or keystone, so every value the fit returns is absolute.
+        base_geometry = replace(
+            geo, fine_rotation=0.0, converge_v=0.0, converge_h=0.0, crop_rect=None, crop_from_auto=False, autocrop_offset=0
+        )
+        context = PipelineContext(
+            original_size=(source.shape[1], source.shape[0]),
+            scale_factor=1.0,
+            process_mode=config.process.process_mode,
+        )
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            skew = trusted_frame_skew(GeometryProcessor(base_geometry).process(source, context))
+        except Exception:
+            logger.exception("Auto Skew failed on %s", self.state.current_file_path)
+            self.set_status("Auto Skew failed; see the log", 3000, "warning")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        if skew is None:
+            self.set_status("Auto Skew could not read the frame edges confidently enough to apply", 3000, "warning")
+            return
+        new_geo = replace(
+            geo,
+            fine_rotation=float(np.clip(skew.fine_rotation, -FINE_ROTATION_LIMIT, FINE_ROTATION_LIMIT)),
+            converge_v=geo.converge_v if skew.converge_v is None else float(skew.converge_v),
+            converge_h=geo.converge_h if skew.converge_h is None else float(skew.converge_h),
+        )
+        # Under the sliders' own step, the frame already sits where the fit would put it.
+        if (
+            abs(new_geo.fine_rotation - geo.fine_rotation) < 0.05
+            and abs(new_geo.converge_v - geo.converge_v) < 0.05
+            and abs(new_geo.converge_h - geo.converge_h) < 0.05
+        ):
+            self.set_status("Auto Skew: no adjustment necessary", 3000)
+            return
+        self._crop_bounds_dirty = True
+        self.session.update_config(replace(config, geometry=new_geo), persist=True)
+        self.rotation_guide_requested.emit()
+        # Only what the fit measured; the slider shows rotation clockwise-positive, the
+        # stored value counter-clockwise.
+        parts = [f"Fine Rotation {-new_geo.fine_rotation:+.2f}°"]
+        if skew.converge_v is not None:
+            parts.append(f"Tilt {new_geo.converge_v:+.1f}%")
+        if skew.converge_h is not None:
+            parts.append(f"Swing {new_geo.converge_h:+.1f}%")
+        self.set_status("Auto Skew: " + ", ".join(parts), 4000)
         self.request_render()
 
     def handle_keystone_line_marked(self, edge: str, nx1: float, ny1: float, nx2: float, ny2: float) -> None:

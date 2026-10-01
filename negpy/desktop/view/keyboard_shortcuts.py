@@ -333,6 +333,7 @@ class ShortcutManager:
             "mode_transparency": lambda: controls.process_sidebar.mode_btn.setCurrentIndex(2),
             "pick_wb": lambda: controls.color_sidebar.pick_wb_btn.toggle(),
             "manual_crop": lambda: controls.geometry_sidebar.manual_crop_btn.toggle(),
+            "auto_skew": lambda: controls.geometry_sidebar.auto_skew_btn.click(),
             "straighten": lambda: controls.geometry_sidebar.straighten_btn.toggle(),
             "keystone_lines": lambda: controls.geometry_sidebar.keystone_lines_btn.toggle(),
             "crop_guide_next": lambda: controls.geometry_sidebar.cycle_guide(),

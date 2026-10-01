@@ -45,6 +45,7 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "converge_v_inc": ShortcutEntry("", "Easel tilt up", "Geometry"),
     "converge_h_dec": ShortcutEntry("", "Easel swing down", "Geometry"),
     "converge_h_inc": ShortcutEntry("", "Easel swing up", "Geometry"),
+    "auto_skew": ShortcutEntry("", "Auto skew: square the frame to its edges", "Geometry"),
     "straighten": ShortcutEntry("L", "Toggle straighten line tool", "Geometry"),
     "keystone_lines": ShortcutEntry("", "Toggle tilt/swing reference-lines tool", "Geometry"),
     "pick_wb": ShortcutEntry("Shift+W", "Toggle WB picker", "Tools"),
