@@ -1586,7 +1586,8 @@ class ThumbnailRenderWorker(QObject):
 
     rendered = pyqtSignal(object, object)  # ThumbnailRenderInput, ndarray — the frame rides
     # along so the controller can re-check the asset is still current before persisting.
-    progress = pyqtSignal(int, int, str)
+    frame_started = pyqtSignal(int, int, str)  # index, total, name — before the decode
+    progress = pyqtSignal(int, int, str, float, float)  # done, total, name, decode s, render s
     finished = pyqtSignal(int)  # frames rendered
     cancelled = pyqtSignal()
     error = pyqtSignal(str)
@@ -1652,14 +1653,21 @@ class ThumbnailRenderWorker(QObject):
                 if self._cancel_requested(generation):
                     break
                 name = str(frame.file_info.get("name") or frame.file_info.get("path") or done)
+                self.frame_started.emit(done, total, name)
+                decode_s = render_s = 0.0
+                decoding = True
+                started = time.perf_counter()
                 try:
                     buffer, meta = _decode_asset_preview_with_meta(
                         self._preview_service, frame.file_info, frame.config, task.workspace_color_space
                     )
+                    decode_s = time.perf_counter() - started
+                    decoding = False
                     cam_xyz = meta.get("cam_xyz")
                     if frame.icc_input_active:
                         cam_xyz = wb_only_cam_xyz(cam_xyz)
                     if not self._cancel_requested(generation):
+                        started = time.perf_counter()
                         result, _metrics = self._processor.run_pipeline(
                             buffer,
                             frame.config,
@@ -1674,14 +1682,20 @@ class ThumbnailRenderWorker(QObject):
                             cam_xyz=cam_xyz,
                             camera_wb=meta.get("camera_wb"),
                         )
+                        render_s = time.perf_counter() - started
                         if isinstance(result, np.ndarray) and not self._cancel_requested(generation):
                             self.rendered.emit(frame, np.ascontiguousarray(result[:, :, :3]))
                             rendered_count += 1
                 except Exception:
                     if self._cancel_requested(generation):
                         break
+                    # A failed read on a slow volume costs as much as a good one; the time left counts it.
+                    if decoding:
+                        decode_s = time.perf_counter() - started
+                    else:
+                        render_s = time.perf_counter() - started
                     logger.exception("Background thumbnail refresh skipped failed frame %s", name)
-                self.progress.emit(done, total, name)
+                self.progress.emit(done, total, name, decode_s, render_s)
 
             self._processor.cleanup(release_source_cache=True, collect=False)
             self._emit_finished_unless_cancelled(generation, rendered_count)

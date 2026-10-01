@@ -336,6 +336,31 @@ _KNEE_LABELS = {
 # navigation and Auto Crop All caches already hold; deferred and retried rather than
 # started under memory pressure.
 _THUMBNAIL_REFRESH_MEMORY_RETRY_MS = 5000
+# Mean decode seconds above which, when decode also dominates the render, a refresh is
+# read-bound: the source volume, not the CPU, sets its pace.
+_THUMBNAIL_READ_BOUND_DECODE_S = 3.0
+
+
+def thumbnail_refresh_progress_text(
+    index: int,
+    total: int,
+    mean_decode_s: float,
+    mean_render_s: float,
+    *,
+    in_flight: bool = False,
+) -> str:
+    """Progress line for a thumbnail refresh. With ``in_flight`` the ``index``-th frame is
+    still decoding and counts as left; otherwise ``index`` frames are finished. The time
+    left needs two measured frames, since one is too noisy."""
+    text = f"Thumbnails {index}/{total}"
+    samples = index - 1 if in_flight else index
+    left = total - samples if in_flight else total - index
+    if samples >= 2 and left > 0:
+        seconds = (mean_decode_s + mean_render_s) * left
+        text += f" · ~{round(seconds / 60)} min left" if seconds >= 60 else f" · ~{max(1, round(seconds))} s left"
+    if mean_decode_s > _THUMBNAIL_READ_BOUND_DECODE_S and mean_decode_s > 2 * mean_render_s:
+        text += f" · reading {mean_decode_s:.0f} s/frame"
+    return text
 
 
 def history_step_label(prev: Optional[WorkspaceConfig], config: WorkspaceConfig, index: int) -> str:
@@ -427,6 +452,8 @@ class AppController(QObject):
     _render_cleanup_requested = pyqtSignal(object)  # texture to spare, or None
     status_message_requested = pyqtSignal(str, int, str)
     status_progress_requested = pyqtSignal(int, int)
+    # The running thumbnail refresh's progress line; "" when none is running.
+    thumbnail_refresh_progress = pyqtSignal(str)
     batch_started = pyqtSignal(str, bool)  # title, abortable
     batch_progress = pyqtSignal(int, int, str)  # current, total, label
     batch_finished = pyqtSignal()
@@ -537,6 +564,9 @@ class AppController(QObject):
         # landing — marks that cancellation as a user stop, not a pre-emption, so the
         # cancelled handler discards the backlog instead of resuming it.
         self._thumbnail_render_user_cancelled = False
+        # Running totals of the current generation's decode and render seconds, and the
+        # frame count they cover: the status line's time left and read-bound cue.
+        self._thumbnail_render_timing = [0.0, 0.0, 0]
         self.flush_export_settings: Optional[Callable[[], None]] = None
         # A rotate/flip on a frame with no cached thumbnail yet (generate_missing_thumbnails
         # is still decoding it) has nothing to turn; the pending turn recorded here is applied
@@ -852,6 +882,7 @@ class AppController(QObject):
         self.batch_autocrop_worker.error.connect(self._on_batch_autocrop_error)
 
         self.thumbnail_render_requested.connect(self.thumbnail_render_worker.process)
+        self.thumbnail_render_worker.frame_started.connect(self._on_thumbnail_render_frame_started)
         self.thumbnail_render_worker.progress.connect(self._on_thumbnail_render_progress)
         self.thumbnail_render_worker.rendered.connect(self._on_thumbnail_rendered)
         self.thumbnail_render_worker.finished.connect(self._on_thumbnail_render_finished)
@@ -3694,9 +3725,11 @@ class AppController(QObject):
 
         self._thumbnail_render_generation += 1
         self._thumbnail_render_running = True
+        self._thumbnail_render_timing = [0.0, 0.0, 0]
         self._thumbnail_render_pending = {f.file_info.get("hash") for f in frames}
         self.thumbnail_refresh_state_changed.emit(True)
         self.set_status(f"Updating {count_of(len(frames), 'thumbnail')}...")
+        self.status_progress_requested.emit(0, len(frames))
         self.thumbnail_render_requested.emit(
             ThumbnailRenderTask(
                 frames=frames,
@@ -3705,8 +3738,24 @@ class AppController(QObject):
             )
         )
 
-    def _on_thumbnail_render_progress(self, current: int, total: int, name: str) -> None:
-        self.set_status(f"Updating thumbnail {current}/{total}: {name}")
+    def _thumbnail_render_means(self) -> tuple[float, float]:
+        decode_s, render_s, count = self._thumbnail_render_timing
+        return (decode_s / count, render_s / count) if count else (0.0, 0.0)
+
+    def _on_thumbnail_render_frame_started(self, index: int, total: int, name: str) -> None:
+        if not self._thumbnail_render_running:
+            return
+        self.thumbnail_refresh_progress.emit(thumbnail_refresh_progress_text(index, total, *self._thumbnail_render_means(), in_flight=True))
+
+    def _on_thumbnail_render_progress(self, current: int, total: int, name: str, decode_s: float, render_s: float) -> None:
+        if not self._thumbnail_render_running:
+            return
+        timing = self._thumbnail_render_timing
+        timing[0] += decode_s
+        timing[1] += render_s
+        timing[2] += 1
+        self.status_progress_requested.emit(current, total)
+        self.thumbnail_refresh_progress.emit(thumbnail_refresh_progress_text(current, total, *self._thumbnail_render_means()))
 
     def _on_thumbnail_rendered(self, frame: ThumbnailRenderInput, buffer: np.ndarray) -> None:
         if not self._thumbnail_render_running:
@@ -3767,6 +3816,8 @@ class AppController(QObject):
         redispatch queued behind, never ahead of, the batch that pre-empted it."""
         self._thumbnail_render_running = False
         self._thumbnail_render_pending = set()
+        self.status_progress_requested.emit(0, 0)
+        self.thumbnail_refresh_progress.emit("")
         self.thumbnail_refresh_state_changed.emit(False)
         if self._thumbnail_render_resume:
             leftover = list(self._thumbnail_render_resume)
