@@ -593,7 +593,8 @@ Spotting, as done with a brush on a finished print. Marks are found by local con
 
 **Clone** (the header shows the stroke count). Copies film from another area over a defect the heal cannot rebuild, such as a large blotch or a mark across texture.
 
-*   **Clone**: `Alt`-click the area to copy from, then click or paint over the defect. The source follows the brush and keeps its offset for later strokes until you `Alt`-click a new one. A dashed circle shows where it copies from. Uses **Brush Size**. Right-click a stroke to delete it.
+*   **Clone**: the first click on the photo picks the area to copy from, then click or paint over the defect. The source follows the brush and keeps its offset for later strokes. A dashed circle shows where it copies from, and the line under the buttons says what the next click does. Uses **Brush Size**. Right-click a stroke to delete it.
+*   **Set Source**: the next click picks a new area to copy from. `Alt`-click with the Clone tool, or **Pick New Source** in the right-click menu, does the same.
 *   **Match Tone** (default on): keeps the source's grain and detail but takes the brightness and color of the film around the destination, so the patch does not show as a lighter or darker area.
 *   **Strength** (0 to 100%, default 100%): how much of the source covers the destination.
 *   **Feather** (0 to 100%, default 50%): how far in from the brush edge the copy fades in, as a share of the brush radius. 0 is a hard edge.

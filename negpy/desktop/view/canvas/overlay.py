@@ -1014,7 +1014,9 @@ class CanvasOverlay(QWidget):
             self._draw_brush(painter, THEME.warn_amber)
 
         if self._tool_mode != ToolMode.NONE and visible_rect.contains(self._mouse_pos):
-            if self._tool_mode in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK, ToolMode.CLONE):
+            if self._tool_mode in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK) or (
+                self._tool_mode == ToolMode.CLONE and not self.state.clone_picking
+            ):
                 self._draw_brush(painter)
             elif self._tool_mode not in _SHAPE_FOR_TOOL:
                 pen = QPen(QColor(255, 255, 255, 80), 1, Qt.PenStyle.DotLine)
@@ -1035,7 +1037,7 @@ class CanvasOverlay(QWidget):
             self._draw_line_hover(painter)
         if self._tool_mode == ToolMode.SCRATCH_PICK:
             self._draw_scratch_in_progress(painter)
-        if self._tool_mode in _BRUSH_TOOLS:
+        if self._tool_mode in _BRUSH_TOOLS and not (self._tool_mode == ToolMode.CLONE and self.state.clone_picking):
             self._draw_heal_drag_in_progress(painter)
         if self._tool_mode == ToolMode.CLONE:
             self._draw_clone_source(painter)
@@ -1292,8 +1294,10 @@ class CanvasOverlay(QWidget):
         return region
 
     def _clone_source_screen(self) -> Optional[QPointF]:
-        """Where the Clone brush copies from: the brush position plus the aligned offset, or
-        the picked source until a stroke fixes the offset."""
+        """Where the Clone brush copies from: the cursor while a source is being picked, the
+        brush position plus the aligned offset, or the picked source until a stroke fixes it."""
+        if self.state.clone_picking:
+            return self._mouse_pos if self._content_view_rect().contains(self._mouse_pos) else None
         with self.state.metrics_lock:
             uv_grid = self.state.last_metrics.get("uv_grid")
         source, offset = self.state.clone_source, self.state.clone_offset

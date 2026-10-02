@@ -2736,6 +2736,8 @@ class AppController(QObject):
             self._handle_wb_pick(nx, ny)
         elif self.state.active_tool == ToolMode.DUST_PICK:
             self._handle_dust_pick(nx, ny)
+        elif self.state.active_tool == ToolMode.CLONE and self.state.clone_picking:
+            self.set_clone_source(nx, ny)
         elif self.state.active_tool == ToolMode.CLONE:
             self.handle_clone_stroke_completed([(nx, ny)])
         elif self.state.active_tool == ToolMode.SCRATCH_LINE:
@@ -2753,6 +2755,8 @@ class AppController(QObject):
         if mode != ToolMode.KEYSTONE_LINES:
             self._keystone_lines = {}
         self.state.active_tool = mode
+        # A Clone tool with nothing to copy from starts by asking for the source.
+        self.state.clone_picking = mode == ToolMode.CLONE and self.state.clone_source is None
         self.tool_sync_requested.emit()
         if leaving_zone_place:
             self.clear_zone_pins()
@@ -3970,13 +3974,21 @@ class AppController(QObject):
         self.request_render()
 
     def set_clone_source(self, nx: float, ny: float) -> None:
-        """Alt-click with the Clone tool: the point the next stroke copies from."""
+        """The point the next Clone stroke copies from (a Set Source click or an Alt-click)."""
         with self.state.metrics_lock:
             uv_grid = self.state.last_metrics.get("uv_grid")
         if uv_grid is None:
             return
         self.state.clone_source = CoordinateMapping.map_click_to_raw(nx, ny, uv_grid)
         self.state.clone_offset = None
+        self.state.clone_picking = False
+        self.config_updated.emit()
+
+    def arm_clone_source(self, armed: bool) -> None:
+        """Set Source: the next click on the photo picks the area to copy from."""
+        if armed and self.state.active_tool != ToolMode.CLONE:
+            self.set_active_tool(ToolMode.CLONE)
+        self.state.clone_picking = armed
         self.config_updated.emit()
 
     def handle_clone_stroke_completed(self, viewport_pts: list) -> None:
@@ -3986,10 +3998,14 @@ class AppController(QObject):
             uv_grid = self.state.last_metrics.get("uv_grid")
         if uv_grid is None or not viewport_pts:
             return
+        if self.state.clone_picking:
+            self.set_clone_source(*viewport_pts[0])
+            return
         raw_pts = [CoordinateMapping.map_click_to_raw(nx, ny, uv_grid) for nx, ny in viewport_pts]
         if self.state.clone_offset is None:
             if self.state.clone_source is None:
-                self.set_status("Alt-click the area to copy from first", 3000, kind="warning")
+                self.arm_clone_source(True)
+                self.set_status("Click the photo to pick the area to copy from first", 3000, kind="warning")
                 return
             sx, sy = self.state.clone_source
             self.state.clone_offset = (sx - raw_pts[0][0], sy - raw_pts[0][1])

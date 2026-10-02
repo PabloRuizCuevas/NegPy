@@ -122,6 +122,7 @@ def _controller(source=None, offset=None):
 
     state = SimpleNamespace(
         config=WorkspaceConfig(),
+        clone_picking=False,
         clone_source=source,
         clone_offset=offset,
         metrics_lock=MagicMock(),
@@ -150,6 +151,22 @@ def test_first_stroke_fixes_the_offset_and_later_strokes_keep_it():
 
 def test_a_stroke_without_a_source_asks_for_one():
     ctrl, commit = _controller()
+    ctrl.arm_clone_source = MagicMock()
     commit([(0.5, 0.5)])
     assert ctrl.state.config.retouch.clone_strokes == []
+    ctrl.arm_clone_source.assert_called_once_with(True)
     ctrl.set_status.assert_called_once()
+
+
+def test_a_stroke_while_picking_sets_the_source_and_paints_nothing():
+    ctrl, commit = _controller(source=(0.2, 0.3), offset=(0.1, 0.1))
+    ctrl.state.clone_picking = True
+    ctrl.config_updated = MagicMock()
+    from negpy.desktop.controller import AppController
+
+    ctrl.set_clone_source = AppController.set_clone_source.__get__(ctrl)
+    commit([(0.7, 0.4), (0.8, 0.4)])
+    assert ctrl.state.config.retouch.clone_strokes == []
+    assert ctrl.state.clone_picking is False
+    assert ctrl.state.clone_offset is None
+    assert abs(ctrl.state.clone_source[0] - 0.7) < 0.02 and abs(ctrl.state.clone_source[1] - 0.4) < 0.02

@@ -3,7 +3,7 @@ from negpy.desktop.view.widgets.choice_button import ChoiceButton
 from negpy.desktop.view.widgets.sliders import CompactSlider, SliderGroup
 from negpy.desktop.view.sidebar.base import BaseSidebar
 from negpy.desktop.session import ToolMode
-from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, header_row, section_subheader, wrap_tooltip
+from negpy.desktop.view.styles.templates import ICON_BUTTON_WIDTH, header_row, hint_label, section_subheader, wrap_tooltip
 from negpy.features.retouch.models import HEAL_SIZE_MAX, HEAL_SIZE_MIN, IR_METHOD_NEGPY, IR_METHOD_OPENICE
 
 _IR_REMOVAL_TIP = (
@@ -36,6 +36,13 @@ _RIGHT_CLICK_TIP = (
     "Off, a right-click opens the canvas menu and its Exclude From Optical Removal item does the same. "
     "Right-drag paints a band either way."
 )
+
+
+def _clone_hint(picking: bool, has_source: bool) -> str:
+    """What the next click on the photo does with the Clone tool."""
+    if picking or not has_source:
+        return "Click the photo to pick the area to copy from."
+    return "Paint over the defect. The dashed circle shows where it copies from; Set Source picks a new area."
 
 
 class RetouchSidebar(BaseSidebar):
@@ -141,10 +148,17 @@ class RetouchSidebar(BaseSidebar):
         self.clone_undo_btn = self._icon_action("fa5s.undo", "Undo Last: remove the most recent clone stroke")
         self.clone_clear_btn = self._icon_action("fa5s.trash-alt", "Clear All: remove all clone strokes")
         self.layout.addLayout(header_row(self.clone_subheader, self.clone_undo_btn, self.clone_clear_btn))
+        self.clone_source_btn = self._tool_toggle(
+            "fa5s.crosshairs",
+            "Set Source",
+            "Pick the area to copy from: the next click on the photo sets it. Alt-click with the Clone tool does the same",
+        )
         clone_row = QHBoxLayout()
-        clone_row.addWidget(self.clone_btn, 1)
-        clone_row.addWidget(self.clone_match_btn, 1)
+        for btn in (self.clone_btn, self.clone_source_btn, self.clone_match_btn):
+            clone_row.addWidget(btn, 1)
         self.layout.addLayout(clone_row)
+        self.clone_hint = hint_label()
+        self.layout.addWidget(self.clone_hint)
         self.clone_strength_slider = CompactSlider("Strength", 0.0, 100.0, conf.clone_strength * 100.0, step=1.0, precision=0, unit="%")
         self.clone_strength_slider.setToolTip(
             wrap_tooltip("How much of the source covers the destination. Lower lets the original show through")
@@ -185,6 +199,7 @@ class RetouchSidebar(BaseSidebar):
             lambda v: self.update_config_section("retouch", readback_metrics=False, scratch_threshold=float(v))
         )
         self.clone_btn.toggled.connect(self._on_clone_toggled)
+        self.clone_source_btn.toggled.connect(self.controller.arm_clone_source)
         self.clone_match_btn.toggled.connect(
             lambda c: self.update_config_section("retouch", render=False, persist=True, clone_match_tone=c)
         )
@@ -259,7 +274,11 @@ class RetouchSidebar(BaseSidebar):
             self.pick_dust_btn.setChecked(self.state.active_tool == ToolMode.DUST_PICK)
             self.pick_scratch_btn.setChecked(self.state.active_tool == ToolMode.SCRATCH_PICK)
             self.pick_line_btn.setChecked(self.state.active_tool == ToolMode.SCRATCH_LINE)
-            self.clone_btn.setChecked(self.state.active_tool == ToolMode.CLONE)
+            cloning = self.state.active_tool == ToolMode.CLONE
+            self.clone_btn.setChecked(cloning)
+            self.clone_source_btn.setChecked(cloning and self.state.clone_picking)
+            self.clone_hint.setText(_clone_hint(self.state.clone_picking, self.state.clone_source is not None))
+            self.clone_hint.setVisible(cloning)
             self.clone_match_btn.setChecked(conf.clone_match_tone)
             self.clone_strength_slider.setValue(conf.clone_strength * 100.0)
             self.clone_feather_slider.setValue(conf.clone_feather * 100.0)
@@ -306,6 +325,7 @@ class RetouchSidebar(BaseSidebar):
             self.pick_line_btn,
             self.line_threshold_slider,
             self.clone_btn,
+            self.clone_source_btn,
             self.clone_match_btn,
             self.clone_strength_slider,
             self.clone_feather_slider,

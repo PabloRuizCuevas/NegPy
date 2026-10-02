@@ -81,6 +81,8 @@ class AppState:
     # stroke starts, the destination-to-source offset every later stroke keeps (aligned).
     clone_source: Optional[Tuple[float, float]] = None
     clone_offset: Optional[Tuple[float, float]] = None
+    # The next Clone click picks the source instead of painting.
+    clone_picking: bool = False
     # Color page region (0 Global, 1 Shadows, 2 Highlights): scopes the WB
     # picker so a pick writes the selected region's CMY fields.
     wb_pick_region: int = 0

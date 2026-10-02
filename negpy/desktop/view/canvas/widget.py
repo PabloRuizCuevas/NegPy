@@ -812,6 +812,9 @@ class ImageCanvas(QWidget):
         assert controller is not None
         count = len(self.state.config.retouch.clone_strokes)
         menu = QMenu(self)
+        act_source = menu.addAction("Pick New Source")
+        act_source.triggered.connect(lambda: controller.arm_clone_source(True))
+        menu.addSeparator()
         hit = self.overlay.heal_hit_test(pos)
         if hit is not None and hit[0] == "clone":
             act_delete = menu.addAction("Delete This Clone")
