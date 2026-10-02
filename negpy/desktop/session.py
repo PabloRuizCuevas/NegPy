@@ -60,6 +60,11 @@ class ToolMode(Enum):
     ZONE_PLACE = auto()
 
 
+# Tools that frame against the whole uncropped frame: their renders carry
+# crop_preview_full, which skips the crop, the border and the filed carrier.
+UNCROPPED_PREVIEW_TOOLS = frozenset({ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES})
+
+
 @dataclass
 class AppState:
     """

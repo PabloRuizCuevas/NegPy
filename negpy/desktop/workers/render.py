@@ -377,6 +377,7 @@ class RenderWorker(QObject):
             metrics["memo_key"] = task.memo_key
             metrics["compare"] = task.compare
             metrics["interactive"] = task.interactive
+            metrics["crop_preview_full"] = task.crop_preview_full
 
             self.finished.emit(result, metrics)
             self.metrics_updated.emit(metrics)

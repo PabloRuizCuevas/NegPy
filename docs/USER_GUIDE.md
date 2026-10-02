@@ -594,7 +594,7 @@ Spotting, as done with a brush on a finished print. Marks are found by local con
 <!-- panel:finish -->
 ### 7.2 Finishing: vignette, carrier, border
 
-How the print is presented. Applied at the end of the pipeline.
+How the print is presented. Applied at the end of the pipeline. The crop, analysis-region and tilt/swing tools preview the frame without the carrier and the border, so their marks sit on the picture they frame.
 
 **Vignette** (printer's edge burn):
 

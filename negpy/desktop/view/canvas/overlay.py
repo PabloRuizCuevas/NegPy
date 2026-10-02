@@ -13,7 +13,7 @@ from PyQt6.QtGui import QColor, QCursor, QImage, QKeySequence, QMouseEvent, QPai
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from negpy.desktop.converters import ImageConverter
-from negpy.desktop.session import AppState, ToolMode
+from negpy.desktop.session import UNCROPPED_PREVIEW_TOOLS, AppState, ToolMode
 from negpy.desktop.view.canvas.crop_guides import CropGuide, guide_shapes
 from negpy.desktop.view.canvas.printing_notes import notes_outline, notes_sheet, paint_card, paint_map
 from negpy.desktop.view.styles.theme import THEME
@@ -984,7 +984,8 @@ class CanvasOverlay(QWidget):
         if (
             self._buffer_overlay_visible
             and self._buffer_overlay_ratio > 1e-4
-            and self._tool_mode not in (ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES)
+            and self._tool_mode not in UNCROPPED_PREVIEW_TOOLS
+            and not self.state.last_metrics.get("crop_preview_full")
         ):
             d = visible_rect
             margin_w = d.width() * self._buffer_overlay_ratio
@@ -1047,10 +1048,13 @@ class CanvasOverlay(QWidget):
             self._draw_dust_overlay(painter)
 
         # Crop, analysis, and tilt/swing modes show the uncropped frame, so the boxes wouldn't line up.
+        # Both gates: the tool hides these the moment it opens, and the buffer's flag
+        # keeps them hidden while an uncropped frame is still on screen after it closes.
         content_aligned = (
             not self.state.flat_peek
             and not self.state.negative_peek
-            and self._tool_mode not in (ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES)
+            and self._tool_mode not in UNCROPPED_PREVIEW_TOOLS
+            and not self.state.last_metrics.get("crop_preview_full")
         )
         if self.state.test_strip and content_aligned:
             # Takes the content rect over from the zone grid: both would claim it.
@@ -2351,7 +2355,7 @@ class CanvasOverlay(QWidget):
         conf = self.state.config
         edges = key_edges(mask, conf.exposure, conf.process.process_mode, metrics)
         roi = metrics.get("active_roi")
-        crop_full = self.state.active_tool in (ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES)
+        crop_full = bool(metrics.get("crop_preview_full"))
         # Box relative to the content, so panning reuses the cache.
         bx, by = x0 - content.x(), y0 - content.y()
         key = (

@@ -397,9 +397,9 @@ class GPUEngine:
             or self._last_scale_factor != scale_factor
             or self._last_render_size_ref != render_size_ref
             or self._last_settings.process.process_mode != settings.process.process_mode
-            # Toggling the crop tool changes only the late-stage dispatch extent (see
-            # full_frame in process_to_texture), but that resizes every texture from
-            # toning on, so cached ones at the other extent cannot be reused.
+            # Toggling the crop tool resizes every texture from toning on and swaps
+            # the carrier and layout passes in or out (see full_frame in
+            # process_to_texture), so nothing cached survives it.
             or self._last_full_frame != full_frame
         ):
             return 0
@@ -441,7 +441,9 @@ class GPUEngine:
         Key is (w, h, usage, label). A 90°/270° rotation already swaps w and h
         upstream (see w_rot/h_rot computation), so the key naturally changes
         with geometry — no extra geometry field needed.
-        Contents are fully overwritten each render, so no stale-data risk.
+        A pooled texture keeps its last dispatch's output between renders, and
+        cached late stages re-display it (see tex_for_layout), so the pool must
+        never zero or evict a texture the current frame may re-show.
 
         Invariant: callers must pass post-rotation dimensions. If rotation
         handling ever moves downstream of texture allocation, revisit this key.
@@ -596,9 +598,10 @@ class GPUEngine:
 
         ``full_frame``: the crop tool's own preview, which shows the whole rotated
         frame outside the crop rectangle too. Widens only the late-stage dispatch
-        extent (toning/finish/layout); the meter, the contrast mask and the
-        reported ``active_roi`` stay on the real crop, so the crop tool's overlay
-        still tracks it and the print exposure the CPU engine would compute.
+        extent (toning/finish) and drops the border and the filed carrier, which
+        frame the crop and would misplace the overlay; the meter, the contrast mask
+        and the reported ``active_roi`` stay on the real crop, so the print exposure
+        matches the CPU engine.
 
         ``local_maps`` is the pre-rasterised (h, w, 2) dodge/burn EV + local grade
         map already in the post-geometry frame; tiled export passes a per-tile slice.
@@ -951,6 +954,7 @@ class GPUEngine:
             render_size_ref,
             scale_factor,
             vignette_full_crop=vignette_full_crop,
+            full_frame=full_frame,
             shadow_refs=shadow_refs,
             metered_anchor=metered_anchor,
             textural_range=textural_range,
@@ -1324,11 +1328,11 @@ class GPUEngine:
                 crop_w,
                 crop_h,
             )
-            tex_for_layout = tex_finish
-        else:
-            tex_for_layout = tex_toning
+        # Pooled, so it still holds the last dispatch's output when the stage is
+        # cached; tex_toning is pre-vignette and never the display source.
+        tex_for_layout = tex_finish
 
-        if not tiling_mode and apply_layout:
+        if not tiling_mode and apply_layout and not full_frame:
             paper_w, paper_h, content_w, content_h, off_x, off_y, _ = self._calculate_layout_dims(settings, crop_w, crop_h, render_size_ref)
             tex_final = self._get_intermediate_texture(
                 paper_w,
@@ -1513,6 +1517,7 @@ class GPUEngine:
         render_size_ref: Optional[float],
         scale_factor: float,
         vignette_full_crop: Optional[Tuple[int, int, int, int]] = None,
+        full_frame: bool = False,
         shadow_refs: Optional[Tuple[float, float, float]] = None,
         metered_anchor: Optional[float] = None,
         textural_range: Optional[float] = None,
@@ -2041,7 +2046,7 @@ class GPUEngine:
         else:
             v_full_w, v_full_h, v_off_x, v_off_y = vignette_full_crop
         carrier_px = 0.0
-        if settings.finish.carrier_width > 0.0:
+        if settings.finish.carrier_width > 0.0 and not full_frame:
             carrier_px = carrier_width_px(
                 settings.finish.carrier_width,
                 settings.export.export_print_size,

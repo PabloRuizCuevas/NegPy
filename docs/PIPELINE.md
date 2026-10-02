@@ -529,7 +529,7 @@ Not modelled: **solarisation** (the reversal dries back to blue, so the finished
 ## 9. Finish
 **Code**: `negpy.features.finish`
 
-Post-crop print finishing in scene-linear, before the output transform. Order: edge burn → filed carrier; layout extras run at compositing time.
+Post-crop print finishing in scene-linear, before the output transform. Order: edge burn → filed carrier; layout extras run at compositing time. The uncropped tool previews (crop, analysis region, tilt/swing) skip the filed carrier and the layout on both engines, because both frame the crop.
 
 *   **Edge Burn (Vignette)**: $I_{out} = I \cdot 2^{-s \cdot m}$, $s$ the burn in stops (negative = hold back), $m$ a cosine falloff mask. **Roundness** morphs from radial (lens-like) to rectangular (card-like); **Size** sets the falloff midpoint.
 

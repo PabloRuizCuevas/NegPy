@@ -21,6 +21,7 @@ from negpy.desktop.session import (
     AppState,
     DesktopSessionManager,
     ToolMode,
+    UNCROPPED_PREVIEW_TOOLS,
     _source_effective_bounds,
     composite_kind,
     resolve_asset_hdr,
@@ -793,7 +794,7 @@ class AppController(QObject):
             disp[1],
             None,
             metrics.get("active_roi"),
-            self.state.active_tool in (ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES),
+            bool(metrics.get("crop_preview_full")),
             norm_w,
             norm_h,
         )
@@ -2450,7 +2451,14 @@ class AppController(QObject):
         # now, with no spinner and no toasts, and let the real render refresh the metrics.
         target_hash = self._file_hash_for_path(file_path)
         self._expected_render_key = self._render_memo_key()
-        memo = self._render_memo.get(target_hash, self._expected_render_key) if target_hash else None
+        # No memo repaint under an uncropped-preview tool: the filed pixels are a
+        # cropped print, and live crop handles over padded paper misalign until the
+        # real full-frame render lands. The entry stays filed for a later visit.
+        memo = (
+            self._render_memo.get(target_hash, self._expected_render_key)
+            if target_hash and self.state.active_tool not in UNCROPPED_PREVIEW_TOOLS
+            else None
+        )
 
         if not preserve_zoom:
             self.zoom_requested.emit(1.0)
@@ -2481,6 +2489,8 @@ class AppController(QObject):
                 self.state.last_metrics["render_long_edge"] = memo.get("render_long_edge", 0)
                 self.state.last_metrics["splash"] = False
                 self.state.last_metrics["proof"] = True
+                # A crop-preview render is never memoized, so these pixels are a plain print.
+                self.state.last_metrics["crop_preview_full"] = False
                 # These pixels are this frame's own last render. Leaving the outgoing
                 # frame's hash next to them would file them under it on the next
                 # thumbnail refresh, which reads whatever last_metrics holds.
@@ -2593,6 +2603,9 @@ class AppController(QObject):
             self.state.last_metrics["base_positive"] = raw
             self.state.last_metrics["render_long_edge"] = int(max(raw.shape[:2])) if isinstance(raw, np.ndarray) else 0
             self.state.last_metrics["splash"] = True
+            # Every base_positive writer stamps the flag: the border gate reads the
+            # buffer, not the live tool.
+            self.state.last_metrics["crop_preview_full"] = self.state.active_tool in UNCROPPED_PREVIEW_TOOLS
         self.image_updated.emit()
 
     def _on_preview_load_failed(self, file_path: str, message: str) -> None:
@@ -2798,8 +2811,7 @@ class AppController(QObject):
     def set_active_tool(self, mode: ToolMode) -> None:
         # The crop, analysis-region, and tilt/swing tools show the full uncropped frame, so
         # entering or leaving that set must re-render to swap the preview.
-        uncropped = {ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES}
-        preview_mode_changed = (self.state.active_tool in uncropped) != (mode in uncropped)
+        preview_mode_changed = (self.state.active_tool in UNCROPPED_PREVIEW_TOOLS) != (mode in UNCROPPED_PREVIEW_TOOLS)
         leaving_crop = self.state.active_tool == ToolMode.CROP_MANUAL and mode != ToolMode.CROP_MANUAL
         leaving_zone_place = self.state.active_tool == ToolMode.ZONE_PLACE and mode != ToolMode.ZONE_PLACE
         if mode != ToolMode.KEYSTONE_LINES:
@@ -6076,7 +6088,7 @@ class AppController(QObject):
         interactive = not readback_metrics and not compare_capture
         ir_buffer = self.state.preview_ir
         detect_buffer = self.state.preview_detect
-        crop_preview_full = self.state.active_tool in (ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES)
+        crop_preview_full = self.state.active_tool in UNCROPPED_PREVIEW_TOOLS
         if (interactive or crop_preview_full) and self.state.preview_proxy is not None:
             preview_raw = self.state.preview_proxy
             # The IR and detection planes must follow the image they are read against.
@@ -6113,7 +6125,13 @@ class AppController(QObject):
             compare=compare_capture,
             interactive=interactive,
             # Mirrors should_update_thumb, minus its pending-task check.
-            wants_thumbnail=(not interactive and not ephemeral and config_override is None and self.state.config is not self._thumb_config),
+            wants_thumbnail=(
+                not interactive
+                and not ephemeral
+                and not crop_preview_full
+                and config_override is None
+                and self.state.config is not self._thumb_config
+            ),
             cam_xyz=cam_xyz,
             camera_wb=camera_wb,
             diptych=dip[1] if dip is not None else None,
@@ -6319,8 +6337,8 @@ class AppController(QObject):
             original_size=(original[0], original[1]),
             scale_factor=max(original) / float(APP_CONFIG.preview_render_size),
             process_mode=self.state.config.process.process_mode,
-            # Mirrors request_render: the crop and tilt/swing tools frame against the uncropped frame.
-            crop_preview_full=self.state.active_tool in (ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW),
+            # Mirrors request_render: these tools frame against the uncropped frame.
+            crop_preview_full=self.state.active_tool in UNCROPPED_PREVIEW_TOOLS,
             wants_uv_grid=False,
         )
         img = GeometryProcessor(geometry).process(source, context)
@@ -6340,6 +6358,7 @@ class AppController(QObject):
             self.state.last_metrics["base_positive"] = working_oetf_encode(img)
             self.state.last_metrics.pop("render_identity", None)
             self.state.last_metrics["content_rect"] = None
+            self.state.last_metrics["crop_preview_full"] = context.crop_preview_full
             self.state.last_metrics["splash"] = False
             self.state.last_metrics["proof"] = False
             # A prior interactive/peek render (e.g. Flat Peek, which renders with
@@ -6416,7 +6435,7 @@ class AppController(QObject):
             original_size=(height, width),
             scale_factor=max(height, width) / float(APP_CONFIG.preview_render_size),
             process_mode=self.state.config.process.process_mode,
-            crop_preview_full=self.state.active_tool in (ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES),
+            crop_preview_full=self.state.active_tool in UNCROPPED_PREVIEW_TOOLS,
             wants_uv_grid=False,
         )
         img = GeometryProcessor(geometry).process(source, context)
@@ -6427,6 +6446,7 @@ class AppController(QObject):
             # whole point of the view.
             self.state.last_metrics["base_positive"] = img
             self.state.last_metrics["content_rect"] = None
+            self.state.last_metrics["crop_preview_full"] = context.crop_preview_full
             self.state.last_metrics["splash"] = True
             self.state.last_metrics["proof"] = False
             self.state.last_metrics["interactive"] = False
@@ -7287,6 +7307,7 @@ class AppController(QObject):
             self._pending_render_task is None
             and not metrics.get("ephemeral")
             and not metrics.get("interactive")
+            and not metrics.get("crop_preview_full")
             and self.state.config is not self._thumb_config
         )
 
@@ -7544,6 +7565,15 @@ class AppController(QObject):
             return
         with self.state.metrics_lock:
             metrics = dict(self.state.last_metrics)
+        # The crop, analysis and tilt/swing tools render the uncropped frame, which is not
+        # the print. An edited frame being left (persist) is repaired off the background
+        # lane instead -- deferred a tick, because refresh_thumbnails_for skips the current
+        # file and the outgoing frame is still current while active_file_changing fires.
+        if metrics.get("crop_preview_full"):
+            stale_hash = metrics.get("source_hash")
+            if persist and stale_hash and self.state.config is not self._thumb_config:
+                QTimer.singleShot(0, lambda: self.refresh_thumbnails_for([stale_hash]))
+            return
         asset = self._asset_for_render(metrics)
         if asset is None:
             return
