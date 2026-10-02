@@ -162,6 +162,12 @@ Actions with no default key are not listed; every one of them can still be bound
 | `Ctrl + 9` | Scan tab |
 | `Ctrl + 0` | Favorites tab |
 
+## Camera Live View
+| Key | Action |
+|-----|--------|
+| `S` | Scan, or stop the capture |
+| `R` | Retake the current frame |
+
 ## Help
 | Key | Action |
 |-----|--------|

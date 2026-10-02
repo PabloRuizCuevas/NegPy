@@ -502,7 +502,7 @@ class ShortcutManager:
 
 def setup_keyboard_shortcuts(window) -> ShortcutManager:
     manager = ShortcutManager(window)
-    missing = [action_id for action_id in REGISTRY if action_id not in manager._actions]
+    missing = [action_id for action_id, entry in REGISTRY.items() if entry.window == "main" and action_id not in manager._actions]
     if missing:
         raise RuntimeError(f"Shortcut actions missing handlers: {missing}")
     return manager
