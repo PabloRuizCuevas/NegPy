@@ -264,7 +264,7 @@ Right-click a thumbnail, or use shortcuts, to mark frames (multi-selection works
 | Bottom-right | cross, frame heavily dimmed | rejected |
 | Bottom-left | *see below* | the frame was built from more than one file |
 | Top-left | exclamation | the file failed to decode; click to retry |
-| Top-left | small amber dot | the thumbnail predates a settings change (a bulk apply reached the file before a render reached its thumbnail); open the frame to refresh it |
+| Top-left | small amber dot | the thumbnail predates a settings change, from this session or an earlier one; open the frame or use **Update Thumbnails** to refresh it |
 
 The gray bottom-left glyph shows the frame type:
 
@@ -285,7 +285,7 @@ The right-click menu also has:
 *   **Reset to Roll Settings**: **Reset to Roll** on every card of this frame that differs from the roll, as one undo step. Unlike **Reset Settings**, the rest of the frame's edit stays. Also in the canvas **⋯** and right-click menus.
 *   **Apply Settings…**.
 *   **Sync Bounds…**: pushes only this frame's measured bounds, as **Tonal span** and **Color balance**, to the selection or roll. Also in the canvas right-click and overflow menus.
-*   **Update Thumbnail(s)**: re-renders the selection's thumbnails; **Update Thumbnails** on the toolbar does every thumbnail in the roll. Both become **Cancel** while running. A thin bar along the top of the canvas shows progress, and the Film Strip's count line shows the frame, the time left and, when the source files read slowly, the read time per frame.
+*   **Update Thumbnail(s)**: re-renders the selection's thumbnails, whether or not they are stale; **Update Thumbnails** on the toolbar does every stale one in the roll. A thumbnail remembers which settings it was rendered from, so the toolbar button also finds thumbnails left stale by an earlier session and skips the rest, which matters when the source files sit on a slow network drive. A thumbnail that has never been rendered from the frame's settings counts as stale. A change that a thumbnail is too small to show, or that only affects the export or the display, does not: sharpening, chroma denoise, dust, scratch and heal repairs, the demosaic choice, the display profile and soft proof. Use **Update Thumbnail(s)** on the selection to show one of these there. Both become **Cancel** while running. A thin bar along the top of the canvas shows progress, and the Film Strip's count line shows the frame, the time left and, when the source files read slowly, the read time per frame.
 *   **Reset Roll to Defaults…**, and per-frame export.
 *   **Edit Independently in This Roll** / **Use the Shared Edit Again**; see [Rolls that are not folders](#rolls-that-are-not-folders).
 
