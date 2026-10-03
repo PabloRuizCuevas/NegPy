@@ -73,11 +73,17 @@ automatically. There is no address to type, no login and no pairing.
 
 **Frame and focus.** Open **Live View & Scan**. Click anywhere on the image to aim the
 camera's *hardware* focus magnifier at that spot. Click again to return to the full frame.
+The **Focus meter** under the image reads the sharpness of the live image against the best
+value seen since the last click. Turn the focus ring through best focus, then back until
+the meter reads **at peak**. It needs no magnifier, so it works on every body with live view.
 In white-light and normal (camera-only) scanning, you can set ISO, shutter and aperture
 live from the toolbar. With a calibrated RGB preset those controls are hidden and locked to
 the preset instead (see **Presets**), so the scan cannot drift. A control the body cannot
 offer is grayed out. Aperture on a lens with no electronic diaphragm is the usual case, and
 that is most enlarging and macro glass.
+
+A thin border marks the edge of the captured frame, so a dark film holder inside the frame
+does not read as the area outside it.
 
 **Calibrate (RGB mode).** Set the ISO and the aperture you will scan with. Press **+**
 beside the preset dropdown, place the small rectangle on the clear film base, name the
@@ -171,7 +177,10 @@ is film-dye crosstalk, which the density-domain **Crosstalk** matrix handles (se
   point into one property, so a click both magnifies *and* aims. Canon (`eoszoom`) and
   Nikon (`liveviewimagezoomratio`) split them, and their coordinate space is unknown here,
   so a click magnifies where the body already looks. Every other body has no magnifier at
-  all, and the feature disables itself.
+  all, and the feature disables itself. The Nikon D3300 has one but sends no live view frames
+  while it is on, so NegPy keeps it off there. A body that does the same is switched back
+  to full frame when its stream stops, and its magnifier stays off for the session. On all
+  of these, focus with the Focus meter.
 - **Tested on macOS.** The Python is portable and libgphoto2 is a Linux-first project, so
   Linux should be at least as good. This is unverified.
 - **Speed.** A three-shot RGB triplet takes about six seconds on an a7C II over USB. Almost

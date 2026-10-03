@@ -599,7 +599,7 @@ def build(window: "MainWindow") -> list[TutorialStep]:
             "Export",
             "Pick a format (JPEG, 16-bit TIFF, PNG, WebP, JPEG XL), a color space and a size. The "
             "arrow on the button picks this frame, the selection or all visible frames. <b>Presets</b> "
-            "run several recipes in one pass. <b>Contact Sheet</b> prints the roll on one sheet, and "
+            "run several recipes in one pass. <b>Contact Sheet</b> prints the roll as film strips on photographic paper, and "
             "<b>Sidecars</b> write each edit to a file beside its scan.",
             lambda w: rp(w).export_sidebar,
             focus=lambda w: rp(w).export_sidebar.export_main_btn,
@@ -609,21 +609,21 @@ def build(window: "MainWindow") -> list[TutorialStep]:
         step(
             SCANNING,
             "Film Scanners",
-            "Scan straight into NegPy. <b>Film Scanner</b> drives SANE scanners, the Nikon Coolscan "
-            "(with ICE, multi-sampling and Superfine) and Plustek. Prescan a strip, set an offset per "
-            "frame, and each scan opens as a frame.",
-            lambda w: rp(w).scan_sane_section,
-            pre_hook=lambda w: rp(w).show_tab_by_key("scan"),
-            guide=("scan_sane", "Film Scanner"),
+            "Scan straight into NegPy. Pick <b>Film Scanner</b> in the Scanner card: it drives SANE scanners, "
+            "the Nikon Coolscan (with ICE, multi-sampling and Superfine) and Plustek. Prescan a strip, set an "
+            "offset per frame, and the frames open as a roll while they are scanned.",
+            lambda w: rp(w).scan_device_section,
+            pre_hook=lambda w: (rp(w).show_tab_by_key("scan"), rp(w).show_scan_source("film")),
+            guide=("scan_device", "Device"),
         ),
         step(
             SCANNING,
             "Camera Scanning",
             "Tether a camera through gphoto2, with live view, and drive a Scanlight for white or red, "
             "green and blue exposures. A Trichrome capture arrives grouped, ready to merge.",
-            lambda w: rp(w).scan_rgb_section,
-            pre_hook=lambda w: rp(w).show_tab_by_key("scan"),
-            guide=("scan_rgb", "Camera Scanning"),
+            lambda w: rp(w).scan_camera_section,
+            pre_hook=lambda w: (rp(w).show_tab_by_key("scan"), rp(w).show_scan_source("camera")),
+            guide=("scan_camera", "Camera"),
         ),
         step(
             SCANNING,

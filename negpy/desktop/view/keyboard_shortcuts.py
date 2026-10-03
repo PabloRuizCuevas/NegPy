@@ -330,6 +330,8 @@ class ShortcutManager:
             "scan_meter_frame": (
                 lambda: right.scan_sidebar.exposure_meter_btn.click() if getattr(right, "scan_sidebar", None) is not None else None
             ),
+            "scan_as_roll": lambda: right.scan_output.as_roll_btn.toggle(),
+            "scan_folder_as_roll": lambda: right.scan_output.folder_roll_btn.toggle(),
             "mode_color_negative": lambda: controls.process_sidebar.mode_btn.setCurrentIndex(0),
             "mode_bw_negative": lambda: controls.process_sidebar.mode_btn.setCurrentIndex(1),
             "mode_transparency": lambda: controls.process_sidebar.mode_btn.setCurrentIndex(2),
@@ -414,6 +416,7 @@ class ShortcutManager:
             "roll_batch_analysis": controller.request_batch_normalization,
             "analyze_all_scenes": controller.request_analyze_all_scenes,
             "roll_settings": lambda: self.window.session_panel.file_browser.roll_settings_btn.click(),
+            "contact_sheet": lambda: right.export_sidebar.contact_sheet_btn.click(),
             "save_as_roll": lambda: self.window.session_panel.file_browser.save_roll_btn.click(),
             "import_roll": lambda: self.window.session_panel.library_tree.prompt_import_folder(),
             "index_library": lambda: self.window.session_panel.library_tree.index_btn.click(),
@@ -505,7 +508,7 @@ class ShortcutManager:
 
 def setup_keyboard_shortcuts(window) -> ShortcutManager:
     manager = ShortcutManager(window)
-    missing = [action_id for action_id in REGISTRY if action_id not in manager._actions]
+    missing = [action_id for action_id, entry in REGISTRY.items() if entry.window == "main" and action_id not in manager._actions]
     if missing:
         raise RuntimeError(f"Shortcut actions missing handlers: {missing}")
     return manager

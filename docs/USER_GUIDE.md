@@ -264,7 +264,7 @@ Right-click a thumbnail, or use shortcuts, to mark frames (multi-selection works
 | Bottom-right | cross, frame heavily dimmed | rejected |
 | Bottom-left | *see below* | the frame was built from more than one file |
 | Top-left | exclamation | the file failed to decode; click to retry |
-| Top-left | small amber dot | the thumbnail predates a settings change (a bulk apply reached the file before a render reached its thumbnail); open the frame to refresh it |
+| Top-left | small amber dot | the thumbnail predates a settings change, from this session or an earlier one; open the frame or use **Update Thumbnails** to refresh it |
 
 The gray bottom-left glyph shows the frame type:
 
@@ -285,7 +285,7 @@ The right-click menu also has:
 *   **Reset to Roll Settings**: **Reset to Roll** on every card of this frame that differs from the roll, as one undo step. Unlike **Reset Settings**, the rest of the frame's edit stays. Also in the canvas **⋯** and right-click menus.
 *   **Apply Settings…**.
 *   **Sync Bounds…**: pushes only this frame's measured bounds, as **Tonal span** and **Color balance**, to the selection or roll. Also in the canvas right-click and overflow menus.
-*   **Update Thumbnail(s)**: re-renders the selection's thumbnails; **Update Thumbnails** on the toolbar does every thumbnail in the roll. Both become **Cancel** while running. A thin bar along the top of the canvas shows progress, and the Film Strip's count line shows the frame, the time left and, when the source files read slowly, the read time per frame.
+*   **Update Thumbnail(s)**: re-renders the selection's thumbnails, whether or not they are stale; **Update Thumbnails** on the toolbar does every stale one in the roll. A thumbnail remembers which settings it was rendered from, so the toolbar button also finds thumbnails left stale by an earlier session and skips the rest, which matters when the source files sit on a slow network drive. A thumbnail that has never been rendered from the frame's settings counts as stale. A change that a thumbnail is too small to show, or that only affects the export or the display, does not: sharpening, chroma denoise, dust, scratch and heal repairs, the demosaic choice, the display profile and soft proof. Use **Update Thumbnail(s)** on the selection to show one of these there. Both become **Cancel** while running. A thin bar along the top of the canvas shows progress, and the Film Strip's count line shows the frame, the time left and, when the source files read slowly, the read time per frame.
 *   **Reset Roll to Defaults…**, and per-frame export.
 *   **Edit Independently in This Roll** / **Use the Shared Edit Again**; see [Rolls that are not folders](#rolls-that-are-not-folders).
 
@@ -603,7 +603,7 @@ Spotting, as done with a brush on a finished print. Marks are found by local con
 <!-- panel:finish -->
 ### 7.2 Finishing: vignette, carrier, border
 
-How the print is presented. Applied at the end of the pipeline.
+How the print is presented. Applied at the end of the pipeline. The crop, analysis-region and tilt/swing tools preview the frame without the carrier and the border, so their marks sit on the picture they frame.
 
 **Vignette** (printer's edge burn):
 
@@ -698,9 +698,9 @@ The line under the buttons names the two exposures the frame is assembled from. 
 
 #### Half Frame
 
-**Half Frame Mode** splits each scan into two frames, for half-frame cameras. Each half is edited and metered separately and badged. Turning it on auto-detects the gutter and the outer film crop on every loaded scan, cropping into the rebate where one shows; a side with no visible or confidently readable rebate stays uncropped. Each roll remembers its own state. It is disabled for a batch that is not one roll (a library-wide search, a restored session with no shared roll).
+**Half Frame Mode** splits each scan into two frames, for half-frame cameras. Each half is edited and metered separately and badged. Turning it on auto-detects the gutter, its direction and the outer film crop on every loaded scan, cropping into the rebate where one shows; a rotated scan whose halves sit stacked splits top/bottom, and a side with no visible or confidently readable rebate stays uncropped. Each roll remembers its own state. It is disabled for a batch that is not one roll (a library-wide search, a restored session with no shared roll).
 
-*   **Adjust…**: a rectangle editor for the current scan. Drag the green box to crop, drag the orange line to set the split, and set **Cut thickness** to discard the black separator band centered on the split. **Auto-detect** re-finds crop and gutter on this scan. **Apply** is a split button: its ▾ picks *Apply to current frame*, *Apply to selected frames* or *Apply to all frames* (the roll default for frames without an override), remembered for next time.
+*   **Adjust…**: a rectangle editor for the current scan. Drag the green box to crop, drag the orange line to set the split, pick **Split direction** (*Vertical* cuts left/right, *Horizontal* top/bottom), and set **Cut thickness** to discard the black separator band centered on the split. **Auto-detect** re-finds crop, gutter and direction on this scan. **Apply** is a split button: its ▾ picks *Apply to current frame*, *Apply to selected frames* or *Apply to all frames* (the roll default for frames without an override), remembered for next time.
 *   **Detect All**: re-runs the batch detection.
 *   **Unsplit** (enabled on a split frame): reverts it, as does its right-click item.
 
@@ -959,11 +959,11 @@ A searchable gear library used by Metadata (§11), Roll Settings and every gear 
     *   **Noritsu RAW**: headerless BGR 16-bit dumps; size detected from file size. 16× expansion by default.
     *   **TIFF**: a 4th channel tagged as IR (ExtraSamples = UNSPECIFIED or missing), a sidecar `_ir.tif` or IR in a secondary page goes to a separate `_ir` file. **Input gamma** (linear, 1.8, 2.2 or sRGB) linearizes the data. Expansion available, off by default.
     *   **Expansion**: scales the data before writing. Defaults: Pakon F135/F235 4×, Noritsu 16×, F335 and LinearRaw DNG off. Camera RAW, Coolscan NEF and Flextight FFF have none.
-    *   **Apply ICE dust removal** (when IR exists): IR dust and scratch correction. Off by default.
-    *   **Corrections** (camera RAW only, all off): **Apply white balance** (as-shot gains; grayed out for a Trichrome triplet or Single-Shot Narrowband capture), **Apply Flat Field**, **Apply sensor correction** (crosstalk unmixing). Stitch composites always get Flat Field and sensor correction per part.
-    *   **Apply lens correction** (off; shown when the frame has an embedded lens profile or a **Distortion Correction**): applies the scanning-lens correction set in **Optics** (§10.8), which resamples the pixels. The embedded profile applies to a single camera RAW only, after Flat Field; **Distortion Correction** applies to any source, IR included, except a half-frame scan, whose file holds the whole scan.
+    *   **IR Dust Removal** (when IR exists): IR dust and scratch correction. Off by default.
+    *   **Corrections** (camera RAW only, all off): **White Balance** (as-shot gains; grayed out for a Trichrome triplet or Single-Shot Narrowband capture), **Flat Field**, **Sensor Correction** (crosstalk unmixing). Stitch composites always get Flat Field and sensor correction per part.
+    *   **Lens Correction** (off; shown when the frame has an embedded lens profile or a **Distortion Correction**): applies the scanning-lens correction set in **Optics** (§10.8), which resamples the pixels. The embedded profile applies to a single camera RAW only, after Flat Field; **Distortion Correction** applies to any source, IR included, except a half-frame scan, whose file holds the whole scan.
 
-    Linear Output uses **Destination** like any export and always appends `_linear`, so it cannot overwrite its source. Without **Overwrite**, an existing file gives `_linear_2`, `_linear_3` and so on. It runs as a background batch: **Abort** stops after the current frame, and the finish message counts failures.
+    Linear Output uses **Destination** like any export and always appends `_linear`, so it cannot overwrite its source. Without **Overwrite Existing Files**, an existing file gives `_linear_2`, `_linear_3` and so on. It runs as a background batch: **Abort** stops after the current frame, and the finish message counts failures.
 
     The file has no ICC profile and no color metadata from the source (JPEG XL excepted, as above). It carries Make, Model and DateTime from the source and a description of source format, expansion, demosaic algorithm, white balance and corrections, ICE included.
 
@@ -977,10 +977,10 @@ A searchable gear library used by Metadata (§11), Roll Settings and every gear 
 *   **Input ICC**: treat an untagged source as this profile. Primaries only: a matrix profile's TRC is ignored; a LUT profile's input curves still apply.
 *   **Export profile**: the space the file is converted to and tagged with: `Same as Source` (names what it resolves to; Adobe RGB for an untagged scan), `sRGB`, `Adobe RGB`, `ProPhoto RGB`, `P3 D65`, `Rec 2020`, `Grayscale` (true B&W), or an imported printer or paper ICC, which is embedded in the file.
 *   **Import ICC** (folder button on the COLOR MANAGEMENT header): copies a `.icc`/`.icm` into `~/NegPy/icc/`, available at once. A file named after a built-in space (`sRGB.icc`) replaces that space everywhere, after a confirmation.
-*   **Proof on screen** is in **Soft Proof** below. A warning shows here when nothing is proofed or the proof targets a different profile than the export.
+*   **Proof on Screen** is in **Soft Proof** below. A warning shows here when nothing is proofed or the proof targets a different profile than the export.
 *   **Paper Aspect Ratio**: final print ratio, or *Original* (no resize).
-*   **Resolution**: *Original* (full resolution), *Print* (long-edge **Size** in cm plus **DPI**) or *Pixels* (long-edge **px**). Every file is tagged with a DPI: *Print* your value, *Pixels* the one its long edge implies, *Original* the source's own (EXIF or e.g. JFIF density), else the **DPI** field. Linear output follows the same rule.
-*   **Destination**: **Filename Pattern** (a Jinja2 template with export and Metadata fields; see [TEMPLATING.md](TEMPLATING.md)), **Overwrite**, and the location: subfolder of source (default, `export`), same as source, or an **Export Path**. A roll with no single source folder exports under its own folder in NegPy's data folder with Subfolder of Source, and the status bar says so. With **Linear**, only Destination shows.
+*   **Resolution**: *Original* (full resolution), *Print* (long-edge **Size** in cm plus **DPI**) or *Pixels* (**Long edge** in px). Every file is tagged with a DPI: *Print* your value, *Pixels* the one its long edge implies, *Original* the source's own (EXIF or e.g. JFIF density), else the **DPI** field. Linear output follows the same rule.
+*   **Destination**: **Filename Pattern** (a Jinja2 template with export and Metadata fields; see [TEMPLATING.md](TEMPLATING.md)), **Overwrite Existing Files**, and the location: subfolder of source (default, `export`), same as source, or an **Export Path**. A roll with no single source folder exports under its own folder in NegPy's data folder with Subfolder of Source, and the status bar says so. With **Linear**, only Destination shows.
 
 ### Export button
 
@@ -991,7 +991,7 @@ A searchable gear library used by Metadata (§11), Roll Settings and every gear 
 <!-- panel:export_presets -->
 #### Presets
 
-Saved Format/Size/Color Management/**Destination**/filename recipes. **Manage** edits them. **Export Presets** renders the frames with every enabled preset, each to its own destination.
+Saved Format/Size/Color Management/**Destination**/filename recipes. Each preset is a toggle; **Manage** edits them. **Export Presets** renders the frames with every preset turned on, each to its own destination.
 
 <!-- panel:printing_notes -->
 #### Printing Notes
@@ -1001,12 +1001,26 @@ The printer's record for this frame: the numbered dodge/burn masks and a card wi
 <!-- panel:export_sidecars -->
 #### Sidecars
 
-**Save on export** writes a `.negpy` sidecar next to each source on export. **Export Sidecars** writes them for all visible frames now and reports failures in read-only folders. Edits always stay in the database too.
+**Save on Export** writes a `.negpy` sidecar next to each source on export. **Export Sidecars** writes them for all visible frames now and reports failures in read-only folders. Edits always stay in the database too.
 
 <!-- panel:contact_sheet -->
 #### Contact Sheet
 
-All visible frames on one sheet. Pick a **Template** or set **Cell / Gap / Margin / Max tiles**, choose a **Path**, press **Export Contact Sheet**. Written as JPEG with the **JPEG Quality** and **Progressive** settings above.
+A darkroom proof of the roll: every visible frame printed at true size as cut film strips on photographic paper, in the order the files were created (the EXIF capture time when every frame has one, else the file date). The paper prints black to its edge. The rebate, the perforations and the maker's edge print (stock name, frame numbers, the DX barcode on 35mm) follow the frames' **Film stock** and **Format** metadata. A vertical shot lies sideways, as on the negative. Each frame prints with its own edit, without the print border.
+
+*   **Path**: the folder for the sheets. Empty follows the export destination.
+*   **Contact Sheet…**: opens the proof. Drag an edge or a corner of the paper to resize it; the strips stay centered and take as many frames as the width holds. A size near an Ilford sheet snaps to it.
+*   **Format**: 35mm, 35mm Half Frame or 120, read from the frames' metadata and the roll's Half Frame mode. **Frame size** sets the 120 camera's frame (6×4.5 to 6×17).
+*   **Paper**: an Ilford sheet size, or Custom. The turn button swaps width and height. The default, 24 × 30.5 cm, holds a whole 36-exposure roll.
+*   **Width** / **Height**: the paper size, 50–610 mm.
+*   **DPI**: 150, 300 or 600. The file carries it, so it prints at true size; a sheet too large for 600 uses 300.
+*   **Order**: **Date** lays the frames out in the order they were created; **Scene** (offered once the roll has a scene) groups them by scene, each scene starting a new strip, frames in no scene last. The frames keep their own edge numbers.
+*   **Print**: **As Edited** prints each frame with its own edit. **Straight Proof** prints the whole roll at one exposure on grade 2 from the roll's Roll Analysis baseline, as a darkroom proof, so thin and dense negatives print light and dark. In **Scene** order each scene prints at its own Scene Analysis metering, the roll's standing in for a scene never analyzed. It needs the roll scanned at one exposure; camera raws exposed differently are evened out from their EXIF. Positives made by other scanning software cannot be proofed.
+*   **Edge Print**: the maker's markings on the film edge (stock name, frame numbers, DX barcode). Off prints plain film.
+*   **Roll Label**: the roll name, film, developer, camera and date above the strips, set in the edge print's capitals and ink.
+*   **Pick Frames**: shows every frame; click one to leave it out of the sheet or put it back. Frames rejected in the Film Strip start left out. The frames that stay keep their own edge numbers.
+
+Sheets are JPEGs named `contact_sheet.jpg` (`contact_sheet_1of2.jpg` and on when the roll needs more sheets), with the **JPEG Quality** and **Progressive** settings above.
 
 #### Soft Proof
 
@@ -1017,76 +1031,106 @@ Simulate the print on screen. See below.
 
 Preview only; exports are never proofed. Paper is dimmer and has a smaller gamut than a screen, so a correct proof looks worse than the plain preview. Judge it in room light.
 
+*   **Proof on Screen** (`Shift+P`, on by default): master switch. Off grays out the settings on the rail under it.
 *   **Preset**: a saved printer and paper set-up (profile, intent, toggles). **None** proofs the export target with no paper simulation. Save names the set-up, the bin removes it. The box goes blank once you change a setting. Separate from the export **Presets**.
-*   **Proof on screen** (`Shift+P`, on by default): master switch. Off grays out the section.
 *   **Profile**: follows the **Export profile** until you pick a printer or paper, so you can proof a print while you export a web JPEG. Lists imported ICC profiles only.
 *   **Intent**: **Relative Colorimetric** keeps printable colors and clips the rest, so saturated areas can flatten. **Perceptual** compresses everything so color relations survive; printer profiles carry their own table, so try it on saturated frames. **Saturation** is for charts, not photographs.
-*   **Black point compensation** (off): map the darkest tone to the paper's black instead of clipping.
-*   **Simulate paper white** (off): show the paper's white and tint.
-*   **Simulate ink black** (off): show the paper's real black; shadows lift.
-*   **Gamut warning**: show unprintable colors as gray (the Analysis panel's **Gamut** row counts them). The edge fades, so read it as a region.
+*   **Black Point Compensation** (off): map the darkest tone to the paper's black instead of clipping.
+*   **Simulate Paper White** (off): show the paper's white and tint.
+*   **Simulate Ink Black** (off): show the paper's real black; shadows lift.
+*   **Gamut Warning**: show unprintable colors as gray (the Analysis panel's **Gamut** row counts them). The edge fades, so read it as a region.
 *   **Display**: the monitor profile, auto-detected; set it by hand if detection fails.
 
 ---
 
 ## 14. Scan tab
 
-Capture film directly into NegPy. Two collapsible sections.
+Capture film directly into NegPy. The **Scanner** card picks the scanner; the tab then shows that scanner's cards, the shared **Output** card, and its status line and **Scan** button pinned at the bottom. While a scan runs, its setup is locked and **Scan** reads **Stop**.
 
-<!-- panel:scan_sane -->
-### Film Scanner
+<!-- panel:scan_source -->
+### Scanner
 
-**Backend**: **SANE** (Linux/macOS), **Nikon Coolscan (nkscan)** (direct Coolscan driver, Linux, Windows, macOS) or **pyOpticfilm (Plustek)** (OpticFilm 8200i SE and 8100 V2, all three OSes). Controls group as **Film**, **Quality**, **Framing** and **Output**; a group with nothing for the device is hidden.
+*   **Scanner** (Camera by default): **Film Scanner** drives a dedicated film scanner (Device, Film & Quality, Framing); **Camera** drives a camera on a copy stand (Camera, Preset & Light). Both write through the same Output card.
 
-*   **Format**: `TIFF` or `TIFF (mono)` (one 16-bit gray plane, for B&W negatives).
-*   **Frames**: `1-6`, `1,2,5`, or empty for all. The strip preview writes its picks here. The line above **Scan** states frame count, resolution, extra passes and approximate disk use.
-*   **Eject When Done** (on by default): returns the strip after a batch. Off keeps it loaded with its frame picks and previews, so more frames scan without a new preview, until **Eject** or the scanner's own idle timeout.
-*   **Depth**, **Autofocus**, hardware **Auto-exposure**: shown only when the device offers them (not on the OpticFilm 8200i SE).
-*   **Prescan**: a low-DPI full-window preview; drag a crop and the next Scan uses that hardware ROI.
-*   **Exposure**: shown when the scanner has `scan-exposure-time` (some genesys devices); overrides the exposure time, in µs, ms or s.
+<!-- panel:scan_device -->
+### Device
 
-**pyOpticfilm (Plustek)**: the **OpticFilm 8200i SE** (`07b3:1825`) and **8100 V2** (`07b3:1824`) scan; other listed models cannot yet (try **SANE** on Linux and macOS). **Prescan** takes a 1200 dpi preview; set a crop and leave with **Apply Crop** or **Scan Frame**. **Scan mode** (Single-Pass by default) chooses among **Single-Pass** (one exposure), **Multi-Pass** (repeats the exposure and stacks the results to reduce noise, with a **Passes** slider from 2 to 9), **Adaptive Multi-Exposure** (fuses a short and long exposure for extended dynamic range) and **Adaptive Multi-Pass** (both together); every mode past Single-Pass takes longer, and Multi-Pass cannot combine with IR. From pyopticfilm 1.1.2, orientation matches SilverFast; rescan older files if left-right matters. **IR** comes in the same pass, aligned to color. Shading is measured before the film feed, so the strip can stay loaded. The holder margins in the default Full window are clamped so they do not skew auto exposure; if a frame still looks off, raise **Analysis Buffer** or crop. On Windows, bind the device to **WinUSB** with Zadig first. Install with `uv sync --group plustek` or `pip install negpy[plustek]` (bundled in Windows builds). See [PLUSTEK_WINDOWS.md](PLUSTEK_WINDOWS.md).
+**Backend**: **SANE** (Linux/macOS), **Nikon Coolscan (nkscan)** (direct Coolscan driver, Linux, Windows, macOS) or **pyOpticfilm (Plustek)** (OpticFilm 8200i SE and 8100 V2, all three OSes). Controls follow what the device reports; a row or card with nothing for the device is hidden.
 
-**Nikon Coolscan (nkscan)**: needs no SANE. **Preview strip…** reads the strip in one pass, finds every frame and cuts the tiles from it; it starts when the dialog opens and holds until eject. **Detect frames** runs it again after the film moves. Adjust framing with **Offset** (±10 mm, both ways) and **Drift**; tiles re-cut with no new scan. **Scan** with nothing picked scans every frame. For a subset, type **Frames** or untick tiles. Eject clears the selection; **Offset** and **Drift** stay. Backend-only controls:
+*   **Device**: the scanner; the arrows refresh the list, the eject button returns the film.
+*   **Debug log** (nkscan only; Off, Debug, Trace): writes nkscan's diagnostics to `nkscan.log` in the NegPy folder; the folder button opens it. Trace adds every command sent to the scanner and is what a bug report usually needs. Set it before you reproduce a problem, then attach the file.
 
-*   **ICE**: infrared dust and scratch removal baked into the file (Retouch's IR Restore stays editable). Color film only. **ICE** and **IR** exclude each other; **IR** keeps the plane for Retouch.
-*   **Samples**: reads per line averaged (1 to 16). Less shadow noise, proportionally slower.
-*   **Superfine**: one line per pass. Slower, with no host-side line registration.
+**pyOpticfilm (Plustek)**: the **OpticFilm 8200i SE** (`07b3:1825`) and **8100 V2** (`07b3:1824`) scan; other listed models cannot yet (try **SANE** on Linux and macOS). From pyopticfilm 1.1.2, orientation matches SilverFast; rescan older files if left-right matters. **IR** comes in the same pass, aligned to color. Shading is measured before the film feed, so the strip can stay loaded. The holder margins in the default Full window are clamped so they do not skew auto exposure; if a frame still looks off, raise **Analysis Buffer** or crop. On Windows, bind the device to **WinUSB** with Zadig first. Install with `uv sync --group plustek` or `pip install negpy[plustek]` (bundled in Windows builds). See [PLUSTEK_WINDOWS.md](PLUSTEK_WINDOWS.md).
+
+**Nikon Coolscan (nkscan)**: needs no SANE. Controls follow what the unit reports; an LS-50 hides Samples and Superfine. The release builds include **nkscan**; from source, see [CONTRIBUTING.md](../CONTRIBUTING.md). On Linux, USB needs a udev rule for vendor `04b0`; FireWire/SCSI needs the `sg` module.
+
+<!-- panel:scan_quality -->
+### Film & Quality
+
 *   **Film**: Color negative, B&W negative, Slide or Kodachrome. Sets how frame boundaries are read, whether IR and ICE are offered (not for B&W or Kodachrome), and metering: a color negative is metered per channel to take the orange mask off before conversion; other films keep the factory balance.
 *   **Film format**: frame length (135, 66, 645 and so on). **Auto** where the holder narrows it; set it for loose film in a masked carrier. Shown only where the transport measures the film.
-*   **Exposure** (**Meter Frame…** / **Unlock**): nkscan meters every frame on its own, so a strip end, which meters on the bare light past the cut, keeps a color negative's orange mask and scans with a different color. **Meter Frame…** meters one frame of the loaded strip (pick one inside the strip, such as frame 2) and every later scan on this scanner reuses its exposure, across strips and restarts, until **Unlock**. Meter again for each new roll.
-*   **Debug log** (Off, Debug, Trace): writes nkscan's diagnostics to `nkscan.log` in the NegPy folder; the folder button opens it. Trace adds every command sent to the scanner and is what a bug report usually needs. Set it before you reproduce a problem, then attach the file.
+*   **Resolution**, **Bit depth**: the scan's dpi and bits per channel; type a resolution between the listed stops.
+*   **Scan mode** (Plustek; Single-Pass by default): **Single-Pass** (one exposure), **Multi-Pass** (repeats the exposure and stacks the results to reduce noise, with **Passes** from 2 to 9 under it), **Adaptive Multi-Exposure** (fuses a short and long exposure for extended dynamic range) and **Adaptive Multi-Pass** (both together). Every mode past Single-Pass takes longer, and Multi-Pass cannot combine with IR.
+*   **Samples** (nkscan): reads per line averaged (1 to 16). Less shadow noise, proportionally slower.
+*   **IR**: a separate infrared plane for Retouch's dust removal. **ICE** (nkscan): infrared dust and scratch removal baked into the file (Retouch's IR Restore stays editable), color film only. **ICE** and **IR** exclude each other.
+*   **Superfine** (nkscan): one line per pass. Slower, with no host-side line registration.
+*   **Autofocus**, **Auto-exposure**: run on the scanner before the scan, where it offers them.
+*   **Exposure** (µs): shown when the scanner has `scan-exposure-time` (some genesys devices); off while Auto-exposure is on.
 
-Controls follow what the unit reports; an LS-50 hides Samples and Superfine. The release builds include **nkscan**; from source, see [CONTRIBUTING.md](../CONTRIBUTING.md). On Linux, USB needs a udev rule for vendor `04b0`; FireWire/SCSI needs the `sg` module.
+<!-- panel:scan_framing -->
+### Framing
 
-**SANE scan window**: on a feeder, **Preview strip…** previews every frame, sets per-frame windows and picks frames. With a manual holder, **Preview…** previews one position for one crop window. The window sets the hardware scan area, so only that region is read.
+*   **Frames**: `1-6`, `1,2,5`, or empty for all. The strip preview writes its picks here. The line above **Scan** states frame count, resolution, extra passes and approximate disk use.
+*   **Batch** / **Window**: on a feeder, **Preview strip…** previews every frame, sets per-frame windows and picks frames; with a manual holder, **Preview…** previews one position for one crop window. The window sets the hardware scan area, so only that region is read. **Clear** scans the default frame again. On nkscan the preview reads the strip in one pass, finds every frame and cuts the tiles from it; **Detect frames** runs it again after the film moves, and Eject clears the selection while **Offset** and **Drift** stay.
+*   **Eject When Done** (on by default): returns the strip after a batch. Off keeps it loaded with its frame picks and previews, so more frames scan without a new preview, until **Eject** or the scanner's own idle timeout.
+*   **Exposure lock** (**Meter Frame…** / **Unlock**, nkscan): nkscan meters every frame on its own, so a strip end, which meters on the bare light past the cut, keeps a color negative's orange mask and scans with a different color. **Meter Frame…** meters one frame of the loaded strip (pick one inside the strip, such as frame 2) and every later scan on this scanner reuses its exposure, across strips and restarts, until **Unlock**. Meter again for each new roll.
+*   **Crop** (**Prescan…**, Plustek): a 1200 dpi full-window preview; drag a crop and leave with **Apply Crop** or **Scan Frame**, and the next scan reads only that hardware area. **Clear** scans the full window.
 
-During a preview, a progress bar shows, **Cancel** reads **Stop Preview** (keeps tiles read so far), and **Apply** and **Scan** stay disabled. Negative stock previews inverted, Slide and Kodachrome not.
+<!-- panel:scan_camera -->
+### Camera
 
-<!-- panel:scan_rgb -->
-### Camera Scanning
+Copy-stand capture with a camera in **PC Remote** mode over USB (macOS/Linux). With a NegPy **Scanlight**, it captures narrowband R/G/B triplets from film-stock presets; without, one white-light exposure. Needs `python-gphoto2` (`pip install gphoto2`; no Windows build). See CAMERA_SCANNING.md for setup, the macOS camera-daemon note and troubleshooting.
 
-Copy-stand capture with a camera in **PC Remote** mode over USB (macOS/Linux). With a NegPy **Scanlight**, it captures narrowband R/G/B triplets from film-stock presets; without, one white-light exposure. Frames go to the hot folder and into Trichrome Mode.
-
-*   **Live View & Scan**: click the image to aim the focus magnifier, click again for the full frame. ISO, shutter and aperture are set from the toolbar, or locked by a calibrated RGB preset.
-*   **Preset**: shows its RGB levels, ISO, shutter and aperture and forces them each frame. **+** calibrates: place the rectangle on clear film base, name it, run it. It solves a shutter and per-channel LED levels just under clipping, or says which way to adjust and saves nothing. **Create a manual preset…** sets one by hand.
-*   **Scan** and **Retake**: **Scan** shoots into a per-roll subfolder, auto-numbered, and imports; **Retake** shoots again without advancing. **Delay between exposures** pauses between R, G and B for bodies that lock up.
+*   **Camera** / **Light**: connection status, found automatically; the light shows its LED temperature, amber once it runs warm.
+*   **Live View**: frame and focus; click the image to aim the focus magnifier, click again for the full frame. The **Focus meter** under the image reads sharpness against the best value seen: turn the focus ring through best focus, then back until it reads **at peak**. Each click resets the peak, and on a body that cannot stream its magnified view a click does only that. ISO, shutter and aperture are set from its toolbar, or locked by a calibrated RGB preset.
+*   **Scan** and **Retake**: **Scan** shoots the next frame, auto-numbered, and imports it; **Retake** shoots the last frame again. In the Live View window, `S` scans and `R` retakes; both can be rebound under Camera Live View in Keyboard Shortcuts.
 *   **Narrowband**: RGB-lit scans render more saturated; the Calibration card's **Narrowband** toggle corrects this.
 
-Needs `python-gphoto2` (`pip install gphoto2`; no Windows build). See CAMERA_SCANNING.md for setup, the macOS camera-daemon note and troubleshooting.
+<!-- panel:scan_light -->
+### Preset & Light
+
+Shown while a Scanlight is connected.
+
+*   **Preset**: shows its RGB levels, ISO, shutter and aperture and forces them each frame. **+** calibrates: place the rectangle on clear film base, name it, run it. It solves a shutter and per-channel LED levels just under clipping, or says which way to adjust and saves nothing. **Create a manual preset…** sets one by hand, and the save button stores it.
+*   **Red**, **Green**, **Blue**, **White** (0 to 255): LED levels, editable while building a manual preset. **Light Off** turns every channel off.
+*   **ISO**, **Shutter**, **Aperture**: the preset's exposure, editable while building a manual preset.
+*   **Channel Delay** (0 to 5000 ms): pauses between R, G and B for bodies that lock up.
+
+<!-- panel:scan_output -->
+### Output
+
+Shared by both scanners.
+
+*   **Folder**: where frames are written.
+*   **Scan as Roll** (on by default): the folder the frames go to becomes a roll in the Library and opens, so Half Frame, the Roll tab and Roll Analysis apply to them. Each frame of a batch loads as it is written; only the first takes the selection.
+*   **Folder as Roll** (on by default): frames go into the output folder itself, which is the roll and gives it its name. Off writes into a **Roll** subfolder, and a new Roll name starts a new roll. A camera frame's file name starts with the roll name.
+*   **Format**, **Filename** (Film Scanner): `TIFF` or `TIFF (mono)` (one 16-bit gray plane, for B&W negatives), and the file name as a Jinja2 template of `{{ date }}` and `{{ seq }}`.
 
 <!-- panel:scan_strip -->
 ### Strip preview
 
 Dialogs end with **Cancel**, **Apply** (keep the framing) and **Scan**. Apply reads **Apply Framing** on a strip, **Apply Window** on a single holder, **Apply Crop** after a Prescan.
 
+During a preview, a progress bar shows, **Cancel** reads **Stop Preview** (keeps tiles read so far), and **Apply** and **Scan** stay disabled. Negative stock previews inverted, Slide and Kodachrome not. On nkscan, adjust framing with **Offset** (±10 mm, both ways) and **Drift**; tiles re-cut with no new scan.
+
 *   **Cropping**: drag on a frame; corners resize, inside moves. **Clear Crops** removes all.
 *   **Frame outline**: red box on the detected frame; offsets are measured from it.
-*   **Offset**: moves every frame along the film to clear the gap. The shaded band on the right is film the transport cannot deliver, so too much offset cuts the frame's tail. A feeder goes one way only.
+*   **Offset**: moves every frame along the film to clear the gap. The shaded band on the right is film the transport cannot deliver, so too much offset cuts the frame's tail. A feeder goes one way only. Each slider here has a tick at 0; off 0, a red dot shows beside the Offset or Drift name.
 *   **Drift**: offset that grows (or shrinks) per frame position.
-*   **Per-frame offset**: the slider under a tile, on top of Offset and Drift. Double-click resets.
+*   **Per-frame offset**: the slider under a tile, on top of Offset and Drift. Double-click resets. A moved slider's tile shows the value.
 *   **Size**: tile size, remembered. Double-click resets.
 *   **Which frames**: each tile has a tick; **All** and **None** set all, with a count. Eject clears ticks, crops and per-frame offsets.
+*   **Preview frame** (eye, beside the tick): scans that one frame again. Hidden where the tiles are cut from one pass over the strip, because a moved offset re-cuts them.
 
 ---
 

@@ -65,6 +65,9 @@ class RenderTask:
     interactive: bool = False
     # Only the controller knows whether the filmstrip is already current for this config.
     wants_thumbnail: bool = False
+    # `config` is a view of the edit (flat peek, zone preview, compare baseline), not the
+    # edit itself, so the pixels get no render identity.
+    config_override: bool = False
     # Decoder XYZ->camera matrix for this source; only the transparency transfer reads it.
     cam_xyz: Optional[list] = None
     # As-shot WB multipliers, needed only when the buffer was decoded without WB.
@@ -73,6 +76,7 @@ class RenderTask:
     # its halves, which are then joined. `config` is unused then — the halves own the edit.
     diptych: Optional[tuple[WorkspaceConfig, WorkspaceConfig]] = None
     split_x: float = 0.5
+    split_axis: str = "x"
     gutter_thickness: float = 0.0
 
 
@@ -109,6 +113,9 @@ class ThumbnailUpdateTask:
     monitor_icc_bytes: Optional[bytes] = None
     proof: Optional[tuple] = None
     persist: bool = True  # False = in-memory filmstrip only, skip the disk JPEG encode.
+    # What the buffer was rendered from (services.assets.thumbnail_fingerprint), stored with
+    # the JPEG so staleness survives a restart. None stores it as unknown, i.e. stale.
+    fingerprint: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -192,11 +199,11 @@ class AssetDiscoveryTask:
     supported_extensions: tuple[str, ...]
     rgb_scan: bool = False  # Group discovered files into R/G/B triplets (one asset per frame).
     restore_triplets: dict | None = None  # {red_path: [green, blue]} — rebuild known triplets (session restore).
-    half_frame: bool = False  # Expand each file into two half-frame assets (left/right).
+    half_frame: bool = False  # Expand each file into two half-frame assets along the split axis.
     restore_stitches: dict | None = None  # {primary_path: {paths, transforms, canvas, sizes, hash}} (session restore).
     restore_hdr: dict | None = None  # {reference_path: {paths, ratios, align, hash}} (session restore).
-    half_frame_profile: dict | None = None  # {crop_rect, split_x, gutter_thickness} override
-    half_frame_overrides: dict | None = None  # {base_hash: {crop_rect, split_x, gutter_thickness}} per-file overrides
+    half_frame_profile: dict | None = None  # {crop_rect, split_x, gutter_thickness, split_axis} override
+    half_frame_overrides: dict | None = None  # {base_hash: {crop_rect, split_x, gutter_thickness, split_axis}} per-file overrides
 
 
 @dataclass(frozen=True)
@@ -234,8 +241,8 @@ class PreviewLoadTask:
     lens_corrections: LensCorrections = LensCorrections()
     lens_flatfield: FlatFieldConfig = FlatFieldConfig()
     demosaic: str = DemosaicMode.AUTO  # CFA interpolation for the preview decode
-    half_slice: tuple[int, float, tuple[float, float, float, float] | None, float] | None = (
-        None  # (half, split_x, crop_rect, gutter_thickness)
+    half_slice: tuple[int, float, tuple[float, float, float, float] | None, float, str] | None = (
+        None  # (half, split_x, crop_rect, gutter_thickness, split_axis)
     )
 
 
@@ -286,13 +293,19 @@ class RenderWorker(QObject):
         assert task.diptych is not None
         rendered = []
         for n, config in ((1, task.diptych[0]), (2, task.diptych[1])):
-            buffer = np.ascontiguousarray(slice_half(task.buffer, n, task.split_x, gutter_thickness=task.gutter_thickness))
+            buffer = np.ascontiguousarray(
+                slice_half(task.buffer, n, task.split_x, gutter_thickness=task.gutter_thickness, split_axis=task.split_axis)
+            )
             ir = None
             if task.ir_buffer is not None:
-                ir = np.ascontiguousarray(slice_half(task.ir_buffer, n, task.split_x, gutter_thickness=task.gutter_thickness))
+                ir = np.ascontiguousarray(
+                    slice_half(task.ir_buffer, n, task.split_x, gutter_thickness=task.gutter_thickness, split_axis=task.split_axis)
+                )
             detect = None
             if task.detect_buffer is not None:
-                detect = np.ascontiguousarray(slice_half(task.detect_buffer, n, task.split_x, gutter_thickness=task.gutter_thickness))
+                detect = np.ascontiguousarray(
+                    slice_half(task.detect_buffer, n, task.split_x, gutter_thickness=task.gutter_thickness, split_axis=task.split_axis)
+                )
             out, metrics = self._processor.run_pipeline(
                 buffer,
                 config,
@@ -314,7 +327,9 @@ class RenderWorker(QObject):
         metrics["diptych"] = True
         # Half 1's GPU histogram describes half 1; let `process` bin the joined image instead.
         metrics.pop("histogram_raw", None)
-        return join_halves(left, right, gap_px(left.shape[1], right.shape[1], task.gutter_thickness)), metrics
+        along = 1 if task.split_axis == "x" else 0
+        gap = gap_px(left.shape[along], right.shape[along], task.gutter_thickness)
+        return join_halves(left, right, gap, axis=task.split_axis), metrics
 
     @pyqtSlot(RenderTask)
     def process(self, task: RenderTask) -> None:
@@ -362,10 +377,16 @@ class RenderWorker(QObject):
             metrics["render_long_edge"] = int(max(task.buffer.shape[:2])) if isinstance(task.buffer, np.ndarray) else 0
             # Render identity, so the controller can reject stale/ephemeral bounds writeback.
             metrics["source_hash"] = task.source_hash
+            # The config these pixels were rendered from, paired with their hash, so the
+            # thumbnail written from them can be fingerprinted against what actually ran,
+            # not against a config the user has edited since. A crop-tool render shows the
+            # uncropped frame, which no config describes.
+            metrics["render_identity"] = None if task.crop_preview_full or task.config_override else (task.source_hash, task.config)
             metrics["ephemeral"] = task.ephemeral
             metrics["memo_key"] = task.memo_key
             metrics["compare"] = task.compare
             metrics["interactive"] = task.interactive
+            metrics["crop_preview_full"] = task.crop_preview_full
 
             self.finished.emit(result, metrics)
             self.metrics_updated.emit(metrics)
@@ -506,6 +527,7 @@ class ThumbnailWorker(QObject):
                     tuple(f_info["crop_rect"]) if f_info.get("crop_rect") else None,
                     float(f_info.get("gutter_thickness") or 0.0),
                     str(f_info.get("process_mode") or ""),
+                    split_axis=str(f_info.get("split_axis") or "x"),
                     fast_only=not self._slow_phase,
                     should_cancel=self._cancel_requested.is_set,
                 )
@@ -558,6 +580,7 @@ class ThumbnailWorker(QObject):
                 color_space=task.color_space,
                 monitor_icc_bytes=task.monitor_icc_bytes,
                 proof=task.proof,
+                fingerprint=task.fingerprint,
             )
             if thumb:
                 self.rendered_finished.emit({task.file_hash: thumb})
@@ -659,7 +682,7 @@ class AssetDiscoveryWorker(QObject):
     finished = pyqtSignal(list)
     error = pyqtSignal(str)
     rgb_grouped = pyqtSignal(dict)  # RGB-scan grouping outcome; the controller decides how loudly to say it
-    splits_detected = pyqtSignal(dict)  # {path: detected split_x}, for AutoDetectAllSplitsTask
+    splits_detected = pyqtSignal(dict)  # {path: (split, thickness, crop_rect|None, axis)}, for AutoDetectAllSplitsTask
 
     def _map_files(
         self,
@@ -775,12 +798,11 @@ class AssetDiscoveryWorker(QObject):
         whole — an unsupported combination.
 
         Per-file resolution, highest priority first:
-          1. ``overrides[base_hash]`` — a {crop_rect, split_x, gutter_thickness} dict
-             saved for this one file from the rectangle editor's per-frame mode, for
-             the odd frame the roll-wide setting still gets wrong.
-          2. ``profile`` (a {crop_rect, split_x, gutter_thickness} dict saved from
-             the editor) — shared across the roll, for every file without its own
-             override.
+          1. ``overrides[base_hash]`` — a {crop_rect, split_x, gutter_thickness,
+             split_axis} dict saved for this one file from the rectangle editor's
+             per-frame mode, for the odd frame the roll-wide setting still gets wrong.
+          2. ``profile`` (the same dict shape saved from the editor) — shared across
+             the roll, for every file without its own override.
           3. No profile yet — every file auto-detects, so a first-time roll starts
              from a real split rather than a blind center cut.
         """
@@ -788,7 +810,7 @@ class AssetDiscoveryWorker(QObject):
 
         from negpy.services.assets.half_frame import (
             base_hash,
-            detect_split_x_for_file,
+            detect_split_axis_for_file,
             half_hash,
             half_name,
             is_composite,
@@ -802,7 +824,7 @@ class AssetDiscoveryWorker(QObject):
         auto_split = profile is None
         if auto_split:
             paths = [a["path"] for a in assets if _splittable(a) and base_hash(a["hash"]) not in overrides]
-            detected = self._map_files(paths, detect_split_x_for_file, lambda p: f"Split {os.path.basename(p)}", _DECODE_WORKERS)
+            detected = self._map_files(paths, detect_split_axis_for_file, lambda p: f"Split {os.path.basename(p)}", _DECODE_WORKERS)
             splits = dict(zip(paths, detected))
         else:
             splits = {}
@@ -815,13 +837,15 @@ class AssetDiscoveryWorker(QObject):
             override = overrides.get(base_hash(a["hash"]))
             if override is not None:
                 split_x = float(override.get("split_x") or 0.5)
+                split_axis = str(override.get("split_axis") or "x")
             elif auto_split:
-                # 0.5 is detect_split_x's own "nothing found" sentinel; auto_split is
-                # only true with no profile, so there is no tuned value to fall back to.
-                detected_x = splits.get(a["path"])
-                split_x = float(detected_x) if detected_x is not None else 0.5
+                # (0.5, "x") is the detector's own "nothing found" sentinel; auto_split
+                # is only true with no profile, so there is no tuned value to fall back to.
+                found = splits.get(a["path"])
+                split_x, split_axis = (float(found[0]), str(found[1])) if found is not None else (0.5, "x")
             else:
                 split_x = float(profile.get("split_x") or 0.5)
+                split_axis = str(profile.get("split_axis") or "x")
             legacy = a.get("legacy_hash")
             for half in (1, 2):
                 entry = {
@@ -831,6 +855,7 @@ class AssetDiscoveryWorker(QObject):
                     "legacy_hash": half_hash(legacy, half) if legacy else "",
                     "half": half,
                     "split_x": split_x,
+                    "split_axis": split_axis,
                 }
                 source = override if override is not None else profile
                 if source is not None:
@@ -1592,9 +1617,10 @@ class ThumbnailRenderWorker(QObject):
     cancelled = pyqtSignal()
     error = pyqtSignal(str)
 
-    def __init__(self, preview_service) -> None:
+    def __init__(self, preview_service, live_preview_service=None) -> None:
         super().__init__()
         self._preview_service = preview_service
+        self._live_preview_service = live_preview_service
         self._processor = ImageProcessor(use_gpu=False)
         self._cancel_lock = threading.RLock()
         self._cancelled_generations: set[int] = set()
@@ -1619,6 +1645,42 @@ class ThumbnailRenderWorker(QObject):
     def _cancel_requested(self, generation: int) -> bool:
         with self._cancel_lock:
             return generation in self._cancelled_generations
+
+    def _peek_live_preview(self, frame: ThumbnailRenderInput, workspace_color_space: str) -> Optional[tuple[np.ndarray, dict]]:
+        """A plain frame's decode from the navigation cache, copied, or None; never writes or
+        reorders it. The key is the whole-scan one `_decode_asset_preview_with_meta` slices, so
+        a half-frame asset or roll fork the live path cached under its own hash and half slice
+        is not found."""
+        from negpy.services.assets.half_frame import base_hash, slice_for_asset
+
+        config = frame.config
+        if self._live_preview_service is None or stitch_active(config.stitch) or hdr_active(config.hdr) or is_rgb_triplet(config.rgbscan):
+            return None
+        hit = self._live_preview_service.peek_linear_preview(
+            frame.file_info["path"],
+            workspace_color_space,
+            use_camera_wb=not effective_linear_raw(config.process),
+            file_hash=base_hash(frame.file_info.get("hash")),
+            demosaic=config.process.demosaic_preview,
+            positive_source=config.process.positive_source,
+            highlight_mode=effective_highlight_reconstruction(config.process),
+            bake_camera_wb=highlight_reconstruction_bakes_wb(config.process),
+            lens_corrections=metadata_lens_corrections(config),
+            lens_flatfield=config.flatfield,
+        )
+        logger.debug("thumbnail refresh live cache %s: %s", "miss" if hit is None else "hit", frame.file_info["path"])
+        if hit is None:
+            return None
+        raw, _dims, meta = hit
+        # The navigation cache still serves these arrays, so the pipeline gets its own.
+        meta = {k: np.copy(v) if isinstance(v, np.ndarray) else v for k, v in meta.items()}
+        return slice_for_asset(np.copy(raw), frame.file_info), meta
+
+    def _decode(self, frame: ThumbnailRenderInput, workspace_color_space: str) -> tuple[np.ndarray, dict]:
+        hit = self._peek_live_preview(frame, workspace_color_space)
+        if hit is not None:
+            return hit
+        return _decode_asset_preview_with_meta(self._preview_service, frame.file_info, frame.config, workspace_color_space)
 
     def _emit_finished_unless_cancelled(self, generation: int, rendered_count: int) -> None:
         """Atomically choose the terminal signal for a generation, so a `cancel()` racing
@@ -1658,9 +1720,7 @@ class ThumbnailRenderWorker(QObject):
                 decoding = True
                 started = time.perf_counter()
                 try:
-                    buffer, meta = _decode_asset_preview_with_meta(
-                        self._preview_service, frame.file_info, frame.config, task.workspace_color_space
-                    )
+                    buffer, meta = self._decode(frame, task.workspace_color_space)
                     decode_s = time.perf_counter() - started
                     decoding = False
                     cam_xyz = meta.get("cam_xyz")

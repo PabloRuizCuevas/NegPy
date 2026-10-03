@@ -706,11 +706,12 @@ class MainWindow(QMainWindow):
         if isinstance(buffer, np.ndarray) and not self.state.gpu_enabled:
             finish_conf = self.state.config.finish
             export_conf = self.state.config.export
-            # Crop, analysis, and tilt/swing tools render the uncropped, border-less frame, and padding it would
-            # misalign the tool rect. The GPU skips the layout pass there too.
-            should_preview = (
-                finish_conf.border_size > 0 or export_conf.paper_aspect_ratio != AspectRatio.ORIGINAL
-            ) and self.state.active_tool not in (ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES)
+            # A crop_preview_full buffer is the uncropped, border-less frame, and padding it
+            # would misalign the tool rect. The buffer's own flag, not the live tool: a render
+            # can land after the tool changed. The GPU skips the layout pass the same way.
+            should_preview = (finish_conf.border_size > 0 or export_conf.paper_aspect_ratio != AspectRatio.ORIGINAL) and not metrics.get(
+                "crop_preview_full"
+            )
 
             if should_preview:
                 pil_img = Image.fromarray(float_to_uint8(buffer))

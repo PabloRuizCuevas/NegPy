@@ -68,6 +68,15 @@ def folder_roll_id_for_path(repo: Any, path: str) -> Optional[str]:
     return None
 
 
+def roll_folder_name(text: str) -> Optional[str]:
+    """*text* as the one folder name a scan's roll is written to; blank is "Roll001".
+    None when it would leave the output folder."""
+    name = text.strip() or "Roll001"
+    if name in {".", ".."} or any(sep in name for sep in ("/", "\\", "\0")):
+        return None
+    return name
+
+
 def recognize_folder(repo: Any, path: str, name: str = "") -> str:
     """Mark *path* as a recognized folder roll. Idempotent: returns the existing id
     when the folder is already recognized, without touching its stored name."""
@@ -82,13 +91,26 @@ def recognize_folder(repo: Any, path: str, name: str = "") -> str:
     roll_id = uuid.uuid4().hex
     store[roll_id] = {
         "kind": "folder",
-        "name": name or path.rstrip("/\\").replace("\\", "/").rsplit("/", 1)[-1] or path,
+        "name": name or _import_name(repo, path) or path.rstrip("/\\").replace("\\", "/").rsplit("/", 1)[-1] or path,
         "folder_path": path,
         "extra_paths": [],
         "created_at": time.time(),
     }
     _write(repo, store)
     return roll_id
+
+
+def _import_name(repo: Any, path: str) -> str:
+    """*path* named as Import Subfolders as Rolls names it, from the deepest import source
+    that holds it, so the Library tree nests it there; "" outside every source."""
+    key = _folder_key(path)
+    sources = [os.path.normpath(s) for s in import_sources(repo) if key != _folder_key(s) and _under(key, _folder_key(s))]
+    if not sources:
+        return ""
+    source = max(sources, key=len)
+    # The source's own spelling, so a case-different path on Windows joins the same tree node.
+    parts = [os.path.basename(source), *os.path.relpath(os.path.normpath(path), source).split(os.sep)]
+    return ROLL_PATH_SEP.join(parts)
 
 
 def _dismissed_folders(repo: Any) -> List[str]:
@@ -216,14 +238,16 @@ def create_virtual_roll(repo: Any, name: str, member_paths: List[str]) -> str:
 
 def add_extra_members(repo: Any, roll_id: str, paths: List[str]) -> None:
     """Extend a roll's membership, in one write: a folder roll's extra_paths, or a virtual
-    roll's member_paths. Skips an unknown roll id and paths already members."""
+    roll's member_paths. Skips an unknown roll id, paths already members and files the
+    folder's own walk already finds."""
     store = _read(repo)
     entry = store.get(roll_id)
     if entry is None:
         return
     key = "extra_paths" if entry["kind"] == "folder" else "member_paths"
     known = set(entry[key])
-    new = [p for p in dict.fromkeys(paths) if p not in known]
+    folder = _folder_key(entry["folder_path"]) if entry["kind"] == "folder" else None
+    new = [p for p in dict.fromkeys(paths) if p not in known and _folder_key(os.path.dirname(p)) != folder]
     if new:
         entry[key] = [*entry[key], *new]
         _write(repo, store)

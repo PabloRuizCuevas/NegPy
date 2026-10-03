@@ -13,7 +13,7 @@ from PyQt6.QtGui import QColor, QCursor, QImage, QKeySequence, QMouseEvent, QPai
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from negpy.desktop.converters import ImageConverter
-from negpy.desktop.session import AppState, ToolMode
+from negpy.desktop.session import UNCROPPED_PREVIEW_TOOLS, AppState, ToolMode
 from negpy.desktop.view.canvas.crop_guides import CropGuide, guide_shapes
 from negpy.desktop.view.canvas.printing_notes import notes_outline, notes_sheet, paint_card, paint_map
 from negpy.desktop.view.styles.theme import THEME
@@ -119,6 +119,50 @@ def draw_view_badge(painter: QPainter, text: str, x: float, y: float, width: flo
     painter.drawRoundedRect(badge, 4, 4)
     painter.setPen(QColor(THEME.accent_primary))
     painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
+
+
+def hit_resize_handle(pos: QPointF, handles: Dict[str, QPointF]) -> Optional[str]:
+    """The resize handle (corner or edge midpoint) under `pos`, or None."""
+    for name, pt in handles.items():
+        dx, dy = pos.x() - pt.x(), pos.y() - pt.y()
+        if dx * dx + dy * dy <= _CROP_HANDLE_PX * _CROP_HANDLE_PX:
+            return name
+    return None
+
+
+def resize_cursor(handle: str) -> Qt.CursorShape:
+    """The cursor that says which way a corner ("tl" …) or edge ("left" …) handle drags."""
+    if handle in ("tl", "br"):
+        return Qt.CursorShape.SizeFDiagCursor
+    if handle in ("tr", "bl"):
+        return Qt.CursorShape.SizeBDiagCursor
+    return Qt.CursorShape.SizeHorCursor if handle in ("left", "right") else Qt.CursorShape.SizeVerCursor
+
+
+def draw_resize_handles(painter: QPainter, corners: Dict[str, QPointF], edges: Optional[Dict[str, QPointF]] = None) -> None:
+    """Corner squares and edge bars of a resizable box, as the crop tool draws them."""
+    handle_pen = QPen(Qt.GlobalColor.white, 1.5, Qt.PenStyle.SolidLine)
+    handle_pen.setCosmetic(True)
+    painter.setPen(handle_pen)
+    painter.setBrush(QColor(THEME.accent_primary))
+    for pt in corners.values():
+        painter.drawRect(QRectF(pt.x() - 5, pt.y() - 5, 10, 10))
+    for name, pt in (edges or {}).items():
+        if name in ("top", "bottom"):
+            rect = QRectF(
+                pt.x() - _EDGE_HANDLE_LENGTH_PX / 2.0,
+                pt.y() - _EDGE_HANDLE_THICKNESS_PX / 2.0,
+                _EDGE_HANDLE_LENGTH_PX,
+                _EDGE_HANDLE_THICKNESS_PX,
+            )
+        else:
+            rect = QRectF(
+                pt.x() - _EDGE_HANDLE_THICKNESS_PX / 2.0,
+                pt.y() - _EDGE_HANDLE_LENGTH_PX / 2.0,
+                _EDGE_HANDLE_THICKNESS_PX,
+                _EDGE_HANDLE_LENGTH_PX,
+            )
+        painter.drawRect(rect)
 
 
 def loupe_src_rect(buf_w: int, buf_h: int, cx: float, cy: float, side: float) -> QRectF:
@@ -990,7 +1034,8 @@ class CanvasOverlay(QWidget):
         if (
             self._buffer_overlay_visible
             and self._buffer_overlay_ratio > 1e-4
-            and self._tool_mode not in (ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES)
+            and self._tool_mode not in UNCROPPED_PREVIEW_TOOLS
+            and not self.state.last_metrics.get("crop_preview_full")
         ):
             d = visible_rect
             margin_w = d.width() * self._buffer_overlay_ratio
@@ -1057,10 +1102,13 @@ class CanvasOverlay(QWidget):
             self._draw_dust_overlay(painter)
 
         # Crop, analysis, and tilt/swing modes show the uncropped frame, so the boxes wouldn't line up.
+        # Both gates: the tool hides these the moment it opens, and the buffer's flag
+        # keeps them hidden while an uncropped frame is still on screen after it closes.
         content_aligned = (
             not self.state.flat_peek
             and not self.state.negative_peek
-            and self._tool_mode not in (ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES)
+            and self._tool_mode not in UNCROPPED_PREVIEW_TOOLS
+            and not self.state.last_metrics.get("crop_preview_full")
         )
         if self.state.test_strip and content_aligned:
             # Takes the content rect over from the zone grid: both would claim it.
@@ -2014,11 +2062,7 @@ class CanvasOverlay(QWidget):
         }
 
     def _hit_test_crop_corner(self, pos: QPointF, corners: Dict[str, QPointF]) -> Optional[str]:
-        for name, pt in corners.items():
-            dx, dy = pos.x() - pt.x(), pos.y() - pt.y()
-            if dx * dx + dy * dy <= _CROP_HANDLE_PX * _CROP_HANDLE_PX:
-                return name
-        return None
+        return hit_resize_handle(pos, corners)
 
     def _crop_edge_midpoint_screen_points(self) -> Optional[Dict[str, QPointF]]:
         if self._crop_rect_norm is None or self._view_rect.isEmpty() or self.state.config.geometry.autocrop_ratio != "Free":
@@ -2034,11 +2078,7 @@ class CanvasOverlay(QWidget):
         }
 
     def _hit_test_crop_edge(self, pos: QPointF, edges: Dict[str, QPointF]) -> Optional[str]:
-        for name, pt in edges.items():
-            dx, dy = pos.x() - pt.x(), pos.y() - pt.y()
-            if dx * dx + dy * dy <= _CROP_HANDLE_PX * _CROP_HANDLE_PX:
-                return name
-        return None
+        return hit_resize_handle(pos, edges)
 
     def _crop_rotation_handle_points(self) -> Optional[Dict[str, QPointF]]:
         """Screen positions of the four rotation handles: one per crop-box edge,
@@ -2095,12 +2135,12 @@ class CanvasOverlay(QWidget):
         corners = self._crop_corner_screen_points()
         corner = self._hit_test_crop_corner(pos, corners) if corners else None
         if corner is not None:
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor if corner in ("tl", "br") else Qt.CursorShape.SizeBDiagCursor)
+            self.setCursor(resize_cursor(corner))
             return
         edges = self._crop_edge_midpoint_screen_points()
         edge = self._hit_test_crop_edge(pos, edges) if edges else None
         if edge is not None:
-            self.setCursor(Qt.CursorShape.SizeHorCursor if edge in ("left", "right") else Qt.CursorShape.SizeVerCursor)
+            self.setCursor(resize_cursor(edge))
             return
         if corners is not None and QPolygonF(list(corners.values())).containsPoint(pos, Qt.FillRule.OddEvenFill):
             self.setCursor(Qt.CursorShape.OpenHandCursor)
@@ -2214,31 +2254,7 @@ class CanvasOverlay(QWidget):
 
         self._draw_crop_guides(painter, QRectF(corners["tl"], corners["br"]))
 
-        handle_pen = QPen(Qt.GlobalColor.white, 1.5, Qt.PenStyle.SolidLine)
-        handle_pen.setCosmetic(True)
-        painter.setPen(handle_pen)
-        painter.setBrush(QColor(THEME.accent_primary))
-        for pt in corners.values():
-            painter.drawRect(QRectF(pt.x() - 5, pt.y() - 5, 10, 10))
-
-        edges = self._crop_edge_midpoint_screen_points()
-        if edges is not None:
-            for name, pt in edges.items():
-                if name in ("top", "bottom"):
-                    rect = QRectF(
-                        pt.x() - _EDGE_HANDLE_LENGTH_PX / 2.0,
-                        pt.y() - _EDGE_HANDLE_THICKNESS_PX / 2.0,
-                        _EDGE_HANDLE_LENGTH_PX,
-                        _EDGE_HANDLE_THICKNESS_PX,
-                    )
-                else:
-                    rect = QRectF(
-                        pt.x() - _EDGE_HANDLE_THICKNESS_PX / 2.0,
-                        pt.y() - _EDGE_HANDLE_LENGTH_PX / 2.0,
-                        _EDGE_HANDLE_THICKNESS_PX,
-                        _EDGE_HANDLE_LENGTH_PX,
-                    )
-                painter.drawRect(rect)
+        draw_resize_handles(painter, corners, self._crop_edge_midpoint_screen_points())
 
         self._draw_rotation_handles(painter, corners)
 
@@ -2406,7 +2422,7 @@ class CanvasOverlay(QWidget):
         conf = self.state.config
         edges = key_edges(mask, conf.exposure, conf.process.process_mode, metrics)
         roi = metrics.get("active_roi")
-        crop_full = self.state.active_tool in (ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES)
+        crop_full = bool(metrics.get("crop_preview_full"))
         # Box relative to the content, so panning reuses the cache.
         bx, by = x0 - content.x(), y0 - content.y()
         key = (

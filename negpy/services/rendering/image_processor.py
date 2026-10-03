@@ -1194,6 +1194,7 @@ class ImageProcessor:
         split_x: float,
         crop_rect: Optional[tuple[float, float, float, float]] = None,
         gutter_thickness: float = 0.0,
+        split_axis: str = "x",
     ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """Slice a decoded source down to one half-frame; copies so the shared
         per-file decode cache is never mutated downstream. No-op when half == 0."""
@@ -1201,9 +1202,13 @@ class ImageProcessor:
             return f32_buffer, ir_full
         from negpy.services.assets.half_frame import slice_half
 
-        f32_buffer = np.ascontiguousarray(slice_half(f32_buffer, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness))
+        f32_buffer = np.ascontiguousarray(
+            slice_half(f32_buffer, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness, split_axis=split_axis)
+        )
         if ir_full is not None:
-            ir_full = np.ascontiguousarray(slice_half(ir_full, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness))
+            ir_full = np.ascontiguousarray(
+                slice_half(ir_full, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness, split_axis=split_axis)
+            )
         return f32_buffer, ir_full
 
     def _prepare_export_source(
@@ -1215,11 +1220,12 @@ class ImageProcessor:
         split_x: float = 0.5,
         crop_rect: Optional[tuple[float, float, float, float]] = None,
         gutter_thickness: float = 0.0,
+        split_axis: str = "x",
     ) -> Tuple[np.ndarray, str, str]:
         """Decode, slice and bake one frame for export: (f32_buffer, source color
         space, bake token for the engine hash). Served from the handoff slot when
         prefetched, computed under the gate otherwise."""
-        key = (file_path, source_hash, params, half, split_x, crop_rect, gutter_thickness)
+        key = (file_path, source_hash, params, half, split_x, crop_rect, gutter_thickness, split_axis)
         slot = self._prepare_slot
         if slot is not None and slot[0] == key:
             return slot[1]
@@ -1227,7 +1233,9 @@ class ImageProcessor:
             slot = self._prepare_slot
             if slot is not None and slot[0] == key:
                 return slot[1]
-            return self._prepare_export_source_locked(file_path, params, source_hash, half, split_x, crop_rect, gutter_thickness)
+            return self._prepare_export_source_locked(
+                file_path, params, source_hash, half, split_x, crop_rect, gutter_thickness, split_axis
+            )
 
     def _prepare_export_source_locked(
         self,
@@ -1238,10 +1246,11 @@ class ImageProcessor:
         split_x: float,
         crop_rect: Optional[tuple[float, float, float, float]],
         gutter_thickness: float,
+        split_axis: str = "x",
     ) -> Tuple[np.ndarray, str, str]:
         f32_buffer, ir_full, source_cs = self._load_source_f32(file_path, params)
         f32_buffer, ir_full = self._slice_half_source(
-            f32_buffer, ir_full, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness
+            f32_buffer, ir_full, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness, split_axis=split_axis
         )
         # Same shape as run_pipeline's base_hash, so an export of a frame previewed at full
         # resolution with the same demosaic finds every bake already in the caches.
@@ -1286,10 +1295,11 @@ class ImageProcessor:
         split_x: float = 0.5,
         crop_rect: Optional[tuple[float, float, float, float]] = None,
         gutter_thickness: float = 0.0,
+        split_axis: str = "x",
     ) -> None:
         """Prepare a source into the handoff slot ahead of its render. Failures are
         dropped; the render's own prepare raises them where they are reported."""
-        key = (file_path, source_hash, params, half, split_x, crop_rect, gutter_thickness)
+        key = (file_path, source_hash, params, half, split_x, crop_rect, gutter_thickness, split_axis)
         slot = self._prepare_slot
         if slot is not None and slot[0] == key:
             return
@@ -1298,7 +1308,9 @@ class ImageProcessor:
                 slot = self._prepare_slot
                 if slot is not None and slot[0] == key:
                     return
-                value = self._prepare_export_source_locked(file_path, params, source_hash, half, split_x, crop_rect, gutter_thickness)
+                value = self._prepare_export_source_locked(
+                    file_path, params, source_hash, half, split_x, crop_rect, gutter_thickness, split_axis
+                )
                 self._prepare_slot = (key, value)
         except Exception:
             logger.exception(f"Export source prefetch failed for {file_path}")
@@ -1316,10 +1328,18 @@ class ImageProcessor:
         split_x: float = 0.5,
         crop_rect: Optional[tuple[float, float, float, float]] = None,
         gutter_thickness: float = 0.0,
+        split_axis: str = "x",
     ) -> Tuple[np.ndarray, str]:
         """Full-res render of one frame; returns the float buffer and its color space."""
         f32_buffer, source_cs, export_token = self._prepare_export_source(
-            file_path, params, source_hash, half=half, split_x=split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness
+            file_path,
+            params,
+            source_hash,
+            half=half,
+            split_x=split_x,
+            crop_rect=crop_rect,
+            gutter_thickness=gutter_thickness,
+            split_axis=split_axis,
         )
         # Ensure both GPU and CPU paths use the same export settings.
         params = dc_replace(params, export=export_settings)
@@ -1393,6 +1413,7 @@ class ImageProcessor:
         split_x: float = 0.5,
         crop_rect: Optional[tuple[float, float, float, float]] = None,
         gutter_thickness: float = 0.0,
+        split_axis: str = "x",
         diptych: Optional[Tuple[WorkspaceConfig, WorkspaceConfig]] = None,
     ) -> Tuple[Optional[np.ndarray], str]:
         """Full-res export render; returns (float buffer, its color space) or (None, error).
@@ -1417,11 +1438,13 @@ class ImageProcessor:
                         split_x=split_x,
                         crop_rect=crop_rect,
                         gutter_thickness=gutter_thickness,
+                        split_axis=split_axis,
                     )
                     for n, cfg in ((1, diptych[0]), (2, diptych[1]))
                 ]
                 (left, color_space), (right, _) = rendered
-                buffer = join_halves(left, right, gap_px(left.shape[1], right.shape[1], gutter_thickness))
+                along = 1 if split_axis == "x" else 0
+                buffer = join_halves(left, right, gap_px(left.shape[along], right.shape[along], gutter_thickness), axis=split_axis)
             else:
                 buffer, color_space = self._render_export_buffer(
                     file_path,
@@ -1435,6 +1458,7 @@ class ImageProcessor:
                     split_x=split_x,
                     crop_rect=crop_rect,
                     gutter_thickness=gutter_thickness,
+                    split_axis=split_axis,
                 )
             return buffer, color_space
         except Exception as e:
@@ -1474,6 +1498,7 @@ class ImageProcessor:
         split_x: float = 0.5,
         crop_rect: Optional[tuple[float, float, float, float]] = None,
         gutter_thickness: float = 0.0,
+        split_axis: str = "x",
         diptych: Optional[Tuple[WorkspaceConfig, WorkspaceConfig]] = None,
         embed_plan: Optional[tuple] = None,
     ) -> Tuple[Optional[bytes], str]:
@@ -1494,6 +1519,7 @@ class ImageProcessor:
             split_x=split_x,
             crop_rect=crop_rect,
             gutter_thickness=gutter_thickness,
+            split_axis=split_axis,
             diptych=diptych,
         )
         if buffer is None:
@@ -1653,6 +1679,8 @@ class ImageProcessor:
         split_x: float = 0.5,
         crop_rect: Optional[tuple[float, float, float, float]] = None,
         gutter_thickness: float = 0.0,
+        split_axis: str = "x",
+        keep_source: bool = False,
     ) -> Optional[np.ndarray]:
         """Render a file (with its edits) to a small sRGB uint8 RGB array for tiling.
 
@@ -1669,7 +1697,7 @@ class ImageProcessor:
 
             f32_buffer, ir_full, _ = self._load_source_f32(file_path, params, fast_decode=fast_decode)
             f32_buffer, ir_full = self._slice_half_source(
-                f32_buffer, ir_full, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness
+                f32_buffer, ir_full, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness, split_axis=split_axis
             )
 
             # Proof scale: everything downstream only needs target_long_px. The
@@ -1678,12 +1706,14 @@ class ImageProcessor:
             if ir_full is not None and ir_full.shape[:2] != f32_buffer.shape[:2]:
                 th, tw = f32_buffer.shape[:2]
                 ir_full = cv2.resize(ir_full, (tw, th), interpolation=cv2.INTER_AREA)
-            # Each frame of a contact sheet is decoded once, so the full-res source
-            # cache only pins ~300MB (24MP) across the next frame's decode.
-            self._source_cache_key = None
-            self._source_cache_value = None
-            self._precorrect_key = None
-            self._precorrect_value = None
+            # A contact sheet decodes each file once; only the other half of the same scan,
+            # rendered next, reuses the decode. Anything else would pin ~300MB (24MP) across
+            # the next frame's decode.
+            if not keep_source:
+                self._source_cache_key = None
+                self._source_cache_value = None
+                self._precorrect_key = None
+                self._precorrect_value = None
 
             # A Print/Target-px export setting sizes the paper from print_size x DPI, which
             # re-inflates the tile to full print resolution right after the downsample. Bound

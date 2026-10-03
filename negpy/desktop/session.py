@@ -61,6 +61,11 @@ class ToolMode(Enum):
     ZONE_PLACE = auto()
 
 
+# Tools that frame against the whole uncropped frame: their renders carry
+# crop_preview_full, which skips the crop, the border and the filed carrier.
+UNCROPPED_PREVIEW_TOOLS = frozenset({ToolMode.CROP_MANUAL, ToolMode.ANALYSIS_DRAW, ToolMode.KEYSTONE_LINES})
+
+
 @dataclass
 class AppState:
     """
@@ -1145,7 +1150,7 @@ class DesktopSessionManager(QObject):
         """Snapshot the settings a fresh file can inherit, in a single transaction.
 
         `last_export_config` is separate from the snapshot because EXPORT_REMAINDER — the
-        output folder, ICC paths, contact-sheet layout — has no catalog row to travel on.
+        export and contact-sheet output folders, ICC paths — has no catalog row to travel on.
         """
         from dataclasses import asdict
 
@@ -1278,9 +1283,12 @@ class DesktopSessionManager(QObject):
         """
         if 0 <= index < len(self.state.uploaded_files):
             # Save current before switching, but only if user actually made explicit edits
-            if self.state.current_file_hash and self._config_dirty:
-                self.repo.save_file_settings(self.state.current_file_hash, self.state.config, file_path=self.state.current_file_path or "")
-                self.settings_saved.emit()
+            if self.state.current_file_hash:
+                if self._config_dirty:
+                    self.repo.save_file_settings(
+                        self.state.current_file_hash, self.state.config, file_path=self.state.current_file_path or ""
+                    )
+                    self.settings_saved.emit()
                 self.active_file_changing.emit()
             self._config_dirty = False
 

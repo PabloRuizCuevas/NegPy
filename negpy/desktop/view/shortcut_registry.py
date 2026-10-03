@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Iterable
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence
 
 from negpy.desktop.view.slider_shortcut_groups import (
@@ -17,6 +18,11 @@ class ShortcutEntry:
     default_key: str
     description: str
     category: str
+    # The window that dispatches the key. A key only clashes with another bound in the same window.
+    window: str = "main"
+
+
+LIVE_VIEW = "live_view"
 
 
 REGISTRY: dict[str, ShortcutEntry] = {
@@ -134,6 +140,8 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "scan_setup": ShortcutEntry("", "Scanning setup wizard", "Process"),
     "scan_prescan": ShortcutEntry("", "Prescan and set crop (Plustek)", "Process"),
     "scan_meter_frame": ShortcutEntry("", "Meter a frame and lock the scan exposure (Coolscan)", "Process"),
+    "scan_as_roll": ShortcutEntry("", "Toggle Scan as Roll", "Process"),
+    "scan_folder_as_roll": ShortcutEntry("", "Toggle Folder as Roll", "Process"),
     "mode_color_negative": ShortcutEntry("", "Mode: Color Negative", "Process"),
     "mode_bw_negative": ShortcutEntry("", "Mode: B&W Negative", "Process"),
     "mode_transparency": ShortcutEntry("", "Mode: Transparency", "Process"),
@@ -245,6 +253,7 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "merge_frame": ShortcutEntry("", "Merge Frame to TIFF Negative…", "Actions"),
     "merge_selected": ShortcutEntry("", "Merge Selected to TIFF Negative…", "Actions"),
     "merge_roll": ShortcutEntry("", "Merge Roll to TIFF Negative…", "Actions"),
+    "contact_sheet": ShortcutEntry("", "Contact Sheet…", "Actions"),
     "copy": ShortcutEntry("Ctrl+C", "Copy settings", "Actions"),
     "copy_with_bounds": ShortcutEntry("Ctrl+Shift+C", "Copy settings (with bounds)", "Actions"),
     "paste": ShortcutEntry("Ctrl+V", "Paste settings", "Actions"),
@@ -269,6 +278,8 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "save_work_print": ShortcutEntry("Ctrl+Shift+S", "Save the current edit as a named work print", "Actions"),
     "undo": ShortcutEntry("Ctrl+Z", "Undo", "Actions"),
     "redo": ShortcutEntry("Ctrl+Y", "Redo", "Actions"),
+    "live_view_scan": ShortcutEntry("S", "Scan, or stop the capture", "Camera Live View", LIVE_VIEW),
+    "live_view_retake": ShortcutEntry("R", "Retake the current frame", "Camera Live View", LIVE_VIEW),
     "show_shortcuts": ShortcutEntry("?", "Show shortcuts", "Help"),
     "show_tour": ShortcutEntry("", "Take the tour: a guided walk through NegPy, one chapter at a time", "Help"),
     "show_analysis_help": ShortcutEntry("", "Analysis panel guide", "Help"),
@@ -394,6 +405,16 @@ def current_bindings() -> dict[str, str]:
     if not _CURRENT_BINDINGS:
         set_current_bindings(default_bindings())
     return dict(_CURRENT_BINDINGS)
+
+
+def clash_scope(action_id: str, key: str) -> str:
+    """The window whose other bindings a key clashes with. A Ctrl or Cmd chord passes a
+    floating panel's key guard to the main window, so it clashes there too."""
+    seq = QKeySequence(key)
+    command = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier
+    if not seq.isEmpty() and seq[0].keyboardModifiers() & command:
+        return "main"
+    return REGISTRY[action_id].window
 
 
 def key_for(action_id: str, bindings: dict[str, str] | None = None) -> str:

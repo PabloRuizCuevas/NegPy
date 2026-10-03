@@ -49,6 +49,7 @@ class CaptureRequest:
     rgb_mode: bool = True  # True = Scanlight R/G/B triplet; False = one plain white-light shot (no Scanlight)
     iso: str = ""  # RGB preset's baked ISO/aperture — the triplet forces them; "" = leave as set
     aperture: str = ""
+    as_roll: bool = False  # output_folder becomes a Library roll and opens
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,7 @@ class CaptureWorker(QObject):
     #: The preview thread died after its retries and the session was dropped (issue #617). It
     #: carries the last gphoto error, so the UI can stop the spinner and offer a retry.
     live_view_failed = pyqtSignal(str)
+    focus_magnifier_unavailable = pyqtSignal(str)  # the body cannot stream its magnified view
     calibration_progress = pyqtSignal(float, str)
     calibration_finished = pyqtSignal(object)  # CalibrationResult
     calibration_exposure = pyqtSignal(str)  # "over"/"under" — target unreachable, run aborted, no preset
@@ -139,6 +141,7 @@ class CaptureWorker(QObject):
                 # A stream that fails on a body that still answers is the "no preview" state,
                 # not a dead camera. Same UI as a body that never advertised one.
                 on_preview_unusable=self.live_view_unsupported.emit,
+                on_magnifier_unusable=self.focus_magnifier_unavailable.emit,
             )
         if not self._camera.is_open():
             try:
