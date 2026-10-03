@@ -10,6 +10,7 @@ closes and until the film moves.
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from typing import Any, Iterator
@@ -21,6 +22,7 @@ from negpy.infrastructure.scanners.base import (
     ScannerDevice,
     ScannerSession,
     ScannerUnavailable,
+    StripReturned,
     TransientScanError,
 )
 from negpy.infrastructure.scanners.params import (
@@ -50,6 +52,11 @@ _MAX_SAMPLES = 16  # the protocol's own ceiling; a unit's own limit comes from i
 _DEFAULT_AREA_MM = (24.0, 36.0)
 
 _PHASES = {"discover": "Detecting frames", "meter": "Metering", "scan": "Scanning"}
+
+# A unit returns a loaded strip after it sits this long without a command, and gives no notice.
+# A strip put back in before NegPy opens the unit again reads as loaded, so this long without
+# contact counts as a return. Under the unit's own timeout: a false return costs a re-measure.
+_IDLE_RETURN_S = 9 * 60
 
 _MM_PER_INCH = 25.4
 
@@ -204,6 +211,8 @@ class NkscanSession:
         with self._backend._mapped_errors():
             ejected = bool(self._session.eject())
         self._backend.forget_frames(self.device_id)
+        if ejected:
+            self._backend._returned.discard(self.device_id)
         return ejected
 
     def close(self) -> None:
@@ -243,6 +252,10 @@ class NkscanBackend:
         self._frames: dict[str, list[tuple[int, int, int, int]]] = {}
         self._strips: dict[str, np.ndarray] = {}
         self._columns: dict[str, float] = {}
+        # Devices whose measured strip the unit returned by itself, not yet reported. Kept apart
+        # from the rects, which go first: a load or eject that fails must not lose the return.
+        self._returned: set[str] = set()
+        self._last_contact = time.monotonic()  # end of the last command to any unit
         self._lock = threading.Lock()
 
     # ── enumeration ───────────────────────────────────────────────────
@@ -309,19 +322,42 @@ class NkscanBackend:
         with self._lock:
             self._sessions.pop(session.device_id, None)
 
-    def _open(self, device_id: str) -> tuple[Any, str]:
-        """Open the unit at `device_id` and stage it for a scan."""
-        model = next((d.model for d in self.list_devices() if d.id == device_id), "")
+    def _open(self, device_id: str, *, notice_return: bool = True) -> tuple[Any, str]:
+        """Open the unit at `device_id` and stage it for a scan.
+
+        Raises StripReturned when the unit returned a strip NegPy had measured;
+        `notice_return=False` carries on without a word, for an eject. Only a strip feeder with a
+        strip pass (the SA-21 and SA-30) is known to return a strip by itself.
+        """
+        device = next((d for d in self.list_devices() if d.id == device_id), None)
+        model = device.model if device is not None else ""
+        returns = device is not None and device.capabilities.strip_pass
+        idle = time.monotonic() - self._last_contact
         with self._mapped_errors():
             session = self._nk.Session(device_id)
         try:
+            returned: StripReturned | None = None
             with self._mapped_errors():
+                loaded = True
                 if not session.media_loaded():
-                    # The unit returned the film by itself (idle timeout): a reload can land it
-                    # elsewhere, so the cached rects no longer describe it.
+                    # The cached rects describe film that has left the holder. An Eject already
+                    # dropped them, so only rects still held mean the unit returned it by itself.
+                    # load() takes in only a strip that waits in the adapter.
+                    if returns and device_id in self._frames:
+                        self._returned.add(device_id)
                     self.forget_frames(device_id)
-                    session.load()
-                session.stage()
+                    loaded = bool(session.load())
+                elif returns and idle >= _IDLE_RETURN_S and device_id in self._frames:
+                    # Long enough for the unit to return the strip and for it to go back in unseen.
+                    self._returned.add(device_id)
+                    self.forget_frames(device_id)
+                if notice_return and device_id in self._returned:
+                    self._returned.discard(device_id)
+                    returned = StripReturned(loaded=loaded)
+                else:
+                    session.stage()
+            if returned is not None:
+                raise returned
         except Exception:
             with suppress(Exception):
                 session.close()
@@ -578,14 +614,20 @@ class NkscanBackend:
             held = self._sessions.get(device_id)
         if held is not None:
             return held.eject()
-        session, _model = self._open(device_id)
+        session, _model = self._open(device_id, notice_return=False)
         try:
             with self._mapped_errors():
-                return bool(session.eject())
+                if device_id in self._returned and not session.media_loaded():
+                    ejected = True  # the unit returned the strip by itself and it is still out
+                else:
+                    ejected = bool(session.eject())
         finally:
             self.forget_frames(device_id)
             with suppress(Exception):
                 session.close()
+        if ejected:
+            self._returned.discard(device_id)
+        return ejected
 
     # ── errors ────────────────────────────────────────────────────────
 
@@ -603,3 +645,5 @@ class NkscanBackend:
             raise RuntimeError(f"{getattr(exc, 'op', 'operation')}: {getattr(exc, 'reason', exc)}") from exc
         except nk.ScannerError as exc:
             raise RuntimeError(str(exc)) from exc
+        finally:
+            self._last_contact = time.monotonic()

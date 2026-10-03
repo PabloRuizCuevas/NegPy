@@ -191,7 +191,9 @@ class ScanSidebar(QWidget):
         # Drop backends that no longer ship on this platform (e.g. saved "sane" on Windows).
         if settings.backend not in {bid for bid, _ in backend_choices()}:
             settings = replace(settings, backend=DEFAULT_BACKEND_ID)
-        return settings
+        # Picks, crops and per-frame corrections describe the strip they were set on. The unit
+        # may have returned it while NegPy was closed, and a new app run measures the film again.
+        return replace(settings, selected_frames=(), frame_windows={}, frame_offsets={})
 
     def _save_settings(self) -> None:
         from dataclasses import asdict
@@ -492,6 +494,7 @@ class ScanSidebar(QWidget):
         self.controller.scan_batch_finished.connect(self._on_scan_batch_finished)
         self.controller.scan_ejected.connect(self._on_ejected)
         self.controller.scan_eject_error.connect(self._on_eject_error)
+        self.controller.scan_strip_returned.connect(self._on_strip_returned)
         self.controller.scan_exposure_metered.connect(self._on_exposure_metered)
         self.controller.scan_meter_error.connect(self._on_meter_error)
 
@@ -1413,21 +1416,41 @@ class ScanSidebar(QWidget):
 
     @pyqtSlot(bool)
     def _on_ejected(self, triggered: bool) -> None:
-        from dataclasses import replace
-
         device = self._current_device()
         self.eject_btn.setEnabled(bool(device and device.capabilities.can_eject) and not self._scanning)
         if not triggered:
             self.status_strip.set_message("This device has no eject control")
             return
-        # Frames and their crops describe the piece of film that just came out; the next strip
-        # is a different one, and silently reusing them scans the wrong frames.
+        stale = self._drop_strip_state()
+        self.status_strip.set_message("Film ejected — frame selection cleared" if stale else "Film ejected")
+
+    @pyqtSlot(bool)
+    def _on_strip_returned(self, loaded: bool) -> None:
+        # The unit's idle timeout is an Eject nobody pressed: the same state goes.
+        stale = self._drop_strip_state()
+        if not loaded:
+            message = "The scanner returned the strip while idle — insert it again"
+        elif stale:
+            message = "The scanner sat idle long enough to return the strip — frame selection cleared"
+        else:
+            message = "The scanner sat idle long enough to return the strip"
+        self.status_strip.set_message(message)
+
+    def _drop_strip_state(self) -> bool:
+        """Forget the frame picks, crops and per-frame offsets, and say whether there were any.
+
+        They describe the piece of film that just came out; the next strip is a different one, or
+        the same one landing elsewhere, and silently reusing them scans the wrong frames. Offset
+        and Drift belong to the scanner, not the strip, and stay.
+        """
+        from dataclasses import replace
+
         stale = bool(self._settings.selected_frames or self._settings.frame_windows or self._settings.frame_offsets)
         if stale:
             self.settings = replace(self._settings, selected_frames=(), frame_windows={}, frame_offsets={})
             self._update_scan_window_status()
             self._update_summary()
-        self.status_strip.set_message("Film ejected — frame selection cleared" if stale else "Film ejected")
+        return stale
 
     @pyqtSlot(str)
     def _on_eject_error(self, msg: str) -> None:

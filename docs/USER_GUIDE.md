@@ -1082,7 +1082,7 @@ Capture film directly into NegPy. The **Scanner** card picks the scanner; the ta
 
 *   **Frames**: `1-6`, `1,2,5`, or empty for all. The strip preview writes its picks here. The line above **Scan** states frame count, resolution, extra passes and approximate disk use.
 *   **Batch** / **Window**: on a feeder, **Preview strip…** previews every frame, sets per-frame windows and picks frames; with a manual holder, **Preview…** previews one position for one crop window. The window sets the hardware scan area, so only that region is read. **Clear** scans the default frame again. On nkscan the preview reads the strip in one pass, finds every frame and cuts the tiles from it; **Detect frames** runs it again after the film moves, and Eject clears the selection while **Offset** and **Drift** stay.
-*   **Eject When Done** (on by default): returns the strip after a batch. Off keeps it loaded with its frame picks and previews, so more frames scan without a new preview, until **Eject** or the scanner's own idle timeout.
+*   **Eject When Done** (on by default): returns the strip after a batch. Off keeps it loaded with its frame picks and previews, so more frames scan without a new preview, until **Eject** or the scanner's own idle timeout. On a strip feeder whose tiles are cut from one strip pass, a strip the scanner returns by itself counts as an Eject: the next scan or preview stops, and the selection, crops, per-frame offsets and preview tiles are cleared. The scanner cannot take the strip back by itself: insert it again, then **Detect frames**. A strip put back in before NegPy next uses the scanner looks as if it never left, so after 9 minutes with no scanner activity NegPy treats the strip as returned and measures it again.
 *   **Exposure lock** (**Meter Frame…** / **Unlock**, nkscan): nkscan meters every frame on its own, so a strip end, which meters on the bare light past the cut, keeps a color negative's orange mask and scans with a different color. **Meter Frame…** meters one frame of the loaded strip (pick one inside the strip, such as frame 2) and every later scan on this scanner reuses its exposure, across strips and restarts, until **Unlock**. Meter again for each new roll.
 *   **Crop** (**Prescan…**, Plustek): a 1200 dpi full-window preview; drag a crop and leave with **Apply Crop** or **Scan Frame**, and the next scan reads only that hardware area. **Clear** scans the full window.
 
@@ -1129,7 +1129,7 @@ During a preview, a progress bar shows, **Cancel** reads **Stop Preview** (keeps
 *   **Drift**: offset that grows (or shrinks) per frame position.
 *   **Per-frame offset**: the slider under a tile, on top of Offset and Drift. Double-click resets. A moved slider's tile shows the value.
 *   **Size**: tile size, remembered. Double-click resets.
-*   **Which frames**: each tile has a tick; **All** and **None** set all, with a count. Eject clears ticks, crops and per-frame offsets.
+*   **Which frames**: each tile has a tick; **All** and **None** set all, with a count. Eject clears ticks, crops and per-frame offsets, and so does restarting NegPy.
 *   **Preview frame** (eye, beside the tick): scans that one frame again. Hidden where the tiles are cut from one pass over the strip, because a moved offset re-cuts them.
 
 ---

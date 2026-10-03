@@ -132,6 +132,7 @@ class _FakeController(QObject):
     scan_batch_finished = pyqtSignal(list)
     scan_ejected = pyqtSignal(bool)
     scan_eject_error = pyqtSignal(str)
+    scan_strip_returned = pyqtSignal(bool)
     scan_exposure_metered = pyqtSignal(object, int)
     scan_meter_error = pyqtSignal(str)
 
@@ -703,12 +704,14 @@ def test_a_typed_frame_list_reaches_the_batch_without_a_preview() -> None:
 
 
 def test_a_selection_from_the_strip_dialog_shows_in_the_frame_box() -> None:
-    sidebar, _ = _sidebar(NKSCAN_DEVICE, settings={"selected_frames": [1, 2, 3, 6]})
+    sidebar, _ = _sidebar(NKSCAN_DEVICE)
+    sidebar.settings = replace(sidebar._settings, selected_frames=(1, 2, 3, 6))
     assert sidebar.frame_spec_edit.text() == "1-3,6"
 
 
 def test_a_measured_strip_scans_the_frames_the_strip_dialog_picked() -> None:
-    sidebar, controller = _sidebar(NKSCAN_DEVICE, settings={"selected_frames": [2, 4]})
+    sidebar, controller = _sidebar(NKSCAN_DEVICE)
+    sidebar.settings = replace(sidebar._settings, selected_frames=(2, 4))
     assert sidebar.frame_spec_edit.text() == "2,4"
     sidebar.output.folder_edit.setText("/tmp/negpy-test")
     sidebar._on_scan()
@@ -931,7 +934,8 @@ def test_the_scan_button_has_a_rule_to_fill_it() -> None:
 
 
 def test_the_summary_counts_the_frames_the_batch_will_scan() -> None:
-    sidebar, _ = _sidebar(FULL_DEVICE, settings={"selected_frames": [1, 3, 5], "dpi": 4000})
+    sidebar, _ = _sidebar(FULL_DEVICE, settings={"dpi": 4000})
+    sidebar.settings = replace(sidebar._settings, selected_frames=(1, 3, 5))
     text = _summary(sidebar)
     assert text.startswith("3 frames  ·  4000 dpi")
     assert "GB" in text or "MB" in text
@@ -958,7 +962,8 @@ def test_the_summary_names_the_extra_passes() -> None:
 
 def test_the_count_and_the_size_carry_the_weight_in_the_summary() -> None:
     """The two numbers the operator checks before committing are the two that stand out."""
-    sidebar, _ = _sidebar(FULL_DEVICE, settings={"selected_frames": [1, 3, 5], "dpi": 4000})
+    sidebar, _ = _sidebar(FULL_DEVICE, settings={"dpi": 4000})
+    sidebar.settings = replace(sidebar._settings, selected_frames=(1, 3, 5))
     markup = sidebar.status_strip._summary.text()
 
     assert f'<span style="color: {THEME.text_primary}">3 frames</span>' in markup
@@ -997,7 +1002,8 @@ def test_a_window_scales_the_estimate_by_its_area() -> None:
 
 
 def test_ejecting_drops_the_frame_selection_of_the_film_that_left() -> None:
-    sidebar, _ = _sidebar(FULL_DEVICE, settings={"selected_frames": [1, 3], "frame_windows": {"1": [0.1, 0.1, 0.9, 0.9]}})
+    sidebar, _ = _sidebar(FULL_DEVICE)
+    sidebar.settings = replace(sidebar._settings, selected_frames=(1, 3), frame_windows={1: (0.1, 0.1, 0.9, 0.9)})
     assert sidebar.settings.selected_frames == (1, 3)
 
     sidebar._on_ejected(True)
@@ -1016,6 +1022,21 @@ def test_ejecting_drops_the_per_frame_corrections_of_the_film_that_left() -> Non
     assert sidebar.settings.frame_offsets == {}
 
 
+def test_a_new_app_run_drops_the_per_strip_state_of_the_last_one() -> None:
+    # The unit may have returned the strip while NegPy was closed; nothing in memory says so.
+    settings = {
+        "selected_frames": [1, 3],
+        "frame_windows": {"1": [0.1, 0.1, 0.9, 0.9]},
+        "frame_offsets": {"3": 1.5},
+        "frame_offset_mm": 0.5,
+        "frame_offset_modifier_mm": 0.1,
+    }
+    sidebar, _ = _sidebar(FULL_DEVICE, settings=settings)
+
+    assert (sidebar.settings.selected_frames, sidebar.settings.frame_windows, sidebar.settings.frame_offsets) == ((), {}, {})
+    assert (sidebar.settings.frame_offset_mm, sidebar.settings.frame_offset_modifier_mm) == (0.5, 0.1)
+
+
 def test_ejecting_keeps_the_registration_offsets() -> None:
     # Offset and drift belong to the transport's own registration, not to one strip.
     sidebar, _ = _sidebar(FULL_DEVICE, settings={"selected_frames": [1], "frame_offset_mm": 1.5, "frame_offset_modifier_mm": 0.2})
@@ -1024,6 +1045,35 @@ def test_ejecting_keeps_the_registration_offsets() -> None:
 
     assert sidebar.settings.frame_offset_mm == 1.5
     assert sidebar.settings.frame_offset_modifier_mm == 0.2
+
+
+def test_the_unit_returning_the_strip_clears_what_an_eject_clears() -> None:
+    # An idle timeout is an Eject nobody pressed: the same per-strip state goes, and the
+    # transport's own registration stays.
+    settings = {
+        "selected_frames": [1, 3],
+        "frame_windows": {"1": [0.1, 0.1, 0.9, 0.9]},
+        "frame_offset_mm": 1.5,
+        "frame_offset_modifier_mm": 0.2,
+    }
+    sidebar, controller = _sidebar(FULL_DEVICE, settings=settings)
+    sidebar.settings = replace(sidebar._settings, frame_offsets={2: 0.4})
+
+    controller.scan_error.emit("returned")
+    controller.scan_strip_returned.emit(True)
+
+    assert (sidebar.settings.selected_frames, sidebar.settings.frame_windows, sidebar.settings.frame_offsets) == ((), {}, {})
+    assert (sidebar.settings.frame_offset_mm, sidebar.settings.frame_offset_modifier_mm) == (1.5, 0.2)
+    assert sidebar.status_strip.message() == "The scanner sat idle long enough to return the strip — frame selection cleared"
+
+
+def test_a_returned_strip_not_back_in_asks_for_it_again() -> None:
+    sidebar, controller = _sidebar(FULL_DEVICE, settings={"selected_frames": [1, 3]})
+
+    controller.scan_strip_returned.emit(False)
+
+    assert sidebar.settings.selected_frames == ()
+    assert sidebar.status_strip.message() == "The scanner returned the strip while idle — insert it again"
 
 
 def test_ejecting_with_nothing_picked_says_only_that() -> None:
@@ -1111,9 +1161,8 @@ def test_the_exposure_lock_row_shows_only_where_the_backend_offers_it() -> None:
 
 
 def test_meter_frame_meters_the_picked_frame_of_the_film_loaded(monkeypatch) -> None:
-    sidebar, controller = _sidebar(
-        LOCKING_DEVICE, settings={"frame_offset_mm": 0.5, "frame_offset_modifier_mm": 0.1, "frame_offsets": {"3": 0.2}}
-    )
+    sidebar, controller = _sidebar(LOCKING_DEVICE, settings={"frame_offset_mm": 0.5, "frame_offset_modifier_mm": 0.1})
+    sidebar.settings = replace(sidebar._settings, frame_offsets={3: 0.2})
 
     _meter_frame(sidebar, monkeypatch, frame=3)
 

@@ -21,6 +21,23 @@ class TransientScanError(RuntimeError):
     """
 
 
+class StripReturned(RuntimeError):
+    """The unit returned a measured strip by itself (an idle timeout).
+
+    The frame picks, crops and per-frame offsets set on it no longer line up, so the operation
+    stops instead of using them. The unit cannot take the strip back by itself: `loaded` is
+    True where one waited in the adapter, or where a long idle may hide a strip put back in.
+    """
+
+    def __init__(self, *, loaded: bool) -> None:
+        self.loaded = loaded
+        if loaded:
+            first, then = "The scanner sat idle long enough to return the strip.", "Preview the strip again."
+        else:
+            first, then = "The scanner returned the strip while it sat idle.", "Insert it again, then preview it."
+        super().__init__(f"{first} Its frame selection, crops and per-frame offsets were cleared. {then}")
+
+
 @dataclass(frozen=True)
 class ScannerCapabilities:
     ir_channel: bool
