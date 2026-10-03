@@ -2503,6 +2503,9 @@ class AppController(QObject):
         self._clear_test_strip()
         self._drop_zone_pins()
         self.exit_compare()
+        if not keep_preview:
+            self.state.clone_source = None
+            self.state.clone_offset = None
 
         # Navigate-back fast path: the frame's last render is memoized and nothing that
         # shaped it has changed, since select_file already hydrated its config. Paint it
@@ -2860,6 +2863,10 @@ class AppController(QObject):
             self._handle_wb_pick(nx, ny)
         elif self.state.active_tool == ToolMode.DUST_PICK:
             self._handle_dust_pick(nx, ny)
+        elif self.state.active_tool == ToolMode.CLONE and self.state.clone_picking:
+            self.set_clone_source(nx, ny)
+        elif self.state.active_tool == ToolMode.CLONE:
+            self.handle_clone_stroke_completed([(nx, ny)])
         elif self.state.active_tool == ToolMode.SCRATCH_LINE:
             self._handle_scratch_line_pick(nx, ny)
         elif self.state.active_tool == ToolMode.ZONE_PLACE:
@@ -2874,6 +2881,8 @@ class AppController(QObject):
         if mode != ToolMode.KEYSTONE_LINES:
             self._keystone_lines = {}
         self.state.active_tool = mode
+        # A Clone tool with nothing to copy from starts by asking for the source.
+        self.state.clone_picking = mode == ToolMode.CLONE and self.state.clone_source is None
         self.tool_sync_requested.emit()
         if leaving_zone_place:
             self.clear_zone_pins()
@@ -4168,6 +4177,85 @@ class AppController(QObject):
             persist=True,
         )
         self.request_render()
+
+    def set_clone_source(self, nx: float, ny: float) -> None:
+        """The point the next Clone stroke copies from (a Set Source click or an Alt-click)."""
+        with self.state.metrics_lock:
+            uv_grid = self.state.last_metrics.get("uv_grid")
+        if uv_grid is None:
+            return
+        self.state.clone_source = CoordinateMapping.map_click_to_raw(nx, ny, uv_grid)
+        self.state.clone_offset = None
+        self.state.clone_picking = False
+        self.config_updated.emit()
+
+    def arm_clone_source(self, armed: bool) -> None:
+        """Set Source: the next click on the photo picks the area to copy from."""
+        if armed and self.state.active_tool != ToolMode.CLONE:
+            self.set_active_tool(ToolMode.CLONE)
+        self.state.clone_picking = armed
+        self.config_updated.emit()
+
+    def handle_clone_stroke_completed(self, viewport_pts: list) -> None:
+        """Commits a Clone stroke (viewport-normalized points). The first stroke after a
+        source is set fixes the offset; later strokes keep it, so the source follows the brush."""
+        with self.state.metrics_lock:
+            uv_grid = self.state.last_metrics.get("uv_grid")
+        if uv_grid is None or not viewport_pts:
+            return
+        if self.state.clone_picking:
+            self.set_clone_source(*viewport_pts[0])
+            return
+        raw_pts = [CoordinateMapping.map_click_to_raw(nx, ny, uv_grid) for nx, ny in viewport_pts]
+        if self.state.clone_offset is None:
+            if self.state.clone_source is None:
+                self.arm_clone_source(True)
+                self.set_status("Click the photo to pick the area to copy from first", 3000, kind="warning")
+                return
+            sx, sy = self.state.clone_source
+            self.state.clone_offset = (sx - raw_pts[0][0], sy - raw_pts[0][1])
+        dx, dy = self.state.clone_offset
+        conf = self.state.config.retouch
+        stroke = (
+            [[rx, ry] for rx, ry in raw_pts],
+            float(conf.manual_dust_size),
+            float(dx),
+            float(dy),
+            float(conf.clone_strength),
+            float(conf.clone_feather),
+            bool(conf.clone_match_tone),
+        )
+        self.session.update_config(
+            replace(self.state.config, retouch=replace(conf, clone_strokes=list(conf.clone_strokes) + [stroke])),
+            persist=True,
+        )
+        self.request_render()
+
+    def _set_clone_strokes(self, strokes: list) -> None:
+        self.session.update_config(
+            replace(self.state.config, retouch=replace(self.state.config.retouch, clone_strokes=strokes)),
+            persist=True,
+        )
+        self.request_render()
+
+    def undo_last_clone(self) -> None:
+        strokes = list(self.state.config.retouch.clone_strokes)
+        if strokes:
+            self._set_clone_strokes(strokes[:-1])
+
+    def delete_clone(self, index: int) -> None:
+        strokes = list(self.state.config.retouch.clone_strokes)
+        if 0 <= index < len(strokes):
+            strokes.pop(index)
+            self._set_clone_strokes(strokes)
+
+    def clear_clones(self) -> None:
+        from negpy.desktop.view.confirm import confirm_clear_clones
+
+        count = len(self.state.config.retouch.clone_strokes)
+        if count == 0 or not confirm_clear_clones(None, count):
+            return
+        self._set_clone_strokes([])
 
     def handle_heal_stroke_completed(self, viewport_pts: list) -> None:
         """Commits a scratch-tool polyline (viewport-normalized points)."""

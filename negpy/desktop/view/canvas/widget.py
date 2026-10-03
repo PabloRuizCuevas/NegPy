@@ -45,6 +45,7 @@ _TOOL_CURSORS: dict[ToolMode, Qt.CursorShape] = {
     ToolMode.WB_PICK: Qt.CursorShape.PointingHandCursor,
     ToolMode.CROP_MANUAL: Qt.CursorShape.CrossCursor,
     ToolMode.DUST_PICK: Qt.CursorShape.BlankCursor,
+    ToolMode.CLONE: Qt.CursorShape.BlankCursor,
     ToolMode.LOCAL_DRAW: Qt.CursorShape.CrossCursor,
     ToolMode.LOCAL_OVAL: Qt.CursorShape.CrossCursor,
     ToolMode.LOCAL_GRADIENT: Qt.CursorShape.CrossCursor,
@@ -122,6 +123,8 @@ class ImageCanvas(QWidget):
     cursor_left_canvas = pyqtSignal()
     local_mask_created = pyqtSignal(str, list)
     scratch_completed = pyqtSignal(list)
+    clone_stroke_completed = pyqtSignal(list)
+    clone_source_picked = pyqtSignal(float, float)
     dust_exclusion_painted = pyqtSignal(list)
     straighten_completed = pyqtSignal(float)
     keystone_line_marked = pyqtSignal(str, float, float, float, float)
@@ -185,6 +188,8 @@ class ImageCanvas(QWidget):
         self.overlay.cursor_left.connect(self.cursor_left_canvas.emit)
         self.overlay.local_mask_created.connect(self.local_mask_created.emit)
         self.overlay.scratch_completed.connect(self.scratch_completed.emit)
+        self.overlay.clone_stroke_completed.connect(self.clone_stroke_completed.emit)
+        self.overlay.clone_source_picked.connect(self.clone_source_picked.emit)
         self.overlay.dust_exclusion_painted.connect(self.dust_exclusion_painted.emit)
         self.overlay.straighten_completed.connect(self.straighten_completed.emit)
         self.overlay.keystone_line_marked.connect(self.keystone_line_marked.emit)
@@ -495,7 +500,7 @@ class ImageCanvas(QWidget):
     def _pinch_sizes_brush(self) -> bool:
         """A live brush takes the pinch. The wheel still zooms in that state, so no context
         is left without a zoom route."""
-        if self.state.active_tool in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK):
+        if self.state.active_tool in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK, ToolMode.CLONE):
             return True
         return bool(self.state.config.retouch.dust_remove and self.state.right_click_excludes)
 
@@ -724,6 +729,9 @@ class ImageCanvas(QWidget):
         if self.state.active_tool in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK):
             self._exec_retouch_menu(pos, global_pos)
             return
+        if self.state.active_tool == ToolMode.CLONE:
+            self._exec_clone_menu(pos, global_pos)
+            return
 
         # Right-click on a selected mask's vertex deletes that point (no menu).
         if self.state.active_tool in (ToolMode.NONE, ToolMode.LOCAL_DRAW) and self.overlay.try_delete_local_vertex(pos):
@@ -798,6 +806,28 @@ class ImageCanvas(QWidget):
         if confirm_unload(self):
             self._controller.session.remove_current_file()
 
+    def _exec_clone_menu(self, pos: QPointF, global_pos) -> None:
+        """Context menu while the Clone tool is active."""
+        controller = self._controller
+        assert controller is not None
+        count = len(self.state.config.retouch.clone_strokes)
+        menu = QMenu(self)
+        act_source = menu.addAction("Pick New Source")
+        act_source.triggered.connect(lambda: controller.arm_clone_source(True))
+        menu.addSeparator()
+        hit = self.overlay.heal_hit_test(pos)
+        if hit is not None and hit[0] == "clone":
+            act_delete = menu.addAction("Delete This Clone")
+            act_delete.triggered.connect(lambda _=False, i=hit[1]: controller.delete_clone(i))
+            menu.addSeparator()
+        act_undo = menu.addAction(label_with_shortcut("Undo Last Clone", "undo"))
+        act_undo.triggered.connect(controller.undo_last_clone)
+        act_undo.setEnabled(count > 0)
+        act_clear = menu.addAction("Clear All Clones…")
+        act_clear.triggered.connect(controller.clear_clones)
+        act_clear.setEnabled(count > 0)
+        menu.exec(global_pos)
+
     def _exec_retouch_menu(self, pos: QPointF, global_pos) -> None:
         """Context menu while the heal or scratch tool is active."""
         controller = self._controller
@@ -819,8 +849,10 @@ class ImageCanvas(QWidget):
         hit = self.overlay.heal_hit_test(pos)
         if hit is not None:
             kind, index = hit
-            act_delete = menu.addAction("Delete This Heal")
-            act_delete.triggered.connect(lambda _=False, k=kind, i=index: controller.delete_heal(k, i))
+            act_delete = menu.addAction("Delete This Clone" if kind == "clone" else "Delete This Heal")
+            act_delete.triggered.connect(
+                lambda _=False, k=kind, i=index: controller.delete_clone(i) if k == "clone" else controller.delete_heal(k, i)
+            )
             menu.addSeparator()
 
         self._add_exclude_action(menu, pos)

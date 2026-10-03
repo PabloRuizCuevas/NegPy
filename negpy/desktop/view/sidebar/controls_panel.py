@@ -812,6 +812,13 @@ class ControlsPanel(QWidget):
                 "pick_dust",
             )
         )
+        ret.clone_btn.setToolTip(
+            tooltip_with_shortcut(
+                "Clone Tool: copy film from another area over a defect the heal cannot rebuild. Alt-click the area "
+                "to copy from, then paint; the source follows the brush. Uses the Brush Size above",
+                "clone_tool",
+            )
+        )
         ret.threshold_slider.setToolTip(
             tooltip_with_shortcut(
                 "How far a speck must stand out from the film's grain to be repaired. Lower catches more, "

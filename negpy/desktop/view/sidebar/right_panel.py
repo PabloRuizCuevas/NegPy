@@ -534,7 +534,7 @@ class RightPanel(QWidget):
         state = self.controller.session.state
         retouch_tab = self._section_tab_index.get("retouch_section")
         if index != retouch_tab:
-            if state.active_tool in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK):
+            if state.active_tool in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK, ToolMode.CLONE):
                 self._suspended_retouch_tool = state.active_tool
                 self.controller.cancel_active_tool()
         else:

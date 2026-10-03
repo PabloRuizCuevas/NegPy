@@ -38,6 +38,7 @@ Actions with no default key are not listed; every one of them can still be bound
 | `Shift + D` | Toggle heal tool |
 | `Shift + S` | Toggle scratch tool |
 | `Shift + K` | Toggle transport-scratch line tool |
+| `Shift + J` | Toggle clone tool |
 | `Shift + B` | Toggle dodge & burn mask draw |
 | `Ctrl + R` | Toggle analysis region draw |
 | `M` | Peek flat scan (digital intermediate) |
