@@ -277,12 +277,12 @@ def test_navigation_cancels_prefetch_without_user_error() -> None:
     worker.prefetch_finished.connect(lambda *args: completed.append(args))
 
     def navigate(*_args, should_cancel, **_kwargs):
-        worker.expect_generation(2)
+        worker._state.expect_generation(2)
         assert should_cancel()
         raise InterruptedError("cancelled")
 
     service.prefetch_linear_preview.side_effect = navigate
-    worker.expect_generation(1)
+    worker._state.expect_generation(1)
     worker.process(
         PreviewLoadTask(
             file_path="/n.dng",
@@ -414,14 +414,14 @@ def test_navigating_to_the_prefetched_file_lets_its_decode_finish() -> None:
     seen = []
 
     def navigate(*_args, should_cancel, **_kwargs):
-        worker.expect_generation(2, "/other.dng")
+        worker._state.expect_generation(2, "/other.dng")
         seen.append(should_cancel())
-        worker.cancel_prefetch(1)
-        worker.expect_generation(3, "/n.dng")
+        worker._state.cancel_prefetch(1)
+        worker._state.expect_generation(3, "/n.dng")
         seen.append(should_cancel())
 
     service.prefetch_linear_preview.side_effect = navigate
-    worker.expect_generation(1)
+    worker._state.expect_generation(1)
     worker.process(
         PreviewLoadTask(
             file_path="/n.dng",

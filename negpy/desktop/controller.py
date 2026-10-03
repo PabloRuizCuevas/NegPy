@@ -51,6 +51,7 @@ from negpy.desktop.workers.render import (
     NormalizationTask,
     NormalizationWorker,
     PreviewLoadTask,
+    PreviewLoadState,
     PreviewLoadWorker,
     RenderTask,
     RenderWorker,
@@ -429,6 +430,7 @@ class AppController(QObject):
     export_finished = pyqtSignal(float, int)
     render_requested = pyqtSignal(RenderTask)
     preview_load_requested = pyqtSignal(PreviewLoadTask)
+    prefetch_load_requested = pyqtSignal(PreviewLoadTask)
     normalization_requested = pyqtSignal(NormalizationTask)
     batch_autocrop_requested = pyqtSignal(BatchAutoCropTask)
     thumbnail_render_requested = pyqtSignal(ThumbnailRenderTask)
@@ -672,9 +674,17 @@ class AppController(QObject):
         self.discovery_thread.start()
 
         self.preview_load_thread = QThread()
-        self.preview_load_worker = PreviewLoadWorker(self.preview_service)
+        self.preview_load_state = PreviewLoadState()
+        self.preview_load_worker = PreviewLoadWorker(self.preview_service, state=self.preview_load_state)
         self.preview_load_worker.moveToThread(self.preview_load_thread)
         self.preview_load_thread.start()
+
+        # Neighbor prefetch decodes on its own thread: LibRaw's unpack cannot stop
+        # mid-read, and on the foreground thread it would queue a click behind it.
+        self.prefetch_load_thread = QThread()
+        self.prefetch_load_worker = PreviewLoadWorker(self.preview_service, state=self.preview_load_state)
+        self.prefetch_load_worker.moveToThread(self.prefetch_load_thread)
+        self.prefetch_load_thread.start()
 
         self.scan_thread = QThread()
         self.scan_worker = ScanWorker()
@@ -951,7 +961,8 @@ class AppController(QObject):
         self.preview_load_worker.vram_capped.connect(self._on_hq_preview_vram_capped)
         self.preview_load_worker.error.connect(self._on_preview_load_error)
         self.preview_load_worker.load_failed.connect(self._on_preview_load_failed)
-        self.preview_load_worker.prefetch_finished.connect(self._on_neighbor_prefetch_finished)
+        self.prefetch_load_requested.connect(self.prefetch_load_worker.process)
+        self.prefetch_load_worker.prefetch_finished.connect(self._on_neighbor_prefetch_finished)
 
         self.scan_devices_requested.connect(self.scan_worker.list_devices)
         self.scan_backend_requested.connect(self.scan_worker.set_backend)
@@ -1354,14 +1365,14 @@ class AppController(QObject):
             or getattr(self, "_active_batch", None) is not None
         )
 
-    def _cancel_neighbor_prefetch(self) -> bool:
+    def _cancel_neighbor_prefetch(self) -> None:
+        """Fire-and-forget: nothing waits on a cancelled prefetch, whose decode cannot
+        stop mid-read anyway."""
         self._neighbor_prefetch_generation = None
         self._neighbor_prefetch_queue.clear()
         generation = self._prefetch_in_flight_generation
-        if generation is None:
-            return False
-        self.preview_load_worker.cancel_prefetch(generation)
-        return True
+        if generation is not None:
+            self.preview_load_state.cancel_prefetch(generation)
 
     # --- Batch progress popup -------------------------------------------------
 
@@ -2491,7 +2502,7 @@ class AppController(QObject):
         Dispatches RAW decode to a background worker to keep the UI thread free.
         """
         self._prefetch_gen += 1
-        self.preview_load_worker.expect_generation(self._prefetch_gen, file_path)
+        self.preview_load_state.expect_generation(self._prefetch_gen, file_path)
         self._cancel_neighbor_prefetch()
         self._foreground_preview_generation = self._prefetch_gen
         self._pause_background_thumbnails()
@@ -2822,16 +2833,15 @@ class AppController(QObject):
             return
         task = self._neighbor_prefetch_queue.pop(0)
         self._prefetch_in_flight_generation = task.generation
-        self.preview_load_requested.emit(task)
+        self.prefetch_load_requested.emit(task)
 
     def _on_neighbor_prefetch_finished(self, generation: int, _file_path: str) -> None:
         if self._prefetch_in_flight_generation == generation:
             self._prefetch_in_flight_generation = None
-        if generation != self._prefetch_gen:
-            return
-        if self._pending_render_task is not None and not self._is_rendering and self._foreground_preview_generation is None:
-            self._dispatch_pending_render()
-            return
+        # Also for a stale generation: a click mid-decode rebuilds the queue with
+        # current-generation tasks, and only the stale finish frees the slot they
+        # need, so a return here would park prefetch and thumbnails until the
+        # next click.
         if self._foreground_work_active():
             return
         self._start_next_neighbor_prefetch()
@@ -6317,13 +6327,11 @@ class AppController(QObject):
             split_axis=str(dip[0].get("split_axis") or "x") if dip is not None else "x",
         )
 
-        prefetch_was_running = self._cancel_neighbor_prefetch()
+        # The in-flight prefetch is cancelled, never waited for: its decode cannot stop
+        # mid-read, so waiting would hold this render behind an abandoned file read.
+        self._cancel_neighbor_prefetch()
 
         if self._is_rendering:
-            self._pending_render_task = task
-            return
-
-        if prefetch_was_running:
             self._pending_render_task = task
             return
 
@@ -7933,9 +7941,17 @@ class AppController(QObject):
         if self.discovery_thread.isRunning():
             self.discovery_thread.quit()
             self.discovery_thread.wait()
+        # Obsolete in-flight preview work before joining its threads, so each join
+        # lasts one cancel point, not a whole abandoned decode.
+        self._prefetch_gen += 1
+        self.preview_load_state.expect_generation(self._prefetch_gen)
+        self._cancel_neighbor_prefetch()
         if self.preview_load_thread.isRunning():
             self.preview_load_thread.quit()
             self.preview_load_thread.wait()
+        if self.prefetch_load_thread.isRunning():
+            self.prefetch_load_thread.quit()
+            self.prefetch_load_thread.wait()
         self.scan_worker.cancel()
         if self.scan_thread.isRunning():
             self.scan_thread.quit()

@@ -334,6 +334,19 @@ class PreviewManager:
         if should_cancel is not None and should_cancel():
             raise InterruptedError("preview load cancelled")
 
+        if isinstance(raw, rawpy.RawPy):
+            # The first raw_pattern touch runs LibRaw's unpack: the whole-file read happens
+            # here, not in postprocess, so it gets its own timing line and a cancel point.
+            t_unpack = time.perf_counter()
+            try:
+                _ = raw.raw_pattern
+            except Exception:
+                pass
+            log("load-timing decode.unpack %.0fms (file read + unpack) %s", (time.perf_counter() - t_unpack) * 1000, file_path)
+            if should_cancel is not None and should_cancel():
+                raw.close()
+                raise InterruptedError("preview load cancelled")
+
         # An explicit algorithm decodes full-size: libraw bins 2x2 quads for half_size and never
         # reaches the interpolator, so the fast path would ignore the choice.
         # Through the enum: an unrecognised persisted value resolves to AUTO and must take the

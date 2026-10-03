@@ -65,6 +65,7 @@ class TestThumbnailRefreshController:
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ):
             if thread is not None and thread.isRunning():

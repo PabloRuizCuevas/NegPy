@@ -1,8 +1,9 @@
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterator, Optional
 
 import numpy as np
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot
@@ -32,9 +33,49 @@ from negpy.services.rendering.image_processor import ImageProcessor
 
 logger = get_logger(__name__)
 
-# Native codec buffers for the selected frame and filmstrip must not overlap.
-# The automatic thumbnail path stays bounded inside this gate.
-_DECODE_MEMORY_GATE = threading.Lock()
+
+class _DecodeGate:
+    """At most one native decode at a time across the selected frame, the filmstrip
+    and the neighbor prefetch, so their codec buffers never overlap. One exception:
+    a foreground preview may enter alongside a prefetch decode of another file,
+    because LibRaw's unpack cannot stop mid-read and a click must not wait behind
+    an abandoned one. Each kind names one thread."""
+
+    def __init__(self) -> None:
+        self._cond = threading.Condition()
+        self._holders: dict[str, str] = {}
+
+    def _may_enter(self, kind: str, path: str) -> bool:
+        if not self._holders:
+            return True
+        if kind == "foreground" and set(self._holders) == {"prefetch"}:
+            return self._holders["prefetch"] != path
+        return False
+
+    @contextmanager
+    def hold(self, kind: str, path: str = "", abandoned: Optional[Callable[[], bool]] = None) -> Iterator[bool]:
+        """Enter as *kind*; yields whether the gate was taken. With *abandoned*, a parked
+        wait gives up once the predicate turns true and yields False, so a stale foreground
+        wait frees its thread for the next click instead of sitting out a whole decode."""
+        acquired = False
+        with self._cond:
+            while not self._may_enter(kind, path):
+                if abandoned is not None and abandoned():
+                    break
+                self._cond.wait(0.1 if abandoned is not None else None)
+            else:
+                self._holders[kind] = path
+                acquired = True
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                with self._cond:
+                    self._holders.pop(kind, None)
+                    self._cond.notify_all()
+
+
+_DECODE_MEMORY_GATE = _DecodeGate()
 
 
 @dataclass(frozen=True)
@@ -515,7 +556,7 @@ class ThumbnailWorker(QObject):
         key = asset_thumbnail_key(f_info)
         self.activity.emit(key)
         try:
-            with _DECODE_MEMORY_GATE:
+            with _DECODE_MEMORY_GATE.hold("thumbnail"):
                 thumb = get_thumbnail_worker(
                     f_info["path"],
                     f_info["hash"],
@@ -1034,6 +1075,43 @@ class AssetDiscoveryWorker(QObject):
         return result
 
 
+class PreviewLoadState:
+    """Generation bookkeeping shared by the foreground preview worker and the prefetch
+    worker, so a click on one thread obsoletes work queued on the other."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._latest_generation = 0
+        self._cancelled_prefetch_generations: set[int] = set()
+        self._foreground_path: str | None = None
+
+    def expect_generation(self, generation: int, file_path: str | None = None) -> None:
+        """Make older queued and segment-based preview work obsolete. A running prefetch of
+        *file_path* itself keeps going: the foreground load waits for it and hits its cache
+        entry, where cancelling would throw that decode away and start it again."""
+        with self._lock:
+            self._latest_generation = generation
+            self._foreground_path = file_path
+            self._cancelled_prefetch_generations = {
+                cancelled for cancelled in self._cancelled_prefetch_generations if cancelled >= generation
+            }
+
+    def cancel_prefetch(self, generation: int) -> None:
+        """Cancel low-priority work without invalidating the selected frame."""
+        with self._lock:
+            self._cancelled_prefetch_generations.add(generation)
+
+    def is_current(self, generation: int) -> bool:
+        with self._lock:
+            return generation == self._latest_generation
+
+    def prefetch_is_current(self, generation: int, file_path: str) -> bool:
+        with self._lock:
+            if file_path == self._foreground_path:
+                return True
+            return generation == self._latest_generation and generation not in self._cancelled_prefetch_generations
+
+
 class PreviewLoadWorker(QObject):
     """
     Background worker for decoding RAW files into a linear preview buffer.
@@ -1051,39 +1129,16 @@ class PreviewLoadWorker(QObject):
     load_failed = pyqtSignal(str, str)
     prefetch_finished = pyqtSignal(int, str)
 
-    def __init__(self, preview_service) -> None:
+    def __init__(self, preview_service, state: PreviewLoadState | None = None) -> None:
         super().__init__()
         self._preview_service = preview_service
-        self._generation_lock = threading.Lock()
-        self._latest_generation = 0
-        self._cancelled_prefetch_generations: set[int] = set()
-        self._foreground_path: str | None = None
-
-    def expect_generation(self, generation: int, file_path: str | None = None) -> None:
-        """Make older queued and segment-based preview work obsolete. A running prefetch of
-        *file_path* itself keeps going: the foreground load waits for it and hits its cache
-        entry, where cancelling would throw that decode away and start it again."""
-        with self._generation_lock:
-            self._latest_generation = generation
-            self._foreground_path = file_path
-            self._cancelled_prefetch_generations = {
-                cancelled for cancelled in self._cancelled_prefetch_generations if cancelled >= generation
-            }
-
-    def cancel_prefetch(self, generation: int) -> None:
-        """Cancel low-priority work without invalidating the selected frame."""
-        with self._generation_lock:
-            self._cancelled_prefetch_generations.add(generation)
+        self._state = state or PreviewLoadState()
 
     def _is_current(self, task: PreviewLoadTask) -> bool:
-        with self._generation_lock:
-            return task.generation == self._latest_generation
+        return self._state.is_current(task.generation)
 
     def _prefetch_is_current(self, task: PreviewLoadTask) -> bool:
-        with self._generation_lock:
-            if task.file_path == self._foreground_path:
-                return True
-            return task.generation == self._latest_generation and task.generation not in self._cancelled_prefetch_generations
+        return self._state.prefetch_is_current(task.generation, task.file_path)
 
     @pyqtSlot(PreviewLoadTask)
     def process(self, task: PreviewLoadTask) -> None:
@@ -1092,15 +1147,15 @@ class PreviewLoadWorker(QObject):
             return
         if not self._is_current(task):
             return
-        with _DECODE_MEMORY_GATE:
-            if self._is_current(task):
+        with _DECODE_MEMORY_GATE.hold("foreground", task.file_path, abandoned=lambda: not self._is_current(task)) as entered:
+            if entered and self._is_current(task):
                 self._process_locked(task)
 
     def _process_prefetch(self, task: PreviewLoadTask) -> None:
         try:
             if not self._prefetch_is_current(task):
                 return
-            with _DECODE_MEMORY_GATE:
+            with _DECODE_MEMORY_GATE.hold("prefetch", task.file_path):
                 if not self._prefetch_is_current(task):
                     return
                 self._preview_service.prefetch_linear_preview(

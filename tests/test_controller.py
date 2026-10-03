@@ -80,6 +80,7 @@ class TestAppController(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -798,7 +799,7 @@ class TestAppController(unittest.TestCase):
         AppController._start_next_neighbor_prefetch(controller)
         AppController._start_next_neighbor_prefetch(controller)
 
-        controller.preview_load_requested.emit.assert_called_once_with(first)
+        controller.prefetch_load_requested.emit.assert_called_once_with(first)
         self.assertEqual(controller._neighbor_prefetch_queue, [second])
 
     def test_neighbor_prefetch_protects_the_selected_frame_cache_entry(self):
@@ -833,7 +834,7 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(first.protected_file_hashes, ("selected",))
         self.assertEqual(second.protected_file_hashes, ("selected", "previous"))
 
-    def test_render_waits_for_running_neighbor_prefetch_to_stop(self):
+    def test_render_does_not_wait_for_a_running_neighbor_prefetch(self):
         import numpy as np
 
         emitted = []
@@ -843,11 +844,35 @@ class TestAppController(unittest.TestCase):
 
         self.controller.request_render()
 
-        self.assertEqual(emitted, [])
-        self.assertIsNotNone(self.controller._pending_render_task)
-        self.controller._on_neighbor_prefetch_finished(self.controller._prefetch_gen, "/neighbor.dng")
+        # The prefetch is cancelled, not waited for: its decode cannot stop mid-read.
         self.assertEqual(len(emitted), 1)
         self.assertTrue(self.controller._is_rendering)
+        self.assertIsNone(self.controller._pending_render_task)
+
+    def test_stale_prefetch_finish_starts_the_next_queued_prefetch(self):
+        from negpy.desktop.workers.render import PreviewLoadTask
+
+        queued = PreviewLoadTask(
+            file_path="/neighbor.dng",
+            workspace_color_space="Adobe RGB",
+            use_camera_wb=True,
+            generation=5,
+            for_cache_warm=True,
+        )
+        self.controller._neighbor_prefetch_queue = [queued]
+        self.controller._prefetch_in_flight_generation = 3
+        self.controller._prefetch_gen = 5  # the click that rebuilt the queue bumped it
+        self.controller._foreground_preview_generation = None
+        self.controller._is_rendering = False
+        self.controller._pending_render_task = None
+        emitted = []
+        self.controller.prefetch_load_requested.connect(emitted.append)
+
+        self.controller._on_neighbor_prefetch_finished(3, "/abandoned.dng")
+
+        # The stale finish frees the slot the current-generation queue was waiting for.
+        self.assertEqual(emitted, [queued])
+        self.assertEqual(self.controller._prefetch_in_flight_generation, 5)
 
     def test_decode_failure_badges_file_and_success_clears_it(self):
         self.mock_session_manager.asset_model = MagicMock()
@@ -2587,6 +2612,7 @@ class TestBatchExportFiltering(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -2748,6 +2774,7 @@ class TestLinearOutputExportCurrentFile(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -2806,6 +2833,7 @@ class TestLinearOutputDestination(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -2925,6 +2953,7 @@ class TestPresetExportCurrentFileTriplet(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -2988,6 +3017,7 @@ class TestPresetBatchExport(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -3086,6 +3116,7 @@ class TestPresetExportSelected(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -3631,6 +3662,7 @@ class TestSessionRestore(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -3726,6 +3758,7 @@ class TestRgbScanModeReload(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -3916,6 +3949,7 @@ class TestDiscoveryProgressPopup(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4061,6 +4095,7 @@ class TestHotFolderSequenceState(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4145,6 +4180,7 @@ class TestBatchAnalysisFiltering(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4202,6 +4238,7 @@ class TestContactSheetOutputDir(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4356,6 +4393,7 @@ class TestRetouchPersistence(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4460,6 +4498,7 @@ class TestDisplayTransformParams(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4588,6 +4627,7 @@ class TestNegativePeekColor(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4734,6 +4774,7 @@ class TestEmbeddedPeek(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4831,6 +4872,7 @@ class TestCompareFlatPeekInteraction(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -5021,6 +5063,7 @@ class TestClearThumbnailCache(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -5085,6 +5128,7 @@ class TestSemanticIndexing(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -5260,6 +5304,7 @@ class TestRotateThumbnails(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -5476,6 +5521,7 @@ class TestLibraryIndexing(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -5757,6 +5803,7 @@ class TestLibrarySearch(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
