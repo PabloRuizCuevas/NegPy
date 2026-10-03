@@ -95,7 +95,7 @@ class TestAppController(unittest.TestCase):
         self.controller.save_half_frame_profile([0.0, 0.0, 1.0, 1.0], 0.6, 0.02)
         args, _ = self.controller.session.repo.save_global_setting.call_args
         self.assertEqual(args[0], "half_frame_profile")
-        self.assertEqual(args[1], {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.6, "gutter_thickness": 0.02})
+        self.assertEqual(args[1], {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.6, "gutter_thickness": 0.02, "split_axis": "x"})
 
     def test_keystone_solve_clears_lines_after_config_update(self):
         self.controller.state.active_tool = ToolMode.KEYSTONE_LINES
@@ -262,7 +262,9 @@ class TestAppController(unittest.TestCase):
         self.controller.save_half_frame_override("h1", [0.05, 0.0, 0.95, 1.0], 0.42, 0.01)
         args, _ = self.controller.session.repo.save_global_setting.call_args
         self.assertEqual(args[0], "half_frame_overrides")
-        self.assertEqual(args[1], {"h1": {"crop_rect": [0.05, 0.0, 0.95, 1.0], "split_x": 0.42, "gutter_thickness": 0.01}})
+        self.assertEqual(
+            args[1], {"h1": {"crop_rect": [0.05, 0.0, 0.95, 1.0], "split_x": 0.42, "gutter_thickness": 0.01, "split_axis": "x"}}
+        )
 
     def test_half_frame_override_saves_numpy_crop_values_as_floats(self):
         import numpy as np
@@ -329,6 +331,7 @@ class TestAppController(unittest.TestCase):
         mock_dialog.crop_rect.return_value = crop_rect
         mock_dialog.split_x.return_value = split_x
         mock_dialog.gutter_thickness.return_value = gutter
+        mock_dialog.split_axis.return_value = "x"
         mock_dialog.scope.return_value = scope
         mock_dialog_cls.return_value = mock_dialog
         return mock_dialog_cls
@@ -339,10 +342,11 @@ class TestAppController(unittest.TestCase):
         self.controller.session.repo.load_file_settings.return_value = None
         result = self.controller.open_half_frame_dialog("/p/a.tif", "ha")
 
-        self.assertEqual(result, {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01})
+        self.assertEqual(result, {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01, "split_axis": "x"})
         saved = {c.args[0]: c.args[1] for c in self.controller.session.repo.save_global_setting.call_args_list}
         self.assertEqual(
-            saved["half_frame_overrides"], {"ha": {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01}}
+            saved["half_frame_overrides"],
+            {"ha": {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01, "split_axis": "x"}},
         )
         # The chosen scope is remembered as next time's default.
         self.assertEqual(saved["half_frame_apply_scope"], "current")
@@ -353,9 +357,12 @@ class TestAppController(unittest.TestCase):
         self.controller.session.repo.load_file_settings.return_value = None
         result = self.controller.open_half_frame_dialog("/p/a.tif", "ha")
 
-        self.assertEqual(result, {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0})
+        self.assertEqual(result, {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0, "split_axis": "x"})
         saved = {c.args[0]: c.args[1] for c in self.controller.session.repo.save_global_setting.call_args_list}
-        self.assertEqual(saved["half_frame_profile"], {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0})
+        self.assertEqual(
+            saved["half_frame_profile"],
+            {"crop_rect": [0.0, 0.0, 1.0, 1.0], "split_x": 0.5, "gutter_thickness": 0.0, "split_axis": "x"},
+        )
 
     def test_open_half_frame_dialog_selected_scope_saves_an_override_on_each_hash(self):
         """Each save reads the settings store before writing, so a real repo (unlike
@@ -370,7 +377,7 @@ class TestAppController(unittest.TestCase):
         overrides = store["half_frame_overrides"]
         self.assertEqual(set(overrides), {"ha", "hb"})
         for entry in overrides.values():
-            self.assertEqual(entry, {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01})
+            self.assertEqual(entry, {"crop_rect": [0.1, 0.0, 0.9, 1.0], "split_x": 0.42, "gutter_thickness": 0.01, "split_axis": "x"})
 
     def test_open_half_frame_dialog_seeds_the_editor_from_the_remembered_scope(self):
         """No explicit initial_scope: the editor opens on whatever scope Apply last used."""
@@ -452,13 +459,14 @@ class TestAppController(unittest.TestCase):
         self.controller.session.repo.load_file_settings.return_value = None
         self.controller.request_asset_discovery = MagicMock()
 
-        self.controller._on_splits_detected({"/p/a.tif": (0.4, 0.02, (0.05, 0.05, 0.95, 0.95)), "/p/b.tif": (0.6, 0.0, None)})
+        self.controller._on_splits_detected({"/p/a.tif": (0.4, 0.02, (0.05, 0.05, 0.95, 0.95), "x"), "/p/b.tif": (0.6, 0.0, None, "y")})
 
         overrides = store["half_frame_overrides"]
         self.assertEqual(overrides["ha"]["split_x"], 0.4)
         self.assertEqual(overrides["ha"]["gutter_thickness"], 0.02)
         self.assertEqual(overrides["ha"]["crop_rect"], [0.05, 0.05, 0.95, 0.95])
         self.assertEqual(overrides["hb"]["split_x"], 0.6)
+        self.assertEqual(overrides["hb"]["split_axis"], "y")
         # No crop detected for this file: falls back to the full frame, same as before.
         self.assertEqual(overrides["hb"]["crop_rect"], [0.0, 0.0, 1.0, 1.0])
         self.controller.request_asset_discovery.assert_called_once()
@@ -471,7 +479,7 @@ class TestAppController(unittest.TestCase):
         self.controller.session.repo.load_file_settings.return_value = None
         self.controller.request_asset_discovery = MagicMock()
 
-        self.controller._on_splits_detected({"/p/a.tif": (0.4, 0.03, None)})
+        self.controller._on_splits_detected({"/p/a.tif": (0.4, 0.03, None, "x")})
 
         self.assertEqual(store["half_frame_overrides"]["ha"]["crop_rect"], [0.1, 0.1, 0.9, 0.9])
         self.assertEqual(store["half_frame_overrides"]["ha"]["split_x"], 0.4)

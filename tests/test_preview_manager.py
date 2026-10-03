@@ -565,7 +565,7 @@ def test_half_preview_reports_sliced_full_resolution_dimensions() -> None:
         lf.get_loader.return_value = (_Ctx(), {"color_space": "Adobe RGB"})
         buf, dims, _ = PreviewManager().load_linear_preview(
             "/fake/path.dng",
-            half_slice=(2, 0.4, (0.1, 0.1, 0.9, 0.9), 0.05),
+            half_slice=(2, 0.4, (0.1, 0.1, 0.9, 0.9), 0.05, "x"),
         )
 
     assert buf.shape == (40, 46, 3)
@@ -581,7 +581,7 @@ def test_half_splash_reports_sliced_full_resolution_dimensions() -> None:
         result = PreviewManager._try_splash_from_open_raw(
             raw,
             "/fake/path.dng",
-            half_slice=(2, 0.4, (0.1, 0.1, 0.9, 0.9), 0.05),
+            half_slice=(2, 0.4, (0.1, 0.1, 0.9, 0.9), 0.05, "x"),
         )
 
     assert result is not None

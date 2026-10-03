@@ -201,6 +201,7 @@ def get_thumbnail_worker(
     gutter_thickness: float = 0.0,
     process_mode: str = "",
     *,
+    split_axis: str = "x",
     fast_only: bool = False,
     should_cancel: Optional[Callable[[], bool]] = None,
 ) -> Optional[Image.Image]:
@@ -229,7 +230,9 @@ def get_thumbnail_worker(
         if half:
             from negpy.services.assets.half_frame import slice_half
 
-            img = Image.fromarray(slice_half(np.asarray(img), half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness))
+            img = Image.fromarray(
+                slice_half(np.asarray(img), half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness, split_axis=split_axis)
+            )
 
         # Shrink before the inversion, not after: preview_positive is float math over every
         # pixel, and on a full-size decode its temporaries cost a gigabyte per worker.

@@ -259,7 +259,7 @@ class _ThumbnailDelegate(QStyledItemDelegate):
             painter.setPen(QPen(QColor(THEME.accent_primary), 2))
             painter.drawRoundedRect(QRectF(img_rect).adjusted(1 - out, 1 - out, out - 2, out - 2), self._RADIUS + out, self._RADIUS + out)
 
-    def _draw_composite_badge(self, painter: QPainter, img_rect: QRect, kind: str, half: int) -> None:
+    def _draw_composite_badge(self, painter: QPainter, img_rect: QRect, kind: str, half: int, split_axis: str = "x") -> None:
         """Bottom-left mark: this frame was assembled from more than one file.
 
         One glyph per kind, so a merge is told from a stitch without opening the menu.
@@ -285,13 +285,22 @@ class _ThumbnailDelegate(QStyledItemDelegate):
                 painter.setBrush(QColor(color))
                 painter.drawEllipse(QRect(cx + dx - 2, cy - 2, 4, 4))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-        elif kind == "half":  # a split frame, this asset's own half filled
+        elif kind == "half":  # a split frame, this asset's own half filled, panes along the split axis
             painter.drawRect(QRect(cx - 6, cy - 4, 12, 8))
-            painter.fillRect(QRect(cx - 5 if half == 1 else cx + 1, cy - 3, 5, 7), self._COMPOSITE_GLYPH)
+            panes = self._half_badge_panes(cx, cy, split_axis)
+            painter.fillRect(panes[0] if half == 1 else panes[1], self._COMPOSITE_GLYPH)
         elif kind == "diptych":  # the same split frame with both halves filled
             painter.drawRect(QRect(cx - 6, cy - 4, 12, 8))
-            for left in (cx - 5, cx + 1):
-                painter.fillRect(QRect(left, cy - 3, 5, 7), self._COMPOSITE_GLYPH)
+            for pane in self._half_badge_panes(cx, cy, split_axis):
+                painter.fillRect(pane, self._COMPOSITE_GLYPH)
+
+    @staticmethod
+    def _half_badge_panes(cx: int, cy: int, split_axis: str) -> tuple[QRect, QRect]:
+        """(half 1, half 2) panes of the half/diptych glyph: left/right for an "x"
+        split, top/bottom for "y"."""
+        if split_axis == "y":
+            return QRect(cx - 5, cy - 3, 11, 3), QRect(cx - 5, cy + 1, 11, 3)
+        return QRect(cx - 5, cy - 3, 5, 7), QRect(cx + 1, cy - 3, 5, 7)
 
     @staticmethod
     def _border_pen(hover: bool) -> QPen:
@@ -322,7 +331,7 @@ class _ThumbnailDelegate(QStyledItemDelegate):
         if failed:
             self._draw_failed_badge(painter, area)
         if kind:
-            self._draw_composite_badge(painter, area, kind, int(file_info.get("half") or 0))
+            self._draw_composite_badge(painter, area, kind, int(file_info.get("half") or 0), str(file_info.get("split_axis") or "x"))
         painter.restore()
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
@@ -368,7 +377,9 @@ class _ThumbnailDelegate(QStyledItemDelegate):
             if failed:
                 self._draw_failed_badge(painter, img_rect)
             if kind:
-                self._draw_composite_badge(painter, img_rect, kind, int(file_info.get("half") or 0))
+                self._draw_composite_badge(
+                    painter, img_rect, kind, int(file_info.get("half") or 0), str(file_info.get("split_axis") or "x")
+                )
             painter.restore()
             return
         base = icon.pixmap(QSize(4096, 4096))  # largest available pixmap (~120px)
@@ -407,7 +418,7 @@ class _ThumbnailDelegate(QStyledItemDelegate):
         elif keeper:
             self._draw_mark_badge(painter, img_rect, check=True)
         if kind:
-            self._draw_composite_badge(painter, img_rect, kind, int(file_info.get("half") or 0))
+            self._draw_composite_badge(painter, img_rect, kind, int(file_info.get("half") or 0), str(file_info.get("split_axis") or "x"))
         if not failed and self._is_stale_thumbnail(file_info):
             self._draw_stale_dot(painter, img_rect)
         painter.setClipping(False)

@@ -1859,10 +1859,15 @@ class AppController(QObject):
         camera copy-stand, or a folder import."""
         return self.session.repo.get_global_setting(self._HALF_FRAME_PROFILE_KEY, default=None)
 
-    def save_half_frame_profile(self, crop_rect, split_x: float, gutter_thickness: float) -> None:
+    def save_half_frame_profile(self, crop_rect, split_x: float, gutter_thickness: float, split_axis: str = "x") -> None:
         self.session.repo.save_global_setting(
             self._HALF_FRAME_PROFILE_KEY,
-            {"crop_rect": [float(v) for v in crop_rect], "split_x": float(split_x), "gutter_thickness": float(gutter_thickness)},
+            {
+                "crop_rect": [float(v) for v in crop_rect],
+                "split_x": float(split_x),
+                "gutter_thickness": float(gutter_thickness),
+                "split_axis": str(split_axis),
+            },
         )
 
     def half_frame_overrides(self) -> dict:
@@ -1874,12 +1879,13 @@ class AppController(QObject):
     def half_frame_override(self, file_hash: str) -> dict | None:
         return self.half_frame_overrides().get(file_hash)
 
-    def save_half_frame_override(self, file_hash: str, crop_rect, split_x: float, gutter_thickness: float) -> None:
+    def save_half_frame_override(self, file_hash: str, crop_rect, split_x: float, gutter_thickness: float, split_axis: str = "x") -> None:
         overrides = self.half_frame_overrides()
         overrides[file_hash] = {
             "crop_rect": [float(v) for v in crop_rect],
             "split_x": float(split_x),
             "gutter_thickness": float(gutter_thickness),
+            "split_axis": str(split_axis),
         }
         self.session.repo.save_global_setting(self._HALF_FRAME_OVERRIDES_KEY, overrides)
 
@@ -1940,11 +1946,13 @@ class AppController(QObject):
                 crop_rect=saved_crop_rect(saved.get("crop_rect")),
                 split_x=float(saved.get("split_x") or 0.5),
                 gutter_thickness=float(saved.get("gutter_thickness") or 0.0),
+                split_axis=str(saved.get("split_axis") or "x"),
             )
         if file_path:
-            from negpy.services.assets.half_frame import detect_split_x_for_file
+            from negpy.services.assets.half_frame import detect_split_axis_for_file
 
-            return HalfGeometry(split_x=detect_split_x_for_file(file_path))
+            split, axis = detect_split_axis_for_file(file_path)
+            return HalfGeometry(split_x=split, split_axis=axis)
         return HalfGeometry()
 
     def _remap_half_frame_edits(self, file_hash: str, old_geom: HalfGeometry, new_geom: HalfGeometry) -> None:
@@ -2017,6 +2025,7 @@ class AppController(QObject):
             initial_rect=old_geom.crop_rect,
             initial_split=old_geom.split_x,
             initial_gutter=old_geom.gutter_thickness,
+            initial_axis=old_geom.split_axis,
             initial_scope=saved_scope,
             process_mode=self._half_frame_process_mode(file_path, file_hash),
             parent=None,
@@ -2032,8 +2041,9 @@ class AppController(QObject):
             "crop_rect": [cx1, cy1, cx2, cy2],
             "split_x": dialog.split_x(),
             "gutter_thickness": dialog.gutter_thickness(),
+            "split_axis": dialog.split_axis(),
         }
-        new_geom = HalfGeometry((cx1, cy1, cx2, cy2), result["split_x"], result["gutter_thickness"])
+        new_geom = HalfGeometry((cx1, cy1, cx2, cy2), result["split_x"], result["gutter_thickness"], result["split_axis"])
 
         if scope == "all":
             overrides = self.half_frame_overrides()
@@ -2044,12 +2054,12 @@ class AppController(QObject):
                     targets.add(h)
             for h in targets:
                 self._remap_half_frame_edits(h, self._half_frame_geometry_for(h, self._path_for_base_hash(h)), new_geom)
-            self.save_half_frame_profile(result["crop_rect"], result["split_x"], result["gutter_thickness"])
+            self.save_half_frame_profile(result["crop_rect"], result["split_x"], result["gutter_thickness"], result["split_axis"])
         else:
             scoped_targets = selected_hashes if scope == "selected" and selected_hashes else [file_hash]
             for h in scoped_targets:
                 self._remap_half_frame_edits(h, self._half_frame_geometry_for(h, self._path_for_base_hash(h)), new_geom)
-                self.save_half_frame_override(h, result["crop_rect"], result["split_x"], result["gutter_thickness"])
+                self.save_half_frame_override(h, result["crop_rect"], result["split_x"], result["gutter_thickness"], result["split_axis"])
         return result
 
     def auto_detect_all_half_frame_splits(self) -> None:
@@ -2068,7 +2078,7 @@ class AppController(QObject):
         self.status_progress_requested.emit(0, len(paths))
         self.auto_detect_all_splits_requested.emit(AutoDetectAllSplitsTask(paths=paths))
 
-    def _on_splits_detected(self, detected: dict[str, tuple[float, float, Optional[tuple[float, float, float, float]]]]) -> None:
+    def _on_splits_detected(self, detected: dict[str, tuple[float, float, Optional[tuple[float, float, float, float]], str]]) -> None:
         """AutoDetectAllSplitsTask finished: save each file's own detected split,
         gutter thickness and outer film crop as its override, re-anchoring its manual
         edits from whatever geometry it used before. A file whose crop detection
@@ -2084,16 +2094,21 @@ class AppController(QObject):
                 continue
             seen.add(file_hash)
             old_geom = self._half_frame_geometry_for(file_hash, a["path"])
-            split_x, gutter_thickness, crop_rect = detected[a["path"]]
+            split_x, gutter_thickness, crop_rect, split_axis = detected[a["path"]]
             new_geom = replace(
                 old_geom,
                 split_x=split_x,
                 gutter_thickness=gutter_thickness,
                 crop_rect=old_geom.crop_rect if crop_rect is None else crop_rect,
+                split_axis=split_axis,
             )
             self._remap_half_frame_edits(file_hash, old_geom, new_geom)
             self.save_half_frame_override(
-                file_hash, new_geom.crop_rect or (0.0, 0.0, 1.0, 1.0), new_geom.split_x, new_geom.gutter_thickness
+                file_hash,
+                new_geom.crop_rect or (0.0, 0.0, 1.0, 1.0),
+                new_geom.split_x,
+                new_geom.gutter_thickness,
+                new_geom.split_axis,
             )
         if not seen:
             return
@@ -2296,8 +2311,8 @@ class AppController(QObject):
 
     def _half_slice_for_asset(
         self, path: Optional[str], file_hash: Optional[str]
-    ) -> Optional[tuple[int, float, tuple[float, float, float, float] | None, float]]:
-        """(half, split_x, crop_rect, gutter_thickness) for the asset at path/hash, or None."""
+    ) -> Optional[tuple[int, float, tuple[float, float, float, float] | None, float, str]]:
+        """(half, split_x, crop_rect, gutter_thickness, split_axis) for the asset at path/hash, or None."""
         if not file_hash:
             return None
         for f in self.state.uploaded_files:
@@ -2316,11 +2331,17 @@ class AppController(QObject):
                     float(f.get("split_x") or 0.5),
                     crop_rect,
                     float(f.get("gutter_thickness") or 0.0),
+                    str(f.get("split_axis") or "x"),
                 )
         return None
 
-    def _active_half(self) -> Optional[tuple[int, float, tuple[float, float, float, float] | None, float]]:
-        """(half, split_x, crop_rect, gutter_thickness) of the active asset, or None for whole-frame."""
+    @staticmethod
+    def _half_slice_for_diptych(info: dict) -> tuple[int, float, tuple[float, float, float, float] | None, float, str]:
+        """The whole-frame (half 0) slice of a diptych, in half_slice's 5-tuple shape."""
+        return (0, info["split_x"], info["crop_rect"], info["gutter_thickness"], str(info.get("split_axis") or "x"))
+
+    def _active_half(self) -> Optional[tuple[int, float, tuple[float, float, float, float] | None, float, str]]:
+        """(half, split_x, crop_rect, gutter_thickness, split_axis) of the active asset, or None for whole-frame."""
         return self._half_slice_for_asset(self.state.current_file_path, self.state.current_file_hash)
 
     def active_diptych(self) -> Optional[tuple[dict, tuple[WorkspaceConfig, WorkspaceConfig]]]:
@@ -2361,7 +2382,13 @@ class AppController(QObject):
             return file_info, None
         geom = self._half_frame_geometry_for(file_info.get("hash") or "", file_info.get("path", ""))
         return (
-            {**file_info, "split_x": geom.split_x, "crop_rect": geom.crop_rect, "gutter_thickness": geom.gutter_thickness},
+            {
+                **file_info,
+                "split_x": geom.split_x,
+                "crop_rect": geom.crop_rect,
+                "gutter_thickness": geom.gutter_thickness,
+                "split_axis": geom.split_axis,
+            },
             pair,
         )
 
@@ -2567,8 +2594,7 @@ class AppController(QObject):
             if dip is not None:
                 # half 0: cropped to the rect, still whole. The render worker splits it, so
                 # both halves come off one decode.
-                info = dip[0]
-                half_info = (0, info["split_x"], info["crop_rect"], info["gutter_thickness"])
+                half_info = self._half_slice_for_diptych(dip[0])
         self.preview_load_requested.emit(
             PreviewLoadTask(
                 file_path=file_path,
@@ -6196,6 +6222,7 @@ class AppController(QObject):
             diptych=dip[1] if dip is not None else None,
             split_x=dip[0]["split_x"] if dip is not None else 0.5,
             gutter_thickness=dip[0]["gutter_thickness"] if dip is not None else 0.0,
+            split_axis=str(dip[0].get("split_axis") or "x") if dip is not None else "x",
         )
 
         prefetch_was_running = self._cancel_neighbor_prefetch()

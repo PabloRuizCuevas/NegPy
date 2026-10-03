@@ -88,7 +88,7 @@ def _linear_preview_key(
     color_space: str,
     use_camera_wb: bool,
     full_resolution: bool,
-    half_slice: tuple[int, float, tuple[float, float, float, float] | None, float] | None,
+    half_slice: tuple[int, float, tuple[float, float, float, float] | None, float, str] | None,
     demosaic: str,
     positive_source: bool,
     highlight_mode: int,
@@ -108,6 +108,7 @@ def _linear_preview_key(
         split_x=half_slice[1] if half_slice else 0.5,
         crop_rect=half_slice[2] if half_slice else None,
         gutter_thickness=half_slice[3] if half_slice else 0.0,
+        split_axis=half_slice[4] if half_slice else "x",
         positive_source=positive_source,
         highlight_mode=highlight_mode,
         bake_camera_wb=bake_camera_wb,
@@ -129,7 +130,7 @@ class PreviewManager:
         *,
         use_camera_wb: bool,
         file_hash: str | None,
-        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float] | None = None,
+        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float, str] | None = None,
         demosaic: str = DemosaicMode.AUTO,
         positive_source: bool = False,
         integrated_gpu: bool = False,
@@ -213,7 +214,7 @@ class PreviewManager:
         use_camera_wb: bool,
         file_hash: str | None,
         full_resolution: bool = False,
-        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float] | None = None,
+        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float, str] | None = None,
         demosaic: str = DemosaicMode.AUTO,
         positive_source: bool = False,
         highlight_mode: int = 0,
@@ -247,7 +248,7 @@ class PreviewManager:
     def _try_splash_from_open_raw(
         raw: Any,
         file_path: str,
-        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float] | None = None,
+        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float, str] | None = None,
     ) -> Optional[Tuple[ImageBuffer, Dimensions]]:
         """
         Extract a splash preview from an already-open raw object.
@@ -266,11 +267,15 @@ class PreviewManager:
         # Half-frame slice before the splash downsample, so the splash shows the active half
         # rather than the whole scan, at the same pixels the linear load slices.
         if half_slice is not None:
-            half, split_x, crop_rect, gutter_thickness = half_slice
+            half, split_x, crop_rect, gutter_thickness, split_axis = half_slice
             from negpy.services.assets.half_frame import slice_half, slice_half_dimensions
 
-            full_dims = slice_half_dimensions(full_dims, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness)
-            arr = np.ascontiguousarray(slice_half(arr, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness))
+            full_dims = slice_half_dimensions(
+                full_dims, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness, split_axis=split_axis
+            )
+            arr = np.ascontiguousarray(
+                slice_half(arr, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness, split_axis=split_axis)
+            )
         h, w = arr.shape[:2]
         if max(h, w) > APP_CONFIG.preview_render_size:
             scale = APP_CONFIG.preview_render_size / max(h, w)
@@ -289,7 +294,7 @@ class PreviewManager:
         full_resolution: bool,
         file_hash: str | None,
         log_timings: bool = False,
-        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float] | None = None,
+        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float, str] | None = None,
         demosaic: str = DemosaicMode.AUTO,
         positive_source: bool = False,
         cache_protected_file_hashes: frozenset[str] = frozenset(),
@@ -305,7 +310,8 @@ class PreviewManager:
         Decode and resize a linear preview from an already-open raw object.
         Handles cache write on completion.
 
-        ``half_slice``: (half, split_x, crop_rect, gutter_thickness) — when set,
+        ``half_slice``: (half, split_x, crop_rect, gutter_thickness, split_axis) —
+        when set,
         the half-frame slice is applied to the full-res decode BEFORE the preview
         downsample so analysis sees the same pixels export analyzes (slice then
         downsample), not whole-scan-averaged pixels (downsample then slice).
@@ -429,15 +435,19 @@ class PreviewManager:
         # Half-frame slice before the downsample, so the analysis stage sees the same pixels
         # the export analyses. The other order averages whole-scan pixels across the gutter.
         if half_slice is not None:
-            half, split_x, crop_rect, gutter_thickness = half_slice
+            half, split_x, crop_rect, gutter_thickness, split_axis = half_slice
             from negpy.services.assets.half_frame import slice_half, slice_half_dimensions
 
-            h_orig, w_orig = slice_half_dimensions((h_orig, w_orig), half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness)
+            h_orig, w_orig = slice_half_dimensions(
+                (h_orig, w_orig), half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness, split_axis=split_axis
+            )
             full_linear = np.ascontiguousarray(
-                slice_half(full_linear, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness)
+                slice_half(full_linear, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness, split_axis=split_axis)
             )
             if ir_full is not None:
-                ir_full = np.ascontiguousarray(slice_half(ir_full, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness))
+                ir_full = np.ascontiguousarray(
+                    slice_half(ir_full, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness, split_axis=split_axis)
+                )
             h_p, w_p = full_linear.shape[:2]
         t_resize0 = time.perf_counter()
         max_res = APP_CONFIG.preview_render_size
@@ -542,7 +552,7 @@ class PreviewManager:
     @staticmethod
     def try_splash_preview(
         file_path: str,
-        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float] | None = None,
+        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float, str] | None = None,
     ) -> Optional[Tuple[ImageBuffer, Dimensions]]:
         """
         Quick embedded-JPEG (or half-size) RGB for first paint. Returns None if not available.
@@ -566,7 +576,7 @@ class PreviewManager:
         full_resolution: bool = False,
         file_hash: str | None = None,
         log_timings: bool = False,
-        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float] | None = None,
+        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float, str] | None = None,
         demosaic: str = DemosaicMode.AUTO,
         positive_source: bool = False,
         cache_protected_file_hashes: frozenset[str] = frozenset(),
@@ -582,8 +592,8 @@ class PreviewManager:
         Loads linear RGB, downsamples for display.
         If color_space is None, uses the source's declared space (metadata).
 
-        ``half_slice``: (half, split_x, crop_rect, gutter_thickness) — slice the
-        half before the preview downsample so analysis matches export.
+        ``half_slice``: (half, split_x, crop_rect, gutter_thickness, split_axis) —
+        slice the half before the preview downsample so analysis matches export.
 
         ``wb_override`` is not part of the cache key: a caller that passes it must also
         pass ``file_hash=None``, the way a bracket sibling already does, or a decode on
@@ -965,7 +975,7 @@ class PreviewManager:
         full_resolution: bool = False,
         file_hash: str | None = None,
         log_timings: bool = False,
-        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float] | None = None,
+        half_slice: tuple[int, float, tuple[float, float, float, float] | None, float, str] | None = None,
         demosaic: str = DemosaicMode.AUTO,
         positive_source: bool = False,
         should_cancel: Optional[Callable[[], bool]] = None,

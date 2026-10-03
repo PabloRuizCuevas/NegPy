@@ -36,6 +36,7 @@ class PreviewCacheKey:
     split_x: float = 0.5
     crop_rect: tuple[float, float, float, float] | None = None
     gutter_thickness: float = 0.0
+    split_axis: str = "x"
     positive_source: bool = False
     highlight_mode: int = 0
     bake_camera_wb: bool = False
@@ -52,6 +53,7 @@ class PreviewCacheKey:
             round(self.split_x, 6),
             self.crop_rect,
             round(self.gutter_thickness, 6),
+            self.split_axis,
             self.positive_source,
             self.highlight_mode,
             self.bake_camera_wb,

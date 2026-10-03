@@ -275,6 +275,7 @@ class ExportWorker(QObject):
                     split_x=float(task.file_info.get("split_x") or 0.5),
                     crop_rect=tuple(task.file_info["crop_rect"]) if task.file_info.get("crop_rect") else None,
                     gutter_thickness=float(task.file_info.get("gutter_thickness") or 0.0),
+                    split_axis=str(task.file_info.get("split_axis") or "x"),
                     diptych=task.diptych,
                 )
                 if prefetch_next and i == 0:
@@ -315,6 +316,7 @@ class ExportWorker(QObject):
             split_x=float(nxt.file_info.get("split_x") or 0.5),
             crop_rect=tuple(nxt.file_info["crop_rect"]) if nxt.file_info.get("crop_rect") else None,
             gutter_thickness=float(nxt.file_info.get("gutter_thickness") or 0.0),
+            split_axis=str(nxt.file_info.get("split_axis") or "x"),
         )
 
     def _finish_task(self, task: ExportTask, buffer: np.ndarray, color_space: str, embed_plan: Optional[tuple]) -> Optional[str]:
@@ -448,6 +450,7 @@ class ExportWorker(QObject):
                         split_x=float(info.get("split_x") or 0.5),
                         crop_rect=tuple(info["crop_rect"]) if info.get("crop_rect") else None,
                         gutter_thickness=float(info.get("gutter_thickness") or 0.0),
+                        split_axis=str(info.get("split_axis") or "x"),
                         keep_source=next_path == info.get("path"),
                     )
                     if tile is None:
