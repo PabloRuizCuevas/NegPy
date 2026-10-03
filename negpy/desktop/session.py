@@ -912,6 +912,7 @@ class DesktopSessionManager(QObject):
             self.state.linear_jxl_effort = int(saved_jxl_effort)
 
         self.state.export_presets = self.repo.load_export_presets()
+        self.state.config = self._empty_session_config()
 
     def _invalidate_search_facts(self) -> None:
         self._search_facts = None
@@ -1135,6 +1136,11 @@ class DesktopSessionManager(QObject):
         config = replace(config, flatfield=replace(config.flatfield, apply=bool(ff_id)))
 
         return self._with_scan_setup(config)
+
+    def _empty_session_config(self) -> WorkspaceConfig:
+        """The config with no frame loaded: what the next fresh frame gets. Any persisted
+        edit snapshots it as the sticky config, so it must hold the sticky values."""
+        return self._apply_sticky_settings(DEFAULT_WORKSPACE_CONFIG, only_global=False)
 
     def _with_scan_setup(self, config: WorkspaceConfig) -> WorkspaceConfig:
         """Overlay the scan-setup preferences (ALWAYS_STICKY_PROCESS): they describe the
@@ -2125,7 +2131,7 @@ class DesktopSessionManager(QObject):
         self.state.preview_detect = None
         self.state.preview_embedded = None
         self.state.has_ir = False
-        self.state.config = DEFAULT_WORKSPACE_CONFIG
+        self.state.config = self._empty_session_config()
         self._config_dirty = False
         with self.state.metrics_lock:
             self.state.last_metrics.clear()

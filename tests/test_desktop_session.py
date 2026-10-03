@@ -1674,8 +1674,7 @@ class TestSessionEmptied(unittest.TestCase):
         self.assertIsNone(state.current_file_hash)
         self.assertIsNone(state.preview_raw)
         self.assertEqual(state.last_metrics, {})
-        # Back to a fresh session's own config, which is the one a card's Reset lands on.
-        self.assertEqual(state.config, AppState().config)
+        self.assertEqual(state.config, self.session._empty_session_config())
 
     def test_remove_current_last_file_emits_and_resets(self):
         self.session.remove_current_file()
@@ -1706,6 +1705,45 @@ class TestSessionEmptied(unittest.TestCase):
         self.assertEqual(self.emptied_count, 0)
         self.assertEqual(len(self.session.state.uploaded_files), 1)
         self.assertEqual(self.session.state.selected_file_idx, 0)
+
+
+class TestEmptySessionConfig(unittest.TestCase):
+    """With no frame loaded, the session holds what the next fresh frame gets, so the
+    panels show the carried values and an edit there persists on top of them."""
+
+    def setUp(self):
+        self.store = {"sticky_config": {"distortion_k1": 0.05, "autocrop_ratio": "6:7"}, "flatfield_active_profile": "rig-a"}
+        self.mock_repo = MagicMock(spec=StorageRepository)
+        self.mock_repo.load_file_settings.return_value = None
+        self.mock_repo.load_file_settings_by_path.return_value = None
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: self.store.get(key, default)
+        self.mock_repo.save_global_settings.side_effect = self.store.update
+        self.mock_repo.get_max_history_index.return_value = 0
+        patcher = patch("negpy.desktop.session.FlatFieldProfiles.get", return_value=SimpleNamespace(id="rig-a", k1=0.0))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.session = DesktopSessionManager(self.mock_repo)
+
+    def _assert_carried(self):
+        config = self.session.state.config
+        self.assertEqual(config.geometry.distortion_k1, 0.05)
+        self.assertEqual(config.flatfield.profile_id, "rig-a")
+        self.assertTrue(config.flatfield.apply)
+
+    def test_startup_holds_the_carried_values(self):
+        self._assert_carried()
+
+    def test_emptied_session_holds_the_carried_values(self):
+        self.session.state.uploaded_files = [{"name": "f.dng", "path": "p", "hash": "h"}]
+        self.session.state.config = DEFAULT_WORKSPACE_CONFIG
+        self.session.clear_files()
+        self._assert_carried()
+
+    def test_edit_with_no_frame_keeps_other_carried_values(self):
+        config = self.session.state.config
+        self.session.update_config(replace(config, flatfield=replace(config.flatfield, apply=False)), persist=True, render=False)
+        self.assertEqual(self.store["sticky_config"]["distortion_k1"], 0.05)
+        self.assertEqual(self.store["sticky_config"]["autocrop_ratio"], "6:7")
 
 
 class TestTriageMarks(unittest.TestCase):
