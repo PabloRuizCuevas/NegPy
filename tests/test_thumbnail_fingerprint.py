@@ -28,8 +28,6 @@ class TestThumbnailFingerprint:
         assert _fp(WorkspaceConfig()) == _fp(WorkspaceConfig())
 
     def test_survives_a_settings_round_trip(self) -> None:
-        """Background checks read the config back from the DB, so a stored-and-reloaded
-        config must fingerprint the same as the one that rendered."""
         config = WorkspaceConfig()
         config = replace(config, exposure=replace(config.exposure, density=config.exposure.density + 0.1))
         reloaded = WorkspaceConfig.from_flat_dict(config.to_dict())
@@ -165,7 +163,6 @@ class TestAssetStoreFingerprint:
     def test_saved_fingerprint_reads_back(self) -> None:
         self.store.save_thumbnail("h1", self.img, fingerprint="deadbeef")
         assert self.store.get_thumbnail_fingerprint("h1") == "deadbeef"
-        # The image itself is still served as before.
         assert self.store.get_thumbnail("h1") is not None
 
     def test_legacy_thumbnail_without_a_comment_is_unknown(self) -> None:
@@ -200,10 +197,7 @@ def _current_defaults() -> dict[str, dict[str, str]]:
 
 
 def test_a_changed_default_bumps_the_render_version() -> None:
-    """A field at its default is not hashed, so a changed default leaves old thumbnails
-    current unless THUMBNAIL_RENDER_VERSION moves. Fields missing from the golden are not
-    checked; NEGPY_RECORD_THUMBNAIL_DEFAULTS=1 records them, and rewrites the golden after
-    a bump."""
+    # Fields missing from the golden are not checked; NEGPY_RECORD_THUMBNAIL_DEFAULTS=1 records them.
     with open(_DEFAULTS_GOLDEN) as fh:
         golden = json.load(fh)
     current = _current_defaults()
