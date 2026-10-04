@@ -1,7 +1,7 @@
 import qtawesome as qta
-from PyQt6.QtCore import QPoint, pyqtSignal
-from PyQt6.QtGui import QAction, QActionGroup, QPainter
-from PyQt6.QtWidgets import QMenu, QPushButton
+from PyQt6.QtCore import QPoint, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QActionGroup, QCursor, QPainter
+from PyQt6.QtWidgets import QApplication, QMenu, QPushButton
 
 from negpy.desktop.view.styles.templates import EditedDot, default_button_height, wrap_tooltip
 from negpy.desktop.view.styles.theme import THEME
@@ -17,7 +17,11 @@ class _MenuButton(QPushButton):
         # Not setMenu: any ::menu-indicator rule then drops the button's padding.
         self.choice_menu = menu = QMenu(self)
         menu.setToolTipsVisible(True)
-        self.clicked.connect(lambda: menu.exec(self.mapToGlobal(self.rect().bottomLeft())))
+        # Qt hides the popup on the press and replays that press as clicked on the
+        # release; swallowing it keeps one click closing the menu.
+        self._swallow_next_click = False
+        menu.aboutToHide.connect(self._note_menu_hidden)
+        self.clicked.connect(self._open_menu)
         # The chevron sits clear of the edited dot in the top-right corner.
         self._chevron_inset = THEME.space_2xl
         self.setStyleSheet(
@@ -29,6 +33,27 @@ class _MenuButton(QPushButton):
         self.setToolTip(wrap_tooltip(tooltip))
         self.plain_tooltip = tooltip
         self.edited_dot = EditedDot(self)
+
+    def _dismissed_by_press_on_button(self) -> bool:
+        """True when the hide happening now comes from a mouse press on this button.
+        An Esc, an item pick or a click elsewhere leaves the next click live."""
+        pressed = bool(QApplication.mouseButtons() & Qt.MouseButton.LeftButton)
+        return pressed and self.rect().contains(self.mapFromGlobal(QCursor.pos()))
+
+    def _note_menu_hidden(self) -> None:
+        self._swallow_next_click = self._dismissed_by_press_on_button()
+
+    def _open_menu(self) -> None:
+        if self._swallow_next_click:
+            self._swallow_next_click = False
+            return
+        self.choice_menu.exec(self.mapToGlobal(self.rect().bottomLeft()))
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        # clicked fires inside the super call; a release off the button fires nothing,
+        # so the flag is cleared here rather than left armed for an unrelated click.
+        super().mouseReleaseEvent(event)
+        self._swallow_next_click = False
 
     def paintEvent(self, event) -> None:  # noqa: N802
         super().paintEvent(event)
