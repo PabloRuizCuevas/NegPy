@@ -18,7 +18,7 @@ class ShortcutEntry:
     default_key: str
     description: str
     category: str
-    # The window that dispatches the key. A key only clashes with another bound in the same window.
+    # The window that dispatches the key; keys clash only within one window.
     window: str = "main"
 
 
@@ -67,6 +67,7 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "pick_dust": ShortcutEntry("Shift+D", "Toggle heal tool", "Tools"),
     "pick_scratch": ShortcutEntry("Shift+S", "Toggle scratch tool", "Tools"),
     "pick_scratch_line": ShortcutEntry("Shift+K", "Toggle transport-scratch line tool", "Tools"),
+    "clone_tool": ShortcutEntry("Shift+J", "Toggle clone tool", "Tools"),
     "local_draw": ShortcutEntry("Shift+B", "Toggle dodge & burn mask draw", "Tools"),
     "local_oval": ShortcutEntry("", "Toggle dodge & burn oval mask draw", "Tools"),
     "local_gradient": ShortcutEntry("", "Toggle dodge & burn card-edge mask draw", "Tools"),
@@ -264,6 +265,7 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "reset_tab": ShortcutEntry("", "Reset this tab to defaults", "Actions"),
     "reset_tab_to_roll": ShortcutEntry("", "Reset this tab to the roll's settings", "Actions"),
     "reset_to_roll": ShortcutEntry("", "Reset this frame to the roll's settings", "Actions"),
+    "load_sidecar": ShortcutEntry("", "Load this frame's edit from a sidecar…", "Actions"),
     "apply_tab": ShortcutEntry("", "Apply this tab to the roll…", "Actions"),
     "toggle_tab_cards": ShortcutEntry("", "Expand or collapse this tab's cards", "Actions"),
     "roll_batch_analysis": ShortcutEntry("", "Roll Analysis (measure the roll's baseline)", "Actions"),

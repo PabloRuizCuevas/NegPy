@@ -368,6 +368,7 @@ class MainWindow(QMainWindow):
         ToolMode.WB_PICK: "WB Picker",
         ToolMode.CROP_MANUAL: "Crop",
         ToolMode.DUST_PICK: "Heal Tool",
+        ToolMode.CLONE: "Clone Tool",
     }
 
     def _update_title(self) -> None:
@@ -583,6 +584,8 @@ class MainWindow(QMainWindow):
         self.canvas.analysis_confirmed.connect(self.controller.confirm_analysis_region)
         self.canvas.local_mask_created.connect(self.controller.handle_local_mask_created)
         self.canvas.scratch_completed.connect(self.controller.handle_heal_stroke_completed)
+        self.canvas.clone_stroke_completed.connect(self.controller.handle_clone_stroke_completed)
+        self.canvas.clone_source_picked.connect(self.controller.set_clone_source)
         self.canvas.dust_exclusion_painted.connect(self.controller.handle_dust_exclusion_painted)
         self.canvas.straighten_completed.connect(self.controller.handle_straighten_completed)
         self.canvas.keystone_line_marked.connect(self.controller.handle_keystone_line_marked)
@@ -725,9 +728,8 @@ class MainWindow(QMainWindow):
         if isinstance(buffer, np.ndarray) and not self.state.gpu_enabled:
             finish_conf = self.state.config.finish
             export_conf = self.state.config.export
-            # A crop_preview_full buffer is the uncropped, border-less frame, and padding it
-            # would misalign the tool rect. The buffer's own flag, not the live tool: a render
-            # can land after the tool changed. The GPU skips the layout pass the same way.
+            # No padding for a crop_preview_full buffer (the uncropped frame), as on the GPU: it would misalign
+            # the tool rect. The buffer's flag decides, not the live tool: a render can land after the tool changes.
             should_preview = (finish_conf.border_size > 0 or export_conf.paper_aspect_ratio != AspectRatio.ORIGINAL) and not metrics.get(
                 "crop_preview_full"
             )
@@ -816,6 +818,7 @@ class MainWindow(QMainWindow):
         self.controls_panel.color_sidebar.pick_wb_btn.setChecked(mode == ToolMode.WB_PICK)
         self.controls_panel.geometry_sidebar.manual_crop_btn.setChecked(mode == ToolMode.CROP_MANUAL)
         self.controls_panel.retouch_sidebar.pick_dust_btn.setChecked(mode == ToolMode.DUST_PICK)
+        self.controls_panel.retouch_sidebar.clone_btn.setChecked(mode == ToolMode.CLONE)
 
         self._update_title()
         self._refresh_image_info()

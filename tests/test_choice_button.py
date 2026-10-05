@@ -99,3 +99,53 @@ def test_a_choice_can_be_disabled(qapp):
     btn.set_choice_enabled(1, False)
     assert not btn.is_choice_enabled(1)
     assert not btn.choice_menu.actions()[1].isEnabled()
+
+
+def test_the_click_that_dismissed_the_menu_does_not_reopen_it(qapp, monkeypatch):
+    btn = ChoiceButton(_CHOICES, "tip")
+    opened = []
+    monkeypatch.setattr(btn.choice_menu, "exec", lambda *_: opened.append(True))
+
+    # A press on the button while the menu is open: Qt hides the menu, then emits clicked.
+    monkeypatch.setattr(btn, "_dismissed_by_press_on_button", lambda: True)
+    btn.choice_menu.aboutToHide.emit()
+    btn.clicked.emit()
+    assert opened == []
+
+    btn.clicked.emit()
+    assert opened == [True]
+
+
+def test_a_hide_not_caused_by_the_button_leaves_the_next_click_live(qapp, monkeypatch):
+    btn = ChoiceButton(_CHOICES, "tip")
+    opened = []
+    monkeypatch.setattr(btn.choice_menu, "exec", lambda *_: opened.append(True))
+
+    monkeypatch.setattr(btn, "_dismissed_by_press_on_button", lambda: False)
+    btn.choice_menu.aboutToHide.emit()
+    btn.clicked.emit()
+    assert opened == [True]
+
+
+def test_a_release_off_the_button_disarms_the_swallow(qapp, monkeypatch):
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
+
+    btn = ChoiceButton(_CHOICES, "tip")
+    opened = []
+    monkeypatch.setattr(btn.choice_menu, "exec", lambda *_: opened.append(True))
+
+    # Armed by the dismissing press; the release lands off the button, so no clicked fires.
+    monkeypatch.setattr(btn, "_dismissed_by_press_on_button", lambda: True)
+    btn.choice_menu.aboutToHide.emit()
+    release = QMouseEvent(
+        QMouseEvent.Type.MouseButtonRelease,
+        QPointF(-10.0, -10.0),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    btn.mouseReleaseEvent(release)
+
+    btn.clicked.emit()
+    assert opened == [True]

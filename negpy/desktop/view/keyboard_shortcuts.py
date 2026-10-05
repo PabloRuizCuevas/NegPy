@@ -20,14 +20,16 @@ from negpy.desktop.view.shortcut_registry import (
 )
 from negpy.desktop.view.slider_shortcut_groups import SLIDER_GROUP_BY_ACTION, SLIDER_GROUPS, SliderShortcutGroup, sign_for_action
 from negpy.desktop.view.frame_merge_action import SCOPE_FRAME, SCOPE_ROLL, SCOPE_SELECTION, merge_to_tiff
+from negpy.desktop.view.sidecar_action import load_edit_from_sidecar
 from negpy.desktop.view.slider_targets import slider_widget_map
 from negpy.desktop.view.widgets.collapsible import hidden_by_gating
 
 
 def _context_undo(controller) -> None:
-    """Ctrl+Z targets what the user is working on: while a heal/scratch tool is
-    active it removes the last placed heal; otherwise it's the normal edit undo."""
-    if controller.session.state.active_tool in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK, ToolMode.SCRATCH_LINE):
+    """Undo the active retouch tool's last stroke, else the last edit."""
+    if controller.session.state.active_tool == ToolMode.CLONE:
+        controller.undo_last_clone()
+    elif controller.session.state.active_tool in (ToolMode.DUST_PICK, ToolMode.SCRATCH_PICK, ToolMode.SCRATCH_LINE):
         controller.undo_last_retouch()
     else:
         controller.session.undo()
@@ -199,7 +201,6 @@ class SpacePanKeyFilter(QObject):
             self._set_space_down(False)
 
     def eventFilter(self, watched, event) -> bool:
-        """Track Space in the active window and suppress the focused tool button's activation."""
         if self._replay_guard:
             return False
 
@@ -240,7 +241,6 @@ class SpacePanKeyFilter(QObject):
         return consumed
 
     def uninstall(self) -> None:
-        """Release Space state and remove the application event filter."""
         self._clear_pending_space()
         self._set_space_down(False)
         self._space_consumed = False
@@ -348,6 +348,7 @@ class ShortcutManager:
             "lens_ca_from_metadata": lambda: controls.lens_sidebar.metadata_ca_btn.click(),
             "pick_dust": lambda: _toggle_tool_button(self.window, "finish", controls.retouch_sidebar.pick_dust_btn),
             "pick_scratch": lambda: _toggle_tool_button(self.window, "finish", controls.retouch_sidebar.pick_scratch_btn),
+            "clone_tool": lambda: _toggle_tool_button(self.window, "finish", controls.retouch_sidebar.clone_btn),
             "pick_scratch_line": lambda: _toggle_tool_button(self.window, "finish", controls.retouch_sidebar.pick_line_btn),
             "local_draw": lambda: _toggle_tool_button(self.window, "tone", controls.local_sidebar.draw_btn),
             "local_oval": lambda: _toggle_tool_button(self.window, "tone", controls.local_sidebar.oval_btn),
@@ -410,6 +411,7 @@ class ShortcutManager:
             "reset_tab": lambda: _fire_tab_header(right, "reset"),
             "reset_tab_to_roll": lambda: _fire_tab_header(right, "revert"),
             "reset_to_roll": controller.revert_frame_to_roll,
+            "load_sidecar": lambda: load_edit_from_sidecar(self.window, controller),
             "apply_tab": lambda: _fire_tab_header(right, "apply"),
             "toggle_tab_cards": lambda: _fire_tab_header(right, "cards"),
             "roll_batch_analysis": controller.request_batch_normalization,

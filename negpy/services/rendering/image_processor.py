@@ -65,6 +65,7 @@ from negpy.features.retouch.logic import (
     strokes_to_score,
 )
 from negpy.features.retouch import openice
+from negpy.features.retouch.clone import apply_clone_strokes, clone_token
 from negpy.features.retouch.models import IR_METHOD_OPENICE
 from negpy.features.rgbscan.logic import merge_rgb_triplet, rgbscan_token
 from negpy.features.rgbscan.models import RgbScanConfig, is_rgb_triplet
@@ -199,7 +200,7 @@ def _resolve_armed_autocrop(
 
 
 def _use_half_size_decode(raw: Any) -> bool:
-    """Mirrors the PreviewManager fast path: half_size aliases the X-Trans 6x6 CFA."""
+    """half_size aliases the X-Trans 6x6 CFA; must match the PreviewManager fast path."""
     return not isinstance(raw, NonStandardFileWrapper) and not is_xtrans(raw)
 
 
@@ -337,6 +338,10 @@ class ImageProcessor:
         self._manual_inc_threshold: Optional[float] = None
         self._manual_inc_score: Optional[np.ndarray] = None
         self._manual_inc_out: Optional[np.ndarray] = None
+        # Clone cache, keyed on input identity like the manual baseline; a strict append extends it.
+        self._clone_img: Optional[np.ndarray] = None
+        self._clone_strokes: tuple = ()
+        self._clone_out: Optional[np.ndarray] = None
         # The OpenICE method's whole result, on its own slot. The two IR methods share no
         # state, so whichever loses can be deleted without unpicking the other.
         self._ice_key: Optional[tuple] = None
@@ -548,6 +553,22 @@ class ImageProcessor:
         self._manual_value = value
         return value
 
+    def _clone_bake(self, img: np.ndarray, settings: WorkspaceConfig) -> np.ndarray:
+        """The last source bake: a clone copies film that is already clean."""
+        strokes = tuple(getattr(settings.retouch, "clone_strokes", ()))
+        if self._is_flat(settings) or not strokes:
+            return img
+        done = self._clone_strokes
+        if self._clone_img is img and self._clone_out is not None and strokes[: len(done)] == done:
+            if len(strokes) == len(done):
+                return self._clone_out
+            out = apply_clone_strokes(self._clone_out, strokes[len(done) :])
+        else:
+            self._slow_step("cloning")
+            out = apply_clone_strokes(img, strokes)
+        self._clone_img, self._clone_strokes, self._clone_out = img, strokes, out
+        return out
+
     def _manual_bake_incremental(
         self,
         img: np.ndarray,
@@ -708,9 +729,11 @@ class ImageProcessor:
             + heal_token
             + luma_bake_token(settings.retouch)
         )
-        # The IR and luma passes run ahead of the manual bake and never read the strokes, so
-        # their caches key without them: painting a heal must not re-run detection.
+        # Each bake keys only on what runs ahead of it, so a heal or clone stroke re-runs only its own pass.
         auto_hash = base_hash.replace(heal_token, "", 1) if heal_token else base_hash
+        clone_tok = clone_token(settings.retouch)
+        base_hash += clone_tok
+        repair_hash = base_hash[: len(base_hash) - len(clone_tok)]
 
         # Bake the IR correction before detection so meters/stats see the corrected buffer.
         # Gated: the bake caches are single-slot and the export prefetch bakes on a helper thread.
@@ -725,7 +748,7 @@ class ImageProcessor:
                 detected_dust, hair_masks = _without_ir(detected_dust, hair_masks, ir_corrected_mask)
             dust_label = _dust_step_label(orig_ret)
             img = self._luma_bake(img, detected_dust, auto_hash + hair_bake_token(orig_ret), dust_label)
-            img, manual_routed = self._manual_bake(img, settings, base_hash)
+            img, manual_routed = self._manual_bake(img, settings, repair_hash)
             extra = [m for m in (ir_routed, manual_routed) if m is not None]
             if extra:
                 hair_masks = hair_masks + extra  # never mutate the cached list
@@ -733,7 +756,8 @@ class ImageProcessor:
             # invalidates the base stage when detection params change.
             hair_token = hair_bake_token(orig_ret) if hair_masks else ""
             if hair_masks:
-                img = self._hair_inpaint(img, hair_masks, base_hash + hair_token, dust_label)
+                img = self._hair_inpaint(img, hair_masks, repair_hash + hair_token, dust_label)
+            img = self._clone_bake(img, settings)
 
         source_hash = base_hash + hair_token + f"|res{w_cols}x{h_orig}"
 
@@ -758,10 +782,8 @@ class ImageProcessor:
         if resolved_crop is not None:
             context.metrics["autocrop_resolved_rect"] = resolved_crop[0]
             context.metrics["autocrop_resolved_key"] = resolved_crop[1]
-        # Display-overlay data: the detection-scale sets that were repaired, and the wash over
-        # the inpainted hairs (they emit no stroke capsules). Written as None/empty when nothing
-        # was found: the controller merges metrics into the last frame's, so an absent key
-        # would keep the previous frame's marks on the overlay.
+        # Overlay data, written even when empty: the controller merges metrics into the last
+        # frame's, so an absent key keeps the previous frame's marks.
         dust_mask = detected_dust < 1.0 if detected_dust is not None else None
         context.metrics["detected_dust_mask"] = dust_mask
         context.metrics["hair_inpaint_masks"] = hair_masks
@@ -1241,6 +1263,7 @@ class ImageProcessor:
             + ir_bake_token(params.retouch, ir_full is not None)
             + manual_bake_token(params.retouch)
             + luma_bake_token(params.retouch)
+            + clone_token(params.retouch)
         )
         f32_buffer, _, _, ir_routed = self._ir_bake(f32_buffer, ir_full, params, detect_key)
         orig_ret = params.retouch
@@ -1253,6 +1276,7 @@ class ImageProcessor:
             hair_masks = hair_masks + extra
         if hair_masks:
             f32_buffer = self._hair_inpaint(f32_buffer, hair_masks, detect_key + hair_bake_token(orig_ret), dust_label)
+        f32_buffer = self._clone_bake(f32_buffer, params)
         export_token = detect_key + (hair_bake_token(orig_ret) if hair_masks else "")
         return f32_buffer, source_cs, export_token
 
@@ -1676,9 +1700,7 @@ class ImageProcessor:
             if ir_full is not None and ir_full.shape[:2] != f32_buffer.shape[:2]:
                 th, tw = f32_buffer.shape[:2]
                 ir_full = cv2.resize(ir_full, (tw, th), interpolation=cv2.INTER_AREA)
-            # A contact sheet decodes each file once; only the other half of the same scan,
-            # rendered next, reuses the decode. Anything else would pin ~300MB (24MP) across
-            # the next frame's decode.
+            # Keep the decode only for the other half of the same scan, rendered next; else it pins memory across the next decode.
             if not keep_source:
                 self._source_cache_key = None
                 self._source_cache_value = None
@@ -1717,6 +1739,7 @@ class ImageProcessor:
                 + ir_bake_token(params.retouch, ir_full is not None)
                 + manual_bake_token(params.retouch)
                 + luma_bake_token(params.retouch)
+                + clone_token(params.retouch)
             )
             f32_buffer, _, _, ir_routed = self._ir_bake(f32_buffer, ir_full, params, detect_key)
             orig_ret = params.retouch
@@ -1728,6 +1751,7 @@ class ImageProcessor:
                 hair_masks = hair_masks + extra
             if hair_masks:
                 f32_buffer = self._hair_inpaint(f32_buffer, hair_masks, detect_key + hair_bake_token(orig_ret))
+            f32_buffer = self._clone_bake(f32_buffer, params)
 
             params, _ = _resolve_armed_autocrop(f32_buffer, params)
 

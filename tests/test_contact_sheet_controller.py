@@ -1,5 +1,3 @@
-"""AppController's Contact Sheet flow: read the frames' facts, open the dialog, queue the job."""
-
 import gc
 import unittest
 from dataclasses import replace
@@ -62,6 +60,7 @@ class TestContactSheetRequest(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -161,7 +160,7 @@ class TestContactSheetRequest(unittest.TestCase):
             self._prepared()
         kwargs = mock_cls.call_args.kwargs
         self.assertFalse(kwargs["proof"].available)
-        # b.tif (in scene 1) meters on its own; a.tif is in no scene and the roll was never analyzed.
+        # a.tif is in no scene and the roll was never analyzed.
         self.assertFalse(kwargs["scene_proof"].available)
         self.assertEqual(self.jobs[0].breaks, (1,))
 

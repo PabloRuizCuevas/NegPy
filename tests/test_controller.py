@@ -80,6 +80,7 @@ class TestAppController(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -142,7 +143,6 @@ class TestAppController(unittest.TestCase):
         with patch("negpy.desktop.controller.trusted_frame_skew", return_value=measured) as fit:
             self.controller.auto_skew_frame()
 
-        # The fit sees the frame with no fine rotation or keystone, so its values replace them.
         fitted_on = fit.call_args.args[0]
         self.assertEqual(fitted_on.shape[:2], (100, 120))
         result = self.controller.state.config.geometry
@@ -542,6 +542,55 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(seen, [True])
         self.assertEqual(self.controller.state.active_roll_id, "r1")
 
+    def test_rgb_scan_mode_for_roll_reads_that_rolls_own_entry(self):
+        store = self._fake_settings_store()
+        store["rgbscan_mode"] = True
+        store["rgbscan_mode_by_roll"] = {"r1": False, "r2": True}
+        self.assertFalse(self.controller.rgb_scan_mode_for_roll("r1"))
+        self.assertTrue(self.controller.rgb_scan_mode_for_roll("r2"))
+
+    def test_rgb_scan_mode_for_roll_falls_back_to_the_last_mode_chosen(self):
+        store = self._fake_settings_store()
+        store["rgbscan_mode"] = True
+        store["rgbscan_mode_by_roll"] = {"r1": False}
+        self.assertTrue(self.controller.rgb_scan_mode_for_roll("new-roll"))
+        self.assertTrue(self.controller.rgb_scan_mode_for_roll(None))
+
+    def test_set_rgb_scan_mode_writes_the_active_rolls_entry_and_the_last_mode(self):
+        store = self._fake_settings_store()
+        store["rgbscan_mode_by_roll"] = {"r2": True}
+        self.controller.state.active_roll_id = "r1"
+        self.controller.session.state.uploaded_files = []
+        self.controller.set_rgb_scan_mode(False)
+        self.assertEqual(store["rgbscan_mode_by_roll"], {"r1": False, "r2": True})
+        self.assertIs(store["rgbscan_mode"], False)
+
+    def test_a_rolls_first_discovery_records_its_trichrome_mode(self):
+        store = self._fake_settings_store()
+        store["rgbscan_mode"] = True
+        self.assertTrue(self.controller._rgb_scan_mode_for_discovery("r1"))
+        self.assertEqual(store["rgbscan_mode_by_roll"], {"r1": True})
+        store["rgbscan_mode"] = False
+        self.assertTrue(self.controller._rgb_scan_mode_for_discovery("r1"))
+
+    def test_discovery_with_no_roll_records_nothing(self):
+        store = self._fake_settings_store()
+        store["rgbscan_mode"] = True
+        self.assertTrue(self.controller._rgb_scan_mode_for_discovery(None))
+        self.assertNotIn("rgbscan_mode_by_roll", store)
+
+    def test_open_roll_emits_that_rolls_own_trichrome_mode(self):
+        store = self._fake_settings_store()
+        store["rgbscan_mode"] = True
+        store["rgbscan_mode_by_roll"] = {"r1": False}
+        with patch("negpy.desktop.controller.rolls") as mock_rolls:
+            mock_rolls.roll_for_id.return_value = {"kind": "folder", "folder_path": "/p", "extra_paths": []}
+            self.controller.request_asset_discovery = MagicMock()
+            seen = []
+            self.controller.rgb_scan_mode_changed.connect(seen.append)
+            self.controller.open_roll("r1")
+        self.assertEqual(seen, [False])
+
     def test_create_roll_from_session_seeds_the_new_rolls_half_frame_state(self):
         """Saving the current ad hoc session as a roll must not silently reset its
         toggle to off the next time that roll is opened."""
@@ -553,6 +602,7 @@ class TestAppController(unittest.TestCase):
             roll_id = self.controller.create_roll_from_session("My Roll")
         self.assertEqual(roll_id, "new-roll")
         self.assertEqual(store["half_frame_mode_by_roll"], {"new-roll": True})
+        self.assertEqual(store["rgbscan_mode_by_roll"], {"new-roll": False})
 
     def test_busy_toast_is_taken_down_when_the_frame_lands(self):
         """A slow render step holds its toast open; the finished frame clears it, and a
@@ -798,7 +848,7 @@ class TestAppController(unittest.TestCase):
         AppController._start_next_neighbor_prefetch(controller)
         AppController._start_next_neighbor_prefetch(controller)
 
-        controller.preview_load_requested.emit.assert_called_once_with(first)
+        controller.prefetch_load_requested.emit.assert_called_once_with(first)
         self.assertEqual(controller._neighbor_prefetch_queue, [second])
 
     def test_neighbor_prefetch_protects_the_selected_frame_cache_entry(self):
@@ -833,7 +883,7 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(first.protected_file_hashes, ("selected",))
         self.assertEqual(second.protected_file_hashes, ("selected", "previous"))
 
-    def test_render_waits_for_running_neighbor_prefetch_to_stop(self):
+    def test_render_does_not_wait_for_a_running_neighbor_prefetch(self):
         import numpy as np
 
         emitted = []
@@ -843,11 +893,33 @@ class TestAppController(unittest.TestCase):
 
         self.controller.request_render()
 
-        self.assertEqual(emitted, [])
-        self.assertIsNotNone(self.controller._pending_render_task)
-        self.controller._on_neighbor_prefetch_finished(self.controller._prefetch_gen, "/neighbor.dng")
         self.assertEqual(len(emitted), 1)
         self.assertTrue(self.controller._is_rendering)
+        self.assertIsNone(self.controller._pending_render_task)
+
+    def test_stale_prefetch_finish_starts_the_next_queued_prefetch(self):
+        from negpy.desktop.workers.render import PreviewLoadTask
+
+        queued = PreviewLoadTask(
+            file_path="/neighbor.dng",
+            workspace_color_space="Adobe RGB",
+            use_camera_wb=True,
+            generation=5,
+            for_cache_warm=True,
+        )
+        self.controller._neighbor_prefetch_queue = [queued]
+        self.controller._prefetch_in_flight_generation = 3
+        self.controller._prefetch_gen = 5  # the click that rebuilt the queue bumped it
+        self.controller._foreground_preview_generation = None
+        self.controller._is_rendering = False
+        self.controller._pending_render_task = None
+        emitted = []
+        self.controller.prefetch_load_requested.connect(emitted.append)
+
+        self.controller._on_neighbor_prefetch_finished(3, "/abandoned.dng")
+
+        self.assertEqual(emitted, [queued])
+        self.assertEqual(self.controller._prefetch_in_flight_generation, 5)
 
     def test_decode_failure_badges_file_and_success_clears_it(self):
         self.mock_session_manager.asset_model = MagicMock()
@@ -916,6 +988,31 @@ class TestAppController(unittest.TestCase):
         params = mock_write.call_args.args[1]
         self.assertIs(params, hydrated)
         self.assertIsNone(params.geometry.crop_rect)
+
+    def test_write_edit_sidecars_never_rehomes_a_forked_frame(self):
+        frame = {"name": "b.dng", "path": "/tmp/b.dng", "hash": "hash2#roll:r1"}
+        with (
+            patch("negpy.desktop.controller.load_or_promote", return_value=None) as mock_load,
+            patch("negpy.desktop.controller.write_sidecar"),
+        ):
+            self.controller._write_edit_sidecars([frame])
+
+        self.assertTrue(mock_load.call_args.kwargs["forked"])
+
+    def test_discovery_promotes_sidecars_before_adding_files(self):
+        state = self.mock_session_manager.state
+        state.uploaded_files = []
+        order = []
+        self.mock_session_manager.add_files.side_effect = lambda *_a, **_k: order.append("add")
+        self.mock_session_manager.asset_model = MagicMock()
+        self.controller.generate_missing_thumbnails = MagicMock()
+        discovered = [{"name": "a", "path": "/a.dng", "hash": "h1"}]
+
+        with patch("negpy.desktop.controller.promote_sidecars", side_effect=lambda *_a: order.append("promote")) as mock_promote:
+            self.controller._on_discovery_finished(discovered)
+
+        mock_promote.assert_called_once_with(self.mock_session_manager.repo, discovered)
+        self.assertEqual(order[:2], ["promote", "add"])
 
     def _wire_repo_store(self) -> dict:
         """Backs the mocked repo's global settings with a real dict, so a roll write
@@ -2383,6 +2480,47 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(self.mock_session_manager.update_config.call_args.kwargs.get("persist"), False)
         self.controller.request_render.assert_not_called()
 
+    def test_crop_rect_live_update_keeps_negative_peek_until_release(self):
+        self.controller.state.preview_raw = np.zeros((8, 8, 3), dtype=np.float32)
+        self.controller.state.negative_peek = True
+        self.controller.state.active_tool = ToolMode.CROP_MANUAL
+        self.mock_session_manager.update_config.side_effect = lambda config, **_kwargs: setattr(self.controller.state, "config", config)
+        painted: list = []
+        self.controller.image_updated.connect(lambda: painted.append(True))
+        self.controller.request_render = MagicMock()
+
+        self.controller.handle_crop_rect_changed(0.2, 0.2, 0.8, 0.8, False)
+
+        self.assertTrue(self.controller.state.negative_peek)
+        self.assertFalse(self.controller._render_debounce.isActive())
+        self.assertFalse(self.controller.request_render.called)
+        self.assertFalse(painted)
+        self.assertFalse(self.mock_session_manager.update_config.call_args.kwargs.get("render", True))
+
+    def test_crop_rect_commit_ends_negative_peek(self):
+        self.controller.state.preview_raw = np.zeros((8, 8, 3), dtype=np.float32)
+        self.controller.state.negative_peek = True
+        self.controller.state.active_tool = ToolMode.CROP_MANUAL
+        self.mock_session_manager.update_config.side_effect = lambda config, **_kwargs: setattr(self.controller.state, "config", config)
+        self.controller.request_render = MagicMock()
+
+        self.controller.handle_crop_rect_changed(0.2, 0.2, 0.8, 0.8, True)
+
+        self.assertFalse(self.controller.state.negative_peek)
+        self.controller.request_render.assert_called_once_with()
+
+    def test_straighten_completion_ends_negative_peek(self):
+        self.controller.state.preview_raw = np.zeros((8, 8, 3), dtype=np.float32)
+        self.controller.state.negative_peek = True
+        self.controller.state.active_tool = ToolMode.STRAIGHTEN
+        self.mock_session_manager.update_config.side_effect = lambda config, **_kwargs: setattr(self.controller.state, "config", config)
+        self.controller.request_render = MagicMock()
+
+        self.controller.handle_straighten_completed(5.0)
+
+        self.assertFalse(self.controller.state.negative_peek)
+        self.controller.request_render.assert_called_once_with()
+
     def test_handle_crop_rect_changed_defers_bounds_invalidation(self):
         """During drag the auto-exposure bounds are left untouched (only flagged dirty),
         so the base cache survives and the frame doesn't re-normalize each step."""
@@ -2587,6 +2725,7 @@ class TestBatchExportFiltering(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -2748,6 +2887,7 @@ class TestLinearOutputExportCurrentFile(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -2806,6 +2946,7 @@ class TestLinearOutputDestination(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -2925,6 +3066,7 @@ class TestPresetExportCurrentFileTriplet(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -2977,6 +3119,7 @@ class TestPresetBatchExport(unittest.TestCase):
 
         self.controller._validate_preset_paths = MagicMock(return_value=True)
         self.controller._run_export_tasks = MagicMock()
+        self.controller._confirm_unopened_frames = MagicMock(return_value=True)
 
     def tearDown(self):
         import gc
@@ -2988,6 +3131,7 @@ class TestPresetBatchExport(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -3075,6 +3219,7 @@ class TestPresetExportSelected(unittest.TestCase):
 
         self.controller._validate_preset_paths = MagicMock(return_value=True)
         self.controller._run_export_tasks = MagicMock()
+        self.controller._confirm_unopened_frames = MagicMock(return_value=True)
 
     def tearDown(self):
         import gc
@@ -3086,6 +3231,7 @@ class TestPresetExportSelected(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -3631,6 +3777,7 @@ class TestSessionRestore(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -3726,6 +3873,7 @@ class TestRgbScanModeReload(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -3916,6 +4064,7 @@ class TestDiscoveryProgressPopup(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -3936,6 +4085,37 @@ class TestDiscoveryProgressPopup(unittest.TestCase):
         self.controller.asset_discovery_requested.connect(tasks.append)
         self.controller.request_asset_discovery(["/a.dng"], **discovery_kwargs)
         return tasks[0]
+
+    def test_discovery_groups_with_the_active_rolls_own_trichrome_mode(self):
+        store = {"rgbscan_mode": False, "rgbscan_mode_by_roll": {"r1": True}}
+        self.mock_session_manager.state.active_roll_id = "r1"
+        self.mock_session_manager.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
+        self.mock_session_manager.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
+        self.assertTrue(self._captured_task().rgb_scan)
+
+    def test_a_new_rolls_discovery_records_the_last_mode_as_its_own(self):
+        store = {"rgbscan_mode": True}
+        self.mock_session_manager.state.active_roll_id = "r2"
+        self.mock_session_manager.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
+        self.mock_session_manager.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
+        self.assertTrue(self._captured_task().rgb_scan)
+        self.assertEqual(store["rgbscan_mode_by_roll"], {"r2": True})
+
+    def test_a_queued_discovery_keeps_the_mode_of_the_roll_it_was_made_for(self):
+        store = {"rgbscan_mode": False, "rgbscan_mode_by_roll": {"r1": True, "r2": False}}
+        self.mock_session_manager.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
+        self.mock_session_manager.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
+        self.controller.asset_discovery_requested.disconnect(self.controller.discovery_worker.process)
+        tasks = []
+        self.controller.asset_discovery_requested.connect(tasks.append)
+        self.controller._discovery_running = True
+        self.mock_session_manager.state.active_roll_id = "r1"
+        self.controller.request_asset_discovery(["/a.dng"])
+        self.mock_session_manager.state.active_roll_id = "r2"
+        self.controller._discovery_running = False
+        self.controller._start_next_asset_discovery()
+        self.assertEqual([t.rgb_scan for t in tasks], [True])
+        self.assertEqual(store["rgbscan_mode_by_roll"], {"r1": True, "r2": False})
 
     def test_no_active_roll_never_splits_half_frames(self):
         """A batch with no single shared roll (a library-wide search's mixed results)
@@ -4061,6 +4241,7 @@ class TestHotFolderSequenceState(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4145,6 +4326,7 @@ class TestBatchAnalysisFiltering(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4202,6 +4384,7 @@ class TestContactSheetOutputDir(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4356,6 +4539,7 @@ class TestRetouchPersistence(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4460,6 +4644,7 @@ class TestDisplayTransformParams(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4588,6 +4773,7 @@ class TestNegativePeekColor(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4734,6 +4920,7 @@ class TestEmbeddedPeek(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4831,6 +5018,7 @@ class TestCompareFlatPeekInteraction(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -4977,8 +5165,8 @@ class TestCompareFlatPeekInteraction(unittest.TestCase):
         self.controller.negative_peek_changed.connect(seen.append)
         with patch.object(self.controller, "_dispatch_pending_render"):
             self.controller.request_render()
-        self.assertFalse(self.controller.state.negative_peek)
-        self.assertIn(False, seen)
+        self.assertTrue(self.controller.state.negative_peek)
+        self.assertEqual(seen, [])
 
     def test_rerender_active_view_keeps_the_negative_peek(self):
         import numpy as np
@@ -5021,6 +5209,7 @@ class TestClearThumbnailCache(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -5085,6 +5274,7 @@ class TestSemanticIndexing(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -5260,6 +5450,7 @@ class TestRotateThumbnails(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -5476,6 +5667,7 @@ class TestLibraryIndexing(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():
@@ -5757,6 +5949,7 @@ class TestLibrarySearch(unittest.TestCase):
             self.controller.norm_thread,
             self.controller.discovery_thread,
             self.controller.preview_load_thread,
+            self.controller.prefetch_load_thread,
             self.controller.scan_thread,
         ]:
             if thread is not None and thread.isRunning():

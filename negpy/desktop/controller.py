@@ -51,6 +51,7 @@ from negpy.desktop.workers.render import (
     NormalizationTask,
     NormalizationWorker,
     PreviewLoadTask,
+    PreviewLoadState,
     PreviewLoadWorker,
     RenderTask,
     RenderWorker,
@@ -101,6 +102,7 @@ from negpy.domain.models import (
     resolve_preset_export,
 )
 from negpy.services.assets.composites import forget_composite, restore_maps
+from negpy.services.assets.triplets import saved_triplets
 from negpy.services.assets import rolls
 from negpy.services.export.contact_sheet_layout import ContactSheetSettings
 from negpy.services.export.contact_sheet_roll import (
@@ -126,7 +128,7 @@ from negpy.services.assets.half_frame import (
     split_scans,
 )
 from negpy.services.export.templating import path_safe, render_export_filename
-from negpy.services.assets.sidecar import load_or_promote, sidecar_path_for, write_sidecar
+from negpy.services.assets.sidecar import load_or_promote, promote_sidecars, sidecar_path_for, write_sidecar
 from negpy.services.assets.frame_merge import carry_edit, carry_sidecar
 from negpy.services.export.frame_merge import (
     MERGEABLE_KINDS,
@@ -221,7 +223,7 @@ _NORM_THREAD_BATCH_OWNERS = frozenset({"autocrop", "normalization"})
 
 
 def _move_to_trash(path: str) -> bool:
-    """Move *path* to the OS Trash. False, with the file left in place, when the volume has none."""
+    """False, with the file left in place, when the volume has no Trash."""
     ok, _trashed = QFile.moveToTrash(path)
     return bool(ok)
 
@@ -362,10 +364,9 @@ _KNEE_LABELS = {
 # navigation and Auto Crop All caches already hold; deferred and retried rather than
 # started under memory pressure.
 _THUMBNAIL_REFRESH_MEMORY_RETRY_MS = 5000
-# Mean decode seconds above which, when decode also dominates the render, a refresh is
-# read-bound: the source volume, not the CPU, sets its pace.
+# Mean decode seconds past which a refresh that decode dominates is read-bound.
 _THUMBNAIL_READ_BOUND_DECODE_S = 3.0
-# Frames checked per event-loop turn when a roll opens: each costs a config hydration.
+# Frames checked per event-loop turn; each costs a config hydration.
 _STALE_SEED_CHUNK = 16
 
 
@@ -377,9 +378,7 @@ def thumbnail_refresh_progress_text(
     *,
     in_flight: bool = False,
 ) -> str:
-    """Progress line for a thumbnail refresh. With ``in_flight`` the ``index``-th frame is
-    still decoding and counts as left; otherwise ``index`` frames are finished. The time
-    left needs two measured frames, since one is too noisy."""
+    """With ``in_flight`` the ``index``-th frame is still decoding; otherwise ``index`` frames are done."""
     text = f"Thumbnails {index}/{total}"
     samples = index - 1 if in_flight else index
     left = total - samples if in_flight else total - index
@@ -430,6 +429,7 @@ class AppController(QObject):
     export_finished = pyqtSignal(float, int)
     render_requested = pyqtSignal(RenderTask)
     preview_load_requested = pyqtSignal(PreviewLoadTask)
+    prefetch_load_requested = pyqtSignal(PreviewLoadTask)
     normalization_requested = pyqtSignal(NormalizationTask)
     batch_autocrop_requested = pyqtSignal(BatchAutoCropTask)
     thumbnail_render_requested = pyqtSignal(ThumbnailRenderTask)
@@ -455,7 +455,7 @@ class AppController(QObject):
     library_search_requested = pyqtSignal(LibrarySearchTask)
     library_index_scan_requested = pyqtSignal(list)  # library_roots(), for whole-library indexing
     library_search_finished = pyqtSignal(int)  # frames found (0 = nothing matched)
-    library_cleared = pyqtSignal()  # the library changed elsewhere — the panel must re-read it
+    library_cleared = pyqtSignal()  # the library changed elsewhere; the panel re-reads it
     first_scene_created = pyqtSignal()  # the loaded roll's first scene: the Film Strip sorts by scene
     stitch_requested = pyqtSignal(object)
     contact_sheet_requested = pyqtSignal(object)  # ContactSheetJob
@@ -484,7 +484,7 @@ class AppController(QObject):
     _render_cleanup_requested = pyqtSignal(object)  # texture to spare, or None
     status_message_requested = pyqtSignal(str, int, str)
     status_progress_requested = pyqtSignal(int, int)
-    # The running thumbnail refresh's progress line; "" when none is running.
+    # "" when no refresh is running.
     thumbnail_refresh_progress = pyqtSignal(str)
     batch_started = pyqtSignal(str, bool)  # title, abortable
     batch_progress = pyqtSignal(int, int, str)  # current, total, label
@@ -504,6 +504,7 @@ class AppController(QObject):
     scan_cancelled = pyqtSignal()
     scan_ejected = pyqtSignal(bool)
     scan_eject_error = pyqtSignal(str)
+    scan_strip_returned = pyqtSignal(bool)  # whether the strip is back in the holder
     scan_frame_done = pyqtSignal(int, str)  # batch: frame number, rgb path
     scan_batch_finished = pyqtSignal(list)  # batch: all completed rgb paths
     scan_batch_requested = pyqtSignal(BatchRequest)
@@ -525,7 +526,7 @@ class AppController(QObject):
     capture_camera_setting_applied = pyqtSignal(str)  # a set_camera_setting call ran to completion
     capture_live_view_failed = pyqtSignal(str)  # preview thread died after retries; session dropped
     capture_live_view_unsupported = pyqtSignal(str)  # body advertises no preview; none was attempted
-    capture_focus_magnifier_unavailable = pyqtSignal(str)  # body cannot stream its magnified view
+    capture_focus_magnifier_unavailable = pyqtSignal(str)  # reason
     capture_finished = pyqtSignal(list)
     capture_cancelled = pyqtSignal()
     capture_error = pyqtSignal(str)
@@ -601,8 +602,7 @@ class AppController(QObject):
         # landing — marks that cancellation as a user stop, not a pre-emption, so the
         # cancelled handler discards the backlog instead of resuming it.
         self._thumbnail_render_user_cancelled = False
-        # Running totals of the current generation's decode and render seconds, and the
-        # frame count they cover: the status line's time left and read-bound cue.
+        # [decode seconds, render seconds, frames] of the running refresh.
         self._thumbnail_render_timing = [0.0, 0.0, 0]
         self.flush_export_settings: Optional[Callable[[], None]] = None
         # A rotate/flip on a frame with no cached thumbnail yet (generate_missing_thumbnails
@@ -678,9 +678,16 @@ class AppController(QObject):
         self.discovery_thread.start()
 
         self.preview_load_thread = QThread()
-        self.preview_load_worker = PreviewLoadWorker(self.preview_service)
+        self.preview_load_state = PreviewLoadState()
+        self.preview_load_worker = PreviewLoadWorker(self.preview_service, state=self.preview_load_state)
         self.preview_load_worker.moveToThread(self.preview_load_thread)
         self.preview_load_thread.start()
+
+        # Own thread: LibRaw cannot stop an unpack mid-read, and a click must not queue behind it.
+        self.prefetch_load_thread = QThread()
+        self.prefetch_load_worker = PreviewLoadWorker(self.preview_service, state=self.preview_load_state)
+        self.prefetch_load_worker.moveToThread(self.prefetch_load_thread)
+        self.prefetch_load_thread.start()
 
         self.scan_thread = QThread()
         self.scan_worker = ScanWorker()
@@ -697,7 +704,6 @@ class AppController(QObject):
         self._capture_thread_started = False
 
         self.contact_sheet_preview = ContactSheetPreview()
-        # The frames and configs of a Contact Sheet request while its file facts are read.
         self._contact_sheet_pending: Optional[dict] = None
         self._contact_sheet_folder = ""
 
@@ -883,6 +889,7 @@ class AppController(QObject):
         self.export_worker.finished.connect(self._on_export_finished)
         self.export_worker.cancelled.connect(self._on_export_batch_cancelled)
         self.export_worker.error.connect(self._on_export_task_error)
+        self.export_worker.warning.connect(self._on_export_task_warning)
         self.export_worker.contact_sheet_written.connect(self._on_contact_sheet_written)
         self.contact_sheet_requested.connect(self.export_worker.run_contact_sheet)
         self.contact_sheet_preview.prepared.connect(self._on_contact_sheet_prepared)
@@ -962,7 +969,8 @@ class AppController(QObject):
         self.preview_load_worker.vram_capped.connect(self._on_hq_preview_vram_capped)
         self.preview_load_worker.error.connect(self._on_preview_load_error)
         self.preview_load_worker.load_failed.connect(self._on_preview_load_failed)
-        self.preview_load_worker.prefetch_finished.connect(self._on_neighbor_prefetch_finished)
+        self.prefetch_load_requested.connect(self.prefetch_load_worker.process)
+        self.prefetch_load_worker.prefetch_finished.connect(self._on_neighbor_prefetch_finished)
 
         self.scan_devices_requested.connect(self.scan_worker.list_devices)
         self.scan_backend_requested.connect(self.scan_worker.set_backend)
@@ -978,6 +986,7 @@ class AppController(QObject):
         self.scan_worker.batch_finished.connect(self._on_scan_batch_finished)
         self.scan_worker.ejected.connect(self.scan_ejected.emit)
         self.scan_worker.eject_error.connect(self.scan_eject_error.emit)
+        self.scan_worker.strip_returned.connect(self.scan_strip_returned.emit)
         self.scan_roll_preview_requested.connect(self.scan_worker.run_roll_preview)
         self.scan_worker.roll_preview_ready.connect(self.scan_roll_preview_ready.emit)
         self.scan_worker.roll_preview_finished.connect(self.scan_roll_preview_finished.emit)
@@ -1036,9 +1045,8 @@ class AppController(QObject):
             self.thumbnail_requested.emit([{**f, "process_mode": self.session.stored_process_mode(f)} for f in missing])
 
     def thumbnail_turn_snapshot(self) -> dict[str, Optional[bool]]:
-        """For each selected frame but the active one, whether its stored thumbnail shows its
-        settings: True, False, or None for a quick or unfingerprinted one. A batch turn reads
-        it after the new geometry is written, so it is taken before."""
+        """Per selected frame but the active one: whether its stored thumbnail shows its settings,
+        None for a quick or unfingerprinted one. Take it before a batch turn writes the geometry."""
         if len(self.state.selected_indices) <= 1:
             return {}
         result: dict[str, Optional[bool]] = {}
@@ -1057,9 +1065,7 @@ class AppController(QObject):
         return result
 
     def _turned_fingerprint(self, asset: Optional[dict]) -> Optional[str]:
-        """Fingerprint of a current thumbnail turned with its frame, now that the turn is saved.
-        A turned bitmap can sit a few pixels off a fresh render of a cropped frame; that is
-        accepted, as re-rendering a whole turned roll costs far more than it shows."""
+        """Fingerprint for a current thumbnail turned with its frame; call once the turn is saved."""
         if asset is None:
             return None
         return self.thumbnail_fingerprint_for(self._config_for_batch_asset(asset))
@@ -1073,8 +1079,7 @@ class AppController(QObject):
         deriving one from the other would clobber whichever is more current. A frame
         with no disk-cached thumbnail yet is still mid-decode in generate_missing_
         thumbnails, so the turn is queued instead and replayed onto that decode's own
-        result in _apply_thumbnails. ``before`` is thumbnail_turn_snapshot's record: a
-        thumbnail current before the turn takes the turned settings' fingerprint."""
+        result in _apply_thumbnails."""
         changed = False
         assets = {asset_thumbnail_key(a): a for a in self.state.uploaded_files} if before else {}
         for key in keys:
@@ -1085,8 +1090,7 @@ class AppController(QObject):
                 changed = True
             cached = self.asset_store.get_thumbnail(key)
             if cached is not None:
-                # Without a record that the bitmap matched the old geometry, the turned one
-                # reads as stale; a quick thumbnail stays quick.
+                # Stale unless ``before`` shows it matched the old geometry; a quick one stays quick.
                 was_quick = decode_comment(cached.info.get("comment")) == THUMB_QUICK
                 fingerprint = THUMB_QUICK if was_quick else None
                 if before is not None and before.get(key):
@@ -1281,7 +1285,7 @@ class AppController(QObject):
             return
         self.set_status(f"{len(paths)} frame{'s' if len(paths) != 1 else ''} found", 3000)
         self.state.active_roll_id = None
-        self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(None))
+        self._announce_roll_modes(None)
         # These paths are the filtered result. Re-running the outlier check over this
         # small, mutually-similar set has no background to stand out from and can exclude
         # every frame, and a stale text filter can empty the batch just as easily.
@@ -1364,14 +1368,13 @@ class AppController(QObject):
             or getattr(self, "_active_batch", None) is not None
         )
 
-    def _cancel_neighbor_prefetch(self) -> bool:
+    def _cancel_neighbor_prefetch(self) -> None:
+        """Fire-and-forget: the decode cannot stop mid-read, so nothing waits for it."""
         self._neighbor_prefetch_generation = None
         self._neighbor_prefetch_queue.clear()
         generation = self._prefetch_in_flight_generation
-        if generation is None:
-            return False
-        self.preview_load_worker.cancel_prefetch(generation)
-        return True
+        if generation is not None:
+            self.preview_load_state.cancel_prefetch(generation)
 
     # --- Batch progress popup -------------------------------------------------
 
@@ -1480,7 +1483,7 @@ class AppController(QObject):
         self._pending_scanned_file = active if active in paths else paths[0]
         triplets = self.session.repo.get_global_setting("session_triplets", {}) or {}
         self.state.active_roll_id = self._roll_id_for_restored_paths(paths)
-        self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(self.state.active_roll_id))
+        self._announce_roll_modes(self.state.active_roll_id)
         self.request_asset_discovery(paths, auto_open=True, restore_triplets=triplets)
 
     def _roll_id_for_restored_paths(self, paths: List[str]) -> Optional[str]:
@@ -1530,7 +1533,7 @@ class AppController(QObject):
             restore_triplets=restore_triplets,
             replace_existing=replace_existing,
             reselect_path=reselect_path,
-            rgb_scan=bool(self.session.repo.get_global_setting("rgbscan_mode", False)),
+            rgb_scan=self._rgb_scan_mode_for_discovery(active_roll_id),
             # A batch spanning several rolls has no roll-wide toggle to apply, and a
             # "confirmed diptych" hash records whichever roll's toggle was on at the
             # time rather than a per-file fact. Splitting waits for a roll that says so.
@@ -1570,11 +1573,21 @@ class AppController(QObject):
         self._active_discovery_keys = frozenset(_capture_import_key(path) for path in request.paths)
         self.set_status("Scanning for assets…")
         stitches, merges = restore_maps(self.session.repo)
+        restore_triplets = request.restore_triplets
+        if request.rgb_scan:
+            # Saved groupings skip the raw read. A requested one wins unless it names the same pair:
+            # the saved record carries the hashes that catch a changed file.
+            saved = saved_triplets(self.session.repo)
+            requested = request.restore_triplets or {}
+            restore_triplets = {
+                **saved,
+                **{red: rec for red, rec in requested.items() if list(saved.get(red, [None, None])[:2]) != list(rec[:2])},
+            }
         task = AssetDiscoveryTask(
             paths=list(request.paths),
             supported_extensions=tuple(SUPPORTED_RAW_EXTENSIONS),
             rgb_scan=request.rgb_scan,
-            restore_triplets=request.restore_triplets,
+            restore_triplets=restore_triplets,
             half_frame=request.half_frame,
             # Read as the request starts, not as it was queued: a composite made while
             # a discovery waits its turn must still be re-attached when the queue gets to it.
@@ -1640,7 +1653,7 @@ class AppController(QObject):
             # becomes the active roll -- that only makes sense for a single one.
             recognized = [rolls.recognize_folder(self.session.repo, f) for f in present]
             self.state.active_roll_id = recognized[0] if len(recognized) == 1 else None
-            self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(self.state.active_roll_id))
+            self._announce_roll_modes(self.state.active_roll_id)
             self._register_library_roots(present)
         self.request_asset_discovery(
             present,
@@ -1667,7 +1680,7 @@ class AppController(QObject):
             self.set_status("This roll has no frames", 3000)
             return
         self.state.active_roll_id = roll_id
-        self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(roll_id))
+        self._announce_roll_modes(roll_id)
         self.request_asset_discovery(paths, auto_open=True, replace_existing=True)
 
     def create_roll_from_session(self, name: str) -> Optional[str]:
@@ -1683,7 +1696,9 @@ class AppController(QObject):
         by_roll = dict(self.session.repo.get_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, default=None) or {})
         by_roll[roll_id] = self.half_frame_mode_for_roll(None)
         self.session.repo.save_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, by_roll)
+        self._save_rgb_scan_mode(self.rgb_scan_mode_for_roll(None), roll_id)
         self.state.active_roll_id = roll_id
+        self._announce_roll_modes(roll_id)
         self.set_status(f"Saved as roll “{name}”", 3000)
         return roll_id
 
@@ -1746,7 +1761,7 @@ class AppController(QObject):
         # An ad hoc result, not (yet) any roll -- Save as Roll in the Film Strip turns it
         # into one.
         self.state.active_roll_id = None
-        self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(None))
+        self._announce_roll_modes(None)
         # The hand-off already is the filtered result -- a semantic query left over from
         # an earlier, unrelated search would otherwise re-rank this batch by an embedding
         # that has nothing to do with it, dropping every file with no cached vector yet.
@@ -1754,9 +1769,8 @@ class AppController(QObject):
         self.request_asset_discovery(paths, auto_open=True, replace_existing=True)
 
     def set_rgb_scan_mode(self, enabled: bool) -> None:
-        """Persist the RGB-scan toggle and re-discover already-loaded assets so the
-        mode regroups/ungroups triplets in place (not only on the next folder load)."""
-        self.session.repo.save_global_setting("rgbscan_mode", bool(enabled))
+        """Persist Trichrome Mode for the active roll and regroup the loaded files in place."""
+        self._save_rgb_scan_mode(enabled, self.state.active_roll_id)
         if enabled:
             # RGB-scan triplets are captured with narrowband LEDs, and correcting for them
             # is the point of the toggle, so switch it on together.
@@ -1834,6 +1848,36 @@ class AppController(QObject):
             self.session.frames_edited_offscreen.emit(changed_hashes)
 
     _HALF_FRAME_MODE_BY_ROLL_KEY = "half_frame_mode_by_roll"
+    _RGB_SCAN_MODE_BY_ROLL_KEY = "rgbscan_mode_by_roll"
+
+    def _announce_roll_modes(self, roll_id: Optional[str]) -> None:
+        self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(roll_id))
+        self.rgb_scan_mode_changed.emit(self.rgb_scan_mode_for_roll(roll_id))
+
+    def rgb_scan_mode_for_roll(self, roll_id: Optional[str]) -> bool:
+        """A roll with no entry, or no roll, reads the mode last chosen anywhere."""
+        if roll_id:
+            by_roll = self.session.repo.get_global_setting(self._RGB_SCAN_MODE_BY_ROLL_KEY, default=None) or {}
+            if roll_id in by_roll:
+                return bool(by_roll[roll_id])
+        return bool(self.session.repo.get_global_setting("rgbscan_mode", False))
+
+    def _save_rgb_scan_mode(self, enabled: bool, roll_id: Optional[str]) -> None:
+        self.session.repo.save_global_setting("rgbscan_mode", bool(enabled))
+        if roll_id:
+            by_roll = dict(self.session.repo.get_global_setting(self._RGB_SCAN_MODE_BY_ROLL_KEY, default=None) or {})
+            by_roll[roll_id] = bool(enabled)
+            self.session.repo.save_global_setting(self._RGB_SCAN_MODE_BY_ROLL_KEY, by_roll)
+
+    def _rgb_scan_mode_for_discovery(self, roll_id: Optional[str]) -> bool:
+        """The mode a discovery groups with; a roll's first discovery records it as the roll's own."""
+        enabled = self.rgb_scan_mode_for_roll(roll_id)
+        if roll_id:
+            by_roll = dict(self.session.repo.get_global_setting(self._RGB_SCAN_MODE_BY_ROLL_KEY, default=None) or {})
+            if roll_id not in by_roll:
+                by_roll[roll_id] = enabled
+                self.session.repo.save_global_setting(self._RGB_SCAN_MODE_BY_ROLL_KEY, by_roll)
+        return enabled
 
     def half_frame_mode_for_roll(self, roll_id: Optional[str]) -> bool:
         """The half-frame toggle's state for *roll_id* -- each roll remembers its own,
@@ -2220,6 +2264,7 @@ class AppController(QObject):
         remember_split_scans(self.session.repo, {base_hash(a["hash"]) for a in valid_assets if a.get("half")})
         self._mark_diptychs(valid_assets)
         self._apply_roll_forks(valid_assets)
+        promote_sidecars(self.session.repo, valid_assets)
         self._active_diptych_memo = ("", None)
         ended_batch = self._end_batch("discovery")
         self._hot_folder_sequence_active = False
@@ -2353,7 +2398,7 @@ class AppController(QObject):
 
     @staticmethod
     def _half_slice_for_diptych(info: dict) -> tuple[int, float, tuple[float, float, float, float] | None, float, str]:
-        """The whole-frame (half 0) slice of a diptych, in half_slice's 5-tuple shape."""
+        """The whole-frame (half 0) slice of a diptych."""
         return (0, info["split_x"], info["crop_rect"], info["gutter_thickness"], str(info.get("split_axis") or "x"))
 
     def _active_half(self) -> Optional[tuple[int, float, tuple[float, float, float, float] | None, float, str]]:
@@ -2503,7 +2548,7 @@ class AppController(QObject):
         Dispatches RAW decode to a background worker to keep the UI thread free.
         """
         self._prefetch_gen += 1
-        self.preview_load_worker.expect_generation(self._prefetch_gen, file_path)
+        self.preview_load_state.expect_generation(self._prefetch_gen, file_path)
         self._cancel_neighbor_prefetch()
         self._foreground_preview_generation = self._prefetch_gen
         self._pause_background_thumbnails()
@@ -2517,15 +2562,16 @@ class AppController(QObject):
         self._clear_test_strip()
         self._drop_zone_pins()
         self.exit_compare()
+        if not keep_preview:
+            self.state.clone_source = None
+            self.state.clone_offset = None
 
         # Navigate-back fast path: the frame's last render is memoized and nothing that
         # shaped it has changed, since select_file already hydrated its config. Paint it
         # now, with no spinner and no toasts, and let the real render refresh the metrics.
         target_hash = self._file_hash_for_path(file_path)
         self._expected_render_key = self._render_memo_key()
-        # No memo repaint under an uncropped-preview tool: the filed pixels are a
-        # cropped print, and live crop handles over padded paper misalign until the
-        # real full-frame render lands. The entry stays filed for a later visit.
+        # An uncropped-preview tool skips the memo: its filed pixels are a cropped print.
         memo = (
             self._render_memo.get(target_hash, self._expected_render_key)
             if target_hash and self.state.active_tool not in UNCROPPED_PREVIEW_TOOLS
@@ -2561,13 +2607,12 @@ class AppController(QObject):
                 self.state.last_metrics["render_long_edge"] = memo.get("render_long_edge", 0)
                 self.state.last_metrics["splash"] = False
                 self.state.last_metrics["proof"] = True
-                # A crop-preview render is never memoized, so these pixels are a plain print.
+                # A crop preview is never memoized.
                 self.state.last_metrics["crop_preview_full"] = False
                 # These pixels are this frame's own last render. Leaving the outgoing
                 # frame's hash next to them would file them under it on the next
                 # thumbnail refresh, which reads whatever last_metrics holds.
                 self.state.last_metrics["source_hash"] = target_hash
-                # The memo key matched this config, so these pixels are its render.
                 self.state.last_metrics["render_identity"] = (target_hash, self.state.config)
             self.image_updated.emit()
 
@@ -2674,8 +2719,7 @@ class AppController(QObject):
             self.state.last_metrics["base_positive"] = raw
             self.state.last_metrics["render_long_edge"] = int(max(raw.shape[:2])) if isinstance(raw, np.ndarray) else 0
             self.state.last_metrics["splash"] = True
-            # Every base_positive writer stamps the flag: the border gate reads the
-            # buffer, not the live tool.
+            # Every base_positive writer stamps this; the border gate reads it, not the live tool.
             self.state.last_metrics["crop_preview_full"] = self.state.active_tool in UNCROPPED_PREVIEW_TOOLS
         self.image_updated.emit()
 
@@ -2831,16 +2875,13 @@ class AppController(QObject):
             return
         task = self._neighbor_prefetch_queue.pop(0)
         self._prefetch_in_flight_generation = task.generation
-        self.preview_load_requested.emit(task)
+        self.prefetch_load_requested.emit(task)
 
     def _on_neighbor_prefetch_finished(self, generation: int, _file_path: str) -> None:
         if self._prefetch_in_flight_generation == generation:
             self._prefetch_in_flight_generation = None
-        if generation != self._prefetch_gen:
-            return
-        if self._pending_render_task is not None and not self._is_rendering and self._foreground_preview_generation is None:
-            self._dispatch_pending_render()
-            return
+        # No early return for a stale generation: a mid-decode click rebuilt the queue,
+        # and only this finish frees the slot that queue waits for.
         if self._foreground_work_active():
             return
         self._start_next_neighbor_prefetch()
@@ -2874,13 +2915,17 @@ class AppController(QObject):
             self._handle_wb_pick(nx, ny)
         elif self.state.active_tool == ToolMode.DUST_PICK:
             self._handle_dust_pick(nx, ny)
+        elif self.state.active_tool == ToolMode.CLONE and self.state.clone_picking:
+            self.set_clone_source(nx, ny)
+        elif self.state.active_tool == ToolMode.CLONE:
+            self.handle_clone_stroke_completed([(nx, ny)])
         elif self.state.active_tool == ToolMode.SCRATCH_LINE:
             self._handle_scratch_line_pick(nx, ny)
         elif self.state.active_tool == ToolMode.ZONE_PLACE:
             self._handle_zone_pin(nx, ny)
 
     def set_active_tool(self, mode: ToolMode) -> None:
-        # The crop, analysis-region, and tilt/swing tools show the full uncropped frame, so
+        # UNCROPPED_PREVIEW_TOOLS show the full uncropped frame, so
         # entering or leaving that set must re-render to swap the preview.
         preview_mode_changed = (self.state.active_tool in UNCROPPED_PREVIEW_TOOLS) != (mode in UNCROPPED_PREVIEW_TOOLS)
         leaving_crop = self.state.active_tool == ToolMode.CROP_MANUAL and mode != ToolMode.CROP_MANUAL
@@ -2888,6 +2933,7 @@ class AppController(QObject):
         if mode != ToolMode.KEYSTONE_LINES:
             self._keystone_lines = {}
         self.state.active_tool = mode
+        self.state.clone_picking = mode == ToolMode.CLONE and self.state.clone_source is None
         self.tool_sync_requested.emit()
         if leaving_zone_place:
             self.clear_zone_pins()
@@ -3373,11 +3419,11 @@ class AppController(QObject):
         # Defer the bounds recompute to crop-tool close. Clearing here re-normalizes on
         # every drag step.
         self._crop_bounds_dirty = True
-        self.session.update_config(replace(self.state.config, geometry=new_geo), persist=persist)
+        self._render_debounce.stop()
+        self.session.update_config(replace(self.state.config, geometry=new_geo), persist=persist, render=persist)
         if persist:
+            self._reset_all_peeks()
             self.request_render()
-        else:
-            self._render_debounce.start()
 
     def handle_crop_rotation_changed(self, angle: float, persist: bool) -> None:
         """Live-updates (persist=False) or commits (persist=True) fine rotation from the
@@ -3409,22 +3455,21 @@ class AppController(QObject):
         self.session.update_config(replace(self.state.config, geometry=new_geo), persist=True)
         self.rotation_guide_requested.emit()
         self.set_active_tool(ToolMode.NONE)
+        self._reset_all_peeks()
         self.request_render()
 
     def auto_skew_frame(self) -> None:
-        """Square the frame to its own film and gate edges: Fine Rotation, and Tilt and Swing
-        where an opposite pair of edges measured them. Unmeasured ones keep their value."""
+        """Set Fine Rotation, and Tilt and Swing where measured, from the frame's own edges."""
         raw = self.state.preview_raw
         if raw is None:
             return
         config = self.state.config
         geo = config.geometry
-        # The fit reads gradients off the flat-fielded source, like every detection path.
+        # Every detection path reads the flat-fielded source.
         source = raw if metadata_lens_corrections(config) else apply_flatfield(raw, config.flatfield)
-        # Detection resolution up front: the transforms below are scale-invariant and the
-        # fit resamples to this size anyway, so the warp never runs at full resolution.
+        # Downsample first: the transforms are scale-invariant and the fit resamples anyway.
         source, _ = _normalize_detection_input(source, AUTOCROP_DETECT_RES)
-        # Measured before any fine rotation or keystone, so every value the fit returns is absolute.
+        # Zeroed, so the fit returns absolute values.
         base_geometry = replace(
             geo, fine_rotation=0.0, converge_v=0.0, converge_h=0.0, crop_rect=None, crop_from_auto=False, autocrop_offset=0
         )
@@ -3451,7 +3496,7 @@ class AppController(QObject):
             converge_v=geo.converge_v if skew.converge_v is None else float(skew.converge_v),
             converge_h=geo.converge_h if skew.converge_h is None else float(skew.converge_h),
         )
-        # Under the sliders' own step, the frame already sits where the fit would put it.
+        # Under the sliders' step, the frame is already square.
         if (
             abs(new_geo.fine_rotation - geo.fine_rotation) < 0.05
             and abs(new_geo.converge_v - geo.converge_v) < 0.05
@@ -3462,8 +3507,7 @@ class AppController(QObject):
         self._crop_bounds_dirty = True
         self.session.update_config(replace(config, geometry=new_geo), persist=True)
         self.rotation_guide_requested.emit()
-        # Only what the fit measured; the slider shows rotation clockwise-positive, the
-        # stored value counter-clockwise.
+        # The slider shows rotation clockwise-positive; the stored value is counter-clockwise.
         parts = [f"Fine Rotation {-new_geo.fine_rotation:+.2f}°"]
         if skew.converge_v is not None:
             parts.append(f"Tilt {new_geo.converge_v:+.1f}%")
@@ -3504,7 +3548,19 @@ class AppController(QObject):
         self._keystone_lines = {}
         self.keystone_lines_cleared.emit()
         self.rotation_guide_requested.emit()
+        self._reset_all_peeks()
         self.request_render()
+
+    def _reset_all_peeks(self) -> None:
+        if self.state.flat_peek:
+            self.state.flat_peek = False
+            self.flat_peek_changed.emit(False)
+        if self.state.negative_peek:
+            self.state.negative_peek = False
+            self.negative_peek_changed.emit(False)
+        if self.state.embedded_peek:
+            self.state.embedded_peek = False
+            self.embedded_peek_changed.emit(False)
 
     def confirm_manual_crop(self) -> None:
         """Close the crop tool (committing the current rect) — invoked by a double-click
@@ -3802,12 +3858,7 @@ class AppController(QObject):
     def request_thumbnail_refresh(self, scope: str) -> None:
         """User-triggered escape hatch for stale thumbnails: the same background pass
         a bulk edit dispatches automatically, run on demand over ``scope`` ("selection"
-        or "roll") — for staleness an automatic trigger missed, or predates one.
-
-        The roll scope renders only frames whose stored thumbnail fingerprint does not
-        match their current settings, so it catches staleness from an earlier session
-        without re-reading every source file. The selection scope renders what was
-        selected regardless: it is the explicit force."""
+        or "roll") — for staleness an automatic trigger missed, or predates one."""
         if scope == "roll":
             indices = self.session.asset_model.visible_actual_indices_ordered()
         else:
@@ -3826,7 +3877,6 @@ class AppController(QObject):
         self.refresh_thumbnails_for([a["hash"] for a in assets])
 
     def thumbnail_fingerprint_for(self, config: WorkspaceConfig) -> str:
-        """Fingerprint of a thumbnail rendered from ``config``."""
         return thumbnail_fingerprint(
             config,
             workspace_color_space=self.state.workspace_color_space,
@@ -3834,13 +3884,10 @@ class AppController(QObject):
         )
 
     def thumbnail_is_stale(self, asset: dict) -> bool:
-        """Whether the asset's cached thumbnail no longer shows its current settings.
-
-        Flagged this session, missing, unfingerprinted (legacy or quick) or mismatched all
-        count as stale. The active frame never does: the live render owns its thumbnail."""
+        """Never true for the active frame: the live render owns its thumbnail."""
         if asset.get("hash") == self.state.current_file_hash:
             return False
-        # A diptych row's thumbnail joins two halves; refresh_thumbnails_for skips it.
+        # A diptych thumbnail joins two halves; no single config describes it.
         if self.diptych_pair(asset) is not None:
             return False
         key = asset_thumbnail_key(asset)
@@ -3856,10 +3903,7 @@ class AppController(QObject):
         return thumbnail_is_current(stored, self.thumbnail_fingerprint_for(config))
 
     def _seed_stale_thumbnails(self, assets: list[dict], *, restart: bool = False) -> None:
-        """Put the Film Strip's stale dot on frames whose rendered thumbnail no longer
-        matches their settings, including staleness from an earlier session. Only a real
-        mismatch gets a dot: a quick or unfingerprinted thumbnail is every frame never
-        opened, though Update Thumbnails still renders it."""
+        """Flag real fingerprint mismatches only: a quick or unfingerprinted thumbnail gets no stale dot."""
         was_idle = not self._stale_seed_pending
         if restart:
             self._stale_seed_pending = []
@@ -3876,7 +3920,6 @@ class AppController(QObject):
             asset_hash = asset.get("hash")
             if asset_hash not in loaded or asset_hash == self.state.current_file_hash:
                 continue
-            # A diptych row's thumbnail joins two halves; no single config describes it.
             if self.diptych_pair(asset) is not None:
                 continue
             key = asset_thumbnail_key(asset)
@@ -4182,6 +4225,82 @@ class AppController(QObject):
             persist=True,
         )
         self.request_render()
+
+    def set_clone_source(self, nx: float, ny: float) -> None:
+        with self.state.metrics_lock:
+            uv_grid = self.state.last_metrics.get("uv_grid")
+        if uv_grid is None:
+            return
+        self.state.clone_source = CoordinateMapping.map_click_to_raw(nx, ny, uv_grid)
+        self.state.clone_offset = None
+        self.state.clone_picking = False
+        self.config_updated.emit()
+
+    def arm_clone_source(self, armed: bool) -> None:
+        if armed and self.state.active_tool != ToolMode.CLONE:
+            self.set_active_tool(ToolMode.CLONE)
+        self.state.clone_picking = armed
+        self.config_updated.emit()
+
+    def handle_clone_stroke_completed(self, viewport_pts: list) -> None:
+        """The first stroke after Set Source fixes the offset; later strokes reuse it."""
+        with self.state.metrics_lock:
+            uv_grid = self.state.last_metrics.get("uv_grid")
+        if uv_grid is None or not viewport_pts:
+            return
+        if self.state.clone_picking:
+            self.set_clone_source(*viewport_pts[0])
+            return
+        raw_pts = [CoordinateMapping.map_click_to_raw(nx, ny, uv_grid) for nx, ny in viewport_pts]
+        if self.state.clone_offset is None:
+            if self.state.clone_source is None:
+                self.arm_clone_source(True)
+                self.set_status("Click the photo to pick the area to copy from first", 3000, kind="warning")
+                return
+            sx, sy = self.state.clone_source
+            self.state.clone_offset = (sx - raw_pts[0][0], sy - raw_pts[0][1])
+        dx, dy = self.state.clone_offset
+        conf = self.state.config.retouch
+        stroke = (
+            [[rx, ry] for rx, ry in raw_pts],
+            float(conf.manual_dust_size),
+            float(dx),
+            float(dy),
+            float(conf.clone_strength),
+            float(conf.clone_feather),
+            bool(conf.clone_match_tone),
+        )
+        self.session.update_config(
+            replace(self.state.config, retouch=replace(conf, clone_strokes=list(conf.clone_strokes) + [stroke])),
+            persist=True,
+        )
+        self.request_render()
+
+    def _set_clone_strokes(self, strokes: list) -> None:
+        self.session.update_config(
+            replace(self.state.config, retouch=replace(self.state.config.retouch, clone_strokes=strokes)),
+            persist=True,
+        )
+        self.request_render()
+
+    def undo_last_clone(self) -> None:
+        strokes = list(self.state.config.retouch.clone_strokes)
+        if strokes:
+            self._set_clone_strokes(strokes[:-1])
+
+    def delete_clone(self, index: int) -> None:
+        strokes = list(self.state.config.retouch.clone_strokes)
+        if 0 <= index < len(strokes):
+            strokes.pop(index)
+            self._set_clone_strokes(strokes)
+
+    def clear_clones(self) -> None:
+        from negpy.desktop.view.confirm import confirm_clear_clones
+
+        count = len(self.state.config.retouch.clone_strokes)
+        if count == 0 or not confirm_clear_clones(None, count):
+            return
+        self._set_clone_strokes([])
 
     def handle_heal_stroke_completed(self, viewport_pts: list) -> None:
         """Commits a scratch-tool polyline (viewport-normalized points)."""
@@ -5283,8 +5402,7 @@ class AppController(QObject):
         self._discover_scanned([path], path, self._scan_as_roll)
 
     def _on_scan_frame_done(self, frame: int, path: str) -> None:
-        """Load each batch frame as it is written. Only the batch's first frame takes the
-        selection, so a frame being edited meanwhile stays selected."""
+        """Only a batch's first frame takes the selection."""
         self.scan_frame_done.emit(frame, path)
         self._discover_scanned([path], path, self._scan_as_roll, select=not self._batch_frame_selected)
         self._batch_frame_selected = True
@@ -5295,15 +5413,13 @@ class AppController(QObject):
     def _discover_scanned(
         self, paths: List[str], selected: str, as_roll: bool, triplet: Optional[dict] = None, select: bool = True
     ) -> None:
-        """Load a scanner's or camera's new files, selecting *selected* when *select*. With
-        *as_roll* their folder is a roll, opened before discovery runs: Half Frame splits at
-        discovery time."""
+        """With *as_roll* the folder opens as a roll before discovery, which is when Half Frame splits."""
         if as_roll:
             folder = os.path.dirname(selected)
             roll_id = rolls.recognize_folder(self.session.repo, folder)
             if roll_id != self.state.active_roll_id:
                 self.state.active_roll_id = roll_id
-                self.half_frame_mode_changed.emit(self.half_frame_mode_for_roll(roll_id))
+                self._announce_roll_modes(roll_id)
                 self._register_library_roots([folder])
                 self.library_cleared.emit()
                 self.request_asset_discovery(
@@ -5379,8 +5495,8 @@ class AppController(QObject):
         self.set_status(message, 6000, kind="error")
 
     def frame_merge_plan(self, indices: Optional[list[int]] = None) -> tuple[list[int], list[str]]:
-        """Film Strip indices of the assembled frames Merge to TIFF Negative can merge, and a line
-        for each one it cannot. *indices* scopes the search; None is the whole roll."""
+        """Film Strip indices Merge to TIFF Negative can merge, and a reason line per refused frame.
+        None for *indices* means every frame."""
         scope = range(len(self.state.uploaded_files)) if indices is None else indices
         mergeable: list[int] = []
         skipped: list[str] = []
@@ -5391,31 +5507,26 @@ class AppController(QObject):
             kind = composite_kind(f)
             if not kind:
                 continue
-            # Tested before the kind: a half of a triplet scan reads as "rgb", and two halves
-            # sharing one path cannot both be replaced by a file.
+            # Before the kind test: a triplet half reads as "rgb", and two halves share one path.
             if f.get("half"):
                 skipped.append(f"{f['name']}: a half-frame scan cannot merge")
             elif kind == "hdr":
-                skipped.append(f"{f['name']}: a bracket keeps its shadow detail and render exposure only unmerged")
+                skipped.append(f"{f['name']}: a bracket would lose its shadow detail in a TIFF")
             elif kind not in MERGEABLE_KINDS:
                 skipped.append(f"{f['name']}: a {kind} cannot merge")
             elif not can_merge(f, kind):
                 skipped.append(f"{f['name']}: a source file is missing or not a camera RAW")
             elif needs_camera_matrix(self._batch_params_for(f)):
-                skipped.append(f"{f['name']}: a slide renders through its camera's color matrix, which a TIFF cannot carry")
+                skipped.append(f"{f['name']}: a TIFF cannot carry a slide's camera color matrix")
             elif not describes_a_merge(f["path"], self._batch_params_for(f)):
-                skipped.append(f"{f['name']}: this source format cannot name the merged file as an assembly")
+                skipped.append(f"{f['name']}: this source format cannot merge")
             else:
                 mergeable.append(i)
         return mergeable, skipped
 
     def request_frame_merge(self, paths: list[str], trash: bool) -> None:
-        """Merge each assembled frame in *paths* into a TIFF beside its primary source.
-        With *trash*, the files it was made of go to the Trash once its edit has moved.
-
-        Paths, not indices: the confirm dialog spins the event loop, so a discovery that
-        lands while it is open would leave an index naming a different frame.
-        """
+        """With *trash*, the sources go to the Trash once the edit has moved. Paths, not indices:
+        a discovery during the confirm dialog can shift the indices."""
         if self._batch_busy("Merge to TIFF Negative"):
             return
         self.session.save_active_edit()
@@ -5444,14 +5555,8 @@ class AppController(QObject):
         self.frame_merge_requested.emit(tasks)
 
     def _already_merged_to(self, r) -> Optional[str]:
-        """The negative this frame was merged to before, when one is still on disk.
-
-        No edit changes a merged negative's pixels, so merging a frame twice writes the same
-        bytes and lands on the same content hash. The hash is only known once the file is
-        written, so the second copy is recognized here and discarded rather than refused up
-        front. The frame is then left exactly as it was: nothing overwrites the edit the
-        first negative already carries.
-        """
+        """The earlier negative this frame merged to, if still on disk; the new duplicate is then deleted.
+        A re-merge writes the same bytes, so it lands on the same content hash."""
         existing = self.session.repo.path_for_file_hash(r.new_hash)
         if not existing or existing == r.out_path or not os.path.exists(existing):
             return None
@@ -5462,12 +5567,8 @@ class AppController(QObject):
         return existing
 
     def _on_frame_merge_finished(self, results: list, aborted: bool) -> None:
-        """Move each merged frame's edit to its TIFF and put it in the Film Strip.
-
-        Trashing the sources replaces the frame they made; keeping them adds the merged file
-        beside it, because a source the user chose to keep is one they can still open.
-        A frame whose edit did not move keeps its sources either way.
-        """
+        """Trashing the sources replaces the frame; keeping them adds the TIFF beside it.
+        A frame whose edit did not move keeps its sources."""
         self._end_batch("frame_merge")
         self.session.save_active_edit()
         repo = self.session.repo
@@ -5497,8 +5598,7 @@ class AppController(QObject):
             old_hash = rolls.unforked_hash(r.asset["hash"])
             try:
                 config = repo.load_file_settings(old_hash) or self.session.config_for_asset({**r.asset, "hash": old_hash})
-                # Only a trashed source leaves its roll: one left on disk is still a frame,
-                # and still belongs to the roll it was always in.
+                # Only a trashed source leaves its roll; a kept one is still a frame there.
                 keep = not self._frame_merge_trash
                 carry_edit(repo, old_hash, primary, r.new_hash, r.out_path, [] if keep else parts, config, r.kind, keep)
                 carry_sidecar(primary, r.out_path, config, r.kind)
@@ -5507,9 +5607,7 @@ class AppController(QObject):
                 logger.warning("Merge to TIFF Negative could not move the edit of %s: %s", r.asset["name"], e)
                 continue
             if r.kind == "stitch" and self._frame_merge_trash:
-                # The membership record outlives the file list, so without this discovery
-                # re-attaches the parts and keeps hiding them from the Film Strip. Kept parts
-                # keep the record: the composite is still a frame and must still assemble.
+                # Discovery re-attaches parts from this record, which outlives the file list.
                 forget_composite(repo, primary)
             new_asset = {
                 "name": os.path.basename(r.out_path),
@@ -5517,8 +5615,7 @@ class AppController(QObject):
                 "hash": r.new_hash,
                 "legacy_hash": "",
                 "mtime": os.path.getmtime(r.out_path),
-                # A composite inherited its film process from its parts; a fresh hash would
-                # otherwise take the sticky mode instead.
+                # The fresh hash would otherwise take the sticky mode.
                 "process_mode": r.asset.get("process_mode", ""),
             }
             self._apply_roll_forks([new_asset])
@@ -6003,7 +6100,13 @@ class AppController(QObject):
         rgb = bool(req is not None and getattr(req, "rgb_mode", True))
         # RGB-Scan (triplet merge) is on only for an actual RGB triplet. Off for a single
         # white-light slide and for a normal camera scan.
-        self.session.repo.save_global_setting("rgbscan_mode", rgb and not white)
+        # It belongs to the roll of the folder the files land in, not to the open roll.
+        as_roll = bool(getattr(req, "as_roll", False))
+        folder = os.path.dirname(paths[0])
+        target_roll = (
+            rolls.recognize_folder(self.session.repo, folder) if as_roll else rolls.folder_roll_id_for_path(self.session.repo, folder)
+        )
+        self._save_rgb_scan_mode(rgb and not white, target_roll)
         capture_roll = getattr(req, "roll_name", "") if req is not None else ""
         capture_frame = getattr(req, "frame_number", None) if req is not None else None
         if white:  # slides / B&W negatives force a positive process
@@ -6034,7 +6137,7 @@ class AppController(QObject):
         # re-derive one it already knows. Deriving it can only refuse a frame it should
         # have kept: a blank or untextured frame gives the content test nothing to match.
         triplet = {paths[0]: [paths[1], paths[2]]} if rgb and not white and len(paths) == 3 else None
-        self._discover_scanned(list(paths), paths[0], bool(getattr(req, "as_roll", False)), triplet)
+        self._discover_scanned(list(paths), paths[0], as_roll, triplet)
 
     def effective_output_icc(self) -> Optional[str]:
         """Profile the *export* converts to and tags with: a custom override, else the
@@ -6255,16 +6358,7 @@ class AppController(QObject):
             self.load_file(self.state.current_file_path, preserve_zoom=True)
             return
 
-        # Any direct render exits the flat preview-peek.
-        if config_override is None and self.state.flat_peek:
-            self.state.flat_peek = False
-            self.flat_peek_changed.emit(False)
-        if config_override is None and self.state.negative_peek:
-            self.state.negative_peek = False
-            self.negative_peek_changed.emit(False)
-        if config_override is None and self.state.embedded_peek:
-            self.state.embedded_peek = False
-            self.embedded_peek_changed.emit(False)
+        # Renders leave peek state alone; edits drop it through _reset_all_peeks.
 
         # The strip's patches were printed from the config as it stood, so once the edit
         # moves they prove something else. Drop them, which also cancels a strip still
@@ -6339,13 +6433,9 @@ class AppController(QObject):
             split_axis=str(dip[0].get("split_axis") or "x") if dip is not None else "x",
         )
 
-        prefetch_was_running = self._cancel_neighbor_prefetch()
+        self._cancel_neighbor_prefetch()
 
         if self._is_rendering:
-            self._pending_render_task = task
-            return
-
-        if prefetch_was_running:
             self._pending_render_task = task
             return
 
@@ -6537,7 +6627,6 @@ class AppController(QObject):
             original_size=(original[0], original[1]),
             scale_factor=max(original) / float(APP_CONFIG.preview_render_size),
             process_mode=self.state.config.process.process_mode,
-            # Mirrors request_render: these tools frame against the uncropped frame.
             crop_preview_full=self.state.active_tool in UNCROPPED_PREVIEW_TOOLS,
             wants_uv_grid=False,
         )
@@ -6728,9 +6817,7 @@ class AppController(QObject):
         return resolve_asset_hdr(resolve_asset_stitch(resolve_asset_rgbscan(params, f), f), f)
 
     def _with_sibling_crosstalk(self, params: WorkspaceConfig, f: dict) -> WorkspaceConfig:
-        """Propagate capture-side crosstalk between sibling half-frames. The dye-unmix
-        calibration belongs to the scanner-film pair, not to a frame, so if one half was
-        calibrated and the other left at default both need the same correction."""
+        """A default half takes its sibling's crosstalk: the calibration belongs to the scanner-film pair."""
         base = f.get("hash", "")
         half_val = half_of(base)
         if half_val is not None:
@@ -7076,6 +7163,8 @@ class AppController(QObject):
 
         if len(files) > 1 and not self._confirm_bulk_export(f"Export {count_of(len(files), 'frame')}?"):
             return
+        if not self._confirm_unopened_frames(files):
+            return
 
         if self.state.config.export.export_sidecars_enabled:
             self._write_edit_sidecars(files)
@@ -7176,6 +7265,23 @@ class AppController(QObject):
             )
         return tasks
 
+    def _confirm_unopened_frames(self, files: list[dict]) -> bool:
+        """A frame with no saved edit exports with the live session settings, while its
+        filmstrip thumbnail is a quick source-preview inversion, so the file can differ
+        badly from what the strip shows. The open frame is exempt: its preview is the
+        export."""
+        hashes = [f["hash"] for f in files if f["hash"] != self.state.current_file_hash]
+        if not hashes:
+            return True
+        saved = self.session.repo.load_file_settings_many(hashes)
+        unopened = sum(1 for h in hashes if h not in saved)
+        if not unopened:
+            return True
+        return self._confirm_bulk_export(
+            f"Frames without a saved edit: {unopened} of {count_of(len(files), 'frame')}. "
+            "They export with the current settings and may not match their thumbnails. Export anyway?"
+        )
+
     def _confirm_bulk_export(self, text: str) -> bool:
         reply = QMessageBox.question(
             None,
@@ -7209,6 +7315,8 @@ class AppController(QObject):
                 f"Export {count_of(n_frames, 'frame')} through {count_of(n_presets, 'preset')} ({count_of(n_files, 'file')})?"
             ):
                 return
+        if not self._confirm_unopened_frames(files):
+            return
 
         if self.state.config.export.export_sidecars_enabled:
             self._write_edit_sidecars(files)
@@ -7268,11 +7376,7 @@ class AppController(QObject):
     _CONTACT_SHEET_SETTINGS_KEY = "contact_sheet_settings"
 
     def request_contact_sheet(self) -> None:
-        """Opens the Contact Sheet dialog for every visible frame once their dates are read.
-
-        Each frame prints with its own edit (roll defaults included), resolved here once, so an
-        unedited frame never takes the active frame's crop.
-        """
+        """Opens the Contact Sheet dialog for every visible frame once their capture dates are read."""
         self._flush_export_ui()
         if self._batch_busy("contact sheet"):
             return
@@ -7368,7 +7472,6 @@ class AppController(QObject):
         return f"{self._active_batch_title} is running; export once it finishes."
 
     def _contact_sheet_roll_name(self, frames: list) -> str:
-        """The Library roll's name; else the Scanlight roll or the folder the frames are in."""
         roll_id = self.state.active_roll_id
         if roll_id:
             entry = rolls.roll_for_id(self.session.repo, roll_id)
@@ -7390,7 +7493,12 @@ class AppController(QObject):
         for f in files:
             half = int(f.get("half") or 0)
             params = load_or_promote(
-                repo, f["hash"], f["path"], half=half, composite=bool(f.get("hdr_paths") or f.get("stitch_paths"))
+                repo,
+                f["hash"],
+                f["path"],
+                half=half,
+                composite=bool(f.get("hdr_paths") or f.get("stitch_paths")),
+                forked="#roll:" in f["hash"],
             ) or self.session.config_for_asset(f)
             try:
                 write_sidecar(f["path"], params, half=half)
@@ -7660,8 +7768,7 @@ class AppController(QObject):
         self.config_updated.emit()
 
     def _carry_render_identity(self, before: WorkspaceConfig) -> None:
-        """A write that leaves the shown pixels as they are makes them the render of the
-        new config too. Identity, not equality: an edit since the render breaks the chain."""
+        """Call after a write that leaves the pixels as they are. Identity, not equality: an edit since the render breaks the chain."""
         with self.state.metrics_lock:
             identity = self.state.last_metrics.get("render_identity")
             if isinstance(identity, tuple) and identity[0] == self.state.current_file_hash and identity[1] is before:
@@ -7687,8 +7794,7 @@ class AppController(QObject):
             return
 
         with self.state.metrics_lock:
-            # _on_render_finished filed this render's identity, and a render-neutral write
-            # since then may have carried it forward.
+            # Keep render_identity: _carry_render_identity may have moved it on since the render.
             self.state.last_metrics.update({k: v for k, v in metrics.items() if k != "render_identity"})
             _stamp_render_serial(self.state.last_metrics, metrics)
         if "ir_degenerate" in metrics:
@@ -7777,6 +7883,10 @@ class AppController(QObject):
         self._dispatch_pending_render()
         AppController._continue_background_work(self)
 
+    def _on_export_task_warning(self, message: str) -> None:
+        """Advisory about files that were written; stays out of the failure count."""
+        self.set_status(message, 6000, kind="warning")
+
     def _on_export_task_error(self, message: str) -> None:
         self._export_failures += 1
         self._report_worker_error("Export", message)
@@ -7838,10 +7948,8 @@ class AppController(QObject):
             return
         with self.state.metrics_lock:
             metrics = dict(self.state.last_metrics)
-        # The crop, analysis and tilt/swing tools render the uncropped frame, which is not
-        # the print. An edited frame being left (persist) is repaired off the background
-        # lane instead -- deferred a tick, because refresh_thumbnails_for skips the current
-        # file and the outgoing frame is still current while active_file_changing fires.
+        # An uncropped preview is not the print. A left frame re-renders a tick later:
+        # refresh_thumbnails_for skips the current file, which the outgoing frame still is.
         if metrics.get("crop_preview_full"):
             stale_hash = metrics.get("source_hash")
             if persist and stale_hash and self.state.config is not self._thumb_config:
@@ -7867,9 +7975,7 @@ class AppController(QObject):
         display_cs, monitor_bytes, proof = self.display_transform_params(
             splash=bool(metrics.get("splash")), proofed=bool(metrics.get("proof", True))
         )
-        # Disk gets only pixels known to be this frame's render. A splash, a peek or a
-        # crop-tool view carries no identity, and last_metrics can hold another frame's
-        # pixels next to it; such a frame gets the stale dot instead.
+        # Disk gets only pixels known to be this frame's render; anything else gets the stale dot.
         fingerprint = None
         if persist:
             identity = metrics.get("render_identity")
@@ -7878,13 +7984,10 @@ class AppController(QObject):
                 return
             fingerprint = self._filed_fingerprint(identity[1], asset)
             if asset.get("hash") == self.state.current_file_hash and fingerprint != self._filed_fingerprint(self.state.config, asset):
-                # Edited since this render. Leaving the frame drops the newer render, and a
-                # thumbnail landing clears the stale flag, so nothing is written.
+                # Edited since this render; a written thumbnail would clear the stale flag.
                 self.state.stale_thumbnails.add(asset_thumbnail_key(asset))
                 self.session.asset_model.refresh()
                 return
-            if fingerprint == self.asset_store.get_thumbnail_fingerprint(asset_thumbnail_key(asset)):
-                return  # the disk already holds this render; the filmstrip got it when it landed
         # The asset's own key, so the batch (source) path re-serves this rendered positive
         # instead of the uninverted source merge it would decode itself.
         task = ThumbnailUpdateTask(
@@ -7902,9 +8005,7 @@ class AppController(QObject):
             self.thumbnail_update_requested.emit(task)
 
     def _filed_fingerprint(self, config: WorkspaceConfig, asset: dict) -> str:
-        """Fingerprint a live render of ``config`` is filed under. An unedited half's measured
-        bounds never reach the database (``_may_persist_measured_bounds``), so its stored
-        bounds stand in, or the half reads stale against its stored settings on every visit."""
+        """When measured bounds may not persist, the stored ones stand in, or the frame reads stale on every visit."""
         if asset.get("hash") == self.state.current_file_hash and not self._may_persist_measured_bounds():
             stored = self.session.config_for_asset(asset).process
             config = replace(config, process=replace(config.process, local_floors=stored.local_floors, local_ceils=stored.local_ceils))
@@ -7939,8 +8040,7 @@ class AppController(QObject):
             self.thumb_worker.cancel_pending()
             self.thumb_thread.quit()
             self.thumb_thread.wait()
-        # Quitting leaves the active frame as a switch does. With the thumbnail thread
-        # stopped, its write runs here; its result has no Film Strip to reach.
+        # Save the active frame's thumbnail as a switch would; its thread is stopped, so it runs here.
         self.thumb_worker.blockSignals(True)
         try:
             self._update_thumbnail_from_state(sync=True)
@@ -7955,9 +8055,16 @@ class AppController(QObject):
         if self.discovery_thread.isRunning():
             self.discovery_thread.quit()
             self.discovery_thread.wait()
+        # Obsolete preview work first, so each join waits one cancel point, not a whole decode.
+        self._prefetch_gen += 1
+        self.preview_load_state.expect_generation(self._prefetch_gen)
+        self._cancel_neighbor_prefetch()
         if self.preview_load_thread.isRunning():
             self.preview_load_thread.quit()
             self.preview_load_thread.wait()
+        if self.prefetch_load_thread.isRunning():
+            self.prefetch_load_thread.quit()
+            self.prefetch_load_thread.wait()
         self.scan_worker.cancel()
         if self.scan_thread.isRunning():
             self.scan_thread.quit()

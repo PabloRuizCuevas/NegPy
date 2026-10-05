@@ -1330,8 +1330,6 @@ class TestDesktopSessionSync(unittest.TestCase):
         self.assertEqual(saved, {"hash1", "hash2"})  # c.jpg filtered out, not touched
 
     def test_reset_roll_settings_selection_scope_respects_active_filter(self):
-        # A hidden frame is not a target in either scope, so a stale selection entry
-        # cannot reach past the filter (#1220).
         self._seed_roll()
         self.session.asset_model.set_filter(".arw", regex=False)  # hides c.jpg
         self.session.state.selected_indices = [0, 1, 2]
@@ -1430,8 +1428,6 @@ class TestDesktopSessionSync(unittest.TestCase):
         self.assertEqual(seen, ["hash1"])
 
     def test_active_file_changing_emitted_when_clean(self):
-        # A frame only looked at still has its render to file on disk; the controller
-        # skips the write when the stored thumbnail already matches.
         self.session.state.current_file_hash = "hash1"
         self.session.state.is_dirty = False
         seen = []
@@ -1674,8 +1670,7 @@ class TestSessionEmptied(unittest.TestCase):
         self.assertIsNone(state.current_file_hash)
         self.assertIsNone(state.preview_raw)
         self.assertEqual(state.last_metrics, {})
-        # Back to a fresh session's own config, which is the one a card's Reset lands on.
-        self.assertEqual(state.config, AppState().config)
+        self.assertEqual(state.config, self.session._empty_session_config())
 
     def test_remove_current_last_file_emits_and_resets(self):
         self.session.remove_current_file()
@@ -1706,6 +1701,42 @@ class TestSessionEmptied(unittest.TestCase):
         self.assertEqual(self.emptied_count, 0)
         self.assertEqual(len(self.session.state.uploaded_files), 1)
         self.assertEqual(self.session.state.selected_file_idx, 0)
+
+
+class TestEmptySessionConfig(unittest.TestCase):
+    def setUp(self):
+        self.store = {"sticky_config": {"distortion_k1": 0.05, "autocrop_ratio": "6:7"}, "flatfield_active_profile": "rig-a"}
+        self.mock_repo = MagicMock(spec=StorageRepository)
+        self.mock_repo.load_file_settings.return_value = None
+        self.mock_repo.load_file_settings_by_path.return_value = None
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: self.store.get(key, default)
+        self.mock_repo.save_global_settings.side_effect = self.store.update
+        self.mock_repo.get_max_history_index.return_value = 0
+        patcher = patch("negpy.desktop.session.FlatFieldProfiles.get", return_value=SimpleNamespace(id="rig-a", k1=0.0))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.session = DesktopSessionManager(self.mock_repo)
+
+    def _assert_carried(self):
+        config = self.session.state.config
+        self.assertEqual(config.geometry.distortion_k1, 0.05)
+        self.assertEqual(config.flatfield.profile_id, "rig-a")
+        self.assertTrue(config.flatfield.apply)
+
+    def test_startup_holds_the_carried_values(self):
+        self._assert_carried()
+
+    def test_emptied_session_holds_the_carried_values(self):
+        self.session.state.uploaded_files = [{"name": "f.dng", "path": "p", "hash": "h"}]
+        self.session.state.config = DEFAULT_WORKSPACE_CONFIG
+        self.session.clear_files()
+        self._assert_carried()
+
+    def test_edit_with_no_frame_keeps_other_carried_values(self):
+        config = self.session.state.config
+        self.session.update_config(replace(config, flatfield=replace(config.flatfield, apply=False)), persist=True, render=False)
+        self.assertEqual(self.store["sticky_config"]["distortion_k1"], 0.05)
+        self.assertEqual(self.store["sticky_config"]["autocrop_ratio"], "6:7")
 
 
 class TestTriageMarks(unittest.TestCase):
@@ -2157,6 +2188,28 @@ class ResetKeepsScanSetup(unittest.TestCase):
 
         self.assertFalse(self.session.state.config.process.narrowband_scan)
         self.assertIn("sensor", rolls.frame_override_cards(self.repo, roll_id, "hash1"))
+
+    def test_loading_a_sidecar_replaces_the_edit_as_one_undo_step(self):
+        import tempfile
+
+        from negpy.services.assets import rolls
+        from negpy.services.assets.sidecar import write_sidecar
+
+        roll_id = self._own_narrowband_then_reset()
+        own = self.session.state.config
+        before = self.session.state.undo_index
+        with tempfile.TemporaryDirectory() as d:
+            path = write_sidecar(
+                f"{d}/frame.tif",
+                replace(own, process=replace(own.process, narrowband_scan=False), exposure=replace(own.exposure, density=0.77)),
+            )
+            self.assertTrue(self.session.load_edit_from_sidecar(path))
+            self.assertFalse(self.session.load_edit_from_sidecar(f"{d}/missing.negpy"))
+
+        self.assertEqual(self.session.state.config.exposure.density, 0.77)
+        self.assertEqual(self.repo.load_file_settings("hash1").exposure.density, 0.77)
+        self.assertIn("sensor", rolls.frame_override_cards(self.repo, roll_id, "hash1"))
+        self.assertEqual(self.session.state.undo_index, before + 1)
 
     def test_a_paste_locks_a_card_that_differs_from_the_roll(self):
         from negpy.services.assets import rolls

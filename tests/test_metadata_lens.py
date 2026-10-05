@@ -524,7 +524,11 @@ def test_history_or_reset_reloads_pixels_when_metadata_mode_changes(enabled):
     state = AppState(current_file_path="scan.arw")
     state.config = replace(state.config, geometry=GeometryConfig(lens_distortion_from_metadata=enabled, lens_ca_from_metadata=enabled))
     state.preview_lens_token = lens_decode_token(LensCorrections(not enabled, not enabled), state.config.flatfield)
-    controller = SimpleNamespace(state=state, _render_debounce=MagicMock(), load_file=MagicMock())
+    controller = SimpleNamespace(
+        state=state,
+        _render_debounce=MagicMock(),
+        load_file=MagicMock(),
+    )
     AppController.request_render(controller)
     controller.load_file.assert_called_once_with("scan.arw", preserve_zoom=True)
 
@@ -690,7 +694,6 @@ def test_warp_capabilities_drive_availability(warp: LensWarp, distortion, ca):
 
 
 def _max_edge_overshoot(lens: LensMetadata, shape: tuple[int, int], corrections: LensCorrections) -> float:
-    """How far past the source any output edge pixel reads, in pixels, through the filled warp."""
     from negpy.features.lens.logic import fill_scale
 
     h, w = shape
@@ -755,7 +758,6 @@ def test_no_fill_when_nothing_reads_past_the_edge_or_distortion_is_off(warp, cor
 
 
 def test_a_chain_is_checked_at_every_stage():
-    """A later warp reading past the image is not hidden by an earlier warp mapping the clamped point inward."""
     from negpy.features.lens.logic import fill_scale
 
     pincushion = RectilinearWarp(((1, -0.02, 0, 0, 0, 0),))
