@@ -22,7 +22,7 @@ from negpy.features.toning.models import ToningConfig
 from negpy.features.finish.models import FinishConfig
 from negpy.features.flatfield.models import FlatFieldConfig
 from negpy.features.rgbscan.models import RgbScanConfig
-from negpy.features.hdr.models import HdrConfig, hdr_active, hdr_bracket
+from negpy.features.hdr.models import HdrConfig, hdr_bracket
 from negpy.features.stitch.models import StitchConfig
 from negpy.features.metadata.models import MetadataConfig
 from negpy.domain.migrations import migrate_export_fmt, migrate_flat_config
@@ -385,12 +385,13 @@ class WorkspaceConfig:
         merge created now, a composite loaded from the DB, a `replace` that turns an ordinary
         frame into one.
         """
-        if not hdr_active(self.hdr):
+        # A stack has one exposure: every scan clips at the same point and no render exposure
+        # divides out, so reconstruction and the autos stay its own.
+        if not hdr_bracket(self.hdr):
             return
         if self.process.highlight_reconstruction:
             object.__setattr__(self, "process", replace(self.process, highlight_reconstruction=0))
-        # A stack has one exposure's range and no render exposure, so the autos are its own.
-        if hdr_bracket(self.hdr) and (self.exposure.auto_exposure or self.exposure.auto_normalize_contrast):
+        if self.exposure.auto_exposure or self.exposure.auto_normalize_contrast:
             object.__setattr__(self, "exposure", replace(self.exposure, auto_exposure=False, auto_normalize_contrast=False))
 
     def to_dict(self) -> Dict[str, Any]:

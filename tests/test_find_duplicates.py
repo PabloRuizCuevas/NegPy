@@ -24,6 +24,15 @@ def _rescan(scene, dy, dx, noise, seed):
     return np.clip(crop + rng.normal(0, noise, crop.shape), 0, 1).astype(np.float32)
 
 
+def _toned(img):
+    """A frame with a full tonal range, dark at one edge and bright at the other."""
+    return (img * np.linspace(0.05, 0.9, img.shape[1], dtype=np.float32)[None, :]).astype(np.float32)
+
+
+def _display_u8(linear):
+    return (np.clip(linear, 0, 1) ** (1 / 2.2) * 255).round().astype(np.uint8)
+
+
 class TestGrouping:
     def test_rescans_group_and_other_frames_stay_apart(self):
         a, b = _scene(1), _scene(2)
@@ -41,6 +50,25 @@ class TestGrouping:
         scan = _rescan(_scene(3), 0, 0, 0.01, 1)
         copy = cv2.resize(scan, (scan.shape[1] // 2, scan.shape[0] // 2), interpolation=cv2.INTER_AREA)
         groups = find_groups({"/r/x.tif": fingerprint(scan), "/r/x.jpg": fingerprint(copy)})
+        assert len(groups) == 1 and groups[0].same_scan
+
+    def test_exposures_of_one_bracket_stay_apart(self):
+        scan = _toned(_rescan(_scene(5), 0, 0, 0.005, 1))
+        for encode in (lambda x: x, _display_u8):
+            for ev in (-2, -1, 1, 2):
+                other = np.clip(scan * 2.0**ev, 0, 1)
+                assert find_groups({"/r/a.tif": fingerprint(encode(scan)), "/r/b.tif": fingerprint(encode(other))}) == [], ev
+
+    def test_rescans_a_little_apart_in_level_still_group(self):
+        scene = _scene(6)
+        a = _toned(_rescan(scene, 0, 0, 0.01, 1))
+        b = _toned(_rescan(scene, 4, -3, 0.01, 2)) * 1.1
+        assert len(find_groups({"/r/a.tif": fingerprint(_display_u8(a)), "/r/b.tif": fingerprint(_display_u8(b))})) == 1
+
+    def test_a_gamma_encoded_copy_is_the_same_scan(self):
+        scan = _toned(_rescan(_scene(7), 0, 0, 0.005, 1))
+        linear = (scan * 65535).astype(np.uint16)
+        groups = find_groups({"/r/x.tif": fingerprint(linear), "/r/x.jpg": fingerprint(_display_u8(scan))})
         assert len(groups) == 1 and groups[0].same_scan
 
     def test_a_different_crop_shape_never_matches(self):

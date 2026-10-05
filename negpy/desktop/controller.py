@@ -5449,6 +5449,11 @@ class AppController(QObject):
         if any(f.get("stitch_paths") for f in ordered):
             self.set_status("Stitching an already-stitched frame is not supported", 4000)
             return
+        # A stitch decodes each part's primary alone, and its membership entry would take over
+        # the stack's or bracket's.
+        if any(f.get("hdr_paths") for f in ordered):
+            self.set_status("Stitching a stacked or merged frame is not supported", 4000)
+            return
         if self._begin_batch("stitch", "Stitching frames", abortable=True) is None:
             return
         self.stitch_requested.emit(
@@ -5510,6 +5515,8 @@ class AppController(QObject):
             # Before the kind test: a triplet half reads as "rgb", and two halves share one path.
             if f.get("half"):
                 skipped.append(f"{f['name']}: a half-frame scan cannot merge")
+            elif kind == "hdr" and f.get("hdr_stack"):
+                skipped.append(f"{f['name']}: a stack cannot merge")
             elif kind == "hdr":
                 skipped.append(f"{f['name']}: a bracket would lose its shadow detail in a TIFF")
             elif kind not in MERGEABLE_KINDS:

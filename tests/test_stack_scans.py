@@ -59,6 +59,13 @@ class TestStackConfig:
         assert not WorkspaceConfig(exposure=autos, hdr=bracket).exposure.auto_exposure
         assert not hdr_bracket(stack) and hdr_bracket(bracket)
 
+    def test_a_stack_keeps_highlight_reconstruction_and_a_bracket_does_not(self):
+        base = WorkspaceConfig()
+        process = replace(base.process, highlight_reconstruction=2)
+        stack = HdrConfig(hdr_enabled=True, hdr_paths=("/b.tif",), hdr_ratios=(1.0, 1.0), hdr_stack=True)
+        assert WorkspaceConfig(process=process, hdr=stack).process.highlight_reconstruction == 2
+        assert WorkspaceConfig(process=process, hdr=replace(stack, hdr_stack=False)).process.highlight_reconstruction == 0
+
     def test_flat_round_trip(self):
         cfg = WorkspaceConfig(hdr=HdrConfig(hdr_enabled=True, hdr_paths=("/b.tif",), hdr_ratios=(1.0, 1.0), hdr_stack=True))
         assert WorkspaceConfig.from_flat_dict(cfg.to_dict()).hdr.hdr_stack
@@ -112,3 +119,27 @@ class TestStackFrames:
         assert not stack(["/r/a.tif", "/r/b.tif"])
         assert not stack(["/r/b.tif"])
         ctrl.session.apply_composite.assert_not_called()
+
+
+class TestStackElsewhere:
+    def _controller(self, files):
+        from negpy.desktop.controller import AppController
+
+        ctrl = MagicMock()
+        ctrl.state.uploaded_files = files
+        ctrl.state.selected_indices = list(range(len(files)))
+        ctrl._batch_busy.return_value = False
+        return ctrl, AppController
+
+    def test_stitch_refuses_a_stack(self):
+        files = [{"path": "/r/a.tif", "hash": "s", "hdr_paths": ("/r/b.tif",), "hdr_stack": True}, {"path": "/r/c.tif", "hash": "c"}]
+        ctrl, cls = self._controller(files)
+        cls.request_stitch_selected.__get__(ctrl)()
+        ctrl.stitch_requested.emit.assert_not_called()
+        assert "stacked" in ctrl.set_status.call_args.args[0]
+
+    def test_merge_to_tiff_names_a_stack_as_a_stack(self):
+        files = [{"name": "a +1 (Stack)", "path": "/r/a.tif", "hash": "s", "hdr_paths": ("/r/b.tif",), "hdr_stack": True}]
+        ctrl, cls = self._controller(files)
+        mergeable, skipped = cls.frame_merge_plan.__get__(ctrl)()
+        assert mergeable == [] and skipped == ["a +1 (Stack): a stack cannot merge"]
