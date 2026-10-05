@@ -3094,6 +3094,7 @@ class TestPresetBatchExport(unittest.TestCase):
 
         self.controller._validate_preset_paths = MagicMock(return_value=True)
         self.controller._run_export_tasks = MagicMock()
+        self.controller._confirm_unopened_frames = MagicMock(return_value=True)
 
     def tearDown(self):
         import gc
@@ -3193,6 +3194,7 @@ class TestPresetExportSelected(unittest.TestCase):
 
         self.controller._validate_preset_paths = MagicMock(return_value=True)
         self.controller._run_export_tasks = MagicMock()
+        self.controller._confirm_unopened_frames = MagicMock(return_value=True)
 
     def tearDown(self):
         import gc

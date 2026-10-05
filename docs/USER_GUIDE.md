@@ -973,7 +973,7 @@ A gear library for Metadata (§11), Roll Settings and every gear picker. **My Ge
 
 ### Export button
 
-**Export**, under the form; its chevron picks the scope: current frame (Ctrl+E), selected frames or all visible frames. For several formats or sizes in one run, use Export Presets.
+**Export**, under the form; its chevron picks the scope: current frame (Ctrl+E), selected frames or all visible frames. For several formats or sizes in one run, use Export Presets. A batch holding frames without a saved edit asks for confirmation first: they export with the current settings and may not match their thumbnails. After the batch, a warning names exports that rendered almost black with no crop set, where the bright scan border drove automatic levels.
 
 ### Collapsible sections
 

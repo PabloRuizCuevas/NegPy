@@ -882,6 +882,7 @@ class AppController(QObject):
         self.export_worker.finished.connect(self._on_export_finished)
         self.export_worker.cancelled.connect(self._on_export_batch_cancelled)
         self.export_worker.error.connect(self._on_export_task_error)
+        self.export_worker.warning.connect(self._on_export_task_warning)
         self.export_worker.contact_sheet_written.connect(self._on_contact_sheet_written)
         self.contact_sheet_requested.connect(self.export_worker.run_contact_sheet)
         self.contact_sheet_preview.prepared.connect(self._on_contact_sheet_prepared)
@@ -7049,6 +7050,8 @@ class AppController(QObject):
 
         if len(files) > 1 and not self._confirm_bulk_export(f"Export {count_of(len(files), 'frame')}?"):
             return
+        if not self._confirm_unopened_frames(files):
+            return
 
         if self.state.config.export.export_sidecars_enabled:
             self._write_edit_sidecars(files)
@@ -7149,6 +7152,23 @@ class AppController(QObject):
             )
         return tasks
 
+    def _confirm_unopened_frames(self, files: list[dict]) -> bool:
+        """A frame with no saved edit exports with the live session settings, while its
+        filmstrip thumbnail is a quick source-preview inversion, so the file can differ
+        badly from what the strip shows. The open frame is exempt: its preview is the
+        export."""
+        hashes = [f["hash"] for f in files if f["hash"] != self.state.current_file_hash]
+        if not hashes:
+            return True
+        saved = self.session.repo.load_file_settings_many(hashes)
+        unopened = sum(1 for h in hashes if h not in saved)
+        if not unopened:
+            return True
+        return self._confirm_bulk_export(
+            f"Frames without a saved edit: {unopened} of {count_of(len(files), 'frame')}. "
+            "They export with the current settings and may not match their thumbnails. Export anyway?"
+        )
+
     def _confirm_bulk_export(self, text: str) -> bool:
         reply = QMessageBox.question(
             None,
@@ -7182,6 +7202,8 @@ class AppController(QObject):
                 f"Export {count_of(n_frames, 'frame')} through {count_of(n_presets, 'preset')} ({count_of(n_files, 'file')})?"
             ):
                 return
+        if not self._confirm_unopened_frames(files):
+            return
 
         if self.state.config.export.export_sidecars_enabled:
             self._write_edit_sidecars(files)
@@ -7742,6 +7764,10 @@ class AppController(QObject):
         self.load_failed.emit()
         self._dispatch_pending_render()
         AppController._continue_background_work(self)
+
+    def _on_export_task_warning(self, message: str) -> None:
+        """Advisory about files that were written; stays out of the failure count."""
+        self.set_status(message, 6000, kind="warning")
 
     def _on_export_task_error(self, message: str) -> None:
         self._export_failures += 1
