@@ -192,7 +192,7 @@ At neutral $D = R \cdot n$, so $10^{-Rn}$ inverts the normalization exactly in f
 
 `RenderIntent.LINEAR` bypasses the darkroom pipeline: the native linear decode, lossless geometry (EXIF orientation, user rotation and flip) and a 16-bit TIFF or lossless JPEG XL (Effort 1 to 9, default 7). No normalization, exposure or color management runs. Only the TIFF is untagged: `_write_jxl()` pins `transfer=LINEAR` but `imagecodecs.jpegxl_encode()` cannot pass custom primaries, so JXL carries sRGB primaries; `JxlLoader` reads no color metadata, so NegPy re-imports it correctly.
 
-*   **Pakon RAW**: expansion 4× for F135 (`PAKON_EXPANSION`), 1× for F335 (detected by file size); recorded in ImageDescription.
+*   **Pakon RAW**: expansion 4× for F135 (`PAKON_EXPANSION`), 1× for F335 (detected by file size); recorded in ImageDescription. A headerless file of 2000 lines and 1000 to 6000 columns (a trimmed frame) opens as planar RGB at its own width.
 *   **LinearRaw DNG** (VueScan RGB+IR, SilverFast HDRi): read through tifffile, IR to an `_ir` file, expansion off. Only a `NewSubfileType` 0 page counts, so Adobe DNG Converter files are camera RAW. A 3-channel file libraw cannot unpack (DNG 1.7 JPEG-XL, [rawpy#207](https://github.com/letmaik/rawpy/issues/207)) falls back to tifffile, replaying `LinearizationTable`, black/white levels and the default crop (`_peek_linear_dng_rgb`), with only `AsShotNeutral` under Linear RAW.
 *   **Camera RAW**: rawpy with `user_wb=[1,1,1,1]`, `output_color=raw`, `gamma=(1,1)`, `no_auto_bright=True`, demosaic from `resolve_demosaic`. As-shot WB goes into XMP as `RAW-WB: R G B`, the filename into `crs:RawFileName`.
 *   **Coolscan NEF** (`nef_loader`): the largest RGB SubIFD (tag 0x014A); CFA SubIFDs are rejected.
