@@ -537,6 +537,38 @@ class TestDesktopSessionSync(unittest.TestCase):
         self.assertEqual(seeded.geometry.distortion_k1, -0.05)
         self.assertEqual(kept.geometry.distortion_k1, 0.012)
 
+    def _flatfield_after_load(self, config, only_global, carried_rows=(), sticky=None):
+        settings = {"flatfield_active_profile": "ff-35", "sticky_config": sticky or {}, "sticky_rows": list(carried_rows)}
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: settings.get(key, default)
+        with patch("negpy.desktop.session.FlatFieldProfiles.get", return_value=SimpleNamespace(id="ff-35", k1=0.0)):
+            ff = self.session._apply_sticky_settings(config, only_global=only_global).flatfield
+        return ff.profile_id, ff.apply
+
+    @staticmethod
+    def _with_flatfield(profile_id: str, apply: bool) -> WorkspaceConfig:
+        base = WorkspaceConfig()
+        return replace(base, flatfield=replace(base.flatfield, profile_id=profile_id, apply=apply))
+
+    def test_a_saved_frame_keeps_its_own_flat_field_profile(self):
+        self.assertEqual(self._flatfield_after_load(self._with_flatfield("ff-120", True), only_global=True), ("ff-120", True))
+
+    def test_a_saved_frame_without_a_profile_takes_the_last_chosen_one(self):
+        self.assertEqual(self._flatfield_after_load(self._with_flatfield("", False), only_global=True), ("ff-35", False))
+
+    def test_a_new_file_takes_the_last_chosen_flat_field_profile(self):
+        self.assertEqual(self._flatfield_after_load(WorkspaceConfig(), only_global=False), ("ff-35", True))
+
+    def test_a_carried_flat_field_row_wins_on_a_new_file(self):
+        carried = self._flatfield_after_load(
+            WorkspaceConfig(), only_global=False, carried_rows=["flatfield.apply"], sticky={"apply": True, "profile_id": "ff-120"}
+        )
+        self.assertEqual(carried, ("ff-120", True))
+
+    def test_no_chosen_flat_field_profile_leaves_a_new_file_uncorrected(self):
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: default
+        ff = self.session._apply_sticky_settings(WorkspaceConfig(), only_global=False).flatfield
+        self.assertEqual((ff.profile_id, ff.apply), ("", False))
+
     def test_paper_black_carries_to_new_files(self):
         """Sticky must carry an explicit value over the file's base."""
         sticky = {"sticky_config": {"paper_black": False}}

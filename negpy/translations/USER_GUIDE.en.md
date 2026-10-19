@@ -649,7 +649,7 @@ The sliders you use most, in one place; empty until you fill it.
 Saves and recalls edit settings by name.
 
 *   **Apply** (or double-click a preset): applies the selected preset to the current image.
-*   **Save…**: pick which of the current settings to store as a new preset.
+*   **Save…**: pick which of the current settings to store as a new preset. A preset can hold the Roll tab's Crop and Optics settings, but never a frame's crop rectangle, rotation or flips. Flat Field stores its profile with it, so a 35mm and a medium-format preset can each name their own.
 *   **Pen** and **Trash**: edit or delete the selected preset.
 
 ---
@@ -859,7 +859,7 @@ Corrects uneven light (vignetting, falloff) from a copy-stand or scanner light, 
 *   **Apply Flat Field**: applies the selected profile to this roll.
 *   **Check Flat Field**: shows how well the selected profile corrects its own reference. A good profile shows an even gray; a band or patch shows where it is off (full white or black is 10% or more). It turns and flips with the open frame, without fine rotation, keystone or crop. An older profile without check data shows the light it corrects instead; save it again to check it. Saving warns when the reference is clipped or does not correct itself evenly.
 
-A newly chosen profile becomes the rig's default for the next roll.
+Each frame keeps its own profile, so lights and film formats can each have one. A newly chosen profile is the one the next new frame takes.
 
 ---
 

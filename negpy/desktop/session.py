@@ -1169,7 +1169,7 @@ class DesktopSessionManager(QObject):
           gets bare WorkspaceConfig() defaults for every catalog field.
 
         The carries below are hard-coded because they are not plain config-value copies:
-        the rig-global flat-field profile, the Kelvin roll-locks, the export fields with no
+        the last chosen flat-field profile, the Kelvin roll-locks, the export fields with no
         catalog row, and the scan-setup preferences. They apply regardless of
         `sticky_settings_enabled`, which only gates the catalog-row overlay above.
         """
@@ -1182,13 +1182,13 @@ class DesktopSessionManager(QObject):
             if remainder:
                 config = replace(config, export=replace(config.export, **remainder))
 
-        # The flat-field profile is rig-global, so the active one always overrides the
-        # per-file id. New files default to enabled when a profile is active, and saved
-        # files keep their toggle.
+        # A frame keeps its own flat-field profile: lights and film formats each need one. The
+        # last chosen profile fills only a frame that names none.
         active_ff = self.repo.get_global_setting("flatfield_active_profile")
         ff_prof = FlatFieldProfiles.get(active_ff) if active_ff else None
         ff_id = ff_prof.id if ff_prof else ""
-        config = replace(config, flatfield=replace(config.flatfield, profile_id=ff_id))
+        if not config.flatfield.profile_id:
+            config = replace(config, flatfield=replace(config.flatfield, profile_id=ff_id))
         # Distortion left the profile for the per-image geometry; adopt a legacy rig value
         # once, on frames that carry none of their own.
         if config.geometry.distortion_k1 == 0.0 and ff_prof is not None and ff_prof.k1 != 0.0:
@@ -1225,7 +1225,9 @@ class DesktopSessionManager(QObject):
         if only_global:
             return config
 
-        config = replace(config, flatfield=replace(config.flatfield, apply=bool(ff_id)))
+        # On with the last chosen profile, unless the user carries the Flat Field row itself.
+        if not (sticky_cfg is not None and any(r.section == "flatfield" for r in rows)):
+            config = replace(config, flatfield=replace(config.flatfield, profile_id=ff_id, apply=bool(ff_id)))
 
         return self._with_scan_setup(config)
 

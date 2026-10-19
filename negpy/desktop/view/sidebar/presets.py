@@ -18,7 +18,11 @@ from negpy.desktop.view.widgets.granular_settings_dialog import GranularSettings
 from negpy.domain.models import WorkspaceConfig
 from negpy.services.assets.presets import Presets, is_valid_preset_name
 
-_PRESET_EXCLUDED_SECTIONS = frozenset({"Crop", "Geometry", "Optics"})
+_PRESET_EXCLUDED_SECTIONS = frozenset({"Geometry"})
+# The Crop and Optics cards hold the roll's format and the scanning rig; the crop rectangle is one frame's.
+_PRESET_ROW_IDS = frozenset(r.id for title, rows in CATALOG if title not in _PRESET_EXCLUDED_SECTIONS for r in rows) - {
+    "geometry.crop_rect"
+}
 
 # "Replace edits" resets only the look sections. Per-frame geometry, frame metadata and
 # export prefs stay, and dust, heal and masks are not catalog rows at all.
@@ -88,6 +92,7 @@ class PresetsSidebar(BaseSidebar):
             exclude_sections=_PRESET_EXCLUDED_SECTIONS,
             repo=self.controller.session.repo,
         )
+        dlg.limit_to_rows(_PRESET_ROW_IDS)
         dlg.setWindowTitle(tr("Apply Preset"))
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -112,6 +117,7 @@ class PresetsSidebar(BaseSidebar):
             exclude_sections=_PRESET_EXCLUDED_SECTIONS,
             repo=self.controller.session.repo,
         )
+        dlg.limit_to_rows(_PRESET_ROW_IDS)
         if dlg.exec() == QDialog.DialogCode.Accepted and self._name_is_usable(dlg.name()):
             Presets.save_preset(dlg.name().strip(), selected_flat_dict(self.state.config, dlg.selected()))
             self._refresh_presets(force=True)
@@ -124,6 +130,7 @@ class PresetsSidebar(BaseSidebar):
         dlg = GranularSettingsDialog(
             self, cfg, name, ask_name=True, exclude_sections=_PRESET_EXCLUDED_SECTIONS, repo=self.controller.session.repo
         )
+        dlg.limit_to_rows(_PRESET_ROW_IDS)
         dlg.setWindowTitle(tr("Edit Preset"))
         dlg.set_name(name)
         if dlg.exec() != QDialog.DialogCode.Accepted:

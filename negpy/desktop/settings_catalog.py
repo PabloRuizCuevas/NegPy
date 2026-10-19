@@ -20,6 +20,7 @@ from negpy.features.geometry.models import with_auto_crop_field
 from negpy.features.metadata.capture import place_summary
 from negpy.features.metadata.models import GEAR_FIELDS, PROCESS_FIELDS, PUSH_PULL_LABELS, SCANNING_FIELDS
 from negpy.features.process.models import invalidate_local_bounds, with_film_fields
+from negpy.services.assets.flatfield import FlatFieldProfiles
 from negpy.services.assets.presets import preset_fields
 
 
@@ -99,6 +100,14 @@ def _fmt_gear(values: tuple) -> str:
     return " · ".join(p for p in parts if p) or "—"
 
 
+def _fmt_flatfield(values: tuple) -> str:
+    apply, profile_id = values
+    if not apply:
+        return _fmt_scalar(False)
+    profile = FlatFieldProfiles.get(profile_id) if profile_id else None
+    return profile.name if profile else _fmt_scalar(True)
+
+
 # fmt: off
 CATALOG: list[tuple[str, tuple[SettingRow, ...]]] = [
     (mark("Film Mode"), (
@@ -151,6 +160,7 @@ CATALOG: list[tuple[str, tuple[SettingRow, ...]]] = [
     (mark("Optics"), (
         _row(mark("Distortion Correction"), "geometry", "distortion_k1", "lens_distortion_from_metadata", sticky=True),
         _row(mark("Embedded CA"), "geometry", "lens_ca_from_metadata", sticky=True),
+        _row(mark("Flat Field"), "flatfield", "apply", "profile_id", fmt=_fmt_flatfield),
     )),
     (mark("Tone"), (
         _row(mark("Print Density"), "exposure", "density"),

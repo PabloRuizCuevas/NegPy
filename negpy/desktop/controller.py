@@ -6049,9 +6049,8 @@ class AppController(QObject):
 
     def set_active_flatfield_profile(self, profile_id: str) -> None:
         """
-        Selects the rig-global flat-field reference profile (or clears it when
-        ``profile_id`` is empty), so a roll that names none of its own picks it up, and
-        edits the Flat Field card on the current frame like any other roll card.
+        Sets the Flat Field card's profile on the current frame like any other roll card (an
+        empty ``profile_id`` clears it), and makes it the profile a frame that names none takes.
         """
         from negpy.services.assets.flatfield import FlatFieldProfiles
 
