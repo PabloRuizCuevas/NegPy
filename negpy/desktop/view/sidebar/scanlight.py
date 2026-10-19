@@ -846,7 +846,7 @@ class ScanlightSidebar(QWidget):
 
     def _refresh_preset_hint(self) -> None:
         """One-line note under the preset row for the current selection — white-light presets
-        do a single exposure. Empty/hidden for RGB film-stock presets or no selection."""
+        do a single exposure. Empty/hidden for narrowband film-stock presets or no selection."""
         name = self.preset_combo.currentData()
         builtin = _BUILTIN_PRESETS.get(name)
         if self._manual_mode:
@@ -1805,9 +1805,12 @@ class ScanlightSidebar(QWidget):
                 if result.sensor_matrix is not None:
                     SensorProfiles.save(name, list(result.sensor_matrix))
                     sensor_profile = name
-                    status = tr("Saved preset “{name}” and its sensor profile", name=name)
+                    status = tr("Saved preset “{name}” and its sensor crosstalk profile", name=name)
                 else:
-                    status = tr("Saved preset “{name}”, with no sensor profile: the probe exposures were too dim to measure one", name=name)
+                    status = tr(
+                        "Saved preset “{name}”, with no sensor crosstalk profile: the probe exposures were too dim to measure one",
+                        name=name,
+                    )
             self._save_current_as_preset(name, sensor_profile)
             self._lv_target = self.lv_image
             self.calib_window.hide()

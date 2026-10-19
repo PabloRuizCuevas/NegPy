@@ -144,7 +144,7 @@ def _metered_target():
         "Use Average Luma",
         "Use Average Color",
         "Crosstalk",
-        "Single-Shot Narrowband Calibration",
+        "Sensor Crosstalk Profile",
         "Crop",
     ],
 )

@@ -463,7 +463,7 @@ What the film is and how you scanned it. These choices decide which cards and co
 *   **Color / B&W / Slide**: color negative (C-41), black-and-white negative, or slide (E-6 and similar).
 *   **Positive** (Slide only): for a file that is already a positive, such as a scanned print or another app's export. NegPy then skips inversion and metering.
 *   **Camera / Film Scanner**: what you scanned with. NegPy reads it from each file (a camera RAW is a camera) until you pick one. Your pick holds for every frame and sets the Scan tab's scanner.
-*   **White Light / Narrowband RGB** (not for B&W): the light behind the negative. White light is a lightbox or LED panel. Narrowband is a light with pure red, green and blue, such as a Scanlight.
+*   **White Light / Narrowband Light** (not for B&W): the light behind the negative. White light is a lightbox or LED panel. Narrowband is a light with pure red, green and blue, such as a Scanlight.
 
 The scanning choices are one setting for the whole app. They set how a RAW file is decoded and which digital print stock is used:
 
@@ -504,9 +504,9 @@ Right-click a half for **Adjust Split for This Frame…** and **Reset Split to R
 
 Corrects color errors that come from your light, camera and film.
 
-**Single-Shot Narrowband Calibration** (camera with narrowband light, Linear RAW): removes the color that leaks between the sensor's channels. Run **Roll Analysis** again after a change.
+**Sensor Crosstalk Profile** (a Single Exposure under narrowband light, Linear RAW): removes the color that leaks between the sensor's channels. Run **Roll Analysis** again after a change.
 
-*   **Profile**: the sensor profile. Your own `.toml` profiles go in `<Documents>/NegPy/sensor/`.
+*   **Profile**: the sensor crosstalk profile. Your own `.toml` profiles go in `<Documents>/NegPy/sensor/`.
 *   **Method**: **Two-Scale** (default) removes the leak and keeps very strong colors from speckling. **Linear** is exact, but strong colors can speckle. **Density** has no speckle, but strong colors are a little duller.
 *   **Calibrate**: makes a profile from three shots of the bare light (red, green and blue), from files or a tethered camera (see CAMERA_SCANNING.md).
 
@@ -516,7 +516,7 @@ Corrects color errors that come from your light, camera and film.
 *   **Strength**: how much of the matrix to apply.
 *   The swatch button opens **Measure from Chart** (color negatives): it measures a matrix from a ColorChecker 24 or SpyderCheckr 24 shot on the film. Drag the four dots onto the corner patches.
 
-**Hue Trim** (camera with narrowband light): turns all colors around the color wheel, for a light that makes yellows orange or greens olive. Keep 0 for white light. It also works on slides, where the sensor profile does not.
+**Hue Trim** (camera with narrowband light): turns all colors around the color wheel, for a light that makes yellows orange or greens olive. Keep 0 for white light. It also works on slides, where the sensor crosstalk profile does not.
 
 <!-- panel:process -->
 ### 10.4 Metering: negative → positive
@@ -788,8 +788,8 @@ Shown while a Scanlight is connected. A preset holds the light levels and the ca
     *   **Calibrate on the Film Base…**: place the rectangle on clear film and run it. NegPy finds the light levels and the shutter.
     *   **Set by Hand**: set the sliders yourself, then save them as a preset.
 *   **Red**, **Green**, **Blue**, **White**: the light levels (0 to 255). **Light On** turns the light on to frame the film, or off.
-*   **Capture mode**: **Triplet** takes one exposure per color and joins them; **Single Capture** takes one exposure with all three colors on.
-*   **Create Sensor Profile** (Single Capture): also saves a sensor profile for this preset (see Calibration, §10.3).
+*   **Capture mode**: **Trichrome** takes one exposure per color and joins them; **Single Exposure** takes one exposure with all three colors on.
+*   **Create Sensor Crosstalk Profile** (Single Exposure): also saves a sensor crosstalk profile for this preset (see Calibration, §10.3).
 *   **ISO**, **Shutter**, **Aperture**: the preset's exposure. A change holds until you pick the preset again. The gauge button meters.
 *   **IR Shutter** and **Infrared** (lights with infrared LEDs): adds an infrared exposure to each scan for dust removal, saved as an `_IR` file. It needs a camera that sees infrared (full-spectrum or converted) and manual focus. Color film only.
 *   **Channel Delay**: a pause between the red, green and blue exposures, for cameras that need it.
