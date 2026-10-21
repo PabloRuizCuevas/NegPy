@@ -25,6 +25,7 @@ from negpy.domain.models import (
 from negpy.features.altprocess.models import AltProcess
 from negpy.features.process.capture_color import wb_only_cam_xyz
 from negpy.features.process.models import DemosaicMode, ProcessMode, invalidate_local_bounds
+from negpy.features.process.path import RenderPath, render_path
 from negpy.features.process.logic import (
     demosaic_token,
     effective_highlight_reconstruction,
@@ -68,9 +69,7 @@ from negpy.features.retouch.logic import (
     route_wide_defects,
     strokes_to_score,
 )
-from negpy.features.retouch import openice
 from negpy.features.retouch.clone import apply_clone_strokes, clone_token
-from negpy.features.retouch.models import IR_METHOD_OPENICE
 from negpy.features.rgbscan.logic import merge_rgb_triplet, rgbscan_token
 from negpy.features.rgbscan.models import RgbScanConfig, is_rgb_triplet
 from negpy.features.stitch.logic import stitch_composite
@@ -78,10 +77,12 @@ from negpy.features.hdr.logic import merge_bracket
 from negpy.features.hdr.models import hdr_active, hdr_token
 from negpy.features.stitch.models import stitch_has_triplets, stitch_token
 from negpy.domain.interfaces import PipelineContext
+from negpy.services.rendering.base_read import NOT_READ, base_log_for, cached_base_log
 from negpy.services.rendering.engine import DarkroomEngine
 from negpy.services.rendering.gpu_engine import GPUEngine
 from negpy.infrastructure.capture.raw_demosaic import _user_sat
 from negpy.infrastructure.gpu.device import GPUDevice
+from negpy.kernel.system import timing
 from negpy.kernel.image.logic import (
     apply_exif_orientation,
     float_to_uint8,
@@ -326,6 +327,44 @@ def preview_takes_unmix(params: WorkspaceConfig) -> bool:
     return not is_rgb_triplet(params.rgbscan) and not stitch_has_triplets(params.stitch)
 
 
+def precorrect_key(
+    source_hash: str, shape: tuple, settings: WorkspaceConfig, skip_flatfield: bool, gain_slices: tuple, source_orientation: int
+) -> tuple:
+    """Identity of a preview source after flat-field and sensor unmix. Shape and the decode
+    tokens are in it: HQ, Linear RAW and a demosaic change re-decode under an unchanged source_hash."""
+    return (
+        source_hash,
+        shape,
+        linear_raw_token(settings.process),
+        demosaic_token(settings.process.demosaic_preview),
+        settings.process.positive_source,
+        skip_flatfield,
+        gain_slices,
+        source_orientation,
+        metadata_lens_corrections(settings),
+        flatfield_token(settings.flatfield),
+        sensor_token(settings.process),
+        rgbscan_token(settings.rgbscan),
+        stitch_token(settings.stitch),
+        hdr_token(settings.hdr),
+    )
+
+
+def precorrect_source(img: ImageBuffer, settings: WorkspaceConfig, gain_slices: tuple = (), source_orientation: int = 1) -> ImageBuffer:
+    """Flat-field, then the sensor unmix: the source pre-corrections, before geometry and crop."""
+    img = flatfield_source(img, settings, gain_slices, orientation=source_orientation)
+    if preview_takes_unmix(settings):
+        img = apply_sensor_correction(img, effective_sensor_matrix(settings.process), settings.process.sensor_unmix)
+    return img
+
+
+def read_source_base(img: ImageBuffer, settings: WorkspaceConfig, source_hash: str, source_orientation: int = 1) -> Optional[tuple]:
+    """The clear-base read `run_pipeline` would take for a whole-frame preview of `img`, for the prefetch."""
+    key = precorrect_key(source_hash, img.shape, settings, False, (), source_orientation)
+    found = cached_base_log(key)
+    return found if found is not NOT_READ else base_log_for(key, precorrect_source(img, settings, (), source_orientation))
+
+
 def _unmix_source(f32_buffer: np.ndarray, params: WorkspaceConfig) -> np.ndarray:
     """The unmix `_load_source_f32(unmix=False)` left out, on the whole source or on one half,
     as the preview unmixes a half alone. Triplets are never unmixed; a stitch holding one
@@ -422,10 +461,6 @@ class ImageProcessor:
         self._clone_img: Optional[np.ndarray] = None
         self._clone_strokes: tuple = ()
         self._clone_out: Optional[np.ndarray] = None
-        # The OpenICE method's whole result, on its own slot. The two IR methods share no
-        # state, so whichever loses can be deleted without unpicking the other.
-        self._ice_key: Optional[tuple] = None
-        self._ice_value: Optional[tuple] = None
 
         # Prefetched export source for the batch worker. The gate serializes the
         # prepare compute: the decode/bake caches above are single-slot.
@@ -497,8 +532,6 @@ class ImageProcessor:
         ret = settings.retouch
         if self._is_flat(settings) or ir_buffer is None or not ret.ir_dust_remove:
             return img, None, False, None
-        if ret.ir_method == IR_METHOD_OPENICE:
-            return self._ir_bake_openice(img, ir_buffer, ret, source_key)
         # The ratio and gain do not depend on the threshold or the attenuation toggle, so their
         # cache is keyed without the IR token and survives a slider drag.
         ratio_det, gain_det, degenerate, _ = self._ir_ratio_gain(ir_buffer, img, source_key.replace(ir_bake_token(ret, True), ""))
@@ -516,27 +549,6 @@ class ImageProcessor:
             self._ir_recon_key = key
             self._ir_recon_value = (out, routed)
         return out, (ratio_det < 0.97), False, routed
-
-    def _ir_bake_openice(
-        self, img: np.ndarray, ir_buffer: np.ndarray, ret: Any, source_key: str
-    ) -> Tuple[np.ndarray, Optional[np.ndarray], bool, Optional[np.ndarray]]:
-        """The OpenICE method (``features/retouch/openice.py``). Its weight ramp is measured
-        off the buffer's own IR noise, so calibration is per resolution and the whole result
-        caches under one key, unlike the NegPy method's split gain/recon."""
-        key = (source_key, round(float(ret.ir_threshold), 6), img.shape, ir_buffer.shape)
-        if key == self._ice_key and self._ice_value is not None:
-            return self._ice_value
-        self._slow_step("removing IR dust")
-        h, w = img.shape[:2]
-        long_edge = max(h, w)
-        dims = None
-        if long_edge > APP_CONFIG.preview_render_size:
-            s = APP_CONFIG.preview_render_size / long_edge
-            dims = (max(1, round(w * s)), max(1, round(h * s)))
-        val = openice.run(img, ir_buffer, float(ret.ir_threshold), dims)
-        self._ice_key = key
-        self._ice_value = val
-        return val
 
     def _hair_inpaint(self, img: np.ndarray, hair_masks: List[np.ndarray], cache_key: str, label: str = _DUST_STEP) -> np.ndarray:
         """Structure-following inpaint of detected hairs, baked into the source before
@@ -762,33 +774,23 @@ class ImageProcessor:
         # per-part flat-fielded, because correcting the composite canvas as one frame would
         # stretch the gain map across the seam. Shape is in the key: HQ re-decodes the same
         # file larger under an unchanged source_hash.
-        precorrect_key = (
-            source_hash,
-            img.shape,
-            skip_flatfield,
-            gain_slices,
-            source_orientation,
-            metadata_lens_corrections(settings),
-            flatfield_token(settings.flatfield),
-            sensor_token(settings.process),
-            rgbscan_token(settings.rgbscan),
-            stitch_token(settings.stitch),
-            hdr_token(settings.hdr),
-        )
-        if self._precorrect_key == precorrect_key and self._precorrect_value is not None:
+        pre_key = precorrect_key(source_hash, img.shape, settings, skip_flatfield, gain_slices, source_orientation)
+        if self._precorrect_key == pre_key and self._precorrect_value is not None:
             img = self._precorrect_value
         else:
             source = img
+            # skip_flatfield buffers come from _load_source_f32, which already applied both.
             if not skip_flatfield:
-                img = flatfield_source(img, settings, gain_slices, orientation=source_orientation)
-            # Sensor unmix is a source pre-correction like flat-field. skip_flatfield buffers
-            # come from _load_source_f32, which already applied it.
-            if not skip_flatfield and preview_takes_unmix(settings):
-                img = apply_sensor_correction(img, effective_sensor_matrix(settings.process), settings.process.sensor_unmix)
+                img = precorrect_source(img, settings, gain_slices, source_orientation)
             # Both no-op'd: caching would pin a second reference to the same buffer.
             if img is not source:
-                self._precorrect_key = precorrect_key
+                self._precorrect_key = pre_key
                 self._precorrect_value = img
+        timing.lap("flat-field/unmix")
+        source_base = NOT_READ
+        if film_base is None and render_path(settings.process) is RenderPath.PRINT:
+            source_base = base_log_for(pre_key, img) if readback_metrics and cache_stages else cached_base_log(pre_key)
+        timing.lap("base read")
         h_orig, w_cols = img.shape[:2]
         # Fold the buffer resolution into source_hash: toggling HQ re-decodes the same file
         # at full resolution with unchanged settings, so without this the engine cache
@@ -820,7 +822,9 @@ class ImageProcessor:
         # Gated: the bake caches are single-slot and the export prefetch bakes on a helper thread.
         want_ir = settings.retouch.ir_dust_remove and ir_buffer is not None and not self._is_flat(settings)
         with self._prepare_gate:
+            timing.lap("wait for prefetch")
             img, ir_corrected_mask, ir_degenerate, ir_routed = self._ir_bake(img, ir_buffer, settings, auto_hash)
+            timing.lap("IR repair")
 
             orig_ret = settings.retouch
             detected_dust, hair_masks = self._detect_luma(settings, img, auto_hash, detect_buffer)
@@ -828,8 +832,11 @@ class ImageProcessor:
                 # What IR already repaired is not repaired again from the visible.
                 detected_dust, hair_masks = _without_ir(detected_dust, hair_masks, ir_corrected_mask)
             dust_label = _dust_step_label(orig_ret)
+            timing.lap("dust detect")
             img = self._luma_bake(img, detected_dust, auto_hash + hair_bake_token(orig_ret), dust_label)
+            timing.lap("dust repair")
             img, manual_routed = self._manual_bake(img, settings, repair_hash)
+            timing.lap("heal")
             extra = [m for m in (ir_routed, manual_routed) if m is not None]
             if extra:
                 hair_masks = hair_masks + extra  # never mutate the cached list
@@ -838,7 +845,9 @@ class ImageProcessor:
             hair_token = hair_bake_token(orig_ret) if hair_masks else ""
             if hair_masks:
                 img = self._hair_inpaint(img, hair_masks, repair_hash + hair_token, dust_label)
+            timing.lap("hair repair")
             img = self._clone_bake(img, settings)
+            timing.lap("clone")
 
         source_hash = base_hash + hair_token + f"|res{w_cols}x{h_orig}" + _camera_token(cam_xyz, camera_wb)
 
@@ -846,6 +855,7 @@ class ImageProcessor:
 
         settings, resolved_crop = _resolve_armed_autocrop(img, settings)
         settings, resolved_meter = _resolve_meter_rect(img, settings, self._meter_memo, source_hash)
+        timing.lap("auto crop/meter area")
 
         context = PipelineContext(
             scale_factor=scale_factor,
@@ -862,6 +872,8 @@ class ImageProcessor:
             context.metrics.update(metrics)
         if film_base is not None:
             context.metrics["film_base"] = tuple(film_base)
+        if source_base is not NOT_READ:
+            context.metrics["source_base_log"] = source_base
         # The crop this render detected, for the controller to freeze into the edit. The key
         # rides along so a freeze that lands after the user moved on is discarded.
         if resolved_crop is not None:
@@ -894,35 +906,38 @@ class ImageProcessor:
 
         if prefer_gpu and self.engine_gpu:
             try:
-                if needs_tiling:
-                    processed, gpu_metrics = self.engine_gpu.process(
-                        img,
-                        settings,
-                        scale_factor=scale_factor,
-                        readback_metrics=readback_metrics,
-                        source_hash=source_hash,
-                        analysis_source_hash=source_hash,
-                        cam_xyz=cam_xyz,
-                        camera_wb=camera_wb,
-                        film_base=film_base,
-                        memory_bounded=True,
-                        render_size_ref=render_size_ref,
-                    )
-                else:
-                    self.engine_gpu.evict_stale_textures(destroy=False)
-                    processed, gpu_metrics = self.engine_gpu.process_to_texture(
-                        img,
-                        settings,
-                        scale_factor=scale_factor,
-                        render_size_ref=render_size_ref,
-                        readback_metrics=readback_metrics,
-                        source_hash=source_hash,
-                        analysis_source_hash=source_hash,
-                        cam_xyz=cam_xyz,
-                        camera_wb=camera_wb,
-                        film_base=film_base,
-                        full_frame=crop_preview_full,
-                    )
+                with timing.step("GPU"):
+                    if needs_tiling:
+                        processed, gpu_metrics = self.engine_gpu.process(
+                            img,
+                            settings,
+                            scale_factor=scale_factor,
+                            readback_metrics=readback_metrics,
+                            source_hash=source_hash,
+                            analysis_source_hash=source_hash,
+                            cam_xyz=cam_xyz,
+                            camera_wb=camera_wb,
+                            film_base=film_base,
+                            source_base_log=source_base,
+                            memory_bounded=True,
+                            render_size_ref=render_size_ref,
+                        )
+                    else:
+                        self.engine_gpu.evict_stale_textures(destroy=False)
+                        processed, gpu_metrics = self.engine_gpu.process_to_texture(
+                            img,
+                            settings,
+                            scale_factor=scale_factor,
+                            render_size_ref=render_size_ref,
+                            readback_metrics=readback_metrics,
+                            source_hash=source_hash,
+                            analysis_source_hash=source_hash,
+                            cam_xyz=cam_xyz,
+                            camera_wb=camera_wb,
+                            film_base=film_base,
+                            source_base_log=source_base,
+                            full_frame=crop_preview_full,
+                        )
                 context.metrics.update(gpu_metrics)
                 return processed, context.metrics
             except Exception:
@@ -930,7 +945,8 @@ class ImageProcessor:
                 self.engine_gpu.cleanup(collect=False)
                 context.metrics["gpu_fallback"] = True
 
-        processed = self.engine_cpu.process(img, settings, source_hash, context)
+        with timing.step("CPU"):
+            processed = self.engine_cpu.process(img, settings, source_hash, context)
         return processed, context.metrics
 
     def buffer_to_pil(self, buffer: Any, settings: WorkspaceConfig, bit_depth: int = 8) -> Image.Image:
@@ -977,6 +993,7 @@ class ImageProcessor:
         positive_source: bool = False,
         highlight_mode: int = 0,
         bake_camera_wb: bool = False,
+        load_ir: bool = True,
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Decode one RAW to sensor-native (output_color=raw), linear uint16 RGB.
 
@@ -1004,7 +1021,7 @@ class ImageProcessor:
 
         Returns (rgb_uint16, loader_metadata).
         """
-        ctx_mgr, metadata = loader_factory.get_loader(file_path, linear_raw=linear_raw, positive_source=positive_source)
+        ctx_mgr, metadata = loader_factory.get_loader(file_path, linear_raw=linear_raw, positive_source=positive_source, load_ir=load_ir)
         with ctx_mgr as raw:
             algo = get_best_demosaic_algorithm(raw, demosaic)
             # Read before postprocess: camera_whitebalance is sensor metadata, unaffected by it,
@@ -1080,6 +1097,7 @@ class ImageProcessor:
             demosaic_token(params.process.demosaic_export),
             fast_decode,
             unmix,
+            params.retouch.ir_dust_remove,
         )
         if cache_key == self._source_cache_key and self._source_cache_value is not None:
             return self._source_cache_value
@@ -1187,6 +1205,7 @@ class ImageProcessor:
                 positive_source=params.process.positive_source,
                 highlight_mode=highlight_mode,
                 bake_camera_wb=bake_wb,
+                load_ir=params.retouch.ir_dust_remove,
             )
         # No embedded profile (scanner-raw linear, sensor-native RAW) means the buffer is
         # already in the working space, so "Same as Source" exports without converting.
@@ -1321,8 +1340,10 @@ class ImageProcessor:
         key = (file_path, source_hash, params, half, split_x, crop_rect, gutter_thickness, split_axis)
         slot = self._prepare_slot
         if slot is not None and slot[0] == key:
+            timing.lap("source (prefetched)")
             return slot[1]
         with self._prepare_gate:
+            timing.lap("wait for prefetch")
             slot = self._prepare_slot
             if slot is not None and slot[0] == key:
                 return slot[1]
@@ -1342,11 +1363,13 @@ class ImageProcessor:
         split_axis: str = "x",
     ) -> Tuple[np.ndarray, str, str]:
         f32_buffer, ir_full, source_cs = self._load_source_f32(file_path, params, unmix=not half)
+        timing.lap("decode/flat-field/unmix")
         f32_buffer, ir_full = self._slice_half_source(
             f32_buffer, ir_full, half, split_x, crop_rect=crop_rect, gutter_thickness=gutter_thickness, split_axis=split_axis
         )
         if half:
             f32_buffer = _unmix_source(f32_buffer, params)
+        timing.lap("half slice")
         # Same shape as run_pipeline's base_hash, so an export of a frame previewed at full
         # resolution with the same demosaic finds every bake already in the caches.
         detect_key = (
@@ -1367,17 +1390,23 @@ class ImageProcessor:
             + clone_token(params.retouch)
         )
         f32_buffer, _, _, ir_routed = self._ir_bake(f32_buffer, ir_full, params, detect_key)
+        timing.lap("IR repair")
         orig_ret = params.retouch
         detected, hair_masks = self._detect_luma(params, f32_buffer, detect_key)
+        timing.lap("dust detect")
         dust_label = _dust_step_label(orig_ret)
         f32_buffer = self._luma_bake(f32_buffer, detected, detect_key + hair_bake_token(orig_ret), dust_label)
+        timing.lap("dust repair")
         f32_buffer, manual_routed = self._manual_bake(f32_buffer, params, detect_key)
+        timing.lap("heal")
         extra = [m for m in (ir_routed, manual_routed) if m is not None]
         if extra:
             hair_masks = hair_masks + extra
         if hair_masks:
             f32_buffer = self._hair_inpaint(f32_buffer, hair_masks, detect_key + hair_bake_token(orig_ret), dust_label)
+        timing.lap("hair repair")
         f32_buffer = self._clone_bake(f32_buffer, params)
+        timing.lap("clone")
         export_token = detect_key + (hair_bake_token(orig_ret) if hair_masks else "")
         return f32_buffer, source_cs, export_token
 
@@ -1403,10 +1432,12 @@ class ImageProcessor:
                 slot = self._prepare_slot
                 if slot is not None and slot[0] == key:
                     return
-                value = self._prepare_export_source_locked(
-                    file_path, params, source_hash, half, split_x, crop_rect, gutter_thickness, split_axis
-                )
+                with timing.collect() as times:
+                    value = self._prepare_export_source_locked(
+                        file_path, params, source_hash, half, split_x, crop_rect, gutter_thickness, split_axis
+                    )
                 self._prepare_slot = (key, value)
+            logger.info("export-timing prefetch %s | %s", timing.summary(times), os.path.basename(file_path))
         except Exception:
             logger.exception(f"Export source prefetch failed for {file_path}")
 
@@ -1457,6 +1488,7 @@ class ImageProcessor:
         # sidecar); a previewed edit arrives with its rect frozen, so the export matches it.
         params, _ = _resolve_armed_autocrop(f32_buffer, params)
         params, _ = _resolve_meter_rect(f32_buffer, params)
+        timing.lap("auto crop/meter area")
 
         if self._is_flat(params):
             prefer_gpu = False
@@ -1465,17 +1497,18 @@ class ImageProcessor:
             # Mirrors run_pipeline's base_hash, so a multi-preset batch of one frame
             # reuses the source upload and the meter cache.
             export_hash = export_token + f"|res{w_raw}x{h_raw}|half{half}:{split_x}:{crop_rect}:{gutter_thickness}"
-            buffer, _gpu_metrics = self.engine_gpu.process(
-                f32_buffer,
-                params,
-                scale_factor=export_scale,
-                bounds_override=bounds_override,
-                readback_metrics=False,
-                cam_xyz=cam_xyz,
-                camera_wb=camera_wb,
-                source_hash=export_hash,
-                analysis_source_hash=export_hash,
-            )
+            with timing.step("GPU"):
+                buffer, _gpu_metrics = self.engine_gpu.process(
+                    f32_buffer,
+                    params,
+                    scale_factor=export_scale,
+                    bounds_override=bounds_override,
+                    readback_metrics=False,
+                    cam_xyz=cam_xyz,
+                    camera_wb=camera_wb,
+                    source_hash=export_hash,
+                    analysis_source_hash=export_hash,
+                )
             content_rect = _gpu_metrics.get("content_rect")
         else:
             buffer, _ = self.run_pipeline(
@@ -1500,8 +1533,11 @@ class ImageProcessor:
             )
             # Release full-res arrays pinned in the CPU stage cache.
             self.engine_cpu.cache.clear()
+            timing.lap("print layout")
 
-        return self._sharpen_resized_content(buffer, content_rect, params), color_space
+        buffer = self._sharpen_resized_content(buffer, content_rect, params)
+        timing.lap("output sharpen")
+        return buffer, color_space
 
     def _sharpen_resized_content(
         self, buffer: np.ndarray, content_rect: Optional[Tuple[int, int, int, int]], params: WorkspaceConfig
@@ -1545,6 +1581,41 @@ class ImageProcessor:
         normalization sees the same pixels the user edited it on. ``params`` is unused
         then — the halves own the edit.
         """
+        with timing.collect() as times:
+            result = self._render_export(
+                file_path,
+                params,
+                export_settings,
+                source_hash,
+                metrics,
+                prefer_gpu,
+                bounds_override,
+                half,
+                split_x,
+                crop_rect,
+                gutter_thickness,
+                split_axis,
+                diptych,
+            )
+        logger.info("export-timing render %s | %s", timing.summary(times), os.path.basename(file_path))
+        return result
+
+    def _render_export(
+        self,
+        file_path: str,
+        params: WorkspaceConfig,
+        export_settings,
+        source_hash: str,
+        metrics: Optional[Dict[str, Any]],
+        prefer_gpu: bool,
+        bounds_override: Optional[Any],
+        half: int,
+        split_x: float,
+        crop_rect: Optional[tuple[float, float, float, float]],
+        gutter_thickness: float,
+        split_axis: str,
+        diptych: Optional[Tuple[WorkspaceConfig, WorkspaceConfig]],
+    ) -> Tuple[Optional[np.ndarray], str]:
         try:
             if diptych is not None:
                 from negpy.services.assets.half_frame import gap_px, half_hash, join_halves

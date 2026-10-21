@@ -1,4 +1,6 @@
 from negpy.kernel.system.i18n import tr
+from negpy.kernel.system import timing
+from negpy.kernel.system.logging import get_logger
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from typing import List, Optional, Any, Union
@@ -31,16 +33,12 @@ from negpy.features.hdr.models import hdr_frame_paths
 from negpy.services.export.print import PrintService
 from negpy.services.export.templating import render_export_filename
 from negpy.services.export.contact_sheet import ContactSheetService
-from negpy.services.export.contact_sheet_layout import (
-    MM_PER_INCH,
-    ContactSheetSettings,
-    SheetFormat,
-    best_dpi,
-    film_geometry,
-    plan_sheets,
-)
+from negpy.services.export.contact_sheet_layout import MM_PER_INCH, ContactSheetSettings, best_dpi, plan_rows, plan_sheets
+from negpy.services.film_edge.geometry import SheetFormat, film_geometry
 from negpy.services.export.contact_sheet_roll import SheetFrame, SheetLook, tile_params, turns_for
 from negpy.services.export.encoders import encode_jpeg
+
+logger = get_logger(__name__)
 
 
 def _protects_metadata(task: "ExportTask") -> bool:
@@ -113,6 +111,8 @@ class ContactSheetJob:
     numbers: tuple[int, ...] = ()
     # Frames that start a new strip.
     breaks: tuple[int, ...] = ()
+    # Each frame's upright print aspect, which lays out the rows when Film Edges is off.
+    aspects: tuple[float, ...] = ()
 
 
 def contact_sheet_paths(out_dir: str, count: int) -> list[str]:
@@ -427,6 +427,12 @@ class ExportWorker(QObject):
     def _finish_task(self, task: ExportTask, buffer: np.ndarray, color_space: str, embed_plan: Optional[tuple]) -> Optional[str]:
         """Encode + metadata + atomic write for one rendered frame, on the finisher
         thread. Returns an error message, or None on success."""
+        with timing.collect() as times:
+            error = self._encode_and_write(task, buffer, color_space, embed_plan)
+        logger.info("export-timing encode %s | %s", timing.summary(times), task.file_info["name"])
+        return error
+
+    def _encode_and_write(self, task: ExportTask, buffer: np.ndarray, color_space: str, embed_plan: Optional[tuple]) -> Optional[str]:
         resolution = _export_resolution(task)
         bits, status = self._processor.encode_export(
             buffer,
@@ -436,6 +442,7 @@ class ExportWorker(QObject):
             embed_plan=embed_plan,
             resolution=resolution,
         )
+        timing.lap("encode")
         if not bits:
             return status
 
@@ -449,6 +456,7 @@ class ExportWorker(QObject):
                 )
             else:
                 bits = embed_metadata(bits, task.metadata_config, task.source_exif, resolution=resolution)
+        timing.lap("metadata")
 
         out_dir, filename, ext = resolve_export_naming(task)
         os.makedirs(out_dir, exist_ok=True)
@@ -473,6 +481,7 @@ class ExportWorker(QObject):
             # The write above stamps the filesystem dates with the export time; the EXIF
             # dates are already right. Tools that sort by file date read the former.
             sync_export_filesystem_dates(path, task.file_info["path"])
+            timing.lap("write")
         except Exception as write_err:
             if tmp_path is not None and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
@@ -515,15 +524,24 @@ class ExportWorker(QObject):
         try:
             geometry = film_geometry(job.format, job.frame_size)
             settings = job.settings
-            plan = plan_sheets(settings.paper_width, settings.paper_height, geometry, len(job.frames), settings.roll_label, job.breaks)
+            if settings.film_edges:
+                plan = plan_sheets(settings.paper_width, settings.paper_height, geometry, len(job.frames), settings.roll_label, job.breaks)
+            else:
+                aspects = job.aspects or tuple(geometry.window_aspect for _ in job.frames)
+                plan = plan_rows(settings.paper_width, settings.paper_height, geometry, aspects, settings.roll_label, job.breaks)
             if not plan.pages:
                 self.error.emit(tr("Contact sheet: {reason}", reason=plan.reason))
                 self.finished.emit()
                 return
             dpi = best_dpi(settings.paper_width, settings.paper_height, settings.dpi)
             px_per_mm = dpi / MM_PER_INCH
-            window_long_px = int(math.ceil(max(geometry.frame_along, geometry.frame_across) * px_per_mm))
-            target_long_px = int(window_long_px * 1.5)
+            if settings.film_edges:
+                window_long_px = int(math.ceil(max(geometry.frame_along, geometry.frame_across) * px_per_mm))
+                target_long_px = int(window_long_px * 1.5)
+            else:
+                # A row frame takes the tile's own aspect, so the tile need only cover its longest side.
+                longest = max(max(f.width, f.height) for page in plan.pages for row in page.rows for f in row.frames)
+                target_long_px = int(math.ceil(longest * px_per_mm))
             paths = contact_sheet_paths(job.out_dir, len(plan.pages))
             os.makedirs(job.out_dir, exist_ok=True)
             icc = _srgb_icc_bytes()
@@ -533,7 +551,7 @@ class ExportWorker(QObject):
             for page_index, page in enumerate(plan.pages):
                 tiles: list[Optional[np.ndarray]] = [None] * len(job.frames)
                 turns = [0] * len(job.frames)
-                indices = [i for strip in page.strips for i in range(strip.first, strip.first + strip.count)]
+                indices = page.slots()
                 for n, index in enumerate(indices):
                     if self._cancel.is_set():
                         self.cancelled.emit()

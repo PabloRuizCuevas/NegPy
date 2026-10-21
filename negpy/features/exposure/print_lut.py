@@ -107,7 +107,11 @@ def tetra_lookup(table: np.ndarray, e_max: np.ndarray, e0: float, e1: float, e2:
     return out[0], out[1], out[2]
 
 
+# Plain Python calls this twin: an inline kernel has no cache, so it would compile on every launch.
+_tetra_lookup_cached = njit(cache=True)(tetra_lookup.py_func)
+
+
 def lut_black_luminance(lut: PrintLut, d_min_rgb: Tuple[float, float, float], black_rgb: Tuple[float, float, float]) -> float:
     """Luminance of the print's black (density black_rgb), which black point compensation maps to 0."""
-    rgb = tetra_lookup(lut.table, lut.e_max, *(b - d for b, d in zip(black_rgb, d_min_rgb)))
+    rgb = _tetra_lookup_cached(lut.table, lut.e_max, *(b - d for b, d in zip(black_rgb, d_min_rgb)))
     return float(sum(w * 10.0**-d * v for w, d, v in zip((LUM_R, LUM_G, LUM_B), d_min_rgb, rgb)))

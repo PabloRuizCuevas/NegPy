@@ -179,7 +179,7 @@ def test_save_offers_the_rig_and_format_rows_but_not_one_frames_placement(qapp, 
     )
     sb = PresetsSidebar(controller)
     labels = _preset_picker_labels(qapp, monkeypatch, sb._on_save_clicked)
-    assert {"Crop Ratio", "Crop Mode", "Crop Offset", "Rebate Trim", "Auto Crop", "Square Before Crop"} <= labels
+    assert {"Crop Ratio", "Crop Mode", "Crop Offset", "Rebate Trim", "Auto Crop", "Square First"} <= labels
     assert {"Distortion Correction", "Embedded CA", "Flat Field"} <= labels
     assert not labels & {"Crop", "Rotation", "Fine Rotation", "Tilt", "Swing", "Flip Horizontal", "Flip Vertical"}
 
@@ -207,3 +207,13 @@ def test_a_rig_preset_round_trips_and_applies_to_the_roll(qapp, tmp_path, monkey
         assert target.geometry.autocrop_ratio == "6:7"
         assert target.flatfield.apply is True
         assert target.flatfield.profile_id == "ff-120"
+
+
+def test_the_preset_section_filters_name_real_catalog_sections():
+    from negpy.desktop.settings_catalog import CATALOG
+    from negpy.desktop.view.sidebar import presets
+
+    titles = {title for title, _rows in CATALOG}
+    assert presets._PRESET_EXCLUDED_SECTIONS <= titles
+    assert presets._REPLACE_KEPT_SECTIONS <= titles
+    assert "geometry.crop_rect" in {r.id for _title, rows in CATALOG for r in rows}
