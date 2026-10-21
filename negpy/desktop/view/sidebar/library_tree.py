@@ -433,7 +433,7 @@ class LibraryTree(QWidget):
             self.rolls_changed.emit()
 
     def reload(self) -> None:
-        # Selecting a roll expands its folder, so the saved state ignores the rebuild and is reapplied after it.
+        # Selecting a roll expands its folder to show it; the saved state ignores that expand.
         self._rebuilding = True
         try:
             self._rebuild()
@@ -467,6 +467,7 @@ class LibraryTree(QWidget):
             parent.addChild(self._make_item(roll_id, entry, parts[-1]))
         for item in folders.values():
             item.setData(0, _DETAIL_ROLE, count_of(self._leaf_count(item), "roll"))
+            item.setExpanded(item.data(0, _PREFIX_ROLE) not in self._collapsed)
         if not self._collapsed <= folders.keys():
             self._collapsed &= folders.keys()
             self._save_collapsed()
@@ -475,8 +476,6 @@ class LibraryTree(QWidget):
         self._apply_filter()
         if selected:
             self._select_roll(selected)
-        for key, item in folders.items():
-            item.setExpanded(key not in self._collapsed)
 
     def _remember_folder(self, item: QTreeWidgetItem, collapsed: bool) -> None:
         key = item.data(0, _PREFIX_ROLE)
