@@ -36,7 +36,7 @@ printer profiles for Crystal Archive DPII and HD paper (FUJIFILM, made with Argy
 NegPy.
 
 The print LUT negpy/features/exposure/print_luts/frontier.npz is derived from the
-color reproduction tables (ColorData.dat, Dpen2Srgb.3dp) of the Fujifilm Frontier
+color reproduction tables (ColorData.dat) of the Fujifilm Frontier
 350/370 A1 system software v7.6. The tables are not distributed with NegPy.
 
 scripts/crosstalk_dyes/kodak_vision3_dyes.csv is the mean of spektrafilm's

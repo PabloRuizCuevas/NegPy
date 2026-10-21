@@ -18,9 +18,9 @@ Sources:
                1D curves; the LUT reads A2B1 through them. The paper white and black of the profile
                give the stock's d_min, base tint and d_max.
     d35        a Frontier 350/370's file output, from the A1 system software's tables (--frontier-dir):
-               the negative's Pass1 matrix, ColorData.dat's tone curves and 32³ LUT, then Dpen2Srgb.3dp.
-               Its input is the machine's 10-bit print density, so the gray axis is solved as for a
-               printer profile.
+               the negative's Pass1 matrix, then ColorData.dat's tone curves and 32³ LUT. The machine writes
+               that F-Color untagged and its monitor shows it as is, so it is read as sRGB. Its input is the
+               machine's 10-bit print density, so the gray axis is solved as for a printer profile.
 
 The CIE tables and the xenon spectrum are downloaded once into --cie-dir.
 
@@ -369,21 +369,19 @@ def trilinear(grid, f):
 
 
 def d35_lab(frontier_dir):
-    """Device RGB in 0..1 (the Frontier's 10-bit print density) -> Lab of its file output, relative to its white, D50.
-    The hardware stores the tone curves G, R, B and clips them at 991; FDILIB puts Dpen2Srgb's nodes at 0, 7, 15 ... 255."""
+    """Device RGB in 0..1 (the Frontier's 10-bit print density) -> Lab of its file output read as sRGB, relative to its
+    white, D50. The hardware stores the tone curves G, R, B and clips them at 991. Dpen2Srgb.3dp is not applied: no
+    output path of the machine uses it."""
     imgp = pathlib.Path(frontier_dir) / "PARAM" / "imgp"
     data = (imgp / "ColorData.dat").read_bytes()
     tone = np.frombuffer(data, "<i2", 3 * 1024).reshape(3, 1024)[[1, 0, 2]].astype(np.float64)
     cube = np.frombuffer(data, np.uint8, 3 * 32**3, 0x3C000).reshape(3, 32, 32, 32).transpose(3, 2, 1, 0).astype(np.float64)
-    raw = (imgp / "Dpen2Srgb.3dp").read_bytes()
-    dpen = np.frombuffer(raw, "<f4", 3 * 33**3, struct.unpack_from("<I", raw, 0x10)[0] + 8).reshape(33, 33, 33, 3).astype(np.float64)
     matrix = D35_MATRIX / D35_MATRIX.sum(1, keepdims=True)
 
     def xyz(device):
         p = np.clip(np.clip(device, 0, 1) * 1023 @ matrix.T, 0, 1023)
         u = np.minimum(np.stack([np.interp(p[..., c], np.arange(1024), tone[c]) for c in range(3)], -1), 991)
-        f = np.clip(trilinear(cube, u / 32), 0, 255)
-        s = np.clip(trilinear(dpen, np.where(f < 7, f / 7, 1 + (f - 7) / 8)), 0, 255) / 255
+        s = np.clip(trilinear(cube, u / 32), 0, 255) / 255
         return np.where(s <= 0.04045, s / 12.92, ((s + 0.055) / 1.055) ** 2.4) @ SRGB_TO_XYZ.T
 
     w = xyz(np.ones(3))
