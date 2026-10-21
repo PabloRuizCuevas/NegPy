@@ -20,9 +20,7 @@ from negpy.services.assets.presets import Presets, is_valid_preset_name
 
 _PRESET_EXCLUDED_SECTIONS = frozenset({"Straighten"})
 # The Crop and Optics cards hold the roll's format and the scanning rig; the crop rectangle is one frame's.
-_PRESET_ROW_IDS = frozenset(r.id for title, rows in CATALOG if title not in _PRESET_EXCLUDED_SECTIONS for r in rows) - {
-    "geometry.crop_rect"
-}
+_PRESET_ROW_IDS = frozenset(r.id for _title, rows in CATALOG for r in rows) - {"geometry.crop_rect"}
 
 # "Replace edits" resets only the look sections. Per-frame geometry, frame metadata and
 # export prefs stay, and dust, heal and masks are not catalog rows at all.

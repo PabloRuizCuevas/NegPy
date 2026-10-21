@@ -579,6 +579,31 @@ class TestDesktopSessionSync(unittest.TestCase):
         )
         self.assertEqual(carried, ("ff-120", True))
 
+    def _load_with_profiles(self, config, only_global, profiles, carried_rows=(), sticky=None):
+        """Load *config* while this machine holds *profiles* (id -> k1) and ff-35 is the last chosen."""
+        settings = {"flatfield_active_profile": "ff-35", "sticky_config": sticky or {}, "sticky_rows": list(carried_rows)}
+        self.mock_repo.get_global_setting.side_effect = lambda key, default=None: settings.get(key, default)
+        get = lambda pid: SimpleNamespace(id=pid, k1=profiles[pid]) if pid in profiles else None  # noqa: E731
+        with patch("negpy.desktop.session.FlatFieldProfiles.get", side_effect=get):
+            return self.session._apply_sticky_settings(config, only_global=only_global)
+
+    def test_a_profile_this_machine_lacks_takes_the_last_chosen_one(self):
+        loaded = self._load_with_profiles(self._with_flatfield("from-elsewhere", True), True, {"ff-35": 0.0})
+        self.assertEqual((loaded.flatfield.profile_id, loaded.flatfield.apply), ("ff-35", True))
+
+    def test_a_carried_flat_field_row_with_a_missing_profile_takes_the_last_chosen_one(self):
+        loaded = self._load_with_profiles(
+            WorkspaceConfig(), False, {"ff-35": 0.0}, carried_rows=["flatfield.apply"], sticky={"apply": True, "profile_id": "deleted"}
+        )
+        self.assertEqual((loaded.flatfield.profile_id, loaded.flatfield.apply), ("ff-35", True))
+
+    def test_legacy_k1_comes_from_the_frames_own_profile(self):
+        profiles = {"ff-35": -0.05, "ff-120": 0.0}
+        own_120 = self._load_with_profiles(self._with_flatfield("ff-120", True), True, profiles)
+        own_35 = self._load_with_profiles(self._with_flatfield("ff-35", True), True, profiles)
+        self.assertEqual(own_120.geometry.distortion_k1, 0.0)
+        self.assertEqual(own_35.geometry.distortion_k1, -0.05)
+
     def test_no_chosen_flat_field_profile_leaves_a_new_file_uncorrected(self):
         self.mock_repo.get_global_setting.side_effect = lambda key, default=None: default
         ff = self.session._apply_sticky_settings(WorkspaceConfig(), only_global=False).flatfield

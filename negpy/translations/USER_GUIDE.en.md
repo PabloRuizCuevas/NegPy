@@ -574,7 +574,7 @@ Removes uneven light, such as darker corners, with a shot of the bare light sour
 *   **Apply Flat Field**: applies the selected profile to this roll.
 *   **Check Flat Field**: shows how well the profile evens out its own shot. Even gray is good; a band or patch shows where it is off.
 
-Each frame keeps its own profile, so each light and film format can have its own. A new frame takes the last profile you chose.
+A frame keeps its own profile unless it follows its roll, so each light and film format can have one. A new frame, or a frame whose profile is missing, takes the last profile you chose.
 
 ---
 

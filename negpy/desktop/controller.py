@@ -6075,7 +6075,8 @@ class AppController(QObject):
 
     def delete_flatfield_profile(self, profile_id: str) -> None:
         """
-        Removes a flat-field profile; clears the active correction if it was selected.
+        Removes a flat-field profile. The current frame, if it used it, takes the last chosen
+        profile, as a frame loaded with a missing profile does.
         """
         from negpy.features.flatfield.logic import invalidate_gain
         from negpy.services.assets.flatfield import FlatFieldProfiles
@@ -6084,8 +6085,11 @@ class AppController(QObject):
             return
         FlatFieldProfiles.delete(profile_id)
         invalidate_gain(profile_id)
-        if self.session.repo.get_global_setting("flatfield_active_profile") == profile_id:
+        active = self.session.repo.get_global_setting("flatfield_active_profile") or ""
+        if active == profile_id:
             self.set_active_flatfield_profile("")
+        elif self.state.config.flatfield.profile_id == profile_id:
+            self.set_roll_default("flatfield", profile_id=active if active and FlatFieldProfiles.get(active) else "")
 
     def load_gear_library(self):
         from negpy.services.assets.gear import GearProfiles
@@ -7661,12 +7665,15 @@ class AppController(QObject):
     def toggle_flatfield_peek(self, force: Optional[bool] = None) -> None:
         """Show how well the selected Flat Field profile corrects its own reference. Excludes the
         other peeks, the compare view and the test strip. With no profile it says so and stays off."""
+        from negpy.services.assets.flatfield import FlatFieldProfiles
+
         if self.state.preview_raw is None:
             return
         target = (not self.state.flatfield_peek) if force is None else force
         if target == self.state.flatfield_peek:
             return
-        if target and not self.state.config.flatfield.profile_id:
+        profile_id = self.state.config.flatfield.profile_id
+        if target and not (profile_id and FlatFieldProfiles.get(profile_id)):
             self.set_status(tr("Choose a Flat Field profile to check"), 3000)
             self.flatfield_peek_changed.emit(False)
             return

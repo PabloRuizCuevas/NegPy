@@ -1190,17 +1190,14 @@ class DesktopSessionManager(QObject):
             if remainder:
                 config = replace(config, export=replace(config.export, **remainder))
 
-        # A frame keeps its own flat-field profile: lights and film formats each need one. The
-        # last chosen profile fills only a frame that names none.
         active_ff = self.repo.get_global_setting("flatfield_active_profile")
-        ff_prof = FlatFieldProfiles.get(active_ff) if active_ff else None
-        ff_id = ff_prof.id if ff_prof else ""
-        if not config.flatfield.profile_id:
-            config = replace(config, flatfield=replace(config.flatfield, profile_id=ff_id))
-        # Distortion left the profile for the per-image geometry; adopt a legacy rig value
-        # once, on frames that carry none of their own.
-        if config.geometry.distortion_k1 == 0.0 and ff_prof is not None and ff_prof.k1 != 0.0:
-            config = replace(config, geometry=replace(config.geometry, distortion_k1=ff_prof.k1))
+        ff_id = active_ff if active_ff and FlatFieldProfiles.get(active_ff) is not None else ""
+        config = self._with_known_flatfield_profile(config, ff_id)
+        # Distortion left the profile for the per-image geometry; adopt a legacy value once,
+        # from the frame's own profile, on frames that carry none of their own.
+        own_ff = FlatFieldProfiles.get(config.flatfield.profile_id) if config.flatfield.profile_id else None
+        if config.geometry.distortion_k1 == 0.0 and own_ff is not None and own_ff.k1 != 0.0:
+            config = replace(config, geometry=replace(config.geometry, distortion_k1=own_ff.k1))
 
         if only_global:
             rows = load_sticky_rows(self.repo)
@@ -1234,10 +1231,20 @@ class DesktopSessionManager(QObject):
             return config
 
         # On with the last chosen profile, unless the user carries the Flat Field row itself.
-        if not (sticky_cfg is not None and any(r.section == "flatfield" for r in rows)):
+        if sticky_cfg is not None and any(r.section == "flatfield" for r in rows):
+            config = self._with_known_flatfield_profile(config, ff_id)
+        else:
             config = replace(config, flatfield=replace(config.flatfield, profile_id=ff_id, apply=bool(ff_id)))
 
         return self._with_scan_setup(config)
+
+    @staticmethod
+    def _with_known_flatfield_profile(config: WorkspaceConfig, fallback_id: str) -> WorkspaceConfig:
+        """A frame keeps its own flat-field profile, because lights and film formats each need one.
+        A profile this machine does not have counts as none and takes *fallback_id*, the last chosen."""
+        if config.flatfield.profile_id and FlatFieldProfiles.get(config.flatfield.profile_id) is not None:
+            return config
+        return replace(config, flatfield=replace(config.flatfield, profile_id=fallback_id))
 
     def _empty_session_config(self) -> WorkspaceConfig:
         """The config with no frame loaded: what the next fresh frame gets. Any persisted

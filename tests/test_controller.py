@@ -5498,6 +5498,39 @@ class TestFlatFieldPeek(unittest.TestCase):
         self.controller.toggle_flatfield_peek(force=True)
         self.assertFalse(self.controller.state.flatfield_peek)
 
+    def test_a_missing_profile_says_so_like_no_profile(self):
+        from dataclasses import replace
+
+        from negpy.features.flatfield.models import FlatFieldConfig
+        from negpy.services.assets.flatfield import FlatFieldProfiles
+
+        state = self.controller.state
+        state.config = replace(state.config, flatfield=FlatFieldConfig(apply=True, profile_id="deleted"))
+        self.controller.set_status = MagicMock()
+        with patch.object(FlatFieldProfiles, "get", return_value=None):
+            self.controller.toggle_flatfield_peek(force=True)
+        self.assertFalse(state.flatfield_peek)
+        self.assertIn("Choose a Flat Field profile", self.controller.set_status.call_args.args[0])
+
+    def test_deleting_the_frames_own_profile_gives_it_the_last_chosen_one(self):
+        from dataclasses import replace
+
+        from negpy.features.flatfield.models import FlatFieldConfig
+        from negpy.services.assets.flatfield import FlatFieldProfile, FlatFieldProfiles
+
+        state = self.controller.state
+        state.config = replace(state.config, flatfield=FlatFieldConfig(apply=True, profile_id="ff-120"))
+        self.mock_session_manager.repo.get_global_setting.side_effect = lambda key, default=None: (
+            "ff-35" if key == "flatfield_active_profile" else default
+        )
+        self.controller.set_roll_default = MagicMock()
+        with (
+            patch.object(FlatFieldProfiles, "delete"),
+            patch.object(FlatFieldProfiles, "get", return_value=FlatFieldProfile("ff-35", "35mm", 0.0, "")),
+        ):
+            self.controller.delete_flatfield_profile("ff-120")
+        self.controller.set_roll_default.assert_called_once_with("flatfield", profile_id="ff-35")
+
     def test_the_peeks_are_mutually_exclusive(self):
         self._select(self._stored())
         self.controller.state.negative_peek = True

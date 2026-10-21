@@ -126,7 +126,7 @@ class FlatFieldSidebar(BaseSidebar):
         self.block_signals(True)
         try:
             self._refresh_profiles()
-            # A deleted profile reads as none: the frame keeps the id, but nothing renders from it.
+            # A profile this machine does not have reads as none; nothing renders from it.
             idx = self.profile_combo.findData(conf.profile_id) if conf.profile_id else -1
             self.profile_combo.setCurrentIndex(max(idx, 0))
 
