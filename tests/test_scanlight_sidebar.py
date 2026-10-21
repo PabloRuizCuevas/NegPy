@@ -2634,3 +2634,25 @@ def test_a_missed_poll_keeps_the_white_presets_offered():
     w._on_poll_status(_poll(usb_ok=True, usb_model="Canon") | {"light_has_white": True})
     w._on_poll_status(_poll(usb_ok=True, usb_model="Canon", light_ok=False) | {"light_has_white": True})
     assert not any(_white_rows_hidden(w))
+
+
+def test_a_decimal_shutter_ladder_shows_fractions_and_keeps_the_camera_label(tmp_path, monkeypatch):
+    import json
+
+    import negpy.desktop.view.sidebar.scanlight as sl
+
+    options = [{"raw": i, "label": label} for i, label in enumerate(("0.0167s", "0.0200s", "0.0250s", "0.0333s", "0.4000s"))]
+    p = tmp_path / "settings.json"
+    p.write_text(json.dumps({"shutter": {"cur": 3, "writable": True, "options": options}}))
+    monkeypatch.setattr(sl, "default_settings_path", lambda: str(p))
+    w = _sidebar()
+    w._camera_verified = True
+    w._set_manual_mode(True)
+
+    stepper = w.shutter_stepper
+    assert [stepper.itemText(i) for i in range(stepper.count())] == ["1/60", "1/50", "1/40", "1/30", '0.4"']
+    assert w.lv_window.shutter_stepper.currentText() == "1/30"
+    stepper.setCurrentIndex(stepper.find_label("0.4000s"))
+    w._on_sidebar_exposure_changed("shutter", stepper)
+    assert w._settings.shutter_r == "0.4000s"  # the scan sends the camera's own label
+    assert w._shutter_text("0.0333s") == "1/30"

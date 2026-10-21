@@ -65,6 +65,7 @@ from negpy.services.capture.calibration import (
     REFERENCE_LEVELS,
     normalize_start_point,
     scan_ladder,
+    shutter_display,
     usable_ladder,
 )
 from negpy.services.assets.sensor import SensorProfiles
@@ -441,7 +442,7 @@ class ScanlightSidebar(QWidget):
         self.capture_mode_row.setLayout(field_row(tr("Capture mode"), self.capture_btn))
         _exp.addWidget(self.capture_mode_row)
         self.iso_stepper = SettingStepper()
-        self.shutter_stepper = SettingStepper()
+        self.shutter_stepper = SettingStepper(shutter=True)
         self.aperture_stepper = SettingStepper()
         for _tag_text, _which, _stepper in (
             ("ISO", "iso", self.iso_stepper),
@@ -460,7 +461,7 @@ class ScanlightSidebar(QWidget):
         self._ir_exposure_widget.setObjectName("collapsible_content_body")
         _ir = QVBoxLayout(self._ir_exposure_widget)
         _ir.setContentsMargins(0, 0, 0, 0)
-        self.ir_shutter_stepper = SettingStepper()
+        self.ir_shutter_stepper = SettingStepper(shutter=True)
         self.ir_shutter_stepper.setToolTip(
             tr("Shutter for the infrared exposure, set by hand and usually much slower than the visible exposure.")
         )
@@ -668,7 +669,7 @@ class ScanlightSidebar(QWidget):
     @staticmethod
     def _stepper_label(stepper) -> str:
         """The stepper's current label as a clean value ('' for the empty “—” placeholder)."""
-        text = stepper.currentText().strip()
+        text = stepper.current_label().strip()
         return "" if text == tr("—") else text
 
     def _apply_preset_exposure(self, iso: str, aperture: str) -> None:
@@ -713,7 +714,7 @@ class ScanlightSidebar(QWidget):
             (self.iso_stepper, preset.iso),
             (self.aperture_stepper, preset.aperture),
         ):
-            idx = stepper.findText(label) if label else -1
+            idx = stepper.find_label(label) if label else -1
             if idx >= 0:
                 stepper.setCurrentIndex(idx)
             elif label:
@@ -1248,7 +1249,13 @@ class ScanlightSidebar(QWidget):
             self._set_status(tr("Meter: this body publishes no writable shutter"))
             return
         if shutter not in candidates:  # Bulb, a bad label, or past the ladder's span
-            self._set_status(tr("Meter: set the shutter between {value} and {value1} first", value=candidates[0], value1=candidates[-1]))
+            self._set_status(
+                tr(
+                    "Meter: set the shutter between {value} and {value1} first",
+                    value=self._shutter_text(candidates[0]),
+                    value1=self._shutter_text(candidates[-1]),
+                )
+            )
             return
         from negpy.desktop.workers.capture_worker import ExposureProbeRequest
 
@@ -1308,9 +1315,9 @@ class ScanlightSidebar(QWidget):
         if label is None:
             self._apply_gating()
             limit = (
-                tr("{fastest}, the fastest the Scanlight meters cleanly", fastest=self._meter_fastest)
+                tr("{fastest}, the fastest the Scanlight meters cleanly", fastest=self._shutter_text(self._meter_fastest))
                 if self._rgb_mode
-                else self._meter_fastest
+                else self._shutter_text(self._meter_fastest)
             )
             self._set_status(
                 tr(
@@ -1325,7 +1332,12 @@ class ScanlightSidebar(QWidget):
         if raw is None:
             self._apply_gating()
             self._set_status(
-                tr("Meter: {where} at {level}; {label} is not a step this body offers", where=where, level=level, label=label),
+                tr(
+                    "Meter: {where} at {level}; {label} is not a step this body offers",
+                    where=where,
+                    level=level,
+                    label=self._shutter_text(label),
+                ),
                 pinned=pinned,
             )
             return
@@ -1337,7 +1349,11 @@ class ScanlightSidebar(QWidget):
         index = self.lv_window.shutter_stepper.findData(raw)
         if index >= 0:
             self.lv_window.shutter_stepper.setCurrentIndex(index)
-        note = tr("; the preset scans at {label} until you pick it again", label=label) if self._adopt_metered_shutter(label, raw) else ""
+        note = (
+            tr("; the preset scans at {label} until you pick it again", label=self._shutter_text(label))
+            if self._adopt_metered_shutter(label, raw)
+            else ""
+        )
         self._apply_gating()
         if reading.clipped:
             self._set_status(
@@ -1345,8 +1361,8 @@ class ScanlightSidebar(QWidget):
                     "Meter: {where} clipped on {clipped_fraction:.1%} of the picture at {shutter}; set {label} ({stops:+.1f} st), meter again{note}",
                     where=where,
                     clipped_fraction=reading.clipped_fraction,
-                    shutter=reading.shutter,
-                    label=label,
+                    shutter=self._shutter_text(reading.shutter),
+                    label=self._shutter_text(label),
                     stops=reading.stops,
                     note=note,
                 ),
@@ -1358,7 +1374,7 @@ class ScanlightSidebar(QWidget):
                     "Meter: {where} at {level} → {label} ({stops:+.1f} st){note}",
                     where=where,
                     level=level,
-                    label=label,
+                    label=self._shutter_text(label),
                     stops=reading.stops,
                     note=note,
                 ),
@@ -1588,7 +1604,7 @@ class ScanlightSidebar(QWidget):
         if raw is not None:
             # Buffer the latest value and write once the user pauses, so rapid stepping does not
             # queue a slow verified write per intermediate step.
-            self._cam_pending[which] = (int(raw), combo.currentText())
+            self._cam_pending[which] = (int(raw), combo.current_label())
             self._cam_setting_debounce.start()
 
     def _flush_camera_settings(self) -> None:
@@ -1686,7 +1702,7 @@ class ScanlightSidebar(QWidget):
 
     def _select_ir_shutter(self) -> bool:
         """Point the IR stepper at the saved IR shutter; False when none is saved or offered."""
-        idx = self.ir_shutter_stepper.findText(self._settings.shutter_ir) if self._settings.shutter_ir else -1
+        idx = self.ir_shutter_stepper.find_label(self._settings.shutter_ir) if self._settings.shutter_ir else -1
         if idx >= 0:
             self.ir_shutter_stepper.setCurrentIndex(idx)
         return idx >= 0
@@ -1849,6 +1865,10 @@ class ScanlightSidebar(QWidget):
             return 0
         return hi
 
+    def _shutter_text(self, label: str) -> str:
+        """A shutter label for a message, as the steppers show it."""
+        return shutter_display(label, self._shutter_labels())
+
     def _shutter_labels(self) -> tuple[str, ...]:
         """Every shutter label the body publishes, the slow end included."""
         info = self._settings_json().get("shutter") or {}
@@ -1914,7 +1934,7 @@ class ScanlightSidebar(QWidget):
             self._set_status(
                 tr(
                     "IR Shutter {shutter} is not a step this camera offers; the infrared frame shoots at the camera's shutter",
-                    shutter=shutter_ir,
+                    shutter=self._shutter_text(shutter_ir),
                 )
             )
             shutter_ir = ""
