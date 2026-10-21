@@ -192,7 +192,9 @@ class LibraryTree(QWidget):
         self.repo = controller.session.repo
         self._sort_order, self._sort_descending = self._saved_sort()
         self._gear = None
-        self._rebuilding = False
+        # True while the tree opens folders on its own, so the saved state ignores those expands.
+        self._auto_expanding = False
+        self._shown_open_roll = None
         saved = self.repo.get_global_setting(_COLLAPSED_KEY, [])
         self._collapsed = {key for key in saved if isinstance(key, str)} if isinstance(saved, list) else set()
         self._init_ui()
@@ -418,6 +420,8 @@ class LibraryTree(QWidget):
         self.index_action.setEnabled(enabled and semantic_model.clip_model_ready())
         # The open roll's mark follows the session, which never rebuilds the tree.
         self.tree.viewport().update()
+        if self.controller.state.active_roll_id != self._shown_open_roll:
+            self._show_open_roll()
 
     def refresh(self) -> None:
         """Refresh: rediscover rolls under the imported parents, then re-read every count."""
@@ -433,12 +437,29 @@ class LibraryTree(QWidget):
             self.rolls_changed.emit()
 
     def reload(self) -> None:
-        # Selecting a roll expands its folder to show it; the saved state ignores that expand.
-        self._rebuilding = True
+        # Selecting a roll expands its folder to show it.
+        self._auto_expanding = True
         try:
             self._rebuild()
         finally:
-            self._rebuilding = False
+            self._auto_expanding = False
+        self._show_open_roll()
+
+    def _show_open_roll(self) -> None:
+        """Open the folders above the open roll and scroll to its row."""
+        roll_id = self._shown_open_roll = self.controller.state.active_roll_id
+        item = next((item for item in self._roll_items() if item.data(0, _ROLL_ID_ROLE) == roll_id), None)
+        if item is None:
+            return
+        self._auto_expanding = True
+        try:
+            parent = item.parent()
+            while parent is not None:
+                parent.setExpanded(True)
+                parent = parent.parent()
+        finally:
+            self._auto_expanding = False
+        self.tree.scrollToItem(item)
 
     def _rebuild(self) -> None:
         selected = self._selected_roll_id()
@@ -479,7 +500,7 @@ class LibraryTree(QWidget):
 
     def _remember_folder(self, item: QTreeWidgetItem, collapsed: bool) -> None:
         key = item.data(0, _PREFIX_ROLE)
-        if self._rebuilding or not key or (key in self._collapsed) == collapsed:
+        if self._auto_expanding or not key or (key in self._collapsed) == collapsed:
             return
         if collapsed:
             self._collapsed.add(key)

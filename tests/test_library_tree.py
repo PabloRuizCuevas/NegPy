@@ -180,6 +180,26 @@ def test_a_reload_opens_the_folder_of_the_selected_roll_without_saving_it(widget
     assert not _make(tmp_path).tree.topLevelItem(0).isExpanded()
 
 
+def test_the_open_roll_shows_inside_collapsed_folders_without_saving_them(widget, tmp_path):
+    day = tmp_path / "2026" / "2026-10" / "2026-10-18"
+    (day / "Roll01").mkdir(parents=True)
+    (day / "Roll02").mkdir()
+    roll_id = recognize_folder(widget.repo, str(day / "Roll01"), name="2026/2026-10/2026-10-18/Roll01")
+    recognize_folder(widget.repo, str(day / "Roll02"), name="2026/2026-10/2026-10-18/Roll02")
+    widget.repo.save_global_setting("library_collapsed_folders", ["2026/2026-10"])
+    widget = _make(tmp_path)
+    widget.show()
+    month = widget.tree.topLevelItem(0).child(0)
+    assert not month.isExpanded()
+
+    widget.controller.state.active_roll_id = roll_id
+    widget.sync_ui()
+
+    assert month.isExpanded() and month.child(0).isExpanded()
+    assert widget.repo.get_global_setting("library_collapsed_folders") == ["2026/2026-10"]
+    assert not _make(tmp_path).tree.topLevelItem(0).child(0).isExpanded()
+
+
 def test_a_folder_shared_by_two_disk_trees_stays_collapsed_after_a_sort_change(widget, tmp_path):
     for parent in ("a", "b"):
         (tmp_path / parent / "scans" / f"roll_{parent}").mkdir(parents=True)
