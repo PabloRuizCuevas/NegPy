@@ -56,8 +56,10 @@ _DETAIL_ROLE = Qt.ItemDataRole.UserRole + 4
 # The film-mode dot ahead of that line; "" for none.
 _DOT_ROLE = Qt.ItemDataRole.UserRole + 5
 _FRAMES_ROLE = Qt.ItemDataRole.UserRole + 6
+# A folder row's roll-name prefix ("a/b"): the row's identity, since rolls from two disk trees can share it.
+_PREFIX_ROLE = Qt.ItemDataRole.UserRole + 7
 
-# The folder rows the user collapsed, by folder path, kept across sessions.
+# The roll-name prefixes of the folder rows the user collapsed, kept across sessions.
 _COLLAPSED_KEY = "library_collapsed_folders"
 
 _ROLL_ROW = 46
@@ -190,7 +192,8 @@ class LibraryTree(QWidget):
         self.repo = controller.session.repo
         self._sort_order, self._sort_descending = self._saved_sort()
         self._gear = None
-        self._collapsed = set(self.repo.get_global_setting(_COLLAPSED_KEY, []) or [])
+        saved = self.repo.get_global_setting(_COLLAPSED_KEY, [])
+        self._collapsed = {key for key in saved if isinstance(key, str)} if isinstance(saved, list) else set()
         self._init_ui()
         # Deferred: files_changed fires before the session saves its triplets.
         self._count_timer = QTimer(self)
@@ -449,12 +452,16 @@ class LibraryTree(QWidget):
                     for _ in range(len(parts) - depth):
                         folder_path = os.path.dirname(folder_path)
                     folders[key] = self._make_folder_item(parts[depth - 1], folder_path)
+                    folders[key].setData(0, _PREFIX_ROLE, key)
                     parent.addChild(folders[key])
                 parent = folders[key]
             parent.addChild(self._make_item(roll_id, entry, parts[-1]))
         for item in folders.values():
             item.setData(0, _DETAIL_ROLE, count_of(self._leaf_count(item), "roll"))
-            item.setExpanded(item.data(0, _FOLDER_ROLE) not in self._collapsed)
+            item.setExpanded(item.data(0, _PREFIX_ROLE) not in self._collapsed)
+        if not self._collapsed <= folders.keys():
+            self._collapsed &= folders.keys()
+            self._save_collapsed()
         # Without folder rows there is nothing to expand, so the rows start at the edge.
         self.tree.setRootIsDecorated(bool(folders))
         self._apply_filter()
@@ -462,13 +469,16 @@ class LibraryTree(QWidget):
             self._select_roll(selected)
 
     def _remember_folder(self, item: QTreeWidgetItem, collapsed: bool) -> None:
-        path = item.data(0, _FOLDER_ROLE)
-        if not path or (path in self._collapsed) == collapsed:
+        key = item.data(0, _PREFIX_ROLE)
+        if not key or (key in self._collapsed) == collapsed:
             return
         if collapsed:
-            self._collapsed.add(path)
+            self._collapsed.add(key)
         else:
-            self._collapsed.discard(path)
+            self._collapsed.discard(key)
+        self._save_collapsed()
+
+    def _save_collapsed(self) -> None:
         self.repo.save_global_setting(_COLLAPSED_KEY, sorted(self._collapsed))
 
     @staticmethod

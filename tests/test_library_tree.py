@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 from negpy.desktop.view.sidebar.library_tree import _DETAIL_ROLE, _FOLDER_ROLE, _MISSING_ROLE, LibraryTree
 from negpy.desktop.view.styles.theme import THEME
 from negpy.infrastructure.storage.repository import StorageRepository
-from negpy.services.assets.rolls import create_virtual_roll, recognize_folder, roll_for_id
+from negpy.services.assets.rolls import create_virtual_roll, delete_roll, recognize_folder, roll_for_id
 
 
 @pytest.fixture
@@ -162,6 +162,42 @@ def test_a_collapsed_folder_stays_collapsed_in_the_next_session(qapp, tmp_path, 
 
     folder.setExpanded(True)
     assert _make(tmp_path).tree.topLevelItem(0).isExpanded()
+
+
+def test_a_folder_shared_by_two_disk_trees_stays_collapsed_after_a_sort_change(widget, tmp_path):
+    for parent in ("a", "b"):
+        (tmp_path / parent / "scans" / f"roll_{parent}").mkdir(parents=True)
+    recognize_folder(widget.repo, str(tmp_path / "a" / "scans" / "roll_a"), name="scans/roll_a")
+    recognize_folder(widget.repo, str(tmp_path / "b" / "scans" / "roll_b"), name="scans/roll_b")
+    widget.reload()
+    widget.tree.topLevelItem(0).setExpanded(False)
+
+    widget.set_sort("name", descending=True)
+
+    assert not widget.tree.topLevelItem(0).isExpanded()
+
+
+def test_a_deleted_folder_is_forgotten(widget, tree_dirs):
+    roll_id = recognize_folder(widget.repo, str(tree_dirs / "roll_a"), name="scans/roll_a")
+    widget.reload()
+    widget.tree.topLevelItem(0).setExpanded(False)
+
+    delete_roll(widget.repo, roll_id)
+    widget.reload()
+
+    assert widget.repo.get_global_setting("library_collapsed_folders") == []
+
+
+@pytest.mark.parametrize("saved", ["scans", 5, None, ["scans", 5]])
+def test_a_bad_saved_value_still_builds_the_tree(qapp, tmp_path, tree_dirs, saved):
+    repo = StorageRepository(str(tmp_path / "edits.db"), str(tmp_path / "settings.db"))
+    repo.initialize()
+    repo.save_global_setting("library_collapsed_folders", saved)
+    recognize_folder(repo, str(tree_dirs / "roll_a"), name="scans/roll_a")
+
+    folder = _make(tmp_path).tree.topLevelItem(0)
+
+    assert folder.isExpanded() == (not isinstance(saved, list))
 
 
 def test_a_roll_row_says_what_the_roll_is(widget):
