@@ -192,6 +192,7 @@ class LibraryTree(QWidget):
         self.repo = controller.session.repo
         self._sort_order, self._sort_descending = self._saved_sort()
         self._gear = None
+        self._rebuilding = False
         saved = self.repo.get_global_setting(_COLLAPSED_KEY, [])
         self._collapsed = {key for key in saved if isinstance(key, str)} if isinstance(saved, list) else set()
         self._init_ui()
@@ -432,6 +433,14 @@ class LibraryTree(QWidget):
             self.rolls_changed.emit()
 
     def reload(self) -> None:
+        # Selecting a roll expands its folder, so the saved state ignores the rebuild and is reapplied after it.
+        self._rebuilding = True
+        try:
+            self._rebuild()
+        finally:
+            self._rebuilding = False
+
+    def _rebuild(self) -> None:
         selected = self._selected_roll_id()
         self.tree.clear()
         entries = self._sorted(rolls.all_rolls_sorted(self.repo))
@@ -458,7 +467,6 @@ class LibraryTree(QWidget):
             parent.addChild(self._make_item(roll_id, entry, parts[-1]))
         for item in folders.values():
             item.setData(0, _DETAIL_ROLE, count_of(self._leaf_count(item), "roll"))
-            item.setExpanded(item.data(0, _PREFIX_ROLE) not in self._collapsed)
         if not self._collapsed <= folders.keys():
             self._collapsed &= folders.keys()
             self._save_collapsed()
@@ -467,10 +475,12 @@ class LibraryTree(QWidget):
         self._apply_filter()
         if selected:
             self._select_roll(selected)
+        for key, item in folders.items():
+            item.setExpanded(key not in self._collapsed)
 
     def _remember_folder(self, item: QTreeWidgetItem, collapsed: bool) -> None:
         key = item.data(0, _PREFIX_ROLE)
-        if not key or (key in self._collapsed) == collapsed:
+        if self._rebuilding or not key or (key in self._collapsed) == collapsed:
             return
         if collapsed:
             self._collapsed.add(key)

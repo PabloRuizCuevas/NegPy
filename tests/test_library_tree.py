@@ -164,6 +164,22 @@ def test_a_collapsed_folder_stays_collapsed_in_the_next_session(qapp, tmp_path, 
     assert _make(tmp_path).tree.topLevelItem(0).isExpanded()
 
 
+def test_a_reload_keeps_a_collapsed_folder_closed_over_its_selected_roll(widget, tree_dirs):
+    recognize_folder(widget.repo, str(tree_dirs / "roll_a"), name="scans/roll_a")
+    widget.show()
+    widget.reload()
+    folder = widget.tree.topLevelItem(0)
+    widget.tree.setCurrentItem(folder.child(0))
+    folder.setExpanded(False)
+
+    widget.reload()
+
+    folder = widget.tree.topLevelItem(0)
+    assert not folder.isExpanded()
+    assert widget.tree.currentItem().text(0) == "roll_a"
+    assert widget.repo.get_global_setting("library_collapsed_folders") == ["scans"]
+
+
 def test_a_folder_shared_by_two_disk_trees_stays_collapsed_after_a_sort_change(widget, tmp_path):
     for parent in ("a", "b"):
         (tmp_path / parent / "scans" / f"roll_{parent}").mkdir(parents=True)
