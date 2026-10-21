@@ -291,7 +291,7 @@ How light or dark the print is, and how much contrast it has.
 
 The paper the picture prints on, and how it turns light into tones from black to white.
 
-*   **Print stock**: the paper. A real paper sets the contrast curve and the colors from its maker's data. **Digital (Adobe RGB)**, the default, is an ideal paper. **Digital (Pakon Minilab)** has the colors of a Pakon lab scanner.
+*   **Print stock**: the paper. A real paper sets the contrast curve and the colors from its maker's data. **Digital (Adobe RGB)**, the default, is an ideal paper. **Digital (Pakon Minilab)** has the colors of a Pakon lab scanner. **Digital (Frontier)** has the colors of a Fujifilm Frontier lab scan.
 *   **Paper Test Strip** (the striped button): prints the frame on every paper. Click a paper to see it large, step with the arrow keys, and press **Keep** to use it.
 *   **Dye Separation**: color strength in the print. 1 is unchanged. **Separation Damping** puts more of the change on dull colors and less on strong ones. **Chroma** on the Look tab changes all colors evenly instead.
 *   **Paper White**: shows the white of real paper, a little darker than pure white.

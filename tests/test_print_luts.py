@@ -9,6 +9,7 @@ from negpy.features.exposure.logic import apply_characteristic_curve, per_channe
 from negpy.features.exposure.papers import PAPER_PROFILES, PaperProfile
 from negpy.features.exposure.print_lut import DyeLut, load_print_lut, lut_black_luminance, save_print_lut, tetra_lookup
 from negpy.features.lab.logic import LUM_B, LUM_G, LUM_R
+from negpy.kernel.image.logic import rgb_to_lab_working
 
 sys.path.insert(0, str(pathlib.Path(__file__).parents[1] / "scripts"))
 
@@ -156,6 +157,27 @@ def test_spectral_luts_rebuild(key):
     table, e_max, _, _ = b.spectral_lut(*b.SPECTRAL[key][:2], CIE_DIR)
     np.testing.assert_allclose(table, load_print_lut(key).table, atol=1e-5)
     np.testing.assert_allclose(e_max, load_print_lut(key).e_max)
+
+
+def test_frontier_lut_rebuilds():
+    import build_print_luts as b
+
+    if not (b.FRONTIER_DIR / "PARAM" / "imgp" / "ColorData.dat").exists():
+        pytest.skip("Frontier 350/370 tables not present")
+    table, e_max, _, _ = b.frontier_d35_lut(b.FRONTIER_DIR, b.D35["frontier"])
+    np.testing.assert_allclose(table, load_print_lut("frontier").table, atol=1e-5)
+    np.testing.assert_allclose(e_max, load_print_lut("frontier").e_max)
+
+
+def test_frontier_lut_keeps_grays_neutral_and_turns_red_to_orange():
+    # The hue turn pins the channel order: the Frontier stores its tone curves G, R, B.
+    lut = load_print_lut("frontier")
+    grays = np.array([tetra_lookup(lut.table, lut.e_max, e, e, e) for e in np.linspace(0.0, 2.3, 12)])
+    assert np.hypot(*rgb_to_lab_working(grays)[:, 1:].T).max() < 0.5
+    e = np.array([0.2, 1.2, 1.0])
+    digital, frontier = rgb_to_lab_working(np.stack([10.0**-e, tetra_lookup(lut.table, lut.e_max, *e)]))
+    turn = np.degrees(np.arctan2(frontier[2], frontier[1]) - np.arctan2(digital[2], digital[1]))
+    assert 5.0 < turn < 35.0
 
 
 def test_build_spec_ships_print_luts():

@@ -93,6 +93,8 @@ PAPER_PROFILES: Dict[str, PaperProfile] = {
     DEFAULT_PROFILE_KEY: PaperProfile(label="Digital (Adobe RGB)", short="Digital", kind="default", medium="digital"),
     # Digital's curve with a Pakon minilab's colors: the LUT is RGBScan.icc applied to Digital's print.
     "pakon": PaperProfile(label="Digital (Pakon Minilab)", short="Pakon", kind="ra4", medium="digital", print_color=DyeLut("pakon")),
+    # Digital's curve with a Frontier 350/370's file colors, from its own tables; the gray axis stays neutral.
+    "frontier": PaperProfile(label="Digital (Frontier)", short="Frontier", kind="ra4", medium="digital", print_color=DyeLut("frontier")),
     # ── B&W (tonal only) ──────────────────────────────────────────────────────
     "ilford_mg_rc": PaperProfile(
         label="Ilford Multigrade RC",
