@@ -11,6 +11,7 @@ from negpy.features.exposure.papers import (
     effective_constants,
     resolve_print_color,
     resolve_saturation_matrix,
+    slope_gain,
 )
 from negpy.features.exposure.print_lut import lut_black_luminance, tetra_lookup
 from negpy.kernel.image.validation import ensure_image
@@ -917,12 +918,13 @@ def default_grade_range() -> float:
     return float(c["auto_grade_target"]) * float(c["auto_grade_nominal_ratio"]) * float(c["auto_grade_nominal_range"])
 
 
-def grade_to_slope(grade: float, density_range: Optional[float]) -> float:
+def grade_to_slope(grade: float, density_range: Optional[float], gain: float = 1.0) -> float:
     """
     Straight-line slope k from the grade given as an ISO R paper exposure range
     (R180 very soft ... R50 very hard; R110 ~ classic grade 2 paper). k is the
     literal H&D gamma: contrast = negative density range / paper exposure range,
-    like real graded paper — k = grade_contrast_scale * range / (R/100).
+    like real graded paper — k = grade_contrast_scale * range / (R/100) * gain,
+    with gain the paper's slope_gain.
     """
     from negpy.features.exposure.models import EXPOSURE_CONSTANTS
 
@@ -930,7 +932,7 @@ def grade_to_slope(grade: float, density_range: Optional[float]) -> float:
     rng_in = default_grade_range() if density_range is None else density_range
     er = min(max(grade, c["iso_r_min"]), c["iso_r_max"]) / 100.0
     rng = min(max(abs(float(rng_in)), 0.3), 3.5)
-    k = float(c["grade_contrast_scale"]) * rng / er
+    k = float(c["grade_contrast_scale"]) * rng / er * float(gain)
     return float(min(max(k, c["slope_min"]), c["slope_max"]))
 
 
@@ -954,7 +956,7 @@ def per_channel_dye_separation(
     )
 
 
-def slope_to_grade(slope: float, density_range: Optional[float]) -> float:
+def slope_to_grade(slope: float, density_range: Optional[float], gain: float = 1.0) -> float:
     """
     Inverse of grade_to_slope: the ISO R paper grade equivalent to an effective
     slope, given the density range that produced it. Used to display the contrast
@@ -968,7 +970,7 @@ def slope_to_grade(slope: float, density_range: Optional[float]) -> float:
     rng = min(max(abs(float(rng_in)), 0.3), 3.5)
     if slope <= 0:
         return float(c["iso_r_max"])
-    er = float(c["grade_contrast_scale"]) * rng / float(slope)
+    er = float(c["grade_contrast_scale"]) * rng * float(gain) / float(slope)
     return float(min(max(er * 100.0, c["iso_r_min"]), c["iso_r_max"]))
 
 
@@ -1124,7 +1126,7 @@ def preflash_params(grade: float, d_min: float = 0.0, paper: Optional[PaperProfi
     c = effective_constants(paper)
     v_th = _reference_linear_value(d_min, paper, target=d_min + float(c["preflash_threshold_density"]))
     er = min(max(float(grade), EXPOSURE_CONSTANTS["iso_r_min"]), EXPOSURE_CONSTANTS["iso_r_max"]) / 100.0
-    return v_th, float(EXPOSURE_CONSTANTS["grade_contrast_scale"]) / er
+    return v_th, float(EXPOSURE_CONSTANTS["grade_contrast_scale"]) / er * slope_gain(paper)
 
 
 def preflash_value(v: Any, v_th: float, flash: float, gamma: float) -> Any:
@@ -1307,7 +1309,7 @@ def auto_base_slope(
 ) -> float:
     """Shared straight-line slope before the per-layer gammas: Grade on the effective range,
     raised to Auto Grade's Shadow Reach floor."""
-    slope = grade_to_slope(grade, effective_grade_range(auto_normalize_contrast, lum_range, textural_range))
+    slope = grade_to_slope(grade, effective_grade_range(auto_normalize_contrast, lum_range, textural_range), slope_gain(paper))
     if auto_normalize_contrast and shadow_point is not None:
         c = effective_constants(paper)
         ref = float(c["assumed_anchor"]) if anchor is None else float(anchor)

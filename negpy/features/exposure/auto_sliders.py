@@ -15,7 +15,7 @@ from negpy.features.exposure.logic import (
     slope_to_grade,
 )
 from negpy.features.exposure.models import ExposureConfig
-from negpy.features.exposure.papers import effective_constants, effective_paper_profile
+from negpy.features.exposure.papers import effective_constants, effective_paper_profile, slope_gain
 
 # The offsets at which the meter alone decides.
 NEUTRAL: Dict[str, float] = {f: float(getattr(ExposureConfig(), f)) for f in ("density", "grade", "shadow_density", "highlight_density")}
@@ -53,7 +53,7 @@ def print_shown_values(exposure: ExposureConfig, process_mode: Optional[str], me
         shown["density"] = exposure.density - shift
     slope = _auto_slope(exposure, process_mode, metrics)
     if slope is not None:
-        shown["grade"] = slope_to_grade(slope, metrics["norm_density_range"])
+        shown["grade"] = slope_to_grade(slope, metrics["norm_density_range"], slope_gain(_paper(exposure, process_mode)[0]))
     if exposure.auto_normalize_contrast and metrics.get("highlight_point") is not None:
         shown["highlight_density"] = exposure.highlight_density + auto_highlight_from_metrics(exposure, process_mode, metrics)
     if exposure.auto_normalize_contrast and metrics.get("shadow_point") is not None:
@@ -74,7 +74,8 @@ def print_stored_value(
             return shown
         lum_range = metrics["norm_density_range"]
         r_eff = effective_grade_range(True, lum_range, metrics["textural_range"])
-        return slope_to_grade(grade_to_slope(shown, lum_range), r_eff)
+        gain = slope_gain(_paper(exposure, process_mode)[0])
+        return slope_to_grade(grade_to_slope(shown, lum_range, gain), r_eff, gain)
     if field == "highlight_density" and exposure.auto_normalize_contrast and metrics.get("highlight_point") is not None:
         return shown - auto_highlight_from_metrics(exposure, process_mode, metrics)
     if field == "shadow_density" and exposure.auto_normalize_contrast and metrics.get("shadow_point") is not None:
