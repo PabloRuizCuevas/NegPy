@@ -147,6 +147,23 @@ def test_selection_survives_a_reload(widget, tree_dirs):
     assert widget.tree.currentItem().text(0) == "roll_b"
 
 
+def test_a_collapsed_folder_stays_collapsed_in_the_next_session(qapp, tmp_path, tree_dirs):
+    widget = _make(tmp_path)
+    recognize_folder(widget.repo, str(tree_dirs / "roll_a"), name="scans/roll_a")
+    recognize_folder(widget.repo, str(tree_dirs / "roll_b"), name="scans/roll_b")
+    widget.reload()
+    folder = widget.tree.topLevelItem(0)
+    assert folder.data(0, _FOLDER_ROLE) == str(tree_dirs)
+    assert folder.isExpanded()
+
+    folder.setExpanded(False)
+    folder = _make(tmp_path).tree.topLevelItem(0)
+    assert not folder.isExpanded()
+
+    folder.setExpanded(True)
+    assert _make(tmp_path).tree.topLevelItem(0).isExpanded()
+
+
 def test_a_roll_row_says_what_the_roll_is(widget):
     from negpy.desktop.view.sidebar.library_tree import _DOT_ROLE
     from negpy.services.assets import rolls
