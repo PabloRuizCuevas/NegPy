@@ -1,3 +1,4 @@
+import math
 from typing import Any, Dict, Optional, Tuple
 
 import cv2
@@ -462,10 +463,10 @@ class CharacteristicCurve:
         self.x0 = float(pivot)
         self.curvature = float(curvature)
         self.flash = max(float(preflash), 0.0)
-        self.flash_v, self.flash_gamma = preflash_params(grade, d_min, paper)
+        self.midtone_gamma = float(c["paper_midtone_gamma"]) if midtone_gamma is None else float(midtone_gamma)
+        self.flash_v, self.flash_gamma = preflash_params(grade, d_min, paper, self.midtone_gamma)
         self.d_min = float(d_min)
         self.v_star = _reference_linear_value(d_min, paper)
-        self.midtone_gamma = float(c["paper_midtone_gamma"]) if midtone_gamma is None else float(midtone_gamma)
         self.gamma_width = float(c["paper_gamma_width"])
         self.zone_sh_center = float(c["anchor_target_density"]) + float(c["zone_density_shadow_offset"])
         self.zone_hi_center = float(c["anchor_target_density"]) + float(c["zone_density_highlight_offset"])
@@ -632,6 +633,7 @@ def curve_params_from_metrics(
         neutral_axis_norm=neutral_axis_norm,
         grade_trims=(exposure.grade_trim_red, exposure.grade_trim_green, exposure.grade_trim_blue),
         shadow_point=metrics.get("shadow_point"),
+        midtone_gamma=effective_midtone_gamma(profile, exposure.midtone_gamma),
     )
 
 
@@ -807,7 +809,7 @@ def apply_characteristic_curve(
 
     toe3, sh3 = per_channel_toe_shoulder(toe, shoulder, toe_trims, shoulder_trims)
     tw3, sw3 = per_channel_widths(toe_width, shoulder_width, toe_width_trims, shoulder_width_trims)
-    flash_v, flash_gamma = preflash_params(frame_grade, d_min, paper)
+    flash_v, flash_gamma = preflash_params(frame_grade, d_min, paper, midtone_gamma)
     toe_k = [t * ts for t in toe3]
     d_min_rgb = paper_dmin_rgb(d_min, paper)
     lut_black = 0.0
@@ -1119,7 +1121,40 @@ def _reference_linear_value(d_min: float = 0.0, paper: Optional[PaperProfile] = 
     return float(d_min + _inv_softplus_np(a_hl * (v1 - d_min)) / a_hl)
 
 
-def preflash_params(grade: float, d_min: float = 0.0, paper: Optional[PaperProfile] = None) -> Tuple[float, float]:
+def _midtone_terms(d_min: float, paper: Optional[PaperProfile], midtone_gamma: Optional[float]) -> Tuple[float, float, float]:
+    c = effective_constants(paper)
+    mg = float(c["paper_midtone_gamma"]) if midtone_gamma is None else float(midtone_gamma)
+    return mg, float(c["paper_gamma_width"]), _reference_linear_value(d_min, paper)
+
+
+def _through_midtone(v: float, d_min: float = 0.0, paper: Optional[PaperProfile] = None, midtone_gamma: Optional[float] = None) -> float:
+    """Straight-line value `v` after the variable midtone gamma, as the kernels apply it.
+    midtone_gamma: the effective value (paper + Snap); None takes the paper's own."""
+    mg, w, v_star = _midtone_terms(d_min, paper, midtone_gamma)
+    return float(v + mg * w * np.tanh((v - v_star) / w))
+
+
+def _straight_line_target(
+    d_min: float = 0.0, paper: Optional[PaperProfile] = None, target: Optional[float] = None, midtone_gamma: Optional[float] = None
+) -> float:
+    """Straight-line value that prints `target` through the midtone gamma and the bounds: the
+    inverse of _through_midtone at _reference_linear_value. Bisection, since the midtone term is
+    monotone and moves a value by at most |mg| * width."""
+    u = _reference_linear_value(d_min, paper, target)
+    mg, w, v_star = _midtone_terms(d_min, paper, midtone_gamma)
+    lo, hi = u - abs(mg) * w, u + abs(mg) * w
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        if mid + mg * w * math.tanh((mid - v_star) / w) < u:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def preflash_params(
+    grade: float, d_min: float = 0.0, paper: Optional[PaperProfile] = None, midtone_gamma: Optional[float] = None
+) -> Tuple[float, float]:
     """(v_th, gamma) for preflash_value. v_th is the straight-line value that prints the paper's
     threshold, d_min + preflash_threshold_density (where the ISO R range starts). gamma is the
     paper's density per log10 exposure at `grade`, so the flash is a paper exposure and does
@@ -1127,7 +1162,7 @@ def preflash_params(grade: float, d_min: float = 0.0, paper: Optional[PaperProfi
     from negpy.features.exposure.models import EXPOSURE_CONSTANTS
 
     c = effective_constants(paper)
-    v_th = _reference_linear_value(d_min, paper, target=d_min + float(c["preflash_threshold_density"]))
+    v_th = _straight_line_target(d_min, paper, d_min + float(c["preflash_threshold_density"]), midtone_gamma)
     er = min(max(float(grade), EXPOSURE_CONSTANTS["iso_r_min"]), EXPOSURE_CONSTANTS["iso_r_max"]) / 100.0
     return v_th, float(EXPOSURE_CONSTANTS["grade_contrast_scale"]) / er * slope_gain(paper)
 
@@ -1138,7 +1173,14 @@ def preflash_value(v: Any, v_th: float, flash: float, gamma: float) -> Any:
     return v_th + gamma * np.log10(10.0 ** ((v - v_th) / gamma) + flash)
 
 
-def shadow_reach_slope(slope: float, anchor: float, shadow_point: float, d_min: float = 0.0, paper: Optional[PaperProfile] = None) -> float:
+def shadow_reach_slope(
+    slope: float,
+    anchor: float,
+    shadow_point: float,
+    d_min: float = 0.0,
+    paper: Optional[PaperProfile] = None,
+    midtone_gamma: Optional[float] = None,
+) -> float:
     """
     Auto Grade floor on the slope: the textured dark tail at `shadow_point` must print
     at least shadow_reach_density while the anchor stays at its target, so the slope
@@ -1149,7 +1191,7 @@ def shadow_reach_slope(slope: float, anchor: float, shadow_point: float, d_min: 
     span = float(shadow_point) - float(anchor)
     if span <= 1e-6:
         return slope
-    v_black = _reference_linear_value(d_min, paper, target=float(c["shadow_reach_density"]))
+    v_black = _straight_line_target(d_min, paper, float(c["shadow_reach_density"]), midtone_gamma)
     needed = (v_black - _reference_linear_value(d_min, paper)) / span
     return float(min(max(slope, needed), float(c["slope_max"])))
 
@@ -1162,13 +1204,14 @@ def highlight_hold_offset(
     paper: Optional[PaperProfile] = None,
     preflash: float = 0.0,
     grade: float = 115.0,
+    midtone_gamma: Optional[float] = None,
 ) -> float:
     """
     Auto Grade's soft exposure: the highlight zone burn (a highlight_density term) that
     lands the textured bright tail at `highlight_point` on highlight_hold_density when the
     straight line would print it brighter. Solved against the kernel's own zone weight at
     that tone, so the burn stays under the shoulder. Never lifts; 0 when the tone holds.
-    Measured after the preflash, so the burn only tops up what the flash leaves.
+    Measured after the preflash and the midtone gamma, so the burn only tops up what they leave.
     """
     c = effective_constants(paper)
     target = float(c["highlight_hold_density"])
@@ -1176,8 +1219,9 @@ def highlight_hold_offset(
         return 0.0
     v = float(slope) * (float(highlight_point) - float(pivot))
     if preflash > 0.0:
-        v_th, gamma = preflash_params(grade, d_min, paper)
+        v_th, gamma = preflash_params(grade, d_min, paper, midtone_gamma)
         v = float(preflash_value(v, v_th, preflash, gamma))
+    v = _through_midtone(v, d_min, paper, midtone_gamma)
     v_hold = _reference_linear_value(d_min, paper, target=target)
     if v >= v_hold:
         return 0.0
@@ -1192,6 +1236,7 @@ def shadow_hold_offset(
     shadow_point: float,
     d_min: float = 0.0,
     paper: Optional[PaperProfile] = None,
+    midtone_gamma: Optional[float] = None,
 ) -> float:
     """Auto Grade's shadow lift (a negative shadow_density), the partner of
     highlight_hold_offset, on the textured dark tail past Shadow Reach's line. A partial
@@ -1200,7 +1245,7 @@ def shadow_hold_offset(
     strength = float(c["shadow_hold_strength"])
     if strength <= 0.0:
         return 0.0
-    v = float(slope) * (float(shadow_point) - float(pivot))
+    v = _through_midtone(float(slope) * (float(shadow_point) - float(pivot)), d_min, paper, midtone_gamma)
     v_start = _reference_linear_value(d_min, paper, target=float(c["shadow_reach_density"])) + float(c["shadow_hold_overshoot"])
     if v <= v_start:
         return 0.0
@@ -1217,7 +1262,8 @@ def auto_shadow_from_metrics(exposure: Any, process_mode: Optional[str], metrics
     profile = effective_paper_profile(exposure.paper_profile, process_mode)
     d_min = profile.d_min if exposure.paper_dmin else 0.0
     slopes, pivots, _ = curve_params_from_metrics(exposure, process_mode, metrics)
-    return shadow_hold_offset(slopes[1], pivots[1], float(point), d_min=d_min, paper=profile)
+    mg = effective_midtone_gamma(profile, exposure.midtone_gamma)
+    return shadow_hold_offset(slopes[1], pivots[1], float(point), d_min=d_min, paper=profile, midtone_gamma=mg)
 
 
 def auto_highlight_from_metrics(exposure: Any, process_mode: Optional[str], metrics: Any) -> float:
@@ -1232,7 +1278,14 @@ def auto_highlight_from_metrics(exposure: Any, process_mode: Optional[str], metr
     d_min = profile.d_min if exposure.paper_dmin else 0.0
     slopes, pivots, _ = curve_params_from_metrics(exposure, process_mode, metrics)
     return highlight_hold_offset(
-        slopes[1], pivots[1], float(point), d_min=d_min, paper=profile, preflash=exposure.preflash, grade=exposure.grade
+        slopes[1],
+        pivots[1],
+        float(point),
+        d_min=d_min,
+        paper=profile,
+        preflash=exposure.preflash,
+        grade=exposure.grade,
+        midtone_gamma=effective_midtone_gamma(profile, exposure.midtone_gamma),
     )
 
 
@@ -1309,6 +1362,7 @@ def auto_base_slope(
     anchor: Optional[float],
     d_min: float = 0.0,
     paper: Optional[PaperProfile] = None,
+    midtone_gamma: Optional[float] = None,
 ) -> float:
     """Shared straight-line slope before the per-layer gammas: Grade on the effective range,
     raised to Auto Grade's Shadow Reach floor."""
@@ -1316,7 +1370,7 @@ def auto_base_slope(
     if auto_normalize_contrast and shadow_point is not None:
         c = effective_constants(paper)
         ref = float(c["assumed_anchor"]) if anchor is None else float(anchor)
-        slope = shadow_reach_slope(slope, ref, shadow_point, d_min=d_min, paper=paper)
+        slope = shadow_reach_slope(slope, ref, shadow_point, d_min=d_min, paper=paper, midtone_gamma=midtone_gamma)
     return slope
 
 
@@ -1333,6 +1387,7 @@ def per_channel_curve_params(
     neutral_axis_norm: Any = None,
     grade_trims: Tuple[float, float, float] = (0.0, 0.0, 0.0),
     shadow_point: Optional[float] = None,
+    midtone_gamma: Optional[float] = None,
 ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float]]:
     """
     Per-channel (slopes, pivots, curvatures); single source of truth for CPU/GPU/chart.
@@ -1357,7 +1412,9 @@ def per_channel_curve_params(
         )
     slope_min = float(c["slope_min"])
     slope_max = float(c["slope_max"])
-    base_slope = auto_base_slope(grade, auto_normalize_contrast, lum_range, textural_range, shadow_point, anchor, d_min, paper)
+    base_slope = auto_base_slope(
+        grade, auto_normalize_contrast, lum_range, textural_range, shadow_point, anchor, d_min, paper, midtone_gamma
+    )
 
     epsilon = 1e-6
 

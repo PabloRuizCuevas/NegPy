@@ -11,6 +11,7 @@ from negpy.features.exposure.logic import (
     auto_highlight_from_metrics,
     auto_shadow_from_metrics,
     effective_grade_range,
+    effective_midtone_gamma,
     grade_to_slope,
     slope_to_grade,
 )
@@ -41,7 +42,8 @@ def _auto_slope(exposure: ExposureConfig, process_mode: Optional[str], metrics: 
         return None
     profile, d_min = _paper(exposure, process_mode)
     anchor = metrics.get("metered_anchor") if exposure.auto_exposure else None
-    return auto_base_slope(exposure.grade, True, lum_range, textural, metrics.get("shadow_point"), anchor, d_min, profile)
+    mg = effective_midtone_gamma(profile, exposure.midtone_gamma)
+    return auto_base_slope(exposure.grade, True, lum_range, textural, metrics.get("shadow_point"), anchor, d_min, profile, mg)
 
 
 def print_shown_values(exposure: ExposureConfig, process_mode: Optional[str], metrics: Mapping[str, Any]) -> Dict[str, float]:
