@@ -897,16 +897,19 @@ def apply_flat_curve(
     gain: float,
     lift: float,
     cmy_offsets: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+    stock_matrix: Optional[np.ndarray] = None,
 ) -> ImageBuffer:
     """
     True log master: emit the normalized log signal directly as the code value
     (positive-oriented 1 - val), linearly remapped with headroom. No 10^-D decode
     and no sRGB OETF — the flat, log-video look, fully invertible for downstream
-    editing. WB rides as an additive per-channel shift in log space.
+    editing. WB rides as an additive per-channel shift in log space; the print
+    stock's density matrix (rows sum 1) mixes after it, as in the print kernel.
     """
-    arr = np.asarray(image, dtype=np.float32)
-    off = np.asarray(cmy_offsets, dtype=np.float32)
-    code = lift + gain * (1.0 - (arr + off))
+    val = np.asarray(image, dtype=np.float32) + np.asarray(cmy_offsets, dtype=np.float32)
+    if stock_matrix is not None:
+        val = val @ np.asarray(stock_matrix, dtype=np.float32).T
+    code = lift + gain * (1.0 - val)
     return ensure_image(np.clip(code, 0.0, 1.0).astype(np.float32))
 
 

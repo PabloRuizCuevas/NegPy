@@ -156,7 +156,7 @@ With `RenderIntent.FLAT`, a log encoding replaces the Print stage. The normalize
 
 $$I_{out} = \text{clip}\big(\text{lift} + \text{gain} \cdot (1 - \text{val}),\ 0,\ 1\big)$$
 
-with `flat_log_gain` $= 0.65$ and `flat_log_lift` $= 0.10$: shadow → $0.10$, mid-gray → $\approx 0.46$, highlight → $0.75$. Manual white balance applies as a log shift. Only Geometry, Normalization, this map and Crop run. Export is full-resolution, 16-bit TIFF or lossless JPEG XL, on the CPU engine (there is no GPU flat shader).
+with `flat_log_gain` $= 0.65$ and `flat_log_lift` $= 0.10$: shadow → $0.10$, mid-gray → $\approx 0.46$, highlight → $0.75$. Manual white balance applies as a log shift. A color print stock then mixes into $\text{val}$ as a density $3\times3$ $M$ with rows that sum to 1 (`resolve_flat_matrix`), so neutrals hold and the map stays log-linear. A flat master has no dye amounts for a LUT, so each LUT file carries a stand-in $M$: `build_print_luts.py` fits $10^{-Me}$ to the LUT in CIEDE2000 on dye amounts around the gray axis, and `--flat-only` refits it on the bundled tables. Only Geometry, Normalization, this map and Crop run. Export is full-resolution, 16-bit TIFF or lossless JPEG XL, on the CPU engine (there is no GPU flat shader).
 
 ### Transparency transfer, "the slide as captured"
 **Code**: `negpy.features.transparency` (+ `shaders/transfer.wgsl`), `negpy.features.process.capture_color`
