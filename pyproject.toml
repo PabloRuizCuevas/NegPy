@@ -28,6 +28,7 @@ dependencies = [
     "qtawesome==1.4.2",
     "wgpu==0.31.1",
     "pyserial>=3.5",
+    "negpy-core",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -81,12 +82,18 @@ Documentation = "https://github.com/marcinz606/NegPy/docs"
 Repository = "https://github.com/marcinz606/NegPy.git"
 Issues = "https://github.com/marcinz606/NegPy/issues"
 
+[tool.uv.workspace]
+members = ["negpy_core"]
+
+[tool.uv.sources]
+negpy-core = { workspace = true }
+
 [build-system]
 requires = ["setuptools~=80.10.2"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["negpy*"]
+include = ["negpy", "negpy.*"]
 
 [tool.setuptools.package-data]
 negpy = ["translations/*.json", "translations/*.md"]
