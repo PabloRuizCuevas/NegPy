@@ -748,8 +748,7 @@ def _scene_mark(index: QModelIndex) -> Optional[tuple]:
 
 
 class _FilmDelegate(_ThumbnailDelegate):
-    """Each frame stands upright in a cell as wide as its picture, a thin rebate border around it,
-    and a scene colors the top border of its frames."""
+    """Each frame stands upright in a cell as wide as its picture, a thin rebate border around it."""
 
     _CACHE_LIMIT = 512
     # Every layout reads the picture bounds of every frame, so their small cache holds a long roll. The strip's
@@ -817,25 +816,9 @@ class _FilmDelegate(_ThumbnailDelegate):
     def picture_rect(self, cell: QRect, index: QModelIndex) -> QRect:
         return super().picture_rect(self._window(cell), index)
 
-    def _paint_scene_line(self, painter: QPainter, cell: QRect, index: QModelIndex) -> None:
-        scene = _scene_mark(index)
-        if not scene:
-            return
-        band, color = self.band(cell), QColor(scene_color(scene[0]))
-        if not scene[3]:
-            painter.fillRect(band.left(), band.top(), band.width(), self._BORDER, color)
-            return
-        # A found scene's line is dashed, the dashes aligned across the cells of a row.
-        dash, period = 2 * self._BORDER, 3 * self._BORDER
-        for x in range(band.left() - band.left() % period, band.right() + 1, period):
-            left, right = max(x, band.left()), min(x + dash, band.right() + 1)
-            if right > left:
-                painter.fillRect(left, band.top(), right - left, self._BORDER, color)
-
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         cell = option.rect
         painter.fillRect(self.band(cell), QColor(*self._film[1]))
-        self._paint_scene_line(painter, cell, index)
         framed = QStyleOptionViewItem(option)
         framed.rect = self._window(cell)
         super().paint(painter, framed, index)
@@ -1261,8 +1244,9 @@ class _FilmGridView(ThumbnailGridView):
         painter = QPainter(self.viewport())
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        self._paint_scene_names(painter, delegate, event.rect())
+        # A scene's line and name chip lie on its frames' top border, over their selection mats.
         self._paint_marks(painter, delegate, event.rect())
+        self._paint_scenes(painter, delegate, event.rect())
         self._paint_scene_move(painter)
         painter.end()
 
@@ -1295,9 +1279,9 @@ class _FilmGridView(ThumbnailGridView):
                 painter.fillPath(edge.subtracted(inside), color)
                 inside = edge
 
-    def _paint_scene_names(self, painter: QPainter, delegate: _FilmDelegate, area: QRect) -> None:
-        """A chip with the scene's name on its line, at the start of each run of its frames on one row. A found
-        scene's chip is outlined with a dashed edge and a dot of its color."""
+    def _paint_scenes(self, painter: QPainter, delegate: _FilmDelegate, area: QRect) -> None:
+        """A scene's line across the top border of each run of its frames on one row, its name in a chip at the run's
+        start. A found scene's line is dashed, its chip outlined with a dashed edge and a dot of its color."""
         font = painter.font()
         font.setPixelSize(THEME.font_size_small)
         font.setBold(True)
@@ -1308,11 +1292,21 @@ class _FilmGridView(ThumbnailGridView):
             if not first.united(last).adjusted(0, -height, 0, 0).intersects(area):
                 continue
             band = delegate.band(first)
+            color = QColor(scene_color(scene[0]))
+            left, right = band.left(), delegate.band(last).right() + 1
+            if not scene[3]:
+                painter.fillRect(left, band.top(), right - left, delegate._BORDER, color)
+            else:
+                # Dashes on a fixed grid line up across the runs of a row.
+                dash, period = 2 * delegate._BORDER, 3 * delegate._BORDER
+                for x in range(left - left % period, right, period):
+                    start, end = max(x, left), min(x + dash, right)
+                    if end > start:
+                        painter.fillRect(start, band.top(), end - start, delegate._BORDER, color)
             dot = height // 3 if scene[3] else 0
             lead = dot + pad if scene[3] else 0
             name = metrics.elidedText(scene[2], Qt.TextElideMode.ElideRight, last.right() - first.left() - 2 * pad - lead)
             chip = QRectF(band.left(), band.top() - height / 2, metrics.horizontalAdvance(name) + 2 * pad + lead, height)
-            color = QColor(scene_color(scene[0]))
             if scene[3]:
                 painter.setPen(QPen(color, 1, Qt.PenStyle.DashLine))
                 painter.setBrush(QColor(THEME.bg_dark))

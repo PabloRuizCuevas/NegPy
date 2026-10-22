@@ -406,9 +406,8 @@ def test_a_scene_draws_a_line_over_its_frames_that_starts_with_its_name(browser,
     image = strip.viewport().grab().toImage()
     color = QColor(scene_color(2))
 
-    assert [_near(image.pixelColor(band.center().x(), band.top() + 1), color) for band in bands] == [False, True, False, False]
-    selected = image.pixelColor(bands[2].center().x(), bands[2].top() + 1)
-    assert selected == QColor(THEME.border_checked), "the selection mat covers the line"
+    assert [_near(image.pixelColor(band.center().x(), band.top() + 1), color) for band in bands] == [False, True, True, False]
+    assert image.pixelColor(bands[2].left() + 1, bands[2].center().y()) == QColor(THEME.border_checked), "the mat still frames the sides"
     assert not _near(image.pixelColor(bands[1].center().x(), bands[1].bottom() - 1), color), "only the top border"
     assert _near(image.pixelColor(bands[1].left() + 3, bands[1].top() - 3), color), "the name sits on the line at the run's start"
     assert not _near(image.pixelColor(bands[2].center().x(), bands[2].top() - 3), color)
