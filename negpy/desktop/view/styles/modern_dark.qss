@@ -574,16 +574,22 @@ OverflowBar#main_tabs {
 }
 
 /* Collapsible section header (see widgets/collapsible.py). [overlay="true"] =
-   header stacked over a preview widget (Tone/Color histogram strip). */
+   header stacked over a preview widget (Tone/Color histogram strip). Its outline runs on into
+   the content frame's, so an open card has square bottom corners; only a collapsed one rounds them. */
 QPushButton#collapsible_header {
     text-align: left;
     background-color: @bg_header;
-    border: none;
-    border-bottom: 1px solid @border_primary;
+    border: 1px solid @border_primary;
+    border-radius: 0;
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
     color: @text_on_accent;
     padding: 0;
+}
+
+QPushButton#collapsible_header[checkable="true"]:!checked {
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
 }
 
 QPushButton#collapsible_header:hover {
