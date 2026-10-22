@@ -79,7 +79,7 @@ D35 = {"frontier": "Fujifilm Frontier 350/370 file output (A1 v7.6 tables)"}
 # Gaussian blur, in nodes, of the chroma of the Frontier's 32^3 cube. Its 8-bit nodes sit 32 codes apart and turn some
 # hues within one step, which a trilinear lookup draws as corners in a smooth gradient. Each node keeps its channel mean,
 # so the near-black neutral solve stays on Fuji's luminance.
-FRONTIER_CUBE_BLUR = 1.0
+FRONTIER_CUBE_BLUR = 2.0
 FRONTIER_DIR = pathlib.Path.home() / "code" / "frontier" / "frontier_sw" / "EZ171" / "fujifilm" / "Frontier"
 SHIPPED = ("kodak_e4070", "kodak_e4021", "kodak_2383", "kodak_2393", *LOOKS, *FRONTIER, *D35)
 
