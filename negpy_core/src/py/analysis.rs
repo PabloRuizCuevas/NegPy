@@ -377,6 +377,52 @@ fn detect_film_bounds<'py>(
     ))
 }
 
+/// `normalize_log_image(img_log, bounds)` of an HxWx3 float32 log image.
+#[pyfunction]
+fn normalize_log_image<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    floors: [f32; 3],
+    ceils: [f32; 3],
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let shape = img.shape().to_vec();
+    if shape.len() != 3 || shape[2] != 3 {
+        return Err(PyValueError::new_err(
+            "normalize_log_image needs an HxWx3 array",
+        ));
+    }
+    let data = slice(&img)?;
+    let out = empty::<f32>(py, &shape, "float32")?;
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        py.detach(|| analysis::normalize_log_image(data, floors, ceils, dst));
+    }
+    Ok(out)
+}
+
+/// `_block_median_grid` of an HxWxC float32 image in `b` x `b` blocks.
+#[pyfunction]
+fn block_median_grid<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    b: usize,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let [h, w, c] = img.shape()[..] else {
+        return Err(PyValueError::new_err(
+            "block_median_grid needs an HxWxC array",
+        ));
+    };
+    if b == 0 {
+        return Err(PyValueError::new_err("block size must be positive"));
+    }
+    let data = slice(&img)?;
+    let grid = py.detach(|| analysis::block_median_grid(data, (h, w, c), b));
+    numpy::PyArray1::from_vec(py, grid).reshape(vec![h / b, w / b, c])
+}
+
 type ConsensusFields = (
     analysis::Roi,
     f64,
@@ -503,6 +549,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(refine_roi_to_image, m)?)?;
     m.add_function(wrap_pyfunction!(detect_film_bounds, m)?)?;
     m.add_function(wrap_pyfunction!(select_consensus, m)?)?;
+    m.add_function(wrap_pyfunction!(normalize_log_image, m)?)?;
+    m.add_function(wrap_pyfunction!(block_median_grid, m)?)?;
     m.add_function(wrap_pyfunction!(film_box_covers_enough, m)?)?;
     m.add_function(wrap_pyfunction!(film_surround_is_plausible, m)?)
 }

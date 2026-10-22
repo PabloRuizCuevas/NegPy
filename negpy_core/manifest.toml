@@ -163,19 +163,19 @@ note = "negpy_core::analysis::base_blocks"
 
 ["features/exposure/normalization.py::_block_median_grid"]
 phase = 2
-status = "todo"
-calls = ["np.median"]
-depends = ["_median"]
+status = "ported"
+calls = ["negpy_core.block_median_grid"]
+depends = []
 
 ["features/exposure/normalization.py::_block_median_grid._median"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.median"]
 depends = []
 
 ["features/exposure/normalization.py::_normalize_log_image_jit"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["numba"]
 depends = []
 
@@ -337,9 +337,9 @@ depends = ["_block_median_grid"]
 
 ["features/exposure/normalization.py::normalize_log_image"]
 phase = 2
-status = "todo"
-calls = []
-depends = ["_normalize_log_image_jit"]
+status = "ported"
+calls = ["negpy_core.normalize_log_image"]
+depends = []
 
 ["features/exposure/normalization.py::pool_frame_bounds"]
 phase = 2

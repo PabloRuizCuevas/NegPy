@@ -15,7 +15,6 @@ _KERNELS = [
         "_float_to_uint16_luma_jit",
     )
 ] + [
-    ("negpy.features.exposure.normalization", "_normalize_log_image_jit"),
     ("negpy.features.exposure.logic", "_apply_print_curve_kernel"),
     ("negpy.infrastructure.display.icc_lut", "_apply_lut_u16_jit"),
     ("negpy.infrastructure.display.icc_lut", "_apply_lut_f32_jit"),

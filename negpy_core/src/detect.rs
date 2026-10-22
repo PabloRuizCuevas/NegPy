@@ -9,7 +9,7 @@ use crate::filter::Border;
 use crate::gray;
 use crate::morph::{self, Op};
 use crate::shapes::{bounding_rect_f32, box_points, fill_convex_poly, min_area_rect};
-use crate::stats::{np_percentiles, np_percentiles_f64, pairwise_sum_f32};
+use crate::stats::{np_median, np_percentiles, np_percentiles_f64, pairwise_sum_f32};
 
 pub type Roi = (i64, i64, i64, i64);
 
@@ -35,21 +35,6 @@ pub const EVIDENCE_SOURCE_ORDER: [&str; 5] = [
 
 fn py_round(v: f64) -> i64 {
     v.round_ties_even() as i64
-}
-
-/// `np.median` of float32 values (NaN when any is NaN).
-fn median_f32(values: &[f32]) -> f32 {
-    if values.is_empty() || values.iter().any(|v| v.is_nan()) {
-        return f32::NAN;
-    }
-    let mut v = values.to_vec();
-    let n = v.len();
-    let (_, &mut hi, _) = v.select_nth_unstable_by(n / 2, f32::total_cmp);
-    if n % 2 == 1 {
-        return hi;
-    }
-    let lo = v[..n / 2].iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    (lo + hi) / 2.0
 }
 
 fn clip(v: f64, lo: f64, hi: f64) -> f64 {
@@ -161,8 +146,7 @@ fn threshold_polarities(
         py_round(0.8 * w as f64) as usize,
     );
     let (y2, x2) = (y2.max(y1 + 1).min(h), x2.max(x1 + 1).min(w));
-    let center = crop(lum, w, (y1.min(h), y2, x1.min(w), x2));
-    let center_median = median_f32(&center) as f64;
+    let center_median = np_median(&mut crop(lum, w, (y1.min(h), y2, x1.min(w), x2))) as f64;
     let gate = 0.025f64.max(0.05 * span);
     if ring_median - center_median > gate {
         vec!["dark"]
@@ -467,13 +451,16 @@ fn oriented_boundary_evidence(
             (inner_end.0 - off.0, inner_end.1 - off.1),
             (inner_start.0 - off.0, inner_start.1 - off.1),
         ];
-        let inside = polygon_values(lum, h, w, &inside_poly);
-        let outside = polygon_values(lum, h, w, &outside_poly);
+        let mut inside = polygon_values(lum, h, w, &inside_poly);
+        let mut outside = polygon_values(lum, h, w, &outside_poly);
         let expected = 8.0f64.max(0.20 * 0.84 * length * band);
         if (inside.len() as f64) < expected || (outside.len() as f64) < expected {
             continue;
         }
-        let (im, om) = (median_f32(&inside) as f64, median_f32(&outside) as f64);
+        let (im, om) = (
+            np_median(&mut inside) as f64,
+            np_median(&mut outside) as f64,
+        );
         let contrast = if dark { om - im } else { im - om };
         let ring_delta = (om - ring_median).abs();
         if contrast < contrast_gate
@@ -933,9 +920,9 @@ pub fn film_surround_is_plausible(lum: &[f32], h: usize, w: usize, roi: &Roi) ->
     if (out.len() as f64) < 0.005 * lum.len() as f64 {
         return true;
     }
-    let out_med = median_f32(&out) as f64;
+    let out_med = np_median(&mut out) as f64;
     let out_high = np_percentiles(&out, &[90.0]).map_or(f64::NAN, |p| p[0] as f64);
-    let box_med = median_f32(&crop(lum, w, (y1, y2.max(y1), x1, x2.max(x1)))) as f64;
+    let box_med = np_median(&mut crop(lum, w, (y1, y2.max(y1), x1, x2.max(x1)))) as f64;
     // Near-clipping, not only bright: a thin negative's picture clears 0.85, but the bed is the
     // light source at the top of the histogram, where detection_luma anchors it.
     let bed_like = out_med >= 0.85 && out_high >= 0.98;
@@ -1027,7 +1014,7 @@ pub fn detect_film_bounds(img: &[f32], h: usize, w: usize, cn: usize) -> Detecti
     if span < 0.04 || span.is_nan() {
         return empty(profile, contrast);
     }
-    let ring_median = median_f32(&outer_ring_values(&lum, h, w)) as f64;
+    let ring_median = np_median(&mut outer_ring_values(&lum, h, w)) as f64;
     let polarities = threshold_polarities(&lum, h, w, span, ring_median);
     let blur = odd_kernel_size(0.004 * h.min(w) as f64, 3, 9) as usize;
     let mut blurred = vec![0f32; h * w];

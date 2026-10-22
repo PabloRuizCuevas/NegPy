@@ -4,7 +4,7 @@ use multiversion::multiversion;
 use rayon::prelude::*;
 
 use crate::filter::Border;
-use crate::stats::{np_percentiles, pairwise_sum_f32, percentiles};
+use crate::stats::{np_median, np_percentiles, pairwise_sum_f32, percentiles};
 
 const LUMA_R: f64 = 0.2126;
 const LUMA_G: f64 = 0.7152;
@@ -64,6 +64,79 @@ pub fn detection_luma(lum: &[f32], dst: &mut [f32]) -> Option<()> {
         *d = (v / anchor).clamp(0.0, 2.0);
     });
     Some(())
+}
+
+/// `normalize_log_image`: `(v - floor) / (ceil - floor)` per channel of an HxWx3 log image,
+/// unclamped. A span under 1e-6 divides by +-1e-6, by the span's sign.
+pub fn normalize_log_image(img: &[f32], floors: [f32; 3], ceils: [f32; 3], dst: &mut [f32]) {
+    let denom = std::array::from_fn::<f32, 3, _>(|c| {
+        let d = ceils[c] - floors[c];
+        // Numba types the span float64 here; float32 division of the difference rounds the same.
+        if (d.abs() as f64) < 1e-6 {
+            if d >= 0.0 { 1e-6 } else { -1e-6 }
+        } else {
+            d
+        }
+    });
+    crate::par_zip(
+        dst.as_chunks_mut::<3>().0,
+        img.as_chunks::<3>().0,
+        move |d, p| {
+            for c in 0..3 {
+                d[c] = ((p[c] - floors[c]) as f64 / denom[c] as f64) as f32;
+            }
+        },
+    );
+}
+
+/// `_block_median_grid` for block size `b` over the whole `b` x `b` blocks of an HxWxC image:
+/// the median of each block per channel, (H/b)x(W/b)xC. A block of 2x2 is (sum - min - max) / 2,
+/// the sum in float64.
+pub fn block_median_grid(img: &[f32], (h, w, c): (usize, usize, usize), b: usize) -> Vec<f32> {
+    let (gh, gw) = (h / b, w / b);
+    let mut out = vec![0f32; gh * gw * c];
+    if gh == 0 || gw == 0 {
+        return out;
+    }
+    let at = |y: usize, x: usize, ch: usize| img[(y * w + x) * c + ch];
+    out.par_chunks_mut(gw * c)
+        .enumerate()
+        .for_each(|(gy, line)| {
+            let mut block = Vec::with_capacity(b * b);
+            for gx in 0..gw {
+                for ch in 0..c {
+                    let (y, x) = (gy * b, gx * b);
+                    line[gx * c + ch] = if b == 2 {
+                        let (p00, p01, p10, p11) = (
+                            at(y, x, ch),
+                            at(y, x + 1, ch),
+                            at(y + 1, x, ch),
+                            at(y + 1, x + 1, ch),
+                        );
+                        let s = p00 as f64 + p01 as f64 + p10 as f64 + p11 as f64;
+                        let mn = np_min(np_min(p00, p01), np_min(p10, p11));
+                        let mx = np_max(np_max(p00, p01), np_max(p10, p11));
+                        ((s - mn as f64 - mx as f64) * 0.5) as f32
+                    } else {
+                        block.clear();
+                        for yy in y..y + b {
+                            block.extend((x..x + b).map(|xx| at(yy, xx, ch)));
+                        }
+                        np_median(&mut block)
+                    };
+                }
+            }
+        });
+    out
+}
+
+/// np.minimum with NaN propagation.
+fn np_min(a: f32, b: f32) -> f32 {
+    if a.is_nan() || b.is_nan() {
+        f32::NAN
+    } else {
+        a.min(b)
+    }
 }
 
 const BASE_BLOCK: usize = 8;
@@ -263,24 +336,6 @@ const EDGE_REBATE_REF: usize = 60;
 // depth, where a dense frame compresses every level.
 const EDGE_STEP_SHARE: f32 = 0.45;
 const EDGE_STEP_FLOOR: f32 = 0.06;
-
-/// `np.median` of a column of float32 values: the middle one, or the float32 mean of the two
-/// middle ones; NaN when any value is NaN.
-fn np_median(col: &mut [f32]) -> f32 {
-    if col.is_empty() || col.iter().any(|v| v.is_nan()) {
-        return f32::NAN;
-    }
-    let n = col.len();
-    let (_, &mut hi, _) = col.select_nth_unstable_by(n / 2, f32::total_cmp);
-    if n % 2 == 1 {
-        return hi;
-    }
-    let lo = col[..n / 2]
-        .iter()
-        .copied()
-        .fold(f32::NEG_INFINITY, f32::max);
-    (lo + hi) / 2.0
-}
 
 /// np.max with NaN propagation.
 fn np_max(a: f32, b: f32) -> f32 {

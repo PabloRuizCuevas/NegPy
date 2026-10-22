@@ -1,11 +1,8 @@
-import os
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional, TYPE_CHECKING, Tuple
 
 import cv2
 import negpy_core
 import numpy as np
-from numba import njit  # type: ignore
 
 from negpy.domain.types import LUMA_B, LUMA_G, LUMA_R, ROI, ImageBuffer
 from negpy.features.geometry.logic import AUTOCROP_DETECT_RES, _normalize_detection_input, film_and_picture
@@ -20,9 +17,6 @@ if TYPE_CHECKING:
 # per-frame bounds from an older version are dropped at startup (migrations/bounds.py).
 BOUNDS_VERSION = 1
 
-# Above this size the block-median is threaded over row strips (np.median frees the GIL).
-_BLOCK_MEDIAN_PARALLEL_MIN_PIXELS = 2_000_000
-
 # Contrast-mask spacer, per-cent of the analysis grid's short side. Of the grid, not of
 # the render, so preview and export mask alike. Under the minimum the mask stops being
 # unsharp and collapses into a plain (1-g) reduction, which is Grade.
@@ -32,35 +26,6 @@ MASK_SPACER_MAX = 6.0
 # Diffusion's blur sigma in per-cent of the printed frame's short side: one diffuser at the
 # lens, whose spread a printer does not vary between prints.
 DIFFUSION_SPREAD = 2.0
-
-
-@njit(cache=True, nogil=True, fastmath=True)
-def _normalize_log_image_jit(img_log: np.ndarray, floors: np.ndarray, ceils: np.ndarray) -> np.ndarray:
-    """
-    Log -> ~0.0-1.0 (Linear stretch, unclamped: out-of-bounds densities are
-    rolled off by the downstream characteristic curve).
-    Supports both f < c (Negative) and f > c (Positive) mapping.
-    """
-    h, w, c = img_log.shape
-    res = np.empty_like(img_log)
-    epsilon = 1e-6
-
-    for y in range(h):
-        for x in range(w):
-            for ch in range(3):
-                f = floors[ch]
-                c_val = ceils[ch]
-                delta = c_val - f
-
-                denom = delta
-                if abs(delta) < epsilon:
-                    if delta >= 0:
-                        denom = epsilon
-                    else:
-                        denom = -epsilon
-
-                res[y, x, ch] = (img_log[y, x, ch] - f) / denom
-    return res
 
 
 class LogNegativeBounds:
@@ -134,32 +99,8 @@ def _block_median_grid(img_log: ImageBuffer) -> ImageBuffer:
     b = int(np.ceil(max(h, w) / grid))
     if b <= 1 or h < b or w < b:
         return img_log
-
     hb, wb = (h // b) * b, (w // b) * b
-    arr = img_log[:hb, :wb]
-    grid_rows, c = hb // b, arr.shape[2]
-
-    def _median(rows: np.ndarray) -> np.ndarray:
-        v = rows.reshape(rows.shape[0] // b, b, wb // b, b, c)
-        if b == 2:
-            # Median of 4 = (sum - min - max) / 2; strided views, no partition.
-            p00, p01, p10, p11 = v[:, 0, :, 0], v[:, 0, :, 1], v[:, 1, :, 0], v[:, 1, :, 1]
-            s = p00.astype(np.float64) + p01 + p10 + p11
-            mn = np.minimum(np.minimum(p00, p01), np.minimum(p10, p11))
-            mx = np.maximum(np.maximum(p00, p01), np.maximum(p10, p11))
-            return ((s - mn - mx) * 0.5).astype(rows.dtype, copy=False)
-        return np.median(v, axis=(1, 3))
-
-    workers = min(os.cpu_count() or 1, grid_rows)
-    if workers < 2 or hb * wb < _BLOCK_MEDIAN_PARALLEL_MIN_PIXELS:
-        return _median(arr)
-
-    # Block-aligned strips -> per-cell median identical to the single pass.
-    rows_per = -(-grid_rows // workers)
-    strips = [arr[i * b : min(grid_rows, i + rows_per) * b] for i in range(0, grid_rows, rows_per)]
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        parts = list(ex.map(_median, strips))
-    return np.concatenate(parts, axis=0)
+    return negpy_core.block_median_grid(np.ascontiguousarray(img_log[:hb, :wb], dtype=np.float32), b)
 
 
 def prefilter_log_grid(
@@ -835,12 +776,12 @@ def diffusion_plane(grid: np.ndarray, bounds: LogNegativeBounds, panchromatic: b
 
 def normalize_log_image(img_log: ImageBuffer, bounds: LogNegativeBounds) -> ImageBuffer:
     """
-    Stretches log-data to fit [0, 1].
+    Log -> ~0.0-1.0 (linear stretch, unclamped: out-of-bounds densities are rolled off by
+    the downstream characteristic curve). Supports both f < c (negative) and f > c (positive).
     """
-    floors = np.ascontiguousarray(np.array(bounds.floors, dtype=np.float32))
-    ceils = np.ascontiguousarray(np.array(bounds.ceils, dtype=np.float32))
-
-    return ensure_image(_normalize_log_image_jit(np.ascontiguousarray(img_log.astype(np.float32)), floors, ceils))
+    floors = [float(v) for v in np.asarray(bounds.floors, dtype=np.float32)]
+    ceils = [float(v) for v in np.asarray(bounds.ceils, dtype=np.float32)]
+    return ensure_image(negpy_core.normalize_log_image(np.ascontiguousarray(img_log, dtype=np.float32), floors, ceils))
 
 
 def _sample_log_bounds(
