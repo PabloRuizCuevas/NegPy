@@ -112,14 +112,6 @@ PAPER_PROFILES: Dict[str, PaperProfile] = {
         slope_gain=1.22,
         print_color=DyeLut("frontier"),
     ),
-    # TEMP eval: Frontier colors on Digital's curve, as Pakon does. Remove before merge.
-    "frontier_digital_curve": PaperProfile(
-        label="Digital (Frontier, Digital curve)",
-        short="Frontier D",
-        kind="ra4",
-        medium="digital",
-        print_color=DyeLut("frontier"),
-    ),
     # ── B&W (tonal only) ──────────────────────────────────────────────────────
     "ilford_mg_rc": PaperProfile(
         label="Ilford Multigrade RC",
