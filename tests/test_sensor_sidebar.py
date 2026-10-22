@@ -66,7 +66,7 @@ def test_panel_greys_out_with_linear_raw_off():
     w = _sidebar(linear_raw=False)
     assert w.sensor_combo.currentText() == SensorProfiles.NONE_NAME
     assert not w.sensor_combo.isEnabled()
-    assert not w.calibrate_sensor_btn.isEnabled()
+    assert w.calibrate_sensor_btn.isEnabled()  # a profile is made from its own shots, not this frame
     assert not w.sensor_hint.isHidden()
 
 
@@ -170,7 +170,7 @@ def test_unmix_is_refused_on_a_transparency_whatever_linear_raw_says():
 
     assert w.sensor_combo.currentText() == SensorProfiles.NONE_NAME
     assert not w.sensor_combo.isEnabled()
-    assert not w.calibrate_sensor_btn.isEnabled()
+    assert w.calibrate_sensor_btn.isEnabled()  # a profile is made from its own shots, not this frame
     assert not w.sensor_hint.isHidden()
     assert "transparency" in w.sensor_hint.text().lower()
 
@@ -208,3 +208,17 @@ def test_profile_is_greyed_out_on_a_trichrome_triplet():
 
     _to_rgbscan(w, enabled=False)
     assert w.sensor_combo.currentText() == _NAME and w.sensor_combo.isEnabled()
+
+
+@pytest.mark.parametrize(
+    ("file_hash", "linear_raw", "applied"),
+    [("abc", True, True), ("abc", False, False), ("", True, False)],
+)
+def test_a_saved_profile_reaches_only_a_frame_that_can_use_it(file_hash, linear_raw, applied):
+    """Calibration runs with no frame open or on a blocked one; the save then only lists the profile."""
+    w = _sidebar(linear_raw=linear_raw, profile=SensorProfiles.NONE_NAME, sensor_matrix=None)
+    w.state.current_file_hash = file_hash
+    w.controller.set_roll_default.reset_mock()
+    w._on_sensor_profile_saved(_NAME)
+    assert w.controller.set_roll_default.called is applied
+    assert w.sensor_combo.findText(_NAME) >= 0

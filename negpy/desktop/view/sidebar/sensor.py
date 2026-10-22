@@ -185,21 +185,24 @@ class SensorSidebar(BaseSidebar):
 
         Display-only: conf.sensor_profile is left alone, so the selection comes back intact
         after a Linear RAW or film-process round-trip. Crosstalk and Hue Trim depend on
-        neither the decode basis nor the light, so they stay enabled.
+        neither the decode basis nor the light, so they stay enabled. Calibrate stays enabled too: it
+        reads its own three shots, not this frame.
         """
-        config = self.state.config
-        triplet = is_rgb_triplet(config.rgbscan) or stitch_has_triplets(config.stitch)
-        reason = ("triplet" if triplet else "") or unmix_block_reason(conf)  # the frame's own reason first: a decode change cannot lift it
+        reason = self._unmix_reason(conf)
         available = not reason
         self.sensor_combo.setCurrentText(conf.sensor_profile if available else SensorProfiles.NONE_NAME)
         self.sensor_combo.setEnabled(available)
-        self.calibrate_sensor_btn.setEnabled(available)
         self.unmix_btn.setEnabled(available and conf.sensor_matrix is not None)
         self.sensor_hint.setVisible(bool(reason))
         if reason:
             text, tip = self._SENSOR_BLOCKED[reason]
             self.sensor_hint.setText(text)
             self.sensor_hint.setToolTip(wrap_tooltip(tip))
+
+    def _unmix_reason(self, conf) -> str:
+        config = self.state.config
+        triplet = is_rgb_triplet(config.rgbscan) or stitch_has_triplets(config.stitch)
+        return ("triplet" if triplet else "") or unmix_block_reason(conf)  # the frame's own reason first: a decode change cannot lift it
 
     def _connect_signals(self) -> None:
         self.sensor_combo.currentTextChanged.connect(self._on_sensor_profile_changed)
@@ -242,8 +245,10 @@ class SensorSidebar(BaseSidebar):
         dlg.exec()
 
     def _on_sensor_profile_saved(self, name: str) -> None:
-        self._on_sensor_profile_changed(name)
-        self.sync_ui()  # rebuild the combo (now includes the new profile) and select it
+        # Only a frame that can use the profile takes it; otherwise the save only adds it to the list.
+        if self.state.current_file_hash and not self._unmix_reason(self.state.config.process):
+            self._on_sensor_profile_changed(name)
+        self.sync_ui()  # rebuild the combo, which now lists the new profile
 
     def _on_crosstalk_profile_changed(self, name: str) -> None:
         # Bake the matrix into the config, so saved edits stay reproducible if the profile file is
