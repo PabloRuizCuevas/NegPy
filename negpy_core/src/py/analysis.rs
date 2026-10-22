@@ -151,11 +151,44 @@ fn walk_border_depth<'py>(
     Ok(numpy::PyArray1::from_vec(py, out))
 }
 
+/// `measure_film_edges(lum, film_roi)`: (top, bottom, left, right) border fractions.
+#[pyfunction]
+fn measure_film_edges(
+    py: Python<'_>,
+    lum: PyReadonlyArrayDyn<'_, f32>,
+    film_roi: (usize, usize, usize, usize),
+) -> PyResult<(f64, f64, f64, f64)> {
+    let [h, w] = lum.shape()[..] else {
+        return Err(PyValueError::new_err(
+            "measure_film_edges needs a 2-D array",
+        ));
+    };
+    let data = slice(&lum)?;
+    let [t, b, l, r] = py.detach(|| analysis::measure_film_edges(data, h, w, film_roi));
+    Ok((t, b, l, r))
+}
+
+/// `_trim_film_edges(lum, film_roi)`.
+#[pyfunction]
+fn trim_film_edges(
+    py: Python<'_>,
+    lum: PyReadonlyArrayDyn<'_, f32>,
+    film_roi: (i64, i64, i64, i64),
+) -> PyResult<(i64, i64, i64, i64)> {
+    let [h, w] = lum.shape()[..] else {
+        return Err(PyValueError::new_err("trim_film_edges needs a 2-D array"));
+    };
+    let data = slice(&lum)?;
+    Ok(py.detach(|| analysis::trim_film_edges(data, h, w, film_roi)))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(luminance, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_to_uint8, m)?)?;
     m.add_function(wrap_pyfunction!(detection_luma, m)?)?;
     m.add_function(wrap_pyfunction!(base_blocks, m)?)?;
     m.add_function(wrap_pyfunction!(find_rebate_level, m)?)?;
-    m.add_function(wrap_pyfunction!(walk_border_depth, m)?)
+    m.add_function(wrap_pyfunction!(walk_border_depth, m)?)?;
+    m.add_function(wrap_pyfunction!(measure_film_edges, m)?)?;
+    m.add_function(wrap_pyfunction!(trim_film_edges, m)?)
 }

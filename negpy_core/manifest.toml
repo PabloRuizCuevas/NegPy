@@ -481,9 +481,10 @@ depends = []
 
 ["features/geometry/logic.py::_border_edge_scatter"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.median"]
 depends = []
+note = "negpy_core::analysis::border_edge_scatter (Python deleted)"
 
 ["features/geometry/logic.py::_candidate_from_contour"]
 phase = 2
@@ -518,9 +519,10 @@ note = "negpy_core::analysis::detection_luma"
 
 ["features/geometry/logic.py::_edge_border_depth"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.median"]
 depends = ["_border_edge_scatter", "_pool_border_depth", "_walk_border_depth"]
+note = "negpy_core::analysis::edge_border_depth (Python deleted)"
 
 ["features/geometry/logic.py::_enforce_ratio_by_occupancy"]
 phase = 2
@@ -610,9 +612,10 @@ depends = []
 
 ["features/geometry/logic.py::_pool_border_depth"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.percentile"]
 depends = []
+note = "negpy_core::analysis::pool_border_depth (Python deleted)"
 
 ["features/geometry/logic.py::_pre_keystone_point"]
 phase = 2
@@ -682,9 +685,10 @@ depends = []
 
 ["features/geometry/logic.py::_trim_film_edges"]
 phase = 2
-status = "todo"
-calls = []
-depends = ["measure_film_edges"]
+status = "ported"
+calls = ["negpy_core.trim_film_edges"]
+depends = []
+note = "negpy_core::analysis::trim_film_edges"
 
 ["features/geometry/logic.py::_vertical_edge_profile"]
 phase = 2
@@ -791,9 +795,10 @@ depends = []
 
 ["features/geometry/logic.py::measure_film_edges"]
 phase = 2
-status = "todo"
-calls = []
-depends = ["_edge_border_depth"]
+status = "ported"
+calls = ["negpy_core.measure_film_edges"]
+depends = []
+note = "negpy_core::analysis::measure_film_edges"
 
 ["features/geometry/logic.py::resolve_autocrop_rect"]
 phase = 2

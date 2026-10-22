@@ -41,12 +41,13 @@ BENCH_LOCK = Path("/tmp/negpy-bench.lock")
 
 
 def _resolve(key: str):
-    """(owner, attribute name, function) for a manifest key, or None for a nested function."""
+    """(owner, attribute name, function) for a manifest key, or None for a nested or deleted function."""
     rel, qual = key.split("::")
     module = importlib.import_module("negpy." + rel.removesuffix(".py").replace("/", "."))
     owner, *rest = qual.split(".")
     if not rest:
-        return module, owner, getattr(module, owner)
+        # A ported helper whose Python is deleted: its callers' replays cover it.
+        return (module, owner, getattr(module, owner)) if hasattr(module, owner) else None
     if len(rest) == 1 and isinstance(getattr(module, owner, None), type):
         cls = getattr(module, owner)
         return cls, rest[0], cls.__dict__[rest[0]]

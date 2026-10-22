@@ -255,7 +255,6 @@ const EDGE_REBATE_MARGIN: f32 = 0.10;
 // The dark side runs a wider margin: dense negative crowds the bottom of the range, so a
 // shadow sits nearer the picture median than a highlight does.
 const EDGE_SHADE_MARGIN: f32 = 0.16;
-// Mirrors geometry/logic.py's _EDGE_REBATE_STEP while it has Python users.
 const EDGE_REBATE_STEP: f32 = 0.18;
 const EDGE_REBATE_REF: usize = 60;
 // The step carries most of the drop from the outer level to the picture. A boundary does that
@@ -267,7 +266,7 @@ const EDGE_STEP_FLOOR: f32 = 0.06;
 /// `np.median` of a column of float32 values: the middle one, or the float32 mean of the two
 /// middle ones; NaN when any value is NaN.
 fn np_median(col: &mut [f32]) -> f32 {
-    if col.iter().any(|v| v.is_nan()) {
+    if col.is_empty() || col.iter().any(|v| v.is_nan()) {
         return f32::NAN;
     }
     let n = col.len();
@@ -291,8 +290,13 @@ fn np_max(a: f32, b: f32) -> f32 {
     }
 }
 
-/// `_walk_border_depth(lines, limit, bridge, relative_step)`: `lines` is L x N (steps inward x
-/// lines), the result one depth per line.
+/// `_walk_border_depth(lines, limit, bridge, relative_step)`: per line, the depth of the
+/// non-image border walking inward from the frame edge. `lines` is L x N (steps inward x
+/// lines). A camera scan puts two tiers outside the picture, either of which may be absent: a
+/// holder mask at the very edge, then a film-base sliver. Neither is separable by level alone,
+/// but the tiers are adjacent, so the walk carries across a short gap and stops at the last
+/// border evidence. A run that ended on a relative test takes its boundary from the strongest
+/// step inside it, and that step must clear a gate (fixed, or a share of the run's own drop).
 pub fn walk_border_depth(
     lines: &[f32],
     rows: usize,
@@ -379,6 +383,269 @@ pub fn walk_border_depth(
         })
         .collect();
     Some(out)
+}
+
+// Gap the walk carries across, covering the mid-gray ramp between mask and base.
+const EDGE_BRIDGE: i64 = 8;
+const EDGE_TRIM_CAP: f64 = 0.03;
+const EDGE_CORE: f64 = 0.70;
+const EDGE_QUANTILE: f64 = 80.0;
+const EDGE_MIN_SUPPORT: f64 = 0.45;
+// Second, deeper walk. EDGE_TRIM_CAP is the depth a border may reach on trust alone. Past it
+// a border must prove itself, because that much of a side is worth real picture. A wide
+// holder margin, a sprocket rail or a neighbouring frame all run several times deeper than
+// the cap, and clamping there leaves a band the eye reads as an uncropped edge.
+const EDGE_DEEP_CAP: f64 = 0.10;
+// Wider than EDGE_BRIDGE: a border this thick is layered (mask, ramp, base, sometimes a second
+// mask segment) and the mid-gray runs between the tiers are longer at this depth.
+const EDGE_DEEP_BRIDGE: i64 = 12;
+// Proof one: the step ends a straight edge. A film boundary is a cut line, so the per-line
+// depths fit a sloped line to within a fraction of the allowance. Picture content resolved by
+// the same rule scatters several times wider.
+const EDGE_DEEP_STRAIGHT: f64 = 0.025;
+// Proof two: the walk stopped on its own. Reaching the allowance means no boundary was found
+// inside it, and the depth is then an artefact of where the search was cut off.
+const EDGE_DEEP_FULL: f64 = 0.92;
+// Proof three is EDGE_STEP_SHARE. Proof four: the outermost pixels are one material. Mask,
+// bed and film base each hold their level along the whole side, so the outer level barely
+// moves from line to line, while picture reaching the frame edge moves with the subject.
+const EDGE_DEEP_OUTER_SPREAD: f64 = 0.15;
+
+/// `np.percentile` of float64 data (or integers, which NumPy interpolates in float64).
+fn np_percentile_f64(values: &[f64], q: f64) -> f64 {
+    let mut v = values.to_vec();
+    if v.iter().any(|x| x.is_nan()) {
+        return f64::NAN;
+    }
+    let n = v.len();
+    let virtual_index = (n - 1) as f64 * (q / 100.0);
+    let lo = (virtual_index.floor().max(0.0) as usize).min(n - 1);
+    let hi = (lo + 1).min(n - 1);
+    let t = virtual_index - lo as f64;
+    v.sort_by(f64::total_cmp);
+    let (a, b) = (v[lo], v[hi]);
+    let diff = b - a;
+    if t >= 0.5 {
+        b - diff * (1.0 - t)
+    } else {
+        a + diff * t
+    }
+}
+
+/// `np.median` of float64 data.
+fn np_median_f64(values: &[f64]) -> f64 {
+    if values.is_empty() || values.iter().any(|x| x.is_nan()) {
+        return f64::NAN;
+    }
+    let mut v = values.to_vec();
+    v.sort_by(f64::total_cmp);
+    let n = v.len();
+    if n % 2 == 1 {
+        v[n / 2]
+    } else {
+        (v[n / 2 - 1] + v[n / 2]) / 2.0
+    }
+}
+
+/// `_pool_border_depth`: the 80th percentile of the line depths, capped at `limit`, or 0 when
+/// fewer than 45% of the lines show a border.
+fn pool_border_depth(depth: &[i64], limit: i64) -> i64 {
+    let live = depth.iter().filter(|&&d| d > 0).count();
+    if (live as f64 / depth.len() as f64) < EDGE_MIN_SUPPORT {
+        return 0;
+    }
+    let as_f: Vec<f64> = depth.iter().map(|&d| d as f64).collect();
+    (limit as f64).min(np_percentile_f64(&as_f, EDGE_QUANTILE)) as i64
+}
+
+/// `_border_edge_scatter`: the median residual of the live depths around a Theil-Sen line.
+fn border_edge_scatter(depth: &[i64]) -> f64 {
+    let index: Vec<f64> = (0..depth.len())
+        .filter(|&i| depth[i] > 0)
+        .map(|i| i as f64)
+        .collect();
+    if index.len() < 8 {
+        return f64::INFINITY;
+    }
+    let value: Vec<f64> = depth
+        .iter()
+        .filter(|&&d| d > 0)
+        .map(|&d| d as f64)
+        .collect();
+    let step = (index.len() / 48).max(1);
+    let a: Vec<f64> = index.iter().step_by(step).copied().collect();
+    let b: Vec<f64> = value.iter().step_by(step).copied().collect();
+    let mut slopes = Vec::new();
+    for i in 0..a.len() {
+        for j in i + 1..a.len() {
+            let da = a[i] - a[j];
+            if da != 0.0 {
+                slopes.push((b[i] - b[j]) / da);
+            }
+        }
+    }
+    let slope = if slopes.is_empty() {
+        0.0
+    } else {
+        np_median_f64(&slopes)
+    };
+    let offsets: Vec<f64> = value
+        .iter()
+        .zip(&index)
+        .map(|(v, i)| v - slope * i)
+        .collect();
+    let intercept = np_median_f64(&offsets);
+    let residuals: Vec<f64> = value
+        .iter()
+        .zip(&index)
+        .map(|(v, i)| (v - (slope * i + intercept)).abs())
+        .collect();
+    np_median_f64(&residuals)
+}
+
+#[derive(Clone, Copy)]
+enum Side {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// `_EDGE_ORIENT[side](box)`, cropped to the core columns: lines run inward from the edge
+/// (rows), one per position along it (columns).
+fn edge_lines(boxed: &[f32], bh: usize, bw: usize, side: Side) -> (Vec<f32>, usize, usize) {
+    let (rows, n) = match side {
+        Side::Top | Side::Bottom => (bh, bw),
+        Side::Left | Side::Right => (bw, bh),
+    };
+    let at = |r: usize, c: usize| match side {
+        Side::Top => boxed[r * bw + c],
+        Side::Bottom => boxed[(bh - 1 - r) * bw + c],
+        Side::Left => boxed[c * bw + r],
+        Side::Right => boxed[c * bw + (bw - 1 - r)],
+    };
+    let margin = py_round((1.0 - EDGE_CORE) * 0.5 * n as f64).max(0) as usize;
+    let (c0, c1) = if n >= 2 * margin + 8 {
+        (margin, n - margin)
+    } else {
+        (0, n)
+    };
+    let cols = c1 - c0;
+    let mut out = Vec::with_capacity(rows * cols);
+    for r in 0..rows {
+        for c in c0..c1 {
+            out.push(at(r, c));
+        }
+    }
+    (out, rows, cols)
+}
+
+/// `_edge_border_depth(box, side, limit, deep_limit)`: the border depth on one side, per line
+/// (these frames are slightly tilted) and pooled. A first walk to `limit` is believed; a second
+/// to `deep_limit` is adopted only where it goes deeper and passes all four proofs.
+fn edge_border_depth(
+    boxed: &[f32],
+    bh: usize,
+    bw: usize,
+    side: Side,
+    limit: i64,
+    deep_limit: i64,
+) -> i64 {
+    let (lines, rows, cols) = edge_lines(boxed, bh, bw, side);
+    if limit <= 0 || (rows as i64) < limit + 8 || cols < 8 {
+        return 0;
+    }
+    let Some(walk) = walk_border_depth(&lines, rows, cols, limit as usize, EDGE_BRIDGE, false)
+    else {
+        return 0;
+    };
+    let near = pool_border_depth(&walk, limit);
+    if deep_limit <= limit || (rows as i64) < deep_limit + 8 {
+        return near;
+    }
+    let Some(deep) = walk_border_depth(
+        &lines,
+        rows,
+        cols,
+        deep_limit as usize,
+        EDGE_DEEP_BRIDGE,
+        true,
+    ) else {
+        return near;
+    };
+    let far = pool_border_depth(&deep, deep_limit);
+    if far <= near || far as f64 >= EDGE_DEEP_FULL * deep_limit as f64 {
+        return near;
+    }
+    if border_edge_scatter(&deep) > EDGE_DEEP_STRAIGHT * deep_limit as f64 {
+        return near;
+    }
+    let mut outer: Vec<f32> = (0..cols)
+        .filter(|&c| deep[c] > 0)
+        .map(|c| np_median(&mut [lines[c], lines[cols + c], lines[2 * cols + c]]))
+        .collect();
+    // np.median of nothing is NaN, and a NaN spread passes no comparison.
+    if outer.is_empty() {
+        return far;
+    }
+    let mid = np_median(&mut outer.clone());
+    let mut spread: Vec<f32> = outer.iter_mut().map(|v| (*v - mid).abs()).collect();
+    if np_median(&mut spread) as f64 > EDGE_DEEP_OUTER_SPREAD {
+        return near;
+    }
+    far
+}
+
+/// `measure_film_edges(lum, film_roi)`: per side (top, bottom, left, right) the border depth as
+/// a fraction of that side.
+pub fn measure_film_edges(
+    lum: &[f32],
+    h: usize,
+    w: usize,
+    roi: (usize, usize, usize, usize),
+) -> [f64; 4] {
+    let (y1, y2, x1, x2) = (roi.0.min(h), roi.1.min(h), roi.2.min(w), roi.3.min(w));
+    let (bh, bw) = (y2.saturating_sub(y1), x2.saturating_sub(x1));
+    if bh < 16 || bw < 16 {
+        return [0.0; 4];
+    }
+    let boxed = crop(lum, w, (y1, y2, x1, x2));
+    let ly = py_round(EDGE_TRIM_CAP * bh as f64);
+    let lx = py_round(EDGE_TRIM_CAP * bw as f64);
+    let dy = py_round(EDGE_DEEP_CAP * bh as f64);
+    let dx = py_round(EDGE_DEEP_CAP * bw as f64);
+    [
+        edge_border_depth(&boxed, bh, bw, Side::Top, ly, dy) as f64 / bh as f64,
+        edge_border_depth(&boxed, bh, bw, Side::Bottom, ly, dy) as f64 / bh as f64,
+        edge_border_depth(&boxed, bh, bw, Side::Left, lx, dx) as f64 / bw as f64,
+        edge_border_depth(&boxed, bh, bw, Side::Right, lx, dx) as f64 / bw as f64,
+    ]
+}
+
+/// `_trim_film_edges(lum, film_roi)`: the box inset past the border on each side, or the box
+/// itself when that would take half a side.
+pub fn trim_film_edges(
+    lum: &[f32],
+    h: usize,
+    w: usize,
+    roi: (i64, i64, i64, i64),
+) -> (i64, i64, i64, i64) {
+    let (y1, y2, x1, x2) = roi;
+    let (height, width) = (y2 - y1, x2 - x1);
+    let clamp = |v: i64| v.max(0) as usize;
+    let m = measure_film_edges(lum, h, w, (clamp(y1), clamp(y2), clamp(x1), clamp(x2)));
+    let out = (
+        y1 + py_round(m[0] * height as f64),
+        y2 - py_round(m[1] * height as f64),
+        x1 + py_round(m[2] * width as f64),
+        x2 - py_round(m[3] * width as f64),
+    );
+    if ((out.1 - out.0) as f64) < 0.5 * height as f64
+        || ((out.3 - out.2) as f64) < 0.5 * width as f64
+    {
+        return roi;
+    }
+    out
 }
 
 #[cfg(test)]

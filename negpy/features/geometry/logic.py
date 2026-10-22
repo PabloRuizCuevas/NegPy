@@ -1044,130 +1044,6 @@ def _roi_from_measured_border(lum: np.ndarray, film_roi: ROI) -> ROI | None:
     return roi
 
 
-# Gap the walk carries across, covering the mid-gray ramp between mask and base.
-_EDGE_BRIDGE = 8
-_EDGE_TRIM_CAP = 0.03
-_EDGE_CORE = 0.70
-_EDGE_QUANTILE = 80
-_EDGE_MIN_SUPPORT = 0.45
-# Mirrored in negpy_core/src/analysis.rs (EDGE_REBATE_STEP) until its other users move.
-_EDGE_REBATE_STEP = 0.18
-
-# Second, deeper walk. _EDGE_TRIM_CAP is the depth a border may reach on trust alone. Past
-# it a border must prove itself, because that much of a side is worth real picture. A wide
-# holder margin, a sprocket rail or a neighbouring frame all run several times deeper than
-# the cap, and clamping there leaves a band the eye reads as an uncropped edge.
-_EDGE_DEEP_CAP = 0.10
-# Wider than _EDGE_BRIDGE: a border this thick is layered (mask, ramp, base, sometimes a
-# second mask segment) and the mid-gray runs between the tiers are longer at this depth.
-_EDGE_DEEP_BRIDGE = 12
-# Proof one: the step ends a straight edge. A film boundary is a cut line, so the per-line
-# depths fit a sloped line to within a fraction of the allowance. Picture content resolved
-# by the same rule scatters several times wider.
-_EDGE_DEEP_STRAIGHT = 0.025
-# Proof two: the walk stopped on its own. Reaching the allowance means no boundary was
-# found inside it, and the depth is then an artefact of where the search was cut off.
-_EDGE_DEEP_FULL = 0.92
-# Proof three: the step carries most of the drop from the outer level to the picture (the
-# walk's EDGE_STEP_SHARE in negpy_core).
-# Proof four: the outermost pixels are one material. Mask, bed and film base each hold their
-# level along the whole side, so the outer level barely moves from line to line, while
-# picture reaching the frame edge moves with the subject.
-_EDGE_DEEP_OUTER_SPREAD = 0.15
-
-_EDGE_ORIENT = {
-    "top": lambda box: box,
-    "bottom": lambda box: box[::-1],
-    "left": lambda box: box.T,
-    "right": lambda box: box.T[::-1],
-}
-
-
-def _walk_border_depth(lines: np.ndarray, limit: int, bridge: int, relative_step: bool) -> np.ndarray:
-    """
-    Per-line depth of the non-image border, walking inward from the frame edge.
-
-    A camera scan puts two tiers outside the picture, either of which may be absent: an
-    opaque holder mask at the very edge, then a clear film-base sliver. Neither is
-    separable by level alone — the mask overlaps dense negative around 0.05 and the ramp
-    between the tiers sits squarely in picture range — but the tiers are adjacent, so the
-    walk carries across a short gap and stops at the last border evidence instead of the
-    first picture-like pixel.
-
-    relative_step scales the step a soft-ended run must show by that run's own drop,
-    instead of the fixed _EDGE_REBATE_STEP; negpy_core's walk_border_depth holds the rule.
-    """
-    return negpy_core.walk_border_depth(np.ascontiguousarray(lines, dtype=np.float32), int(limit), int(bridge), bool(relative_step))
-
-
-def _pool_border_depth(depth: np.ndarray, limit: int) -> int:
-    if float((depth > 0).mean()) < _EDGE_MIN_SUPPORT:
-        return 0  # a minority of lines: incidental highlights, not a border
-    return int(min(limit, np.percentile(depth, _EDGE_QUANTILE)))
-
-
-def _border_edge_scatter(depth: np.ndarray) -> float:
-    """
-    How far the resolved depths sit off a straight line, in pixels (median residual).
-
-    A film boundary is a cut line, so a robust fit through the per-line depths leaves
-    almost nothing; the slope absorbs the tilt every frame has. Picture content resolved
-    by the same rule follows the subject instead and scatters.
-    """
-    live = depth > 0
-    if int(live.sum()) < 8:
-        return float("inf")
-    index = np.nonzero(live)[0].astype(np.float64)
-    value = depth[live].astype(np.float64)
-    step = max(1, index.size // 48)
-    a, b = index[::step], value[::step]
-    # Theil-Sen over a coarse subsample: the median pairwise slope ignores the runs that
-    # follow a subject, which a least-squares fit would let tilt the line.
-    da, db = a[:, None] - a[None, :], b[:, None] - b[None, :]
-    upper = np.triu(np.ones_like(da, dtype=bool), 1) & (da != 0)
-    slope = float(np.median(db[upper] / da[upper])) if upper.any() else 0.0
-    intercept = float(np.median(value - slope * index))
-    return float(np.median(np.abs(value - (slope * index + intercept))))
-
-
-def _edge_border_depth(box: np.ndarray, side: str, limit: int, deep_limit: int = 0) -> int:
-    """
-    Depth of the non-image border on one side of a film box, in pixels.
-
-    Walks each line inward on its own and pools the depths — per line rather than per row
-    because these frames are slightly tilted, and one row crosses both border tiers and the
-    picture at once, which smears every per-row statistic together.
-
-    Two passes. The first reaches `limit` and is believed as it stands. The second reaches
-    `deep_limit`, and is adopted only where it goes deeper and proves itself: it must stop
-    inside its allowance, leave a straight edge, and end on a step that carries most of the
-    run's drop. Past `limit` a wrong answer costs real picture, so the burden is on the
-    deeper reading.
-    """
-    lines = _EDGE_ORIENT[side](box)
-    n = lines.shape[1]
-    margin = int(round((1.0 - _EDGE_CORE) * 0.5 * n))
-    if n - 2 * margin >= 8:
-        lines = lines[:, margin : n - margin]
-    if limit <= 0 or lines.shape[0] < limit + 8 or lines.shape[1] < 8:
-        return 0
-
-    near = _pool_border_depth(_walk_border_depth(lines, limit, _EDGE_BRIDGE, False), limit)
-    if deep_limit <= limit or lines.shape[0] < deep_limit + 8:
-        return near
-
-    deep = _walk_border_depth(lines, deep_limit, _EDGE_DEEP_BRIDGE, True)
-    far = _pool_border_depth(deep, deep_limit)
-    if far <= near or far >= _EDGE_DEEP_FULL * deep_limit:
-        return near
-    if _border_edge_scatter(deep) > _EDGE_DEEP_STRAIGHT * deep_limit:
-        return near
-    outer = np.median(lines[:3], axis=0)[deep > 0]
-    if float(np.median(np.abs(outer - np.median(outer)))) > _EDGE_DEEP_OUTER_SPREAD:
-        return near
-    return far
-
-
 def measure_film_edges(lum: np.ndarray, film_roi: ROI) -> dict[str, float]:
     """
     Per-side holder-mask + film-base thickness inside a film box, as a fraction of that
@@ -1178,22 +1054,8 @@ def measure_film_edges(lum: np.ndarray, film_roi: ROI) -> dict[str, float]:
     few pixels, so that ring straddles both tiers plus the picture and abstains; this
     walks the edge itself instead.
     """
-    y1, y2, x1, x2 = film_roi
-    box = lum[y1:y2, x1:x2]
-    bh, bw = box.shape[:2]
-    if bh < 16 or bw < 16:
-        return {name: 0.0 for name in BORDER_SIDES}
-
-    ly = int(round(_EDGE_TRIM_CAP * bh))
-    lx = int(round(_EDGE_TRIM_CAP * bw))
-    dy = int(round(_EDGE_DEEP_CAP * bh))
-    dx = int(round(_EDGE_DEEP_CAP * bw))
-    return {
-        "top": _edge_border_depth(box, "top", ly, dy) / bh,
-        "bottom": _edge_border_depth(box, "bottom", ly, dy) / bh,
-        "left": _edge_border_depth(box, "left", lx, dx) / bw,
-        "right": _edge_border_depth(box, "right", lx, dx) / bw,
-    }
+    sides = negpy_core.measure_film_edges(np.ascontiguousarray(lum, dtype=np.float32), tuple(int(v) for v in film_roi))
+    return dict(zip(BORDER_SIDES, sides))
 
 
 def _trim_film_edges(lum: np.ndarray, film_roi: ROI) -> ROI:
@@ -1203,22 +1065,10 @@ def _trim_film_edges(lum: np.ndarray, film_roi: ROI) -> ROI:
     Sides are independent: a frame sitting off-centre in the holder shows a border on some
     sides and none on others, so requiring an opposite pair (as _roi_from_measured_border
     does) would leave the border on. The caps are what bound the damage instead — picture
-    running to the frame edge is trimmed by at most _EDGE_TRIM_CAP of the side, or
-    _EDGE_DEEP_CAP where the deeper walk proved a border.
+    running to the frame edge is trimmed by at most 3% of the side, or 10% where the
+    deeper walk proved a border (negpy_core holds the walk and its constants).
     """
-    y1, y2, x1, x2 = film_roi
-    height, width = y2 - y1, x2 - x1
-    measured = measure_film_edges(lum, film_roi)
-
-    roi = (
-        y1 + round(measured["top"] * height),
-        y2 - round(measured["bottom"] * height),
-        x1 + round(measured["left"] * width),
-        x2 - round(measured["right"] * width),
-    )
-    if roi[1] - roi[0] < 0.5 * height or roi[3] - roi[2] < 0.5 * width:
-        return film_roi
-    return roi
+    return negpy_core.trim_film_edges(np.ascontiguousarray(lum, dtype=np.float32), tuple(int(v) for v in film_roi))
 
 
 def _find_rebate_level(lum: np.ndarray, film_roi: ROI, bed: Optional[float] = None) -> Optional[Tuple[float, float]]:
