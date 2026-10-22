@@ -2,6 +2,9 @@ import cv2
 import negpy_core
 import numpy as np
 import pytest
+from core_oracle import cv2_oracle
+
+pytestmark = cv2_oracle
 
 _RNG = np.random.default_rng(5)
 

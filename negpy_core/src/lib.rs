@@ -1,3 +1,4 @@
+pub mod filter;
 pub mod resize;
 pub mod stats;
 
@@ -8,5 +9,6 @@ mod py;
 #[pyo3::pymodule]
 fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> {
     py::stats::register(m)?;
-    py::resize::register(m)
+    py::resize::register(m)?;
+    py::filter::register(m)
 }
