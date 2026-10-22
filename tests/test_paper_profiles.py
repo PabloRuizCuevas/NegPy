@@ -142,17 +142,17 @@ class TestPaperProfiles(unittest.TestCase):
         for mode in (ProcessMode.BW, ProcessMode.E6):
             self.assertEqual(resolve_print_color(effective_paper_profile("kodak_endura", mode)), (None, None))
 
-    def test_frontier_gain_keeps_the_grade_range(self):
-        # slope_gain steepens the line under the long shoulder, so ISO R stays near the Grade's.
+    def test_frontier_gain_matches_digital_midtone_span(self):
+        # slope_gain prints L* 90 to 10 over Digital's log E span at the same Grade.
         x = np.linspace(-0.5, 1.5, 2001, dtype=np.float32)
         img = np.stack([x, x, x], axis=-1)[None]
 
-        def iso_r(key):
-            p = resolve_paper(key)
-            d = -np.log10(np.maximum(self._render(key, img)[0].mean(-1), 1e-9))
-            return 130.0 * float(x[np.argmax(d >= 0.9 * p.d_max)] - x[np.argmax(d >= p.d_min + 0.04)])
+        def span(key):
+            y = np.maximum(self._render(key, img)[0].mean(-1), 1e-9)
+            lstar = 116.0 * np.cbrt(y) - 16.0
+            return float(x[np.argmax(lstar <= 10.0)] - x[np.argmax(lstar <= 90.0)])
 
-        self.assertLess(abs(iso_r("frontier") - iso_r(DEFAULT_PROFILE_KEY)), 8.0)
+        self.assertAlmostEqual(span("frontier") / span(DEFAULT_PROFILE_KEY), 1.0, delta=0.05)
 
     def test_slope_gain_keeps_a_neutral_film_neutral_under_cast_removal(self):
         # Cast Removal matches R and B to green's slope, so the gain applies once to all three layers.

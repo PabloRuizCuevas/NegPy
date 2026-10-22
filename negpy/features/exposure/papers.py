@@ -95,9 +95,9 @@ PAPER_PROFILES: Dict[str, PaperProfile] = {
     DEFAULT_PROFILE_KEY: PaperProfile(label="Digital (Adobe RGB)", short="Digital", kind="default", medium="digital"),
     # Digital's curve with a Pakon minilab's colors: the LUT is RGBScan.icc applied to Digital's print.
     "pakon": PaperProfile(label="Digital (Pakon Minilab)", short="Pakon", kind="ra4", medium="digital", print_color=DyeLut("pakon")),
-    # A Frontier 350/370's file output, from its own tables, with a neutral gray axis. The curve is fitted to its gray
-    # curve on the print density axis (543 codes per log E) at the default Grade. Its long shoulder takes much of the
-    # ISO R, so the straight line is steeper than the Grade gives.
+    # A Frontier 350/370's file output, from its own tables, with a neutral gray axis. The curve shape is fitted to its
+    # gray curve on the print density axis (543 codes per log E). slope_gain prints L* 90 to 10 over Digital's log E span
+    # at the same Grade. The fit's equal-ISO-R gain (1.5) separates the layers so far that warm shadows block in two.
     "frontier": PaperProfile(
         label="Digital (Frontier)",
         short="Frontier",
@@ -109,7 +109,7 @@ PAPER_PROFILES: Dict[str, PaperProfile] = {
         shoulder_sharpness_base=1.21,
         paper_midtone_gamma=0.25,
         paper_gamma_width=2.0,
-        slope_gain=1.5,
+        slope_gain=1.22,
         print_color=DyeLut("frontier"),
     ),
     # TEMP eval: Frontier colors on Digital's curve, as Pakon does. Remove before merge.
