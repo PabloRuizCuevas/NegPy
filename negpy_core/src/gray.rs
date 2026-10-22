@@ -287,7 +287,7 @@ mod tests {
             .collect();
         let mut dst = vec![0u8; h * w];
         canny(&src, &mut dst, h, w, 40.0, 160.0).unwrap();
-        assert!(dst.iter().any(|&v| v == 255));
+        assert!(dst.contains(&255));
         assert!((0..h).all(|y| dst[y * w] == 0));
     }
 }
