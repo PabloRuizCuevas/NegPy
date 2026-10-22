@@ -439,9 +439,10 @@ QLabel[hint="warning"] {
     border: none;
 }
 
+/* An error asks the user to act, so it reads at body size. */
 QLabel[hint="error"] {
-    color: @error;
-    font-size: @font_size_smallpx;
+    color: @error_text;
+    font-size: @font_size_basepx;
     border: none;
 }
 

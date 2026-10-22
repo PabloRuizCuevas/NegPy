@@ -62,8 +62,10 @@ class ThemeConfig:
     mark_photo: str = "#FFFFFF"
     # The dark edge or plate under a photo mark; each site sets its own alpha (templates.with_alpha).
     mark_shadow: str = "#000000"
-    # Errors and invalid input.
+    # Errors and invalid input. Error copy takes the lighter tier, as the channel colors do: error
+    # falls under 4.5:1 on a card, and a lighter error would dim the white mark on a failed-frame badge.
     error: str = "#D32F2F"
+    error_text: str = "#FF5A5A"
 
     # Spacing scale (px)
     space_xs: int = 2

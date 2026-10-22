@@ -290,7 +290,7 @@ def test_no_theme_color_is_a_bright_red_but_errors_and_the_red_channel():
     the red channel of RGB data stay bright red."""
     import dataclasses
 
-    allowed = {"error", "channel_red", "channel_red_text"}
+    allowed = {"error", "error_text", "channel_red", "channel_red_text"}
     bright = []
     for field in dataclasses.fields(THEME):
         value = getattr(THEME, field.name)
