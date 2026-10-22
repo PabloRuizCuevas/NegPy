@@ -109,7 +109,7 @@ PAPER_PROFILES: Dict[str, PaperProfile] = {
         shoulder_sharpness_base=1.21,
         paper_midtone_gamma=0.25,
         paper_gamma_width=2.0,
-        slope_gain=1.22,
+        slope_gain=1.2,
         print_color=DyeLut("frontier"),
     ),
     # ── B&W (tonal only) ──────────────────────────────────────────────────────
