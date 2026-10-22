@@ -17,6 +17,11 @@ on:
           - windows
           - linux
           - macos
+      publish:
+        description: 'Create the GitHub release (off for a test build)'
+        required: true
+        default: true
+        type: boolean
 
 jobs:
   setup:
@@ -55,6 +60,15 @@ jobs:
 
       - name: Set up Python
         run: uv python install 3.13
+
+      - name: Set up Rust
+        # uv sync builds negpy_core with the toolchain pinned in negpy_core/rust-toolchain.toml.
+        working-directory: negpy_core
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: negpy_core
 
       - name: Install System Dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -133,7 +147,7 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
-    if: success()
+    if: success() && inputs.publish
     environment: production
     permissions:
       contents: write

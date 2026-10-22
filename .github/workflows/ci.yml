@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, mz/core ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, mz/core ]
 
 jobs:
   test:
@@ -23,6 +23,20 @@ jobs:
       - name: Set up Python
         run: uv python install 3.13
 
+      - name: Set up Rust
+        # Installs the toolchain pinned in negpy_core/rust-toolchain.toml.
+        working-directory: negpy_core
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: negpy_core
+
+      - name: Rust licenses and bans (cargo-deny)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: negpy_core/Cargo.toml
+
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -33,6 +47,10 @@ jobs:
         # pieusb / plustek are pure Python (+ bundled libusb where needed); without
         # them those backend tests importorskip away.
         run: uv sync --group dev --group plustek --group pieusb
+
+      - name: Rust checks (fmt, clippy, test)
+        # Under uv run, PyO3's build script finds the project's Python 3.13, not the runner's.
+        run: uv run --no-sync make rust
 
       - name: Run Linting (Ruff)
         run: uv run ruff check .
@@ -63,3 +81,42 @@ jobs:
           name: coverage
           path: coverage.xml
           retention-days: 7
+
+  native:
+    # negpy_core must give the same bits on every release platform: run the Rust tests and
+    # the pytest oracles of the ported functions on each one.
+    name: Native (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Set up Rust
+        working-directory: negpy_core
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: negpy_core
+
+      - name: Rust tests
+        run: cargo test --manifest-path negpy_core/Cargo.toml
+
+      - name: Install Dependencies
+        run: uv sync --group dev
+
+      - name: Ported-function oracles
+        run: uv run pytest tests/test_percentiles.py

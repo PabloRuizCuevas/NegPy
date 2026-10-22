@@ -40,8 +40,22 @@
       sourcePreference = "wheel";
     };
 
+    # negpy-core stays a normal build: a Rust edit needs a new `nix develop`.
     editableOverlay = workspace.mkEditablePyprojectOverlay {
       root = "$REPO_ROOT";
+      members = ["negpy"];
+    };
+
+    # The Rust extension builds with maturin from the vendored Cargo.lock; nothing is
+    # downloaded at build time.
+    rustOverlay = pkgs: final: prev: {
+      negpy-core = prev.negpy-core.overrideAttrs (old: {
+        cargoDeps = pkgs.rustPlatform.importCargoLock {lockFile = ./negpy_core/Cargo.lock;};
+        nativeBuildInputs =
+          (old.nativeBuildInputs or [])
+          ++ [pkgs.rustPlatform.cargoSetupHook pkgs.cargo pkgs.rustc]
+          ++ final.resolveBuildSystem {maturin = [];};
+      });
     };
 
     # Packages that need system Qt6/Vulkan/LLVM rather than what autoPatchelf can wire
@@ -141,6 +155,7 @@
           pyproject-build-systems.overlays.wheel
           overlay
           (nixpkgsFallbackOverlay pkgs pkgs.python313Packages)
+          (rustOverlay pkgs)
           (dataFixupOverlay python)
         ]
       );
@@ -254,6 +269,10 @@
             virtualenv
             pkgs.uv
             pkgs.qt6.qtbase
+            pkgs.cargo
+            pkgs.rustc
+            pkgs.rustfmt
+            pkgs.clippy
           ];
           env = {
             UV_NO_SYNC = "1";
