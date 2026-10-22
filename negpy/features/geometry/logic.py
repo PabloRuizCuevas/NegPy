@@ -949,12 +949,6 @@ def _detection_luma(img: np.ndarray) -> np.ndarray:
 
 BORDER_SIDES: Tuple[str, ...] = ("top", "bottom", "left", "right")
 
-# Walk cap per side, as a fraction of that side. Real rebate plus bed slop stays well under
-# it, so reaching the cap means the profile never came back down and bright picture content
-# touches that edge. Those sides report NaN and pooling ignores them.
-_BORDER_WALK_CAP = 0.06
-_BORDER_MIN_SEPARATION = 0.15
-
 
 def measure_film_border(lum: np.ndarray, film_roi: ROI) -> dict[str, float]:
     """
@@ -965,42 +959,8 @@ def measure_film_border(lum: np.ndarray, film_roi: ROI) -> dict[str, float]:
     bright sky reaching the frame edge. Callers pool these across a roll and take the
     median. A side with no clean border->image transition reports NaN.
     """
-    y1, y2, x1, x2 = film_roi
-    box = lum[y1:y2, x1:x2]
-    bh, bw = box.shape[:2]
-    if bh < 16 or bw < 16:
-        return {name: float("nan") for name in BORDER_SIDES}
-
-    image_level = float(np.percentile(box, 40))
-    row_profile = box.mean(axis=1)
-    col_profile = box.mean(axis=0)
-
-    result: dict[str, float] = {}
-    for name in BORDER_SIDES:
-        profile, length = (row_profile, bh) if name in ("top", "bottom") else (col_profile, bw)
-        walk = profile[::-1] if name in ("bottom", "right") else profile
-        # A 1-2 px border is too few samples for a median; use a high percentile.
-        outer = walk[: max(2, round(0.03 * length))]
-        base = float(np.percentile(outer, 90))
-        if base - image_level < _BORDER_MIN_SEPARATION:
-            result[name] = 0.0  # no bright border on this side (full-bleed edge)
-            continue
-        threshold = 0.5 * (base + image_level)
-        cap = max(3, int(_BORDER_WALK_CAP * length))
-        head = walk[:cap]
-        # From the brightest sample, not index 0. The box edge usually carries a sliver of bed
-        # that ramps up into the rebate, and a walk starting there is already under the
-        # threshold and reports zero on a side that has a border.
-        peak = int(np.argmax(head))
-        if head[peak] <= threshold:
-            result[name] = 0.0  # no bright border on this side (full-bleed edge)
-            continue
-        below = np.flatnonzero(head[peak:] <= threshold)
-        result[name] = float("nan") if below.size == 0 else float(peak + int(below[0])) / length
-    return result
-
-
-_OPPOSITE_SIDE = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}
+    sides = negpy_core.measure_film_border(np.ascontiguousarray(lum, dtype=np.float32), tuple(int(v) for v in film_roi))
+    return dict(zip(BORDER_SIDES, sides))
 
 
 def _roi_from_measured_border(lum: np.ndarray, film_roi: ROI) -> ROI | None:
@@ -1011,37 +971,7 @@ def _roi_from_measured_border(lum: np.ndarray, film_roi: ROI) -> ROI | None:
     bright side is usually a uniform scene region, and trusting it carves the picture
     down to a dark subject.
     """
-    measured = measure_film_border(lum, film_roi)
-    y1, y2, x1, x2 = film_roi
-    height, width = y2 - y1, x2 - x1
-
-    # Cap against the opposite side, so one over-long walk cannot cut deep against a much
-    # smaller reading across the same gate.
-    insets: dict[str, float] = {}
-    for name in BORDER_SIDES:
-        own, opposite = measured[name], measured[_OPPOSITE_SIDE[name]]
-        if not np.isfinite(own):
-            own = opposite
-        if not np.isfinite(own):
-            insets[name] = 0.0
-            continue
-        if own > 0.0 and np.isfinite(opposite) and opposite > 0.0:
-            own = min(own, 2.0 * opposite)
-        insets[name] = float(own)
-
-    paired = any(insets[first] > 0.0 and insets[second] > 0.0 for first, second in (("top", "bottom"), ("left", "right")))
-    if not paired:
-        return None
-
-    roi = (
-        y1 + round(insets["top"] * height),
-        y2 - round(insets["bottom"] * height),
-        x1 + round(insets["left"] * width),
-        x2 - round(insets["right"] * width),
-    )
-    if roi[1] <= roi[0] or roi[3] <= roi[2]:
-        return None
-    return roi
+    return negpy_core.roi_from_measured_border(np.ascontiguousarray(lum, dtype=np.float32), tuple(int(v) for v in film_roi))
 
 
 def measure_film_edges(lum: np.ndarray, film_roi: ROI) -> dict[str, float]:

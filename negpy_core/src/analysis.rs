@@ -3,7 +3,7 @@
 use multiversion::multiversion;
 use rayon::prelude::*;
 
-use crate::stats::{np_percentiles, percentiles};
+use crate::stats::{np_percentiles, pairwise_sum_f32, percentiles};
 
 const LUMA_R: f64 = 0.2126;
 const LUMA_G: f64 = 0.7152;
@@ -646,6 +646,125 @@ pub fn trim_film_edges(
         return roi;
     }
     out
+}
+
+// Walk cap per side, as a fraction of that side. Real rebate plus bed slop stays well under
+// it, so reaching the cap means the profile never came back down and bright picture content
+// touches that edge. Those sides report NaN and pooling ignores them.
+const BORDER_WALK_CAP: f64 = 0.06;
+const BORDER_MIN_SEPARATION: f64 = 0.15;
+
+/// `measure_film_border(lum, film_roi)`: per side (top, bottom, left, right) the bright
+/// border's thickness as a fraction of that side; 0.0 for none, NaN for no clean transition.
+pub fn measure_film_border(
+    lum: &[f32],
+    h: usize,
+    w: usize,
+    roi: (usize, usize, usize, usize),
+) -> [f64; 4] {
+    let (y1, y2, x1, x2) = (roi.0.min(h), roi.1.min(h), roi.2.min(w), roi.3.min(w));
+    let (bh, bw) = (y2.saturating_sub(y1), x2.saturating_sub(x1));
+    if bh < 16 || bw < 16 {
+        return [f64::NAN; 4];
+    }
+    let boxed = crop(lum, w, (y1, y2, x1, x2));
+    let Some(level) = np_percentiles(&boxed, &[40.0]) else {
+        return [f64::NAN; 4];
+    };
+    let image_level = level[0] as f64;
+    // mean(axis=1): a pairwise sum per row; mean(axis=0): sequential down each column.
+    let rows: Vec<f32> = boxed
+        .chunks_exact(bw)
+        .map(|r| pairwise_sum_f32(r) / bw as f32)
+        .collect();
+    let mut cols = vec![0f32; bw];
+    for r in boxed.chunks_exact(bw) {
+        for (c, &v) in cols.iter_mut().zip(r) {
+            *c += v;
+        }
+    }
+    cols.iter_mut().for_each(|c| *c /= bh as f32);
+
+    let side = |profile: &[f32], reversed: bool| -> f64 {
+        let length = profile.len();
+        let walk: Vec<f32> = if reversed {
+            profile.iter().rev().copied().collect()
+        } else {
+            profile.to_vec()
+        };
+        let outer_n = py_round(0.03 * length as f64).max(2) as usize;
+        let Some(b) = np_percentiles(&walk[..outer_n.min(length)], &[90.0]) else {
+            return f64::NAN;
+        };
+        let base = b[0] as f64;
+        if base - image_level < BORDER_MIN_SEPARATION {
+            return 0.0;
+        }
+        // NEP 50: the Python float threshold joins float32 comparisons as float32.
+        let threshold = (0.5 * (base + image_level)) as f32;
+        let cap = ((BORDER_WALK_CAP * length as f64) as usize)
+            .max(3)
+            .min(length);
+        let head = &walk[..cap];
+        // np.argmax: the first maximum, or the first NaN.
+        let peak = head.iter().position(|v| v.is_nan()).unwrap_or_else(|| {
+            head.iter()
+                .enumerate()
+                .fold(0, |best, (i, &v)| if v > head[best] { i } else { best })
+        });
+        if head[peak] <= threshold {
+            return 0.0;
+        }
+        match head[peak..].iter().position(|&v| v <= threshold) {
+            Some(k) => (peak + k) as f64 / length as f64,
+            None => f64::NAN,
+        }
+    };
+    [
+        side(&rows, false),
+        side(&rows, true),
+        side(&cols, false),
+        side(&cols, true),
+    ]
+}
+
+/// `_roi_from_measured_border(lum, film_roi)`: the box inset by its measured border, when an
+/// opposite pair agrees.
+pub fn roi_from_measured_border(
+    lum: &[f32],
+    h: usize,
+    w: usize,
+    roi: (i64, i64, i64, i64),
+) -> Option<(i64, i64, i64, i64)> {
+    let (y1, y2, x1, x2) = roi;
+    let clamp = |v: i64| v.max(0) as usize;
+    let m = measure_film_border(lum, h, w, (clamp(y1), clamp(y2), clamp(x1), clamp(x2)));
+    let (height, width) = ((y2 - y1) as f64, (x2 - x1) as f64);
+    let opposite = [1, 0, 3, 2];
+    let mut insets = [0f64; 4];
+    for i in 0..4 {
+        let (mut own, other) = (m[i], m[opposite[i]]);
+        if !own.is_finite() {
+            own = other;
+        }
+        if !own.is_finite() {
+            continue;
+        }
+        if own > 0.0 && other.is_finite() && other > 0.0 {
+            own = own.min(2.0 * other);
+        }
+        insets[i] = own;
+    }
+    if !((insets[0] > 0.0 && insets[1] > 0.0) || (insets[2] > 0.0 && insets[3] > 0.0)) {
+        return None;
+    }
+    let out = (
+        y1 + py_round(insets[0] * height),
+        y2 - py_round(insets[1] * height),
+        x1 + py_round(insets[2] * width),
+        x2 - py_round(insets[3] * width),
+    );
+    (out.1 > out.0 && out.3 > out.2).then_some(out)
 }
 
 #[cfg(test)]

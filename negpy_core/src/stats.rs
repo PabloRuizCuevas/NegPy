@@ -152,6 +152,34 @@ pub fn percentiles(values: &[f32], qs: &[f64]) -> Option<Vec<f32>> {
     )
 }
 
+/// NumPy's float32 sum of a contiguous run: one pairwise sum (blocks of 128, eight
+/// accumulators), the order `np.sum` and `mean(axis=-1)` use.
+pub fn pairwise_sum_f32(a: &[f32]) -> f32 {
+    let n = a.len();
+    if n < 8 {
+        return a.iter().fold(-0.0f32, |s, &v| s + v);
+    }
+    if n <= 128 {
+        let mut r = [0f32; 8];
+        r.copy_from_slice(&a[..8]);
+        let mut i = 8;
+        while i < n - n % 8 {
+            for j in 0..8 {
+                r[j] += a[i + j];
+            }
+            i += 8;
+        }
+        let mut res = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]));
+        for &v in &a[i..] {
+            res += v;
+        }
+        return res;
+    }
+    let mut n2 = n / 2;
+    n2 -= n2 % 8;
+    pairwise_sum_f32(&a[..n2]) + pairwise_sum_f32(&a[n2..])
+}
+
 /// `np.percentile` itself, which is NaN for every q when any value is NaN; `percentiles`
 /// matches NegPy's partition helper, which callers feed only finite values.
 pub fn np_percentiles(values: &[f32], qs: &[f64]) -> Option<Vec<f32>> {
@@ -183,6 +211,18 @@ mod tests {
                 ((x >> 40) as f32 / (1u64 << 24) as f32) * 4.0 - 1.0
             })
             .collect()
+    }
+
+    #[test]
+    fn pairwise_sum_regions() {
+        let v: Vec<f32> = (0..1000).map(|i| (i as f32).sqrt()).collect();
+        for n in [0, 1, 7, 8, 9, 128, 129, 1000] {
+            let exact: f64 = v[..n].iter().map(|&x| x as f64).sum();
+            assert!(
+                (pairwise_sum_f32(&v[..n]) as f64 - exact).abs() < 1e-2,
+                "n={n}"
+            );
+        }
     }
 
     #[test]

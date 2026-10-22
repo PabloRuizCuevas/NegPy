@@ -649,9 +649,10 @@ depends = []
 
 ["features/geometry/logic.py::_roi_from_measured_border"]
 phase = 2
-status = "todo"
-calls = []
-depends = ["measure_film_border"]
+status = "ported"
+calls = ["negpy_core.roi_from_measured_border"]
+depends = []
+note = "negpy_core::analysis::roi_from_measured_border"
 
 ["features/geometry/logic.py::_score_contour"]
 phase = 2
@@ -789,9 +790,10 @@ depends = ["keystone_matrix"]
 
 ["features/geometry/logic.py::measure_film_border"]
 phase = 2
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.measure_film_border"]
 depends = []
+note = "negpy_core::analysis::measure_film_border"
 
 ["features/geometry/logic.py::measure_film_edges"]
 phase = 2
