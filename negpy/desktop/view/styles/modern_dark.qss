@@ -567,12 +567,6 @@ QPushButton[primary="true"]:disabled, QToolButton[primary="true"]:disabled {
     color: @text_muted;
 }
 
-/* The right panel's main tab strip (see widgets/panel_tab.py). */
-OverflowBar#main_tabs {
-    background-color: @bg_header;
-    border-bottom: 1px solid @border_primary;
-}
-
 /* Collapsible section header (see widgets/collapsible.py). [overlay="true"] =
    header stacked over a preview widget (Tone/Color histogram strip). Its outline runs on into
    the content frame's, so an open card has square bottom corners; only a collapsed one rounds them. */
