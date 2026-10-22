@@ -462,43 +462,31 @@ def luminance_density_range(bounds: LogNegativeBounds) -> float:
     return float(LUMA_R * rr + LUMA_G * rg + LUMA_B * rb)
 
 
-def _textured_cells(lum: np.ndarray) -> np.ndarray:
-    """
-    Cells of the prefiltered luma grid that carry detail. The grid is tiled into
-    sectors of 2x2 blocks of activity_block cells; a sector votes when its four block
-    means span more than activity_gate_density (Boyack & Juenger, US 5,724,456). Block
-    means average grain out, and a flat sector beside a textured one stays out because
-    only its own blocks are compared. Falls back to every cell when too few pass.
-    """
+def _activity_gate() -> Tuple[int, float, float]:
+    """The activity gate shared by the anchor and textural-range meters: the grid is tiled into
+    sectors of 2x2 blocks of activity_block cells, and a sector votes when its four block means
+    span more than activity_gate_density (Boyack & Juenger, US 5,724,456). Block means average
+    grain out, and a flat sector beside a textured one stays out because only its own blocks are
+    compared. Every cell votes when fewer than activity_min_fraction of the sectors pass."""
     from negpy.features.exposure.models import EXPOSURE_CONSTANTS
 
     c = EXPOSURE_CONSTANTS
-    b = int(c["activity_block"])
-    h, w = lum.shape
-    hs, ws = (h // (2 * b)) * 2 * b, (w // (2 * b)) * 2 * b
-    if hs == 0 or ws == 0:
-        return lum.ravel()
-    core = lum[:hs, :ws]
-    blocks = core.reshape(hs // b, b, ws // b, b).mean(axis=(1, 3))
-    sectors = blocks.reshape(hs // (2 * b), 2, ws // (2 * b), 2)
-    active = (sectors.max(axis=(1, 3)) - sectors.min(axis=(1, 3))) > float(c["activity_gate_density"])
-    if active.mean() < float(c["activity_min_fraction"]):
-        return lum.ravel()
-    mask = np.repeat(np.repeat(active, 2 * b, axis=0), 2 * b, axis=1)
-    return core[mask]
+    return int(c["activity_block"]), float(c["activity_gate_density"]), float(c["activity_min_fraction"])
 
 
-def _textured_norm_luma(grid: ImageBuffer, bounds: LogNegativeBounds) -> np.ndarray:
-    """Luma of the grid normalized against `bounds`, textured cells only."""
+def _meter_norm(bounds: LogNegativeBounds) -> list:
+    """Per channel (floor, span, and whether each is a float64 operand): NumPy normalizes in
+    float64 when the bounds hold NumPy float64 scalars, in float32 for Python floats."""
     epsilon = 1e-6
-    norm = np.empty_like(grid)
+    out = []
     for ch in range(3):
         f = bounds.floors[ch]
         denom = bounds.ceils[ch] - f
         if abs(denom) < epsilon:
             denom = epsilon if denom >= 0 else -epsilon
-        norm[:, :, ch] = (grid[:, :, ch] - f) / denom
-    return _textured_cells(LUMA_R * norm[:, :, 0] + LUMA_G * norm[:, :, 1] + LUMA_B * norm[:, :, 2])
+        wide = (np.result_type(np.float32, f) == np.float64, np.result_type(np.float32, denom) == np.float64)
+        out.append((float(f), bool(wide[0]), float(denom), bool(wide[1])))
+    return out
 
 
 def measure_shadow_point_from_log(
@@ -516,8 +504,10 @@ def measure_shadow_point_from_log(
         img_log = img_log[y1:y2, x1:x2]
     if analysis_buffer > 0:
         img_log = get_analysis_crop(img_log, analysis_buffer)
-    lum = _textured_norm_luma(_block_median_grid(img_log), bounds)
-    return float(np.percentile(lum, float(EXPOSURE_CONSTANTS["shadow_reach_percentile"])))
+    grid = np.ascontiguousarray(_block_median_grid(img_log), dtype=np.float32)
+    return float(
+        negpy_core.textured_percentile(grid, _meter_norm(bounds), _activity_gate(), float(EXPOSURE_CONSTANTS["shadow_reach_percentile"]))
+    )
 
 
 def measure_highlight_point_from_log(
@@ -535,8 +525,10 @@ def measure_highlight_point_from_log(
         img_log = img_log[y1:y2, x1:x2]
     if analysis_buffer > 0:
         img_log = get_analysis_crop(img_log, analysis_buffer)
-    lum = _textured_norm_luma(_block_median_grid(img_log), bounds)
-    return float(np.percentile(lum, float(EXPOSURE_CONSTANTS["highlight_hold_percentile"])))
+    grid = np.ascontiguousarray(_block_median_grid(img_log), dtype=np.float32)
+    return float(
+        negpy_core.textured_percentile(grid, _meter_norm(bounds), _activity_gate(), float(EXPOSURE_CONSTANTS["highlight_hold_percentile"]))
+    )
 
 
 def measure_anchor_from_log(
@@ -573,11 +565,8 @@ def measure_anchor_from_log(
     if analysis_buffer > 0:
         img_log = get_analysis_crop(img_log, analysis_buffer)
 
-    lum = _textured_norm_luma(_block_median_grid(img_log), bounds)
-    clip = float(EXPOSURE_CONSTANTS["anchor_trim_clip"])
-    lo, hi = np.percentile(lum, [clip, 100.0 - clip])
-    inner = lum[(lum >= lo) & (lum <= hi)]
-    measured = 0.5 * (float(inner.mean()) + 0.5 * (float(lo) + float(hi)))
+    grid = np.ascontiguousarray(_block_median_grid(img_log), dtype=np.float32)
+    measured = negpy_core.textured_anchor(grid, _meter_norm(bounds), _activity_gate(), float(EXPOSURE_CONSTANTS["anchor_trim_clip"]))
 
     a = float(EXPOSURE_CONSTANTS["assumed_anchor"]) if assumed is None else float(assumed)
     strength = float(EXPOSURE_CONSTANTS["anchor_meter_strength"])
@@ -619,12 +608,8 @@ def measure_textural_range_from_log(
     if analysis_buffer > 0:
         img_log = get_analysis_crop(img_log, analysis_buffer)
 
-    img_log = _block_median_grid(img_log)
-
-    lum = _textured_cells(LUMA_R * img_log[:, :, 0] + LUMA_G * img_log[:, :, 1] + LUMA_B * img_log[:, :, 2])
-    clip = float(EXPOSURE_CONSTANTS["textural_range_clip"])
-    lo, hi = np.percentile(lum, [clip, 100.0 - clip])
-    return float(abs(hi - lo))
+    grid = np.ascontiguousarray(_block_median_grid(img_log), dtype=np.float32)
+    return negpy_core.textured_range(grid, _activity_gate(), float(EXPOSURE_CONSTANTS["textural_range_clip"]))
 
 
 def measure_textural_range(

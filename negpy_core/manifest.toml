@@ -283,8 +283,8 @@ depends = ["measure_anchor_from_log"]
 
 ["features/exposure/normalization.py::measure_anchor_from_log"]
 phase = 2
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.textured_anchor"]
 depends = ["_block_median_grid"]
 
 ["features/exposure/normalization.py::measure_base_log"]
@@ -301,8 +301,8 @@ depends = []
 
 ["features/exposure/normalization.py::measure_highlight_point_from_log"]
 phase = 2
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.textured_percentile"]
 depends = ["_block_median_grid"]
 
 ["features/exposure/normalization.py::measure_neutral_axis"]
@@ -325,8 +325,8 @@ depends = []
 
 ["features/exposure/normalization.py::measure_shadow_point_from_log"]
 phase = 2
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.textured_percentile"]
 depends = ["_block_median_grid"]
 
 ["features/exposure/normalization.py::measure_textural_range"]
@@ -337,8 +337,8 @@ depends = ["measure_textural_range_from_log"]
 
 ["features/exposure/normalization.py::measure_textural_range_from_log"]
 phase = 2
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.textured_range"]
 depends = ["_block_median_grid"]
 
 ["features/exposure/normalization.py::normalize_log_image"]

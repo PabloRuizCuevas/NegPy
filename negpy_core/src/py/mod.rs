@@ -3,6 +3,7 @@ pub mod contours;
 pub mod filter;
 pub mod gray;
 pub mod histogram;
+pub mod meter;
 pub mod morph;
 pub mod resize;
 pub mod stats;
