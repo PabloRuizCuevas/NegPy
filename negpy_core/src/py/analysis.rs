@@ -84,10 +84,9 @@ fn detection_luma<'py>(
     Ok(out)
 }
 
-/// The flat base-candidate blocks of `_base_blocks`: an Nx3 float32 array of block means, or
-/// None with too few.
+/// `_base_blocks(det, band)`: an Nx3 float32 array of the base blocks' means, or None.
 #[pyfunction]
-fn flat_block_means<'py>(
+fn base_blocks<'py>(
     py: Python<'py>,
     det: PyReadonlyArrayDyn<'py, f32>,
     band: PyReadonlyArrayDyn<'py, bool>,
@@ -108,7 +107,7 @@ fn flat_block_means<'py>(
         .iter()
         .map(|&v| v as u8)
         .collect();
-    let found = py.detach(|| analysis::flat_block_means(data, &mask, h, w));
+    let found = py.detach(|| analysis::base_blocks(data, &mask, h, w));
     found
         .map(|rows| {
             let flat: Vec<Vec<f32>> = rows.iter().map(|r| r.to_vec()).collect();
@@ -121,5 +120,5 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(luminance, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_to_uint8, m)?)?;
     m.add_function(wrap_pyfunction!(detection_luma, m)?)?;
-    m.add_function(wrap_pyfunction!(flat_block_means, m)?)
+    m.add_function(wrap_pyfunction!(base_blocks, m)?)
 }

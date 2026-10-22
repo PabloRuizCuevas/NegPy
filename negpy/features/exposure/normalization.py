@@ -426,9 +426,7 @@ def measure_neutral_axis(
 #: way negdensity.py reads it. The film box comes from the crop's detector at its own resolution,
 #: whose edge walk is calibrated there.
 _BASE_MARGIN = 0.15  # the band inside the film box, per side, that holds rebate, perforations and picture edge
-_GROUP_GAP = 0.04  # decades between neighbouring blocks that split two brightness groups
 _OPEN_LIGHT_GAP = 0.08  # decades a brighter, smaller group must clear the base to be bare light
-_MIN_BASE_BLOCKS = 5
 
 
 def _margin_band(shape: Tuple[int, int], film_roi: ROI) -> np.ndarray:
@@ -446,26 +444,10 @@ def _base_blocks(det: np.ndarray, band: np.ndarray) -> Optional[np.ndarray]:
 
     Flat blocks are grouped by brightness; the largest group is the base. A smaller group
     well above it is bare light through a perforation or past the film's edge. A flat
-    picture region in the band that outnumbers the base is taken for it."""
-    # The block statistics (8x8 blocks, flat under 3% std over mean, unclipped under 0.98) run
-    # in negpy_core; log10 and the grouping stay in NumPy, whose
-    # float32 log10 and argsort differ by CPU (SVML, SIMD sort) and cannot be copied bit for bit.
-    cand = negpy_core.flat_block_means(np.ascontiguousarray(det, dtype=np.float32), np.ascontiguousarray(band, dtype=bool))
-    if cand is None:
-        return None
-    log_lum = np.log10(np.maximum(cand.mean(axis=1), 1e-6))
-    order = np.argsort(log_lum)[::-1]  # brightest first
-    groups: list[np.ndarray] = []
-    start = 0
-    for i in range(1, len(order) + 1):
-        if i == len(order) or log_lum[order[i - 1]] - log_lum[order[i]] > _GROUP_GAP:
-            groups.append(order[start:i])
-            start = i
-    min_n = max(_MIN_BASE_BLOCKS, int(0.02 * len(order)))
-    big = [g for g in groups if len(g) >= min_n]
-    if not big:
-        return None
-    return cand[max(big, key=len)]
+    picture region in the band that outnumbers the base is taken for it. negpy_core holds the
+    rules: 8x8 blocks, flat under 3% std over mean, unclipped under 0.98, groups split at 0.04
+    decades, at least max(5, 2%) blocks."""
+    return negpy_core.base_blocks(np.ascontiguousarray(det, dtype=np.float32), np.ascontiguousarray(band, dtype=bool))
 
 
 def measure_base_log(image: ImageBuffer) -> Optional[Tuple[float, float, float]]:

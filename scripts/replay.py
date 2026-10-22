@@ -173,20 +173,42 @@ def record(files: list[str], phases: list[int] | None, edits_db: str | None) -> 
             print(f"{recorder.saved[key]:4d}  {key}")
 
 
-def same(a, b) -> bool:
-    """Bit-for-bit equality, NaN payloads and the sign of zero included."""
+def _ulps(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Distance in units in the last place between two float arrays of one dtype."""
+    ints = {np.dtype(np.float32): np.int32, np.dtype(np.float64): np.int64}[a.dtype]
+    ia, ib = (np.ascontiguousarray(x).view(ints).astype(np.int64) for x in (a, b))
+    # Map the sign-magnitude float bits onto one ordered integer line.
+    ia = np.where(ia < 0, np.iinfo(ints).min - ia, ia)
+    ib = np.where(ib < 0, np.iinfo(ints).min - ib, ib)
+    return np.abs(ia - ib)
+
+
+def same(a, b, compare: str = "exact") -> bool:
+    """Equality for replay. "exact": bit for bit, NaN payloads and the sign of zero included.
+    "rows": a 2-D array's rows in any order. "ulp=N": floats within N units in the last place."""
     if type(a) is not type(b):
         return False
     if isinstance(a, np.ndarray):
-        return a.dtype == b.dtype and a.shape == b.shape and np.ascontiguousarray(a).tobytes() == np.ascontiguousarray(b).tobytes()
+        if a.dtype != b.dtype or a.shape != b.shape:
+            return False
+        if compare == "rows" and a.ndim == 2:
+            rows = f"V{a.shape[1] * a.dtype.itemsize}"
+            a, b = (np.sort(np.ascontiguousarray(x).view(rows).ravel()) for x in (a, b))
+            return a.tobytes() == b.tobytes()
+        if compare.startswith("ulp=") and a.dtype.kind == "f":
+            nan = np.isnan(a)
+            return bool(np.array_equal(nan, np.isnan(b)) and np.all(_ulps(a[~nan], b[~nan]) <= int(compare[4:])))
+        return np.ascontiguousarray(a).tobytes() == np.ascontiguousarray(b).tobytes()
     if isinstance(a, (np.generic, float)):
+        if compare.startswith("ulp="):
+            return same(np.atleast_1d(np.asarray(a)), np.atleast_1d(np.asarray(b)), compare)
         return np.asarray(a).tobytes() == np.asarray(b).tobytes()
     if isinstance(a, (list, tuple)):
-        return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
+        return len(a) == len(b) and all(same(x, y, compare) for x, y in zip(a, b))
     if isinstance(a, dict):
-        return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
+        return a.keys() == b.keys() and all(same(a[k], b[k], compare) for k in a)
     if dataclasses.is_dataclass(a) or hasattr(a, "__dict__"):
-        return same(vars(a), vars(b))
+        return same(vars(a), vars(b), compare)
     return a == b
 
 
@@ -201,11 +223,13 @@ def _calls(keys: list[str]):
 
 def replay(phases: list[int] | None) -> int:
     failed = 0
+    manifest = load_manifest()
     for key, fn, files in _calls(_targets(phases, ("todo", "ported"))):
+        compare = manifest[key].get("compare", "exact")
         bad = []
         for f in files:
             rec = pickle.loads(f.read_bytes())
-            if not same(fn(*rec["args"], **rec["kwargs"]), rec["result"]):
+            if not same(fn(*rec["args"], **rec["kwargs"]), rec["result"], compare):
                 bad.append(f"{f.name} ({rec['frame']})")
         failed += bool(bad)
         print(f"{'DIFF' if bad else 'same'}  {len(files) - len(bad):3d}/{len(files):<3d} {key}  {' '.join(bad[:5])}")

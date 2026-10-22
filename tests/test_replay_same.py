@@ -21,3 +21,13 @@ def test_same_walks_containers():
     assert same((1, [np.uint8(3)], {"k": None}), (1, [np.uint8(3)], {"k": None}))
     assert not same((1, 2), [1, 2])
     assert not same({"k": np.int32(1)}, {"k": np.int64(1)})
+
+
+def test_same_rows_and_ulp_modes():
+    a = np.array([[1, 2, 3], [4, 5, 6]], np.float32)
+    assert same(a, a[::-1].copy(), "rows")
+    assert not same(a, a[::-1].copy())
+    b = np.nextafter(a, np.float32(10))
+    assert same(a, b, "ulp=1")
+    assert not same(a, b, "ulp=0")
+    assert same(np.array([np.nan, -0.0], np.float32), np.array([np.nan, 0.0], np.float32), "ulp=1")

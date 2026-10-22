@@ -73,7 +73,7 @@ const MIN_BASE_BLOCKS: usize = 5;
 /// The first half of `_base_blocks`: per-channel means of the 8x8 blocks of `det` (HxWx3) that
 /// lie in `band`, hold no clipped pixel and are flat, in block order; None with fewer than
 /// five. NumPy's order: each block sums row by row, the 8 rows outer, from +0.
-pub fn flat_block_means(det: &[f32], band: &[u8], h: usize, w: usize) -> Option<Vec<[f32; 3]>> {
+fn flat_block_means(det: &[f32], band: &[u8], h: usize, w: usize) -> Option<Vec<[f32; 3]>> {
     let b = BASE_BLOCK;
     let (hb, wb) = (h / b, w / b);
     let rows: Vec<Vec<[f32; 3]>> = (0..hb)
@@ -128,6 +128,38 @@ pub fn flat_block_means(det: &[f32], band: &[u8], h: usize, w: usize) -> Option<
         .collect();
     let flat: Vec<[f32; 3]> = rows.into_iter().flatten().collect();
     (flat.len() >= MIN_BASE_BLOCKS).then_some(flat)
+}
+
+const GROUP_GAP: f32 = 0.04;
+
+/// `_base_blocks`: the flat blocks grouped by log brightness, brightest first, split where two
+/// neighbours differ by more than `GROUP_GAP` decades; the largest group of at least
+/// max(5, 2%) blocks. log10 is libm's (see LEDGER.md); ties sort by block index.
+pub fn base_blocks(det: &[f32], band: &[u8], h: usize, w: usize) -> Option<Vec<[f32; 3]>> {
+    let cand = flat_block_means(det, band, h, w)?;
+    let log_lum: Vec<f32> = cand
+        .iter()
+        .map(|m| libm::log10f((((m[0] + m[1]) + m[2]) / 3.0).max(1e-6)))
+        .collect();
+    let mut order: Vec<usize> = (0..cand.len()).collect();
+    order.sort_by(|&a, &b| log_lum[a].total_cmp(&log_lum[b]));
+    order.reverse();
+    let mut groups: Vec<&[usize]> = Vec::new();
+    let mut start = 0;
+    for i in 1..=order.len() {
+        if i == order.len() || log_lum[order[i - 1]] - log_lum[order[i]] > GROUP_GAP {
+            groups.push(&order[start..i]);
+            start = i;
+        }
+    }
+    let min_n = MIN_BASE_BLOCKS.max((0.02 * order.len() as f64) as usize);
+    let mut best: Option<&[usize]> = None;
+    for g in groups.into_iter().filter(|g| g.len() >= min_n) {
+        if best.is_none_or(|b| g.len() > b.len()) {
+            best = Some(g);
+        }
+    }
+    best.map(|g| g.iter().map(|&i| cand[i]).collect())
 }
 
 #[cfg(test)]

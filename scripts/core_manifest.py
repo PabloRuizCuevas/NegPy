@@ -124,7 +124,7 @@ def merge(current: dict[str, dict], found: dict[str, dict]) -> dict[str, dict]:
             "status": old.get("status", "todo"),
             "calls": entry["calls"],
             "depends": entry["depends"],
-            **{k: old[k] for k in ("owner", "note") if k in old},
+            **{k: old[k] for k in ("owner", "compare", "note") if k in old},
         }
     for key, old in current.items():
         if key not in merged and old.get("status") == "ported":
@@ -143,12 +143,13 @@ def _toml_value(value) -> str:
 def dump(manifest: dict[str, dict]) -> str:
     lines = [
         "# One entry per Python function that negpy_core replaces. scripts/core_manifest.py writes",
-        "# calls and depends; phase, status (todo, ported, stays), owner and note are kept by hand.",
+        "# calls and depends; phase, status (todo, ported, stays), owner, compare (replay: exact, rows,",
+        "# ulp=N; see negpy_core/LEDGER.md) and note are kept by hand.",
     ]
     for key in sorted(manifest, key=lambda k: (manifest[k]["phase"], k)):
         lines.append("")
         lines.append(f"[{_toml_value(key)}]")
-        for field in ("phase", "status", "owner", "calls", "depends", "note"):
+        for field in ("phase", "status", "owner", "compare", "calls", "depends", "note"):
             if field in manifest[key]:
                 lines.append(f"{field} = {_toml_value(manifest[key][field])}")
     return "\n".join(lines) + "\n"

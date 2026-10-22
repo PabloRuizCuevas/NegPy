@@ -63,7 +63,8 @@ The negpy_core extension module links these Rust crates: PyO3 and rust-numpy
 (MIT OR Apache-2.0; rust-numpy BSD-2-Clause), rayon and crossbeam (MIT OR
 Apache-2.0), ndarray, num-traits, num-complex, num-integer, matrixmultiply and
 rawpointer (MIT OR Apache-2.0), libc, once_cell, either, portable-atomic and
-rustc-hash (MIT OR Apache-2.0), multiversion and target-features (MIT OR Apache-2.0).
+rustc-hash (MIT OR Apache-2.0), multiversion and target-features (MIT OR Apache-2.0), libm (MIT, a port of
+musl's math library).
 negpy_core/Cargo.lock lists the exact versions.
 
 negpy_core/src/resize.rs and negpy_core/src/filter.rs port OpenCV's float32 area

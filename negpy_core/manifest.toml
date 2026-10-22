@@ -1,5 +1,6 @@
 # One entry per Python function that negpy_core replaces. scripts/core_manifest.py writes
-# calls and depends; phase, status (todo, ported, stays), owner and note are kept by hand.
+# calls and depends; phase, status (todo, ported, stays), owner, compare (replay: exact, rows,
+# ulp=N; see negpy_core/LEDGER.md) and note are kept by hand.
 
 ["kernel/image/logic.py::percentiles"]
 phase = 1
@@ -154,9 +155,11 @@ depends = []
 
 ["features/exposure/normalization.py::_base_blocks"]
 phase = 2
-status = "todo"
-calls = ["negpy_core.flat_block_means", "np.argsort"]
+status = "ported"
+compare = "rows"
+calls = ["negpy_core.base_blocks"]
 depends = []
+note = "negpy_core::analysis::base_blocks"
 
 ["features/exposure/normalization.py::_block_median_grid"]
 phase = 2
