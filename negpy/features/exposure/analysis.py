@@ -45,32 +45,24 @@ _SCOPE_MAX_SAMPLES = 262_144
 _MAX_HIST_SAMPLES = 2_000_000
 
 
+def _frame_step(shape: Tuple[int, ...], max_samples: int) -> int:
+    """The stride that keeps a whole frame near `max_samples` samples."""
+    return max(1, round(np.sqrt(shape[0] * shape[1] / max_samples)))
+
+
 def output_histogram(buffer: Any) -> Optional[np.ndarray]:
-    """(4, 256) [R, G, B, L] counts from a (4, 256) bin array or an H×W×3 encoded buffer."""
+    """(4, 256) [R, G, B, L] counts from a (4, 256) bin array or an H×W×3 encoded buffer. An
+    8-bit frame (the camera live view) bins by value: the same bins as the float path's
+    floor(v / 255 * 256)."""
     if buffer is None:
         return None
     buffer = np.asarray(buffer)
     if buffer.ndim == 2 and buffer.shape == (4, OUTPUT_HIST_BINS):
         return buffer.astype(float)
-    if buffer.ndim != 3 or buffer.shape[-1] != 3:
+    if buffer.ndim != 3 or buffer.shape[-1] != 3 or min(buffer.shape[:2]) < 1:
         return None
-    step = max(1, round(np.sqrt(buffer.shape[0] * buffer.shape[1] / _MAX_HIST_SAMPLES)))
-    if step > 1:
-        buffer = buffer[::step, ::step]
-    if buffer.dtype == np.uint8:
-        # An 8-bit frame (the camera live view) bins by value: the same bins as the float
-        # path's floor(v / 255 * 256).
-        rows = [np.bincount(buffer[..., c].ravel(), minlength=OUTPUT_HIST_BINS) for c in range(3)]
-        lum = get_luminance(np.ascontiguousarray(buffer.astype(np.float32) / 255.0))
-        rows.append(
-            np.bincount(np.minimum((lum * OUTPUT_HIST_BINS).astype(np.int64), OUTPUT_HIST_BINS - 1).ravel(), minlength=OUTPUT_HIST_BINS)
-        )
-        return np.stack(rows).astype(float)
-    buffer = np.ascontiguousarray(buffer.astype(np.float32, copy=False))
-    lum = get_luminance(buffer)
-    rows = [np.histogram(buffer[..., c], bins=OUTPUT_HIST_BINS, range=(0, 1))[0] for c in range(3)]
-    rows.append(np.histogram(lum, bins=OUTPUT_HIST_BINS, range=(0, 1))[0])
-    return np.stack(rows).astype(float)
+    dtype = np.uint8 if buffer.dtype == np.uint8 else np.float32
+    return negpy_core.output_histogram(np.ascontiguousarray(buffer, dtype=dtype), _frame_step(buffer.shape, _MAX_HIST_SAMPLES))
 
 
 def color_histogram(buffer: Any) -> Optional[np.ndarray]:
@@ -81,15 +73,9 @@ def color_histogram(buffer: Any) -> Optional[np.ndarray]:
     buffer = np.asarray(buffer)
     if buffer.ndim == 3 and buffer.shape == (COLOR_HIST_BINS,) * 3:
         return buffer.astype(float)
-    if buffer.ndim != 3 or buffer.shape[-1] != 3:
+    if buffer.ndim != 3 or buffer.shape[-1] != 3 or min(buffer.shape[:2]) < 1:
         return None
-    step = max(1, round(np.sqrt(buffer.shape[0] * buffer.shape[1] / _MAX_HIST_SAMPLES)))
-    if step > 1:
-        buffer = buffer[::step, ::step]
-    q = np.clip((np.asarray(buffer, dtype=np.float32) * COLOR_HIST_BINS).astype(np.int32), 0, COLOR_HIST_BINS - 1)
-    flat = (q[..., 0] * COLOR_HIST_BINS + q[..., 1]) * COLOR_HIST_BINS + q[..., 2]
-    counts = np.bincount(flat.ravel(), minlength=COLOR_HIST_BINS**3)
-    return counts.reshape((COLOR_HIST_BINS,) * 3).astype(float)
+    return negpy_core.color_histogram(np.ascontiguousarray(buffer, dtype=np.float32), _frame_step(buffer.shape, _MAX_HIST_SAMPLES))
 
 
 def gamut_fraction(color_hist: Any, out_of_gamut: Any) -> Optional[float]:
@@ -109,56 +95,32 @@ def gamut_fraction(color_hist: Any, out_of_gamut: Any) -> Optional[float]:
     return float(hist[mask].sum() / total) if total > 0 else None
 
 
-def _waveform_cells(buffer: Any) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-    """(sampled H×W×3 float32 buffer, flat bin * WAVEFORM_COLS + col index per pixel)."""
+def _waveform(buffer: Any, kind: str) -> Optional[np.ndarray]:
+    """The waveform counts or sums of an H×W×3 encoded buffer, binned by float32 luma or channel."""
     if buffer is None:
         return None
     buffer = np.asarray(buffer)
     if buffer.ndim != 3 or buffer.shape[-1] < 3 or min(buffer.shape[:2]) < 1:
         return None
-    step = max(1, round(np.sqrt(buffer.shape[0] * buffer.shape[1] / _MAX_HIST_SAMPLES)))
-    if step > 1:
-        buffer = buffer[::step, ::step]
-    rgb = np.ascontiguousarray(buffer[..., :3], dtype=np.float32)
-    lum = get_luminance(rgb)
-    w = lum.shape[1]
-    cols = np.minimum(np.arange(w) * WAVEFORM_COLS // w, WAVEFORM_COLS - 1)
-    bins = np.clip((np.nan_to_num(lum) * WAVEFORM_BINS).astype(np.int32), 0, WAVEFORM_BINS - 1)
-    return rgb, (bins * WAVEFORM_COLS + cols[None, :]).ravel()
+    return negpy_core.waveform(np.ascontiguousarray(buffer, dtype=np.float32), _frame_step(buffer.shape, _MAX_HIST_SAMPLES), kind)
 
 
 def waveform(buffer: Any) -> Optional[np.ndarray]:
     """(WAVEFORM_BINS, WAVEFORM_COLS) luma counts per image column of an H×W×3 encoded
     buffer. CPU counterpart of waveform.wgsl."""
-    cells = _waveform_cells(buffer)
-    if cells is None:
-        return None
-    return np.bincount(cells[1], minlength=WAVEFORM_BINS * WAVEFORM_COLS).reshape(WAVEFORM_BINS, WAVEFORM_COLS).astype(float)
+    return _waveform(buffer, "luma")
 
 
 def waveform_color(buffer: Any) -> Optional[np.ndarray]:
     """(3, WAVEFORM_BINS, WAVEFORM_COLS) fixed-point sums of the encoded R, G, B in each
     waveform cell. CPU counterpart of the sums in waveform.wgsl."""
-    cells = _waveform_cells(buffer)
-    if cells is None:
-        return None
-    rgb, flat = cells
-    fixed = np.round(np.clip(np.nan_to_num(rgb.reshape(-1, 3)), 0.0, 1.0) * WAVEFORM_COLOR_SCALE)
-    sums = [np.bincount(flat, weights=fixed[:, c], minlength=WAVEFORM_BINS * WAVEFORM_COLS) for c in range(3)]
-    return np.stack(sums).reshape(3, WAVEFORM_BINS, WAVEFORM_COLS)
+    return _waveform(buffer, "color")
 
 
 def waveform_parade(buffer: Any) -> Optional[np.ndarray]:
     """(3, WAVEFORM_BINS, WAVEFORM_COLS) counts of each encoded channel per image column: the
     RGB parade. CPU counterpart of the parade counts in waveform.wgsl."""
-    cells = _waveform_cells(buffer)
-    if cells is None:
-        return None
-    rgb, flat = cells
-    cols = flat % WAVEFORM_COLS
-    bins = np.clip((np.nan_to_num(rgb.reshape(-1, 3)) * WAVEFORM_BINS).astype(np.int32), 0, WAVEFORM_BINS - 1)
-    counts = [np.bincount(bins[:, c] * WAVEFORM_COLS + cols, minlength=WAVEFORM_BINS * WAVEFORM_COLS) for c in range(3)]
-    return np.stack(counts).reshape(3, WAVEFORM_BINS, WAVEFORM_COLS).astype(float)
+    return _waveform(buffer, "parade")
 
 
 def scope_radius(chroma: Any, log: bool) -> Any:
@@ -671,21 +633,7 @@ def _sample_crop(shape: Tuple[int, ...], roi: Optional[Tuple[int, int, int, int]
     x1, x2, _ = slice(x1, x2).indices(w)
     if y2 <= y1 or x2 <= x1:
         return None
-    step = max(1, round(np.sqrt((y2 - y1) * (x2 - x1) / _MAX_HIST_SAMPLES)))
-    return (y1, y2, x1, x2), step
-
-
-def _parade_samples(img: np.ndarray, roi: Optional[Tuple[int, int, int, int]]) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-    """The crop's RGB, stride-subsampled, and each sample column's parade column."""
-    if roi is not None:
-        y1, y2, x1, x2 = roi
-        img = img[y1:y2, x1:x2]
-    if min(img.shape[:2]) < 1:
-        return None
-    full_w = img.shape[1]
-    step = max(1, round(np.sqrt(img.shape[0] * full_w / _MAX_HIST_SAMPLES)))
-    cols = np.minimum(np.arange(0, full_w, step) * WAVEFORM_COLS // full_w, WAVEFORM_COLS - 1)
-    return img[::step, ::step, :3], cols
+    return (y1, y2, x1, x2), _frame_step((y2 - y1, x2 - x1), _MAX_HIST_SAMPLES)
 
 
 def density_parade(img_log: Any, roi: Optional[Tuple[int, int, int, int]] = None) -> Optional[np.ndarray]:
@@ -715,10 +663,8 @@ def scan_full_scale_columns(image: Any, roi: Optional[Tuple[int, int, int, int]]
     img = np.asarray(image)
     if img.ndim != 3 or img.shape[-1] < 3:
         return None
-    sampled = _parade_samples(img, roi)
-    if sampled is None:
+    crop = _sample_crop(img.shape, roi)
+    if crop is None:
         return None
-    img, cols = sampled
-    clipped = img >= float(EXPOSURE_CONSTANTS["scan_clip_level"])
-    flat_cols = np.broadcast_to(cols[None, :], clipped.shape[:2]).ravel()
-    return np.stack([np.bincount(flat_cols, weights=clipped[..., c].ravel().astype(np.float64), minlength=WAVEFORM_COLS) for c in range(3)])
+    level = float(EXPOSURE_CONSTANTS["scan_clip_level"])
+    return negpy_core.scan_full_scale_columns(np.ascontiguousarray(img, dtype=np.float32), *crop, level)

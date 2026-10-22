@@ -10,13 +10,16 @@ pub const DENSITY_HIST_BINS: usize = 120;
 const DENSITY_HIST_RANGE: (f64, f64) = (-0.1, 1.1);
 pub const WAVEFORM_BINS: usize = 128;
 pub const WAVEFORM_COLS: usize = 256;
+pub const OUTPUT_HIST_BINS: usize = 256;
+pub const COLOR_HIST_BINS: usize = 32;
+const WAVEFORM_COLOR_SCALE: f32 = 1023.0;
 const SCAN_DENSITY_RANGE: (f64, f64) = (0.0, 3.0);
 
 /// A stride-subsampled crop of an HxWxC float32 image: rows `y1..y2` and columns `x1..x2`, every
 /// `step`-th from the first, as `img[y1:y2:step, x1:x2:step]` reads them.
 #[derive(Clone, Copy)]
-pub struct Samples<'a> {
-    pub img: &'a [f32],
+pub struct Samples<'a, T = f32> {
+    pub img: &'a [T],
     pub w: usize,
     pub cn: usize,
     pub rows: (usize, usize),
@@ -24,14 +27,14 @@ pub struct Samples<'a> {
     pub step: usize,
 }
 
-impl Samples<'_> {
+impl<T: Copy> Samples<'_, T> {
     fn row_starts(&self) -> Vec<usize> {
         (self.rows.0..self.rows.1).step_by(self.step).collect()
     }
 
     /// The first three channels of row `y`'s samples, packed: a slice of the image when they
     /// already are, else a copy in `buf`.
-    fn rgb_row<'b>(&'b self, y: usize, buf: &'b mut Vec<f32>) -> &'b [f32] {
+    fn rgb_row<'b>(&'b self, y: usize, buf: &'b mut Vec<T>) -> &'b [T] {
         if self.step == 1 && self.cn == 3 {
             return &self.img[(y * self.w + self.cols.0) * 3..(y * self.w + self.cols.1) * 3];
         }
@@ -97,7 +100,7 @@ fn parade_bins(vals: &[f32], out: &mut [u8]) {
 }
 
 /// Neighbouring samples often share a bin, and one counter serializes on its own increments,
-/// so each sample counts into lane `i % LANES` (u32: a row never overflows one).
+/// so each sample counts into lane `i % LANES` (u32: a cell holds one column's samples at most).
 const LANES: usize = 4;
 
 fn fold_lanes(lanes: &[u32]) -> Vec<u64> {
@@ -116,43 +119,22 @@ pub fn density_histogram(s: Samples) -> Vec<f64> {
         hi: DENSITY_HIST_RANGE.1,
         bins: DENSITY_HIST_BINS,
     };
-    let counts = s
-        .row_starts()
-        .par_iter()
-        .fold(
-            || {
-                let counts = vec![0u32; LANES * 4 * DENSITY_HIST_BINS];
-                (counts, Vec::new(), Vec::new(), Vec::new(), Vec::new())
-            },
-            |(mut counts, mut buf, mut lum, mut bins, mut lbins), &y| {
-                let rgb = s.rgb_row(y, &mut buf);
-                let px = rgb.len() / 3;
-                lum.resize(px, 0.0);
-                luminance_chunk(rgb, &mut lum);
-                bins.resize(3 * px, 0);
-                lbins.resize(px, 0);
-                binner.bin_into(rgb, &mut bins);
-                binner.bin_into(&lum, &mut lbins);
-                for (i, (p, &l)) in bins.as_chunks::<3>().0.iter().zip(&lbins).enumerate() {
-                    let lane = (i % LANES) * 4 * DENSITY_HIST_BINS;
-                    for (c, &b) in p.iter().chain([&l]).enumerate() {
-                        if b != NO_BIN {
-                            counts[lane + c * DENSITY_HIST_BINS + b as usize] += 1;
-                        }
-                    }
+    count_rows(s, 4 * DENSITY_HIST_BINS, |rgb, counts| {
+        let px = rgb.len() / 3;
+        let mut lum = vec![0f32; px];
+        luminance_chunk(rgb, &mut lum);
+        let (mut bins, mut lbins) = (vec![0u8; 3 * px], vec![0u8; px]);
+        binner.bin_into(rgb, &mut bins);
+        binner.bin_into(&lum, &mut lbins);
+        for (i, (p, &l)) in bins.as_chunks::<3>().0.iter().zip(&lbins).enumerate() {
+            let lane = (i % LANES) * 4 * DENSITY_HIST_BINS;
+            for (c, &b) in p.iter().chain([&l]).enumerate() {
+                if b != NO_BIN {
+                    counts[lane + c * DENSITY_HIST_BINS + b as usize] += 1;
                 }
-                (counts, buf, lum, bins, lbins)
-            },
-        )
-        .map(|(counts, ..)| fold_lanes(&counts))
-        .reduce(
-            || vec![0u64; 4 * DENSITY_HIST_BINS],
-            |mut a, b| {
-                a.iter_mut().zip(&b).for_each(|(x, y)| *x += y);
-                a
-            },
-        );
-    counts.iter().map(|&c| c as f64).collect()
+            }
+        }
+    })
 }
 
 /// `density_parade`: (3, WAVEFORM_BINS, WAVEFORM_COLS) counts of each channel's scan density
@@ -164,33 +146,192 @@ pub fn density_parade(s: Samples) -> Vec<f64> {
         .map(|x| (x * WAVEFORM_COLS / full_w).min(WAVEFORM_COLS - 1))
         .collect();
     let plane = WAVEFORM_BINS * WAVEFORM_COLS;
-    let counts = s
-        .row_starts()
+    count_rows(s, 3 * plane, |rgb, counts| {
+        let mut bins = vec![0u8; rgb.len()];
+        parade_bins(rgb, &mut bins);
+        for (i, (p, &col)) in bins.as_chunks::<3>().0.iter().zip(&cols).enumerate() {
+            let lane = (i % LANES) * 3 * plane;
+            for (c, &b) in p.iter().enumerate() {
+                counts[lane + c * plane + b as usize * WAVEFORM_COLS + col] += 1;
+            }
+        }
+    })
+}
+
+/// NumPy's float32 to int32 cast on x86: truncation, and INT_MIN for NaN or out of range.
+fn np_i32(f: f32) -> i32 {
+    if (-2147483648.0..2147483648.0).contains(&f) {
+        f as i32
+    } else {
+        i32::MIN
+    }
+}
+
+/// np.nan_to_num for float32.
+fn nan_to_num(v: f32) -> f32 {
+    if v.is_nan() {
+        0.0
+    } else {
+        v.clamp(f32::MIN, f32::MAX)
+    }
+}
+
+/// `clip((v * bins).astype(int32), 0, bins - 1)` in float32.
+fn quantize(v: f32, bins: usize) -> usize {
+    np_i32(v * bins as f32).clamp(0, bins as i32 - 1) as usize
+}
+
+/// Counts over the rows of `s` in parallel: `count(row, counts)` adds one row into `n` lanes'
+/// worth of u32 counters, which fold into one u64 count per cell.
+fn count_rows<T: Copy + Send + Sync>(
+    s: Samples<'_, T>,
+    n: usize,
+    count: impl Fn(&[T], &mut [u32]) + Sync,
+) -> Vec<f64> {
+    s.row_starts()
         .par_iter()
         .fold(
-            || (vec![0u32; LANES * 3 * plane], Vec::new(), Vec::new()),
-            |(mut counts, mut buf, mut bins), &y| {
-                let rgb = s.rgb_row(y, &mut buf);
-                bins.resize(rgb.len(), 0);
-                parade_bins(rgb, &mut bins);
-                for (i, (p, &col)) in bins.as_chunks::<3>().0.iter().zip(&cols).enumerate() {
-                    let lane = (i % LANES) * 3 * plane;
-                    for (c, &b) in p.iter().enumerate() {
-                        counts[lane + c * plane + b as usize * WAVEFORM_COLS + col] += 1;
-                    }
-                }
-                (counts, buf, bins)
+            || (vec![0u32; LANES * n], Vec::new()),
+            |(mut counts, mut buf), &y| {
+                count(s.rgb_row(y, &mut buf), &mut counts);
+                (counts, buf)
             },
         )
-        .map(|(counts, ..)| fold_lanes(&counts))
+        .map(|(counts, _)| fold_lanes(&counts))
         .reduce(
-            || vec![0u64; 3 * plane],
+            || vec![0u64; n],
             |mut a, b| {
                 a.iter_mut().zip(&b).for_each(|(x, y)| *x += y);
                 a
             },
-        );
-    counts.iter().map(|&c| c as f64).collect()
+        )
+        .iter()
+        .map(|&c| c as f64)
+        .collect()
+}
+
+/// `output_histogram` of float32 samples: (4, 256) counts of R, G, B and luminance on 0..1.
+/// `np.histogram(range=(0, 1))` divides by a uint64 span, so it bins in float64, where the
+/// edges i / 256 are exact; values outside 0..1 and NaN are dropped.
+pub fn output_histogram(s: Samples) -> Vec<f64> {
+    let bin = |v: f32| {
+        (0.0..=1.0)
+            .contains(&v)
+            .then(|| ((v as f64 * OUTPUT_HIST_BINS as f64) as usize).min(OUTPUT_HIST_BINS - 1))
+    };
+    count_rows(s, 4 * OUTPUT_HIST_BINS, |rgb, counts| {
+        let mut lum = vec![0f32; rgb.len() / 3];
+        luminance_chunk(rgb, &mut lum);
+        for (i, (p, &l)) in rgb.as_chunks::<3>().0.iter().zip(&lum).enumerate() {
+            let lane = (i % LANES) * 4 * OUTPUT_HIST_BINS;
+            for (c, &v) in p.iter().chain([&l]).enumerate() {
+                if let Some(b) = bin(v) {
+                    counts[lane + c * OUTPUT_HIST_BINS + b] += 1;
+                }
+            }
+        }
+    })
+}
+
+/// `output_histogram` of uint8 samples: each channel by value, luminance of value / 255.
+pub fn output_histogram_u8(s: Samples<'_, u8>) -> Vec<f64> {
+    count_rows(s, 4 * OUTPUT_HIST_BINS, |rgb, counts| {
+        let scaled: Vec<f32> = rgb.iter().map(|&v| v as f32 / 255.0).collect();
+        let mut lum = vec![0f32; rgb.len() / 3];
+        luminance_chunk(&scaled, &mut lum);
+        for (i, (p, &l)) in rgb.as_chunks::<3>().0.iter().zip(&lum).enumerate() {
+            let lane = (i % LANES) * 4 * OUTPUT_HIST_BINS;
+            for (c, &v) in p.iter().enumerate() {
+                counts[lane + c * OUTPUT_HIST_BINS + v as usize] += 1;
+            }
+            let b = ((l * OUTPUT_HIST_BINS as f32) as i64).min(OUTPUT_HIST_BINS as i64 - 1);
+            counts[lane + 3 * OUTPUT_HIST_BINS + b as usize] += 1;
+        }
+    })
+}
+
+/// `color_histogram`: (32, 32, 32) joint RGB counts.
+pub fn color_histogram(s: Samples) -> Vec<f64> {
+    let n = COLOR_HIST_BINS;
+    count_rows(s, n * n * n, |rgb, counts| {
+        for (i, p) in rgb.as_chunks::<3>().0.iter().enumerate() {
+            let lane = (i % LANES) * n * n * n;
+            let [r, g, b] = p.map(|v| quantize(v, n));
+            counts[lane + (r * n + g) * n + b] += 1;
+        }
+    })
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Waveform {
+    /// (BINS, COLS) luma counts.
+    Luma,
+    /// (3, BINS, COLS) sums of R, G, B rounded to 0..1023, in each luma cell.
+    Color,
+    /// (3, BINS, COLS) counts of each channel.
+    Parade,
+}
+
+/// `waveform`, `waveform_color` and `waveform_parade`: the column of a sample is its x in the
+/// sampled frame, its luma cell from the float32 luminance.
+pub fn waveform(s: Samples, kind: Waveform) -> Vec<f64> {
+    let w = (s.cols.1 - s.cols.0).div_ceil(s.step);
+    let cols: Vec<usize> = (0..w)
+        .map(|x| (x * WAVEFORM_COLS / w).min(WAVEFORM_COLS - 1))
+        .collect();
+    let plane = WAVEFORM_BINS * WAVEFORM_COLS;
+    let n = if kind == Waveform::Luma {
+        plane
+    } else {
+        3 * plane
+    };
+    count_rows(s, n, |rgb, counts| {
+        let mut lum = vec![0f32; rgb.len() / 3];
+        if kind != Waveform::Parade {
+            luminance_chunk(rgb, &mut lum);
+        }
+        for (i, (p, &col)) in rgb.as_chunks::<3>().0.iter().zip(&cols).enumerate() {
+            let lane = (i % LANES) * n;
+            match kind {
+                Waveform::Luma => {
+                    let b = quantize(nan_to_num(lum[i]), WAVEFORM_BINS);
+                    counts[lane + b * WAVEFORM_COLS + col] += 1;
+                }
+                Waveform::Color => {
+                    let b = quantize(nan_to_num(lum[i]), WAVEFORM_BINS);
+                    for (c, &v) in p.iter().enumerate() {
+                        let fixed = (nan_to_num(v).clamp(0.0, 1.0) * WAVEFORM_COLOR_SCALE)
+                            .round_ties_even();
+                        counts[lane + c * plane + b * WAVEFORM_COLS + col] += fixed as u32;
+                    }
+                }
+                Waveform::Parade => {
+                    for (c, &v) in p.iter().enumerate() {
+                        let b = quantize(nan_to_num(v), WAVEFORM_BINS);
+                        counts[lane + c * plane + b * WAVEFORM_COLS + col] += 1;
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// `scan_full_scale_columns`: (3, WAVEFORM_COLS) counts of samples at or above `level`, per
+/// parade column of the crop.
+pub fn scan_full_scale_columns(s: Samples, level: f32) -> Vec<f64> {
+    let full_w = s.cols.1 - s.cols.0;
+    let cols: Vec<usize> = (0..full_w)
+        .step_by(s.step)
+        .map(|x| (x * WAVEFORM_COLS / full_w).min(WAVEFORM_COLS - 1))
+        .collect();
+    count_rows(s, 3 * WAVEFORM_COLS, |rgb, counts| {
+        for (i, (p, &col)) in rgb.as_chunks::<3>().0.iter().zip(&cols).enumerate() {
+            let lane = (i % LANES) * 3 * WAVEFORM_COLS;
+            for (c, &v) in p.iter().enumerate() {
+                counts[lane + c * WAVEFORM_COLS + col] += (v >= level) as u32;
+            }
+        }
+    })
 }
 
 #[cfg(test)]

@@ -21,16 +21,22 @@ status = "todo"
 calls = ["np.bincount"]
 depends = []
 
-["features/exposure/analysis.py::_waveform_cells"]
+["features/exposure/analysis.py::_waveform"]
 phase = 2
 status = "todo"
+calls = ["negpy_core.waveform"]
+depends = []
+
+["features/exposure/analysis.py::_waveform_cells"]
+phase = 2
+status = "ported"
 calls = []
 depends = []
 
 ["features/exposure/analysis.py::color_histogram"]
 phase = 2
-status = "todo"
-calls = ["np.bincount"]
+status = "ported"
+calls = ["negpy_core.color_histogram"]
 depends = []
 
 ["features/exposure/analysis.py::density_histogram"]
@@ -59,8 +65,8 @@ depends = []
 
 ["features/exposure/analysis.py::output_histogram"]
 phase = 2
-status = "todo"
-calls = ["np.bincount", "np.histogram"]
+status = "ported"
+calls = ["negpy_core.output_histogram"]
 depends = []
 
 ["features/exposure/analysis.py::paper_grid_mosaic"]
@@ -71,8 +77,8 @@ depends = []
 
 ["features/exposure/analysis.py::scan_full_scale_columns"]
 phase = 2
-status = "todo"
-calls = ["np.bincount"]
+status = "ported"
+calls = ["negpy_core.scan_full_scale_columns"]
 depends = []
 
 ["features/exposure/analysis.py::scope_point"]
@@ -95,21 +101,21 @@ depends = []
 
 ["features/exposure/analysis.py::waveform"]
 phase = 2
-status = "todo"
-calls = ["np.bincount"]
-depends = ["_waveform_cells"]
+status = "ported"
+calls = []
+depends = ["_waveform"]
 
 ["features/exposure/analysis.py::waveform_color"]
 phase = 2
-status = "todo"
-calls = ["np.bincount"]
-depends = ["_waveform_cells"]
+status = "ported"
+calls = []
+depends = ["_waveform"]
 
 ["features/exposure/analysis.py::waveform_parade"]
 phase = 2
-status = "todo"
-calls = ["np.bincount"]
-depends = ["_waveform_cells"]
+status = "ported"
+calls = []
+depends = ["_waveform"]
 
 ["features/exposure/analysis.py::zone_anchors"]
 phase = 2
