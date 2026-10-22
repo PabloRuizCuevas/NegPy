@@ -155,7 +155,7 @@ depends = []
 ["features/exposure/normalization.py::_base_blocks"]
 phase = 2
 status = "todo"
-calls = ["np.argsort"]
+calls = ["negpy_core.flat_block_means", "np.argsort"]
 depends = []
 
 ["features/exposure/normalization.py::_block_median_grid"]

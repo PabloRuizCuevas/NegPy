@@ -65,6 +65,71 @@ pub fn detection_luma(lum: &[f32], dst: &mut [f32]) -> Option<()> {
     Some(())
 }
 
+const BASE_BLOCK: usize = 8;
+const CLIP_LEVEL: f32 = 0.98;
+const FLAT_CV: f32 = 0.03;
+const MIN_BASE_BLOCKS: usize = 5;
+
+/// The first half of `_base_blocks`: per-channel means of the 8x8 blocks of `det` (HxWx3) that
+/// lie in `band`, hold no clipped pixel and are flat, in block order; None with fewer than
+/// five. NumPy's order: each block sums row by row, the 8 rows outer, from +0.
+pub fn flat_block_means(det: &[f32], band: &[u8], h: usize, w: usize) -> Option<Vec<[f32; 3]>> {
+    let b = BASE_BLOCK;
+    let (hb, wb) = (h / b, w / b);
+    let rows: Vec<Vec<[f32; 3]>> = (0..hb)
+        .into_par_iter()
+        .map(|by| {
+            let mut out = Vec::new();
+            for bx in 0..wb {
+                let px = |i1: usize, i3: usize| {
+                    let o = ((by * b + i1) * w + bx * b + i3) * 3;
+                    [det[o], det[o + 1], det[o + 2]]
+                };
+                let mut sum = [0f32; 3];
+                let mut top = f32::NEG_INFINITY;
+                let mut count = 0u32;
+                for i1 in 0..b {
+                    for i3 in 0..b {
+                        let p = px(i1, i3);
+                        for c in 0..3 {
+                            sum[c] += p[c];
+                            // np.max propagates NaN, so a block with one is never unclipped.
+                            top = if p[c].is_nan() || top.is_nan() {
+                                f32::NAN
+                            } else {
+                                top.max(p[c])
+                            };
+                        }
+                        count += (band[(by * b + i1) * w + bx * b + i3] != 0) as u32;
+                    }
+                }
+                let n = (b * b) as f32;
+                let mean = sum.map(|v| v / n);
+                let mut sq = [0f32; 3];
+                for i1 in 0..b {
+                    for i3 in 0..b {
+                        let p = px(i1, i3);
+                        for c in 0..3 {
+                            let d = p[c] - mean[c];
+                            sq[c] += d * d;
+                        }
+                    }
+                }
+                let std = sq.map(|v| (v / n).sqrt());
+                let lum = ((mean[0] + mean[1]) + mean[2]) / 3.0;
+                let cv = ((std[0] + std[1]) + std[2]) / 3.0 / lum.max(1e-6);
+                let inside = count as f64 / (b * b) as f64 >= 0.9;
+                if inside && top < CLIP_LEVEL && lum > 1e-4 && cv < FLAT_CV {
+                    out.push(mean);
+                }
+            }
+            out
+        })
+        .collect();
+    let flat: Vec<[f32; 3]> = rows.into_iter().flatten().collect();
+    (flat.len() >= MIN_BASE_BLOCKS).then_some(flat)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

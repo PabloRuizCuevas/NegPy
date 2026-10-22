@@ -426,12 +426,9 @@ def measure_neutral_axis(
 #: way negdensity.py reads it. The film box comes from the crop's detector at its own resolution,
 #: whose edge walk is calibrated there.
 _BASE_MARGIN = 0.15  # the band inside the film box, per side, that holds rebate, perforations and picture edge
-_BASE_BLOCK = 8  # block size at detection resolution
-_FLAT_CV = 0.03  # a block whose std over mean is under this is flat film, not edge print or a gradient
 _GROUP_GAP = 0.04  # decades between neighbouring blocks that split two brightness groups
 _OPEN_LIGHT_GAP = 0.08  # decades a brighter, smaller group must clear the base to be bare light
 _MIN_BASE_BLOCKS = 5
-_CLIP_LEVEL = 0.98  # a block with a pixel at sensor white is light the scan clipped, never film
 
 
 def _margin_band(shape: Tuple[int, int], film_roi: ROI) -> np.ndarray:
@@ -450,17 +447,12 @@ def _base_blocks(det: np.ndarray, band: np.ndarray) -> Optional[np.ndarray]:
     Flat blocks are grouped by brightness; the largest group is the base. A smaller group
     well above it is bare light through a perforation or past the film's edge. A flat
     picture region in the band that outnumbers the base is taken for it."""
-    b = _BASE_BLOCK
-    hb, wb = det.shape[0] // b, det.shape[1] // b
-    blocks = det[: hb * b, : wb * b].reshape(hb, b, wb, b, 3)
-    mean = blocks.mean(axis=(1, 3))
-    lum = mean.mean(axis=2)
-    inside = band[: hb * b, : wb * b].reshape(hb, b, wb, b).mean(axis=(1, 3)) >= 0.9
-    unclipped = blocks.max(axis=(1, 3, 4)) < _CLIP_LEVEL
-    flat = inside & unclipped & (lum > 1e-4) & (blocks.std(axis=(1, 3)).mean(axis=2) / np.maximum(lum, 1e-6) < _FLAT_CV)
-    if int(flat.sum()) < _MIN_BASE_BLOCKS:
+    # The block statistics (8x8 blocks, flat under 3% std over mean, unclipped under 0.98) run
+    # in negpy_core; log10 and the grouping stay in NumPy, whose
+    # float32 log10 and argsort differ by CPU (SVML, SIMD sort) and cannot be copied bit for bit.
+    cand = negpy_core.flat_block_means(np.ascontiguousarray(det, dtype=np.float32), np.ascontiguousarray(band, dtype=bool))
+    if cand is None:
         return None
-    cand = mean[flat]
     log_lum = np.log10(np.maximum(cand.mean(axis=1), 1e-6))
     order = np.argsort(log_lum)[::-1]  # brightest first
     groups: list[np.ndarray] = []

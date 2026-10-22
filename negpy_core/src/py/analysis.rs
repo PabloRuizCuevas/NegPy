@@ -84,8 +84,42 @@ fn detection_luma<'py>(
     Ok(out)
 }
 
+/// The flat base-candidate blocks of `_base_blocks`: an Nx3 float32 array of block means, or
+/// None with too few.
+#[pyfunction]
+fn flat_block_means<'py>(
+    py: Python<'py>,
+    det: PyReadonlyArrayDyn<'py, f32>,
+    band: PyReadonlyArrayDyn<'py, bool>,
+) -> PyResult<Option<Bound<'py, numpy::PyArray2<f32>>>> {
+    let shape = det.shape().to_vec();
+    let [h, w, 3] = shape[..] else {
+        return Err(PyValueError::new_err(
+            "flat_block_means needs an HxWx3 array",
+        ));
+    };
+    if band.shape() != [h, w] {
+        return Err(PyValueError::new_err("band must be HxW"));
+    }
+    let data = slice(&det)?;
+    let mask: Vec<u8> = band
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("band must be contiguous"))?
+        .iter()
+        .map(|&v| v as u8)
+        .collect();
+    let found = py.detach(|| analysis::flat_block_means(data, &mask, h, w));
+    found
+        .map(|rows| {
+            let flat: Vec<Vec<f32>> = rows.iter().map(|r| r.to_vec()).collect();
+            numpy::PyArray2::from_vec2(py, &flat).map_err(|e| PyValueError::new_err(e.to_string()))
+        })
+        .transpose()
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(luminance, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_to_uint8, m)?)?;
-    m.add_function(wrap_pyfunction!(detection_luma, m)?)
+    m.add_function(wrap_pyfunction!(detection_luma, m)?)?;
+    m.add_function(wrap_pyfunction!(flat_block_means, m)?)
 }
