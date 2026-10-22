@@ -643,19 +643,10 @@ def loupe_acutance(patch: Any) -> float:
 def density_histogram(normalized_log: np.ndarray, roi: Optional[Tuple[int, int, int, int]] = None) -> np.ndarray:
     """(4, DENSITY_HIST_BINS) [R, G, B, L] val-domain occupancy; out-of-range mass lands in
     the edge bins. `roi` is the crop rect (y1, y2, x1, x2) in the same frame as `normalized_log`."""
-    img = normalized_log
-    if roi is not None:
-        y1, y2, x1, x2 = roi
-        img = img[y1:y2, x1:x2]
-    step = max(1, round(np.sqrt(img.shape[0] * img.shape[1] / _MAX_HIST_SAMPLES)))
-    if step > 1:
-        img = img[::step, ::step]
-    img = np.ascontiguousarray(img)
-    lum = get_luminance(img)
-    lo, hi = DENSITY_HIST_RANGE
-    rows = [np.histogram(np.clip(img[..., c], lo, hi), bins=DENSITY_HIST_BINS, range=DENSITY_HIST_RANGE)[0] for c in range(3)]
-    rows.append(np.histogram(np.clip(lum, lo, hi), bins=DENSITY_HIST_BINS, range=DENSITY_HIST_RANGE)[0])
-    return np.stack(rows).astype(np.float64)
+    crop = _sample_crop(normalized_log.shape, roi)
+    if crop is None:
+        return np.zeros((4, DENSITY_HIST_BINS))
+    return negpy_core.density_histogram(np.ascontiguousarray(normalized_log, dtype=np.float32), *crop)
 
 
 def scan_density_axis(density: Any) -> Any:
@@ -669,6 +660,19 @@ def scan_density_of_val(val: Any, bounds: Any) -> np.ndarray:
     floors = np.asarray(bounds.floors, dtype=np.float64)[:3]
     ceils = np.asarray(bounds.ceils, dtype=np.float64)[:3]
     return -(floors + np.asarray(val, dtype=np.float64)[:3] * (ceils - floors))
+
+
+def _sample_crop(shape: Tuple[int, ...], roi: Optional[Tuple[int, int, int, int]]) -> Optional[Tuple[Tuple[int, int, int, int], int]]:
+    """The crop (y1, y2, x1, x2) as numpy slicing clamps it, and the stride that keeps it near
+    _MAX_HIST_SAMPLES samples; None for an empty crop."""
+    h, w = shape[:2]
+    y1, y2, x1, x2 = roi if roi is not None else (0, h, 0, w)
+    y1, y2, _ = slice(y1, y2).indices(h)
+    x1, x2, _ = slice(x1, x2).indices(w)
+    if y2 <= y1 or x2 <= x1:
+        return None
+    step = max(1, round(np.sqrt((y2 - y1) * (x2 - x1) / _MAX_HIST_SAMPLES)))
+    return (y1, y2, x1, x2), step
 
 
 def _parade_samples(img: np.ndarray, roi: Optional[Tuple[int, int, int, int]]) -> Optional[Tuple[np.ndarray, np.ndarray]]:
@@ -694,15 +698,10 @@ def density_parade(img_log: Any, roi: Optional[Tuple[int, int, int, int]] = None
     img = np.asarray(img_log)
     if img.ndim != 3 or img.shape[-1] < 3:
         return None
-    sampled = _parade_samples(img, roi)
-    if sampled is None:
+    crop = _sample_crop(img.shape, roi)
+    if crop is None:
         return None
-    img, cols = sampled
-    pos = scan_density_axis(-np.nan_to_num(img.astype(np.float32)))
-    bins = np.clip(np.floor(pos * WAVEFORM_BINS), 0, WAVEFORM_BINS - 1).astype(np.int64)
-    flat_cols = np.broadcast_to(cols[None, :], bins.shape[:2]).ravel()
-    counts = [np.bincount(bins[..., c].ravel() * WAVEFORM_COLS + flat_cols, minlength=WAVEFORM_BINS * WAVEFORM_COLS) for c in range(3)]
-    return np.stack(counts).reshape(3, WAVEFORM_BINS, WAVEFORM_COLS).astype(float)
+    return negpy_core.density_parade(np.ascontiguousarray(img, dtype=np.float32), *crop)
 
 
 def scan_full_scale_columns(image: Any, roi: Optional[Tuple[int, int, int, int]] = None) -> Optional[np.ndarray]:

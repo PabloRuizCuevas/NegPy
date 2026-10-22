@@ -2,6 +2,7 @@ pub mod analysis;
 pub mod contours;
 pub mod filter;
 pub mod gray;
+pub mod histogram;
 pub mod morph;
 pub mod resize;
 pub mod stats;

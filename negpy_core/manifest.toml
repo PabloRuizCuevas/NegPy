@@ -35,14 +35,14 @@ depends = []
 
 ["features/exposure/analysis.py::density_histogram"]
 phase = 2
-status = "todo"
-calls = ["np.histogram"]
+status = "ported"
+calls = ["negpy_core.density_histogram"]
 depends = []
 
 ["features/exposure/analysis.py::density_parade"]
 phase = 2
-status = "todo"
-calls = ["np.bincount"]
+status = "ported"
+calls = ["negpy_core.density_parade"]
 depends = []
 
 ["features/exposure/analysis.py::encoded_of_zone"]

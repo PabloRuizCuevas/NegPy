@@ -3,6 +3,7 @@ pub mod contours;
 pub mod detect;
 pub mod filter;
 pub mod gray;
+pub mod histogram;
 pub mod morph;
 pub mod resize;
 pub mod shapes;
@@ -31,5 +32,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::morph::register(m)?;
     py::gray::register(m)?;
     py::contours::register(m)?;
+    py::histogram::register(m)?;
     py::analysis::register(m)
 }

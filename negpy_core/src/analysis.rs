@@ -20,7 +20,7 @@ pub fn luminance(rgb: &[f32], dst: &mut [f32]) {
 
 /// `mul_add` is one instruction only where the CPU has FMA, so this compiles twice.
 #[multiversion(targets("x86_64+avx2+fma", "aarch64+neon"))]
-fn luminance_chunk(rgb: &[f32], dst: &mut [f32]) {
+pub(crate) fn luminance_chunk(rgb: &[f32], dst: &mut [f32]) {
     for (d, p) in dst.iter_mut().zip(rgb.as_chunks::<3>().0) {
         let t = LUMA_R * p[0] as f64;
         let t = LUMA_G.mul_add(p[1] as f64, t);
