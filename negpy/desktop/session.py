@@ -119,6 +119,8 @@ class AppState:
     source_exif: Dict[str, Any] = field(default_factory=dict)  # file_hash -> piexif dict
     selected_file_idx: int = -1
     selected_indices: List[int] = field(default_factory=list)
+    # Detect Scenes' groups waiting for Accept or Discard: {"roll", "name", "hashes"} each, never saved.
+    found_scenes: List[Dict[str, Any]] = field(default_factory=list)
     # The roll (negpy.services.assets.rolls) the loaded frames came from, if any -- a
     # plain Add Files pick or a clear leaves this None. Files appended while it is set
     # join that roll's membership so reopening it later still shows them.
@@ -577,7 +579,11 @@ class AssetListModel(QAbstractListModel):
 
     @property
     def has_scenes(self) -> bool:
-        return any(f.get("scene") for f in self._state.uploaded_files)
+        return any(f.get("scene") or f.get("found_scene") for f in self._state.uploaded_files)
+
+    @property
+    def has_found_scenes(self) -> bool:
+        return any(f.get("found_scene") for f in self._state.uploaded_files)
 
     @property
     def effective_sort_order(self) -> str:
@@ -589,7 +595,7 @@ class AssetListModel(QAbstractListModel):
 
     def _scene_rank(self, file_info: dict) -> tuple:
         """Scene sort's outer key. Frames in no scene come last in either direction."""
-        scene = file_info.get("scene")
+        scene = file_info.get("scene") or file_info.get("found_scene")
         if not scene:
             return (1, 0)
         return (0, -scene[0] if self._sort_descending else scene[0])
@@ -602,7 +608,7 @@ class AssetListModel(QAbstractListModel):
         files = self._state.uploaded_files
         runs: list[tuple[Optional[int], int, int]] = []
         for row, i in enumerate(self._sorted_indices):
-            scene = files[i].get("scene")
+            scene = files[i].get("scene") or files[i].get("found_scene")
             ordinal = scene[0] if scene else None
             if runs and runs[-1][0] == ordinal:
                 runs[-1] = (ordinal, runs[-1][1], row)
@@ -1513,13 +1519,19 @@ class DesktopSessionManager(QObject):
             self.select_file(advance_to)
 
     def _stamp_scenes(self) -> None:
-        by_hash = rolls.scene_by_hash(self.repo, self.state.active_roll_id)
+        """Marks each loaded frame with its scene, ``(ordinal, scene_id, name)``, or its found scene,
+        ``(ordinal, index, name)`` numbered on from the scenes. Found scenes of another roll drop."""
+        roll_id = self.state.active_roll_id
+        by_hash = rolls.scene_by_hash(self.repo, roll_id)
+        self.state.found_scenes = [s for s in self.state.found_scenes if s["roll"] == roll_id]
+        first = len(rolls.roll_scenes(self.repo, roll_id)) + 1
+        found = {h: (first + k, k, s["name"]) for k, s in enumerate(self.state.found_scenes) for h in s["hashes"]}
         for f in self.state.uploaded_files:
-            hit = by_hash.get(unforked_hash(f["hash"]))
-            if hit:
-                f["scene"] = hit
-            else:
-                f.pop("scene", None)
+            for key, hit in (("scene", by_hash.get(unforked_hash(f["hash"]))), ("found_scene", found.get(f["hash"]))):
+                if hit:
+                    f[key] = hit
+                else:
+                    f.pop(key, None)
 
     def refresh_scene_marks(self) -> None:
         """Re-reads the active roll's scenes onto the loaded frames after a scene edit."""

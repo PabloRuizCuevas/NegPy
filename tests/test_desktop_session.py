@@ -53,6 +53,26 @@ class TestDesktopSessionSync(unittest.TestCase):
         # A scoped apply reads the visible set, which a real load always builds.
         self.session.asset_model.refresh()
 
+    def test_found_scenes_mark_their_frames_after_the_scenes_and_drop_with_their_roll(self):
+        from negpy.services.assets import rolls
+
+        self.session.state.active_roll_id = "roll-1"
+        self.session.state.found_scenes = [{"roll": "roll-1", "name": "Scene 2", "hashes": ["hash2"]}]
+        with (
+            patch.object(rolls, "scene_by_hash", return_value={"hash1": (1, "s1", "Beach")}),
+            patch.object(rolls, "roll_scenes", return_value=[("s1", {"name": "Beach"})]),
+        ):
+            self.session.refresh_scene_marks()
+            first, second = self.session.state.uploaded_files
+            self.assertEqual((first.get("scene"), first.get("found_scene")), ((1, "s1", "Beach"), None))
+            self.assertEqual((second.get("scene"), second.get("found_scene")), (None, (2, 0, "Scene 2")))
+
+            self.session.state.active_roll_id = "roll-2"
+            self.session.refresh_scene_marks()
+
+        self.assertEqual(self.session.state.found_scenes, [])
+        self.assertNotIn("found_scene", self.session.state.uploaded_files[1])
+
     def test_a_color_vision_choice_is_saved_and_announced(self):
         heard = []
         self.session.color_vision_changed.connect(lambda: heard.append(1))
@@ -1726,6 +1746,23 @@ class TestAssetListModelSceneSort(unittest.TestCase):
         self.model.set_filter("[bcd]", regex=True)
         self.assertEqual(self._names(), ["c.nef", "b.nef", "d.nef"])
         self.assertEqual(self.model.scene_runs(), [(1, 0, 0), (2, 1, 2)])
+
+    def test_found_scenes_follow_the_scenes_as_blocks(self):
+        self.state.uploaded_files[0]["found_scene"] = (3, 0, "Scene 3")
+        self.state.uploaded_files.append({"name": "f.nef", "path": "/r/f.nef", "hash": "h6", "found_scene": (3, 0, "Scene 3")})
+        self.model.refresh()
+
+        self.assertEqual(self._names(), ["c.nef", "e.nef", "b.nef", "d.nef", "a.nef", "f.nef"])
+        self.assertEqual(self.model.scene_runs(), [(1, 0, 1), (2, 2, 3), (3, 4, 5)])
+
+    def test_found_scenes_alone_sort_by_scene(self):
+        for f in self.state.uploaded_files:
+            f.pop("scene", None)
+        self.state.uploaded_files[3]["found_scene"] = (1, 0, "Scene 1")
+        self.model.refresh()
+
+        self.assertEqual(self.model.effective_sort_order, "scene")
+        self.assertEqual(self._names()[0], "d.nef")
 
     def test_no_blocks_under_other_orders_or_a_semantic_query(self):
         import numpy as np

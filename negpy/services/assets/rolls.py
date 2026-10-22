@@ -1023,11 +1023,19 @@ def scene_by_hash(repo: Any, roll_id: Optional[str]) -> Dict[str, tuple]:
 
 
 def next_scene_name(repo: Any, roll_id: Optional[str]) -> str:
+    return next_scene_names(repo, roll_id, 1)[0]
+
+
+def next_scene_names(repo: Any, roll_id: Optional[str], count: int) -> List[str]:
+    """*count* free "Scene N" names, numbered on from the roll's scenes."""
     taken = {entry["name"] for _sid, entry in roll_scenes(repo, roll_id)}
-    n = len(taken) + 1
-    while f"Scene {n}" in taken:
+    n = len(taken)
+    names: List[str] = []
+    while len(names) < count:
         n += 1
-    return f"Scene {n}"
+        if f"Scene {n}" not in taken:
+            names.append(f"Scene {n}")
+    return names
 
 
 def resolve_roll_baseline(repo: Any, roll_id: str, file_hash: str, config: "WorkspaceConfig") -> "WorkspaceConfig":
