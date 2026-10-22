@@ -137,6 +137,34 @@ fn trace(
     pts
 }
 
+/// `cv2.contourArea` of integer points: the shoelace sum in double, unsigned.
+pub fn contour_area(pts: &[(i32, i32)]) -> f64 {
+    let Some(&last) = pts.last() else { return 0.0 };
+    let mut prev = (last.0 as f32, last.1 as f32);
+    let mut a = 0f64;
+    for &(x, y) in pts {
+        let p = (x as f32, y as f32);
+        a += prev.0 as f64 * p.1 as f64 - prev.1 as f64 * p.0 as f64;
+        prev = p;
+    }
+    (a * 0.5).abs()
+}
+
+/// `cv2.boundingRect` of integer points: (x, y, width, height).
+pub fn bounding_rect(pts: &[(i32, i32)]) -> (i32, i32, i32, i32) {
+    if pts.is_empty() {
+        return (0, 0, 0, 0);
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    for &(x, y) in pts {
+        x0 = x0.min(x);
+        y0 = y0.min(y);
+        x1 = x1.max(x);
+        y1 = y1.max(y);
+    }
+    (x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

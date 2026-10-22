@@ -285,6 +285,67 @@ fn refine_film_roi_by_tiers<'py>(
     }))
 }
 
+/// `_refine_frame_bounds(image)`'s (left, top, right, bottom) for an HxW or HxWx3 float32 image.
+#[pyfunction]
+fn refine_frame_bounds(
+    py: Python<'_>,
+    image: PyReadonlyArrayDyn<'_, f32>,
+) -> PyResult<(i64, i64, i64, i64)> {
+    let (h, w, cn) = match image.shape()[..] {
+        [h, w] => (h, w, 1),
+        [h, w, 3] => (h, w, 3),
+        _ => {
+            return Err(PyValueError::new_err(
+                "refine_frame_bounds needs an HxW or HxWx3 array",
+            ));
+        }
+    };
+    let data = slice(&image)?;
+    py.detach(|| analysis::refine_frame_bounds(data, h, w, cn))
+        .ok_or_else(|| {
+            PyValueError::new_err("refine_frame_bounds needs an image at least 31 px on each side")
+        })
+}
+
+type Gated<'py> = (
+    analysis::Roi,
+    Option<Bound<'py, numpy::PyArray1<f32>>>,
+    Option<Bound<'py, numpy::PyArray1<f32>>>,
+);
+
+/// `_refine_roi_to_image(img, film_roi)` for an HxW or HxWx3 float32 image: (roi, row
+/// occupancy or None, column occupancy or None).
+#[pyfunction]
+fn refine_roi_to_image<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    film_roi: analysis::Roi,
+) -> PyResult<Gated<'py>> {
+    let (h, w, cn) = match img.shape()[..] {
+        [h, w] => (h, w, 1),
+        [h, w, 3] => (h, w, 3),
+        _ => {
+            return Err(PyValueError::new_err(
+                "refine_roi_to_image needs an HxW or HxWx3 array",
+            ));
+        }
+    };
+    let data = slice(&img)?;
+    let (roi, tiers) = py
+        .detach(|| analysis::refine_roi_to_image(data, h, w, cn, film_roi))
+        .ok_or_else(|| {
+            PyValueError::new_err("refine_roi_to_image: image too small for the Sobel path")
+        })?;
+    Ok(match tiers {
+        Some(t) => (
+            roi,
+            Some(numpy::PyArray1::from_vec(py, t.rows)),
+            Some(numpy::PyArray1::from_vec(py, t.cols)),
+        ),
+        None => (roi, None, None),
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(luminance, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_to_uint8, m)?)?;
@@ -298,5 +359,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(roi_from_measured_border, m)?)?;
     m.add_function(wrap_pyfunction!(smooth_signal, m)?)?;
     m.add_function(wrap_pyfunction!(snap_edge_to_gradient, m)?)?;
-    m.add_function(wrap_pyfunction!(refine_film_roi_by_tiers, m)?)
+    m.add_function(wrap_pyfunction!(refine_film_roi_by_tiers, m)?)?;
+    m.add_function(wrap_pyfunction!(refine_frame_bounds, m)?)?;
+    m.add_function(wrap_pyfunction!(refine_roi_to_image, m)?)
 }

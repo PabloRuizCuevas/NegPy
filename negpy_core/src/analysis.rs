@@ -3,6 +3,7 @@
 use multiversion::multiversion;
 use rayon::prelude::*;
 
+use crate::filter::Border;
 use crate::stats::{np_percentiles, pairwise_sum_f32, percentiles};
 
 const LUMA_R: f64 = 0.2126;
@@ -1007,6 +1008,302 @@ pub fn refine_film_roi_by_tiers(
         rows,
         cols,
     })
+}
+
+/// The uint8 preview and its gray plane, as `_refine_frame_bounds` and `_dark_region_bounds`
+/// build them from an HxW or HxWx3 float32 image.
+fn preview_gray(img: &[f32], h: usize, w: usize, cn: usize) -> Vec<u8> {
+    let color: Vec<f32> = if cn == 1 {
+        img.iter().flat_map(|&v| [v, v, v]).collect()
+    } else {
+        img.to_vec()
+    };
+    let mut preview = vec![0u8; h * w * 3];
+    normalize_to_uint8(&color, &mut preview);
+    let mut gray = vec![0u8; h * w];
+    crate::gray::bgr_to_gray(&preview, &mut gray);
+    gray
+}
+
+/// `_boundary_candidates(signal, from_start)`: (edge index, value, inner index, value).
+fn boundary_candidates(signal: &[f32], from_start: bool) -> (i64, f64, i64, f64) {
+    let length = signal.len() as i64;
+    if length == 0 {
+        return (0, 0.0, 0, 0.0);
+    }
+    let edge_window = (py_round(length as f64 * 0.08))
+        .max(32)
+        .min((length - 1).max(1));
+    let search_end = py_round(length as f64 * 0.45)
+        .max(edge_window + 1)
+        .min(length);
+    let search_start = py_round(length as f64 * 0.55).min((length - edge_window - 1).max(0));
+    // np.argmax: the first maximum, or the first NaN.
+    let argmax = |s: &[f32]| -> usize {
+        s.iter().position(|v| v.is_nan()).unwrap_or_else(|| {
+            s.iter()
+                .enumerate()
+                .fold(0, |b, (i, &v)| if v > s[b] { i } else { b })
+        })
+    };
+    let at = |a: i64, b: i64| {
+        &signal[a.clamp(0, length) as usize..b.clamp(0, length).max(a.clamp(0, length)) as usize]
+    };
+    let (edge, edge_base, search, search_base) = if from_start {
+        (
+            at(0, edge_window),
+            0,
+            at(edge_window, search_end),
+            edge_window,
+        )
+    } else {
+        (
+            at(length - edge_window, length),
+            length - edge_window,
+            at(search_start, length - edge_window),
+            search_start,
+        )
+    };
+    let (edge_idx, edge_value) = if edge.is_empty() {
+        (edge_base, 0.0)
+    } else {
+        let k = argmax(edge);
+        (edge_base + k as i64, edge[k] as f64)
+    };
+    if search.is_empty() {
+        return (edge_idx, edge_value, edge_idx, edge_value);
+    }
+    let k = argmax(search);
+    (
+        edge_idx,
+        edge_value,
+        search_base + k as i64,
+        search[k] as f64,
+    )
+}
+
+/// `_dark_region_bounds(image)`: (left, top, right, bottom) of the largest dark region, or None.
+fn dark_region_bounds(gray: &[u8], h: usize, w: usize) -> Option<(i64, i64, i64, i64)> {
+    let as_f: Vec<f64> = gray.iter().map(|&v| v as f64).collect();
+    let threshold = np_percentile_f64(&as_f, 55.0);
+    let mask: Vec<u8> = gray
+        .iter()
+        .map(|&v| if (v as f64) <= threshold { 255 } else { 0 })
+        .collect();
+    let mut opened = vec![0u8; h * w];
+    crate::morph::morphology(
+        &mask,
+        &mut opened,
+        (h, w, 1),
+        crate::morph::Op::Open,
+        (9, 9),
+        1,
+        Border::Constant,
+    )?;
+    let mut closed = vec![0u8; h * w];
+    crate::morph::morphology(
+        &opened,
+        &mut closed,
+        (h, w, 1),
+        crate::morph::Op::Close,
+        (31, 31),
+        2,
+        Border::Constant,
+    )?;
+    let found = crate::contours::find_external_contours(&closed, h, w);
+    // max(contours, key=cv2.contourArea): the first of the largest.
+    let contour = found
+        .iter()
+        .fold(None::<&Vec<(i32, i32)>>, |best, c| match best {
+            Some(b) if crate::contours::contour_area(c) <= crate::contours::contour_area(b) => {
+                Some(b)
+            }
+            _ => Some(c),
+        })?;
+    let (x, y, bw, bh) = crate::contours::bounding_rect(contour);
+    let (x, y, bw, bh) = (x as i64, y as i64, bw as i64, bh as i64);
+    let area_ratio = crate::contours::contour_area(contour) / ((h * w) as f64).max(1.0);
+    if !(0.15..=0.85).contains(&area_ratio) {
+        return None;
+    }
+    let (hf, wf) = (h as f64, w as f64);
+    if bw < py_round(wf * 0.25) || bh < py_round(hf * 0.25) {
+        return None;
+    }
+    let pad_x = py_round(wf * 0.004).max(4);
+    let pad_y = py_round(hf * 0.004).max(4);
+    let (left, top) = ((x - pad_x).max(0), (y - pad_y).max(0));
+    let (right, bottom) = (
+        (x + bw + pad_x).min(w as i64),
+        (y + bh + pad_y).min(h as i64),
+    );
+    let (inset_x, inset_y) = (py_round(wf * 0.03), py_round(hf * 0.03));
+    if left < inset_x
+        || top < inset_y
+        || (w as i64 - right) < inset_x
+        || (h as i64 - bottom) < inset_y
+    {
+        return None;
+    }
+    Some((left, top, right, bottom))
+}
+
+/// `_refine_frame_bounds(image)`'s box (left, top, right, bottom) for an HxW or HxWx3 float32
+/// image: Sobel profiles of the gray preview, edge and inner candidates, and the dark-region
+/// fallback. None for an image narrower or shorter than the 31-tap smoothing.
+pub fn refine_frame_bounds(
+    img: &[f32],
+    h: usize,
+    w: usize,
+    cn: usize,
+) -> Option<(i64, i64, i64, i64)> {
+    let gray = preview_gray(img, h, w, cn);
+    let gray_f: Vec<f32> = gray.iter().map(|&v| v as f32).collect();
+    let grad = |dx: bool| -> Option<Vec<f64>> {
+        let (kx, ky): (&[f32], &[f32]) = if dx {
+            (&[-1.0, 0.0, 1.0], &[1.0, 2.0, 1.0])
+        } else {
+            (&[1.0, 2.0, 1.0], &[-1.0, 0.0, 1.0])
+        };
+        let mut out = vec![0f32; h * w];
+        crate::filter::sep_filter2d(&gray_f, &mut out, (h, w, 1), (kx, ky), Border::Reflect101)?;
+        Some(
+            out.iter()
+                .map(|&v| v.abs().min(255.0) as u8 as f64)
+                .collect(),
+        )
+    };
+    let (gx, gy) = (grad(true)?, grad(false)?);
+    let col: Vec<f32> = (0..w)
+        .map(|c| np_percentile_f64(&(0..h).map(|r| gx[r * w + c]).collect::<Vec<_>>(), 95.0) as f32)
+        .collect();
+    let row: Vec<f32> = (0..h)
+        .map(|r| np_percentile_f64(&gy[r * w..(r + 1) * w], 95.0) as f32)
+        .collect();
+    let col_signal = smooth_signal(&col, 31)?;
+    let row_signal = smooth_signal(&row, 31)?;
+
+    let (left_edge, _, left_inner, left_inner_value) = boundary_candidates(&col_signal, true);
+    let (right_edge, _, right_inner, right_inner_value) = boundary_candidates(&col_signal, false);
+    let (top_edge, top_edge_value, top_inner, top_inner_value) =
+        boundary_candidates(&row_signal, true);
+    let (bottom_edge, bottom_edge_value, bottom_inner, bottom_inner_value) =
+        boundary_candidates(&row_signal, false);
+    let col_floor = np_percentiles(&col_signal, &[75.0])?[0] as f64;
+    let row_floor = np_percentiles(&row_signal, &[75.0])?[0] as f64;
+    let (wf, hf) = (w as f64, h as f64);
+
+    let (mut left, mut right, mut top, mut bottom) =
+        (left_edge, right_edge + 1, top_edge, bottom_edge + 1);
+    let pair_x = left_inner >= py_round(wf * 0.12)
+        && right_inner <= py_round(wf * 0.88)
+        && left_inner_value >= col_floor * 4.0
+        && right_inner_value >= col_floor * 4.0
+        && (right_inner - left_inner) >= py_round(wf * 0.5);
+    if pair_x {
+        left = left_inner;
+        right = right_inner + 1;
+    } else {
+        if left_inner >= py_round(wf * 0.12) && left_inner_value >= col_floor * 5.0 {
+            left = left_inner;
+        }
+        if right_inner <= py_round(wf * 0.88) && right_inner_value >= col_floor * 5.0 {
+            right = right_inner + 1;
+        }
+    }
+    let pair_y = top_inner > top_edge + 20
+        && bottom_inner < bottom_edge - 20
+        && top_inner_value > (top_edge_value * 1.2).max(row_floor + 25.0)
+        && bottom_inner_value > (bottom_edge_value * 1.2).max(row_floor + 25.0)
+        && (bottom_inner - top_inner) >= py_round(hf * 0.5);
+    if pair_y {
+        top = top_inner;
+        bottom = bottom_inner + 1;
+    } else {
+        if top_inner > top_edge + 20
+            && top_inner_value > (top_edge_value * 1.45).max(row_floor + 35.0)
+        {
+            top = top_inner;
+        }
+        if bottom_inner < bottom_edge - 20
+            && bottom_inner_value > (bottom_edge_value * 1.45).max(row_floor + 35.0)
+        {
+            bottom = bottom_inner + 1;
+        }
+    }
+    let pad_x = py_round(wf * 0.004).max(4);
+    let pad_y = py_round(hf * 0.004).max(4);
+    left = (left - pad_x).max(0);
+    right = (right + pad_x).min(w as i64);
+    top = (top - pad_y).max(0);
+    bottom = (bottom + pad_y).min(h as i64);
+    if right - left < py_round(wf * 0.5).max(1) {
+        (left, right) = (0, w as i64);
+    }
+    if bottom - top < py_round(hf * 0.5).max(1) {
+        (top, bottom) = (0, h as i64);
+    }
+    let area = ((right - left) * (bottom - top)) as f64 / (hf * wf).max(1.0);
+    if area > 0.8
+        && let Some((dl, dt, dr, db)) = dark_region_bounds(&gray, h, w)
+    {
+        let dark_area = ((dr - dl) * (db - dt)) as f64 / (hf * wf).max(1.0);
+        if (0.15..=0.85).contains(&dark_area) {
+            return Some((dl, dt, dr, db));
+        }
+    }
+    Some((left, top, right, bottom))
+}
+
+pub type Roi = (i64, i64, i64, i64);
+
+/// `_refine_roi_to_image(img, film_roi)`: the exposed picture inside the film box, by tiers,
+/// then the edge walk, then the border measurement, then Sobel; with the occupancy profiles
+/// when the tiers found it.
+pub fn refine_roi_to_image(
+    img: &[f32],
+    h: usize,
+    w: usize,
+    cn: usize,
+    roi: Roi,
+) -> Option<(Roi, Option<TierRefinement>)> {
+    let color: Vec<f32> = if cn == 1 {
+        img.iter().flat_map(|&v| [v, v, v]).collect()
+    } else {
+        img.to_vec()
+    };
+    let mut lum = vec![0f32; h * w];
+    luminance(&color, &mut lum);
+    let mut det = vec![0f32; h * w];
+    detection_luma(&lum, &mut det)?;
+    let clamp = |v: i64| v.max(0) as usize;
+    let uroi = (clamp(roi.0), clamp(roi.1), clamp(roi.2), clamp(roi.3));
+    if let Some(r) = refine_film_roi_by_tiers(&det, h, w, uroi) {
+        return Some((r.roi, Some(r)));
+    }
+    let walked = trim_film_edges(&det, h, w, roi);
+    if walked != roi {
+        return Some((walked, None));
+    }
+    if let Some(m) = roi_from_measured_border(&det, h, w, roi) {
+        return Some((m, None));
+    }
+    if find_rebate_level(&det, h, w, uroi, None).is_none() {
+        return Some((roi, None));
+    }
+    let (y1, y2, x1, x2) = (uroi.0.min(h), uroi.1.min(h), uroi.2.min(w), uroi.3.min(w));
+    let crop_w = x2.saturating_sub(x1);
+    let crop: Vec<f32> = (y1..y2)
+        .flat_map(|y| color[(y * w + x1) * 3..(y * w + x2) * 3].iter().copied())
+        .collect();
+    let (left, top, right, bottom) = refine_frame_bounds(&crop, y2.saturating_sub(y1), crop_w, 3)?;
+    let out = (roi.0 + top, roi.0 + bottom, roi.2 + left, roi.2 + right);
+    // A Sobel cut removing more than a quarter of the box latched onto picture content.
+    let film_area = ((roi.1 - roi.0) * (roi.3 - roi.2)).max(1) as f64;
+    if (((out.1 - out.0) * (out.3 - out.2)) as f64) < 0.75 * film_area {
+        return Some((roi, None));
+    }
+    Some((out, None))
 }
 
 #[cfg(test)]

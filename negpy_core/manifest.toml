@@ -500,9 +500,10 @@ depends = ["_candidate_from_contour"]
 
 ["features/geometry/logic.py::_dark_region_bounds"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["cv2.boundingRect", "cv2.contourArea", "cv2.getStructuringElement", "negpy_core.bgr_to_gray", "negpy_core.find_external_contours", "negpy_core.morphology_ex", "np.percentile"]
 depends = ["_normalize_to_uint8"]
+note = "negpy_core::analysis::dark_region_bounds (Python deleted)"
 
 ["features/geometry/logic.py::_detect_film_bounds"]
 phase = 2
@@ -633,15 +634,17 @@ note = "negpy_core::analysis::refine_film_roi_by_tiers"
 
 ["features/geometry/logic.py::_refine_frame_bounds"]
 phase = 2
-status = "todo"
-calls = ["negpy_core.bgr_to_gray", "negpy_core.sobel", "np.percentile"]
-depends = ["_dark_region_bounds", "_normalize_to_uint8", "_smooth_signal"]
+status = "ported"
+calls = ["negpy_core.refine_frame_bounds"]
+depends = []
+note = "negpy_core::analysis::refine_frame_bounds"
 
 ["features/geometry/logic.py::_refine_roi_to_image"]
 phase = 2
-status = "todo"
-calls = []
-depends = ["_detection_luma", "_find_rebate_level", "_refine_film_roi_by_tiers", "_refine_frame_bounds", "_roi_from_measured_border", "_trim_film_edges"]
+status = "ported"
+calls = ["negpy_core.refine_roi_to_image"]
+depends = []
+note = "negpy_core::analysis::refine_roi_to_image"
 
 ["features/geometry/logic.py::_remap_tiled"]
 phase = 2
