@@ -188,7 +188,7 @@ class SensorSidebar(BaseSidebar):
         neither the decode basis nor the light, so they stay enabled. Calibrate stays enabled too: it
         reads its own three shots, not this frame.
         """
-        reason = self._unmix_reason(conf)
+        reason = self._unmix_reason()
         available = not reason
         self.sensor_combo.setCurrentText(conf.sensor_profile if available else SensorProfiles.NONE_NAME)
         self.sensor_combo.setEnabled(available)
@@ -199,10 +199,12 @@ class SensorSidebar(BaseSidebar):
             self.sensor_hint.setText(text)
             self.sensor_hint.setToolTip(wrap_tooltip(tip))
 
-    def _unmix_reason(self, conf) -> str:
+    def _unmix_reason(self) -> str:
         config = self.state.config
         triplet = is_rgb_triplet(config.rgbscan) or stitch_has_triplets(config.stitch)
-        return ("triplet" if triplet else "") or unmix_block_reason(conf)  # the frame's own reason first: a decode change cannot lift it
+        return ("triplet" if triplet else "") or unmix_block_reason(
+            config.process
+        )  # the frame's own reason first: a decode change cannot lift it
 
     def _connect_signals(self) -> None:
         self.sensor_combo.currentTextChanged.connect(self._on_sensor_profile_changed)
@@ -245,9 +247,11 @@ class SensorSidebar(BaseSidebar):
         dlg.exec()
 
     def _on_sensor_profile_saved(self, name: str) -> None:
-        # Only a frame that can use the profile takes it; otherwise the save only adds it to the list.
-        if self.state.current_file_hash and not self._unmix_reason(self.state.config.process):
+        # Linear RAW off keeps the choice, as the gate does; a slide or a triplet never uses one.
+        if self.state.current_file_hash and self._unmix_reason() in ("", "linear_raw"):
             self._on_sensor_profile_changed(name)
+        else:
+            self.controller.set_status(tr("Saved sensor profile “{name}”. Select it on a single-shot negative.", name=name), 6000)
         self.sync_ui()  # rebuild the combo, which now lists the new profile
 
     def _on_crosstalk_profile_changed(self, name: str) -> None:

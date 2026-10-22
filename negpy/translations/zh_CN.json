@@ -2112,6 +2112,7 @@
   "Saved preset “{name}” and its sensor profile": "已保存预设“{name}”及其传感器配置",
   "Saved preset “{name}”, with no sensor profile: the probe exposures were too dim to measure one": "已保存预设“{name}”，未生成传感器配置：探测曝光过暗，无法测量",
   "Saved process": "已保存工艺",
+  "Saved sensor profile “{name}”. Select it on a single-shot negative.": "已保存传感器配置“{name}”。请在单次拍摄的负片上选择它。",
   "Saved sets of metadata values. Apply one to write its fields onto this frame.": "已保存的元数据值组合。应用后会将其字段写入此画面。",
   "Saved setup": "已保存装置",
   "Saved shots of the bare light, used to even out the light.": "已保存的光源空拍，用于均匀光线。",

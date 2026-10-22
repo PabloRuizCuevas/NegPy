@@ -2112,6 +2112,7 @@
   "Saved preset “{name}” and its sensor profile": "プリセット「{name}」とそのセンサープロファイルを保存しました",
   "Saved preset “{name}”, with no sensor profile: the probe exposures were too dim to measure one": "プリセット「{name}」をセンサープロファイルなしで保存しました: プローブの露出が暗すぎて測定できませんでした",
   "Saved process": "保存されたプロセス",
+  "Saved sensor profile “{name}”. Select it on a single-shot negative.": "センサープロファイル「{name}」を保存しました。シングルショットのネガで選択してください。",
   "Saved sets of metadata values. Apply one to write its fields onto this frame.": "保存したメタデータ値のセット。適用すると、そのフィールドをこのフレームに書き込みます。",
   "Saved setup": "保存された設定",
   "Saved shots of the bare light, used to even out the light.": "光を均一にするための、光源だけを撮った保存済みの画像。",

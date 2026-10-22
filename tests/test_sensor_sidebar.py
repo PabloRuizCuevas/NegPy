@@ -211,14 +211,33 @@ def test_profile_is_greyed_out_on_a_trichrome_triplet():
 
 
 @pytest.mark.parametrize(
-    ("file_hash", "linear_raw", "applied"),
-    [("abc", True, True), ("abc", False, False), ("", True, False)],
+    ("file_hash", "process", "applied"),
+    [
+        ("abc", {}, True),
+        ("abc", {"linear_raw": False}, True),  # kept like any choice under Linear RAW off
+        ("abc", {"process_mode": ProcessMode.E6, "positive_source": True}, False),
+        ("", {}, False),
+    ],
 )
-def test_a_saved_profile_reaches_only_a_frame_that_can_use_it(file_hash, linear_raw, applied):
-    """Calibration runs with no frame open or on a blocked one; the save then only lists the profile."""
-    w = _sidebar(linear_raw=linear_raw, profile=SensorProfiles.NONE_NAME, sensor_matrix=None)
+def test_a_saved_profile_reaches_only_a_frame_that_can_keep_it(tmp_path, file_hash, process, applied):
+    """Calibration runs with no frame open or on a blocked frame; a slide or no frame only lists the profile."""
+    w = _sidebar(linear_raw=True, profile=SensorProfiles.NONE_NAME, sensor_matrix=None)
+    _to_mode(w, **process)
     w.state.current_file_hash = file_hash
-    w.controller.set_roll_default.reset_mock()
-    w._on_sensor_profile_saved(_NAME)
-    assert w.controller.set_roll_default.called is applied
-    assert w.sensor_combo.findText(_NAME) >= 0
+    with open(os.path.join(tmp_path, "new_sensor.toml"), "w", encoding="utf-8") as f:
+        f.write('name = "New Sensor"\nmatrix = [[1.0, 0.0, 0.0], [-0.2, 1.0, 0.0], [0.0, 0.0, 1.0]]\n')
+    assert w.sensor_combo.findText("New Sensor") < 0
+    w.controller.reset_mock()
+
+    w._on_sensor_profile_saved("New Sensor")
+
+    assert w.sensor_combo.findText("New Sensor") >= 0  # the save rebuilds the list
+    if applied:
+        w.controller.set_roll_default.assert_called_once()
+        kwargs = w.controller.set_roll_default.call_args.kwargs
+        assert kwargs["sensor_profile"] == "New Sensor"
+        assert kwargs["sensor_matrix"] == (1.0, 0.0, 0.0, -0.2, 1.0, 0.0, 0.0, 0.0, 1.0)
+        assert not w.controller.set_status.called
+    else:
+        assert not w.controller.set_roll_default.called
+        assert "New Sensor" in w.controller.set_status.call_args.args[0]  # says it was saved

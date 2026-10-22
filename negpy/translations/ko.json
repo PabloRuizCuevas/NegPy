@@ -2112,6 +2112,7 @@
   "Saved preset “{name}” and its sensor profile": "사전 설정 “{name}”과 센서 프로필을 저장했습니다",
   "Saved preset “{name}”, with no sensor profile: the probe exposures were too dim to measure one": "사전 설정 “{name}”을 센서 프로필 없이 저장했습니다: 프로브 노출이 너무 어두워 측정할 수 없었습니다",
   "Saved process": "저장된 프로세스",
+  "Saved sensor profile “{name}”. Select it on a single-shot negative.": "센서 프로필 \"{name}\"을(를) 저장했습니다. 단일 촬영 네거티브에서 선택하세요.",
   "Saved sets of metadata values. Apply one to write its fields onto this frame.": "저장된 메타데이터 값 세트입니다. 적용하면 해당 필드를 이 프레임에 씁니다.",
   "Saved setup": "저장된 설정",
   "Saved shots of the bare light, used to even out the light.": "빛을 고르게 하는 데 쓰는, 광원만 찍어 저장한 이미지입니다.",
