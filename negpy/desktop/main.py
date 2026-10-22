@@ -72,7 +72,7 @@ class AppEventFilter(QObject):
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         kind = event.type()
-        if kind == QEvent.Type.Show and sys.platform == "darwin" and isinstance(obj, QWidget) and obj.isWindow():
+        if kind == QEvent.Type.Show and isinstance(obj, QWidget):
             from negpy.desktop.view.mac_window import paint_window_background
 
             paint_window_background(obj)
