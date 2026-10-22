@@ -989,6 +989,32 @@ class TestThumbnailRefreshController:
             self.controller._on_auto_thumbnail_refresh_changed(True)
         refresh.assert_called_once_with(["other"])
 
+    def test_a_dotted_refresh_leaves_out_frames_already_in_flight(self) -> None:
+        from negpy.services.assets.thumbnails import asset_thumbnail_key
+
+        self.controller.state.stale_thumbnails |= {asset_thumbnail_key(f) for f in self.files[1:]}
+        self.controller._thumbnail_render_running = True
+        self.controller._thumbnail_render_pending = {"other"}
+        with patch.object(self.controller, "refresh_thumbnails_for") as refresh:
+            self.controller._refresh_dotted_thumbnails()
+        refresh.assert_called_once_with(["third"])
+
+    def test_a_dotted_refresh_waits_for_the_first_thumbnails(self) -> None:
+        from negpy.services.assets.thumbnails import asset_thumbnail_key
+
+        self.controller.state.stale_thumbnails.add(asset_thumbnail_key(self.files[1]))
+        self.controller._thumbnail_queue_active = True
+        with (
+            patch.object(self.controller, "refresh_thumbnails_for") as refresh,
+            patch.object(self.controller, "generate_missing_embeddings"),
+        ):
+            self.controller._on_auto_thumbnail_refresh_changed(True)
+            refresh.assert_not_called()
+            self.controller._on_thumbnail_activity("")
+            refresh.assert_called_once_with(["other"])
+            self.controller._on_thumbnail_activity("")
+        refresh.assert_called_once()
+
 
 def test_progress_text_has_no_time_left_after_one_frame() -> None:
     assert thumbnail_refresh_progress_text(1, 49, 1.0, 1.0) == "Thumbnails 1/49"
