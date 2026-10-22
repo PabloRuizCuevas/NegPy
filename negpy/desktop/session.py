@@ -1185,7 +1185,7 @@ class DesktopSessionManager(QObject):
           gets bare WorkspaceConfig() defaults for every catalog field.
 
         The carries below are hard-coded because they are not plain config-value copies:
-        the rig-global flat-field profile, the Kelvin roll-locks, the export fields with no
+        the last chosen flat-field profile, the Kelvin roll-locks, the export fields with no
         catalog row, and the scan-setup preferences. They apply regardless of
         `sticky_settings_enabled`, which only gates the catalog-row overlay above.
         """
@@ -1198,17 +1198,14 @@ class DesktopSessionManager(QObject):
             if remainder:
                 config = replace(config, export=replace(config.export, **remainder))
 
-        # The flat-field profile is rig-global, so the active one always overrides the
-        # per-file id. New files default to enabled when a profile is active, and saved
-        # files keep their toggle.
         active_ff = self.repo.get_global_setting("flatfield_active_profile")
-        ff_prof = FlatFieldProfiles.get(active_ff) if active_ff else None
-        ff_id = ff_prof.id if ff_prof else ""
-        config = replace(config, flatfield=replace(config.flatfield, profile_id=ff_id))
-        # Distortion left the profile for the per-image geometry; adopt a legacy rig value
-        # once, on frames that carry none of their own.
-        if config.geometry.distortion_k1 == 0.0 and ff_prof is not None and ff_prof.k1 != 0.0:
-            config = replace(config, geometry=replace(config.geometry, distortion_k1=ff_prof.k1))
+        ff_id = active_ff if active_ff and FlatFieldProfiles.get(active_ff) is not None else ""
+        config = self._with_known_flatfield_profile(config, ff_id)
+        # Distortion left the profile for the per-image geometry; adopt a legacy value once,
+        # from the frame's own profile, on frames that carry none of their own.
+        own_ff = FlatFieldProfiles.get(config.flatfield.profile_id) if config.flatfield.profile_id else None
+        if config.geometry.distortion_k1 == 0.0 and own_ff is not None and own_ff.k1 != 0.0:
+            config = replace(config, geometry=replace(config.geometry, distortion_k1=own_ff.k1))
 
         if only_global:
             rows = load_sticky_rows(self.repo)
@@ -1241,9 +1238,21 @@ class DesktopSessionManager(QObject):
         if only_global:
             return config
 
-        config = replace(config, flatfield=replace(config.flatfield, apply=bool(ff_id)))
+        # On with the last chosen profile, unless the user carries the Flat Field row itself.
+        if sticky_cfg is not None and any(r.section == "flatfield" for r in rows):
+            config = self._with_known_flatfield_profile(config, ff_id)
+        else:
+            config = replace(config, flatfield=replace(config.flatfield, profile_id=ff_id, apply=bool(ff_id)))
 
         return self._with_scan_setup(config)
+
+    @staticmethod
+    def _with_known_flatfield_profile(config: WorkspaceConfig, fallback_id: str) -> WorkspaceConfig:
+        """A frame keeps its own flat-field profile, because lights and film formats each need one.
+        A profile this machine does not have counts as none and takes *fallback_id*, the last chosen."""
+        if config.flatfield.profile_id and FlatFieldProfiles.get(config.flatfield.profile_id) is not None:
+            return config
+        return replace(config, flatfield=replace(config.flatfield, profile_id=fallback_id))
 
     def _empty_session_config(self) -> WorkspaceConfig:
         """The config with no frame loaded: what the next fresh frame gets. Any persisted
@@ -1354,18 +1363,6 @@ class DesktopSessionManager(QObject):
         config = rolls.resolve_roll_config(self.repo, roll_id, file_hash, config)
         return rolls.resolve_roll_baseline(self.repo, roll_id, file_hash, config)
 
-    def _keep_locked_flatfield_profile(self, saved: WorkspaceConfig, config: WorkspaceConfig, asset: dict) -> WorkspaceConfig:
-        """Put back the saved flat-field profile when that card is locked.
-
-        The rig-global profile replaces profile_id before the lock is read.
-        """
-        roll_id = rolls.frame_roll(self.repo, self.state.active_roll_id, asset)
-        if roll_id is None:
-            return config
-        if "flatfield" not in rolls.frame_override_cards(self.repo, roll_id, unforked_hash(asset["hash"])):
-            return config
-        return replace(config, flatfield=replace(config.flatfield, profile_id=saved.flatfield.profile_id))
-
     def load_edit_from_sidecar(self, path: str) -> bool:
         """Replace the active frame's edit with the sidecar at *path*, as an undoable
         history step. Like a work print, its own values beat the roll's, so diverged cards
@@ -1396,7 +1393,6 @@ class DesktopSessionManager(QObject):
             # A saved edit keeps its own process mode and shadow lift, which are the user's
             # now, so only the wiring overlays apply.
             config = self._overlay_roll_defaults(self._apply_sticky_settings(saved_config, only_global=True), asset)
-            config = self._keep_locked_flatfield_profile(saved_config, config, asset)
             return resolve_asset_hdr(resolve_asset_stitch(resolve_asset_rgbscan(config, asset), asset), asset)
         # Sticky settings include the global process mode, which a composite must not take over
         # the mode of the frames it was built from. _asset_defaults applies after.

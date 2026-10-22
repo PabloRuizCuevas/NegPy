@@ -427,7 +427,7 @@ Your most-used sliders in one place. It is empty until you fill it: click **Edit
 Saved settings you can apply to other frames.
 
 *   **Apply** (or double-click a preset): applies the selected preset to this frame.
-*   **Save…**: choose which of the current settings to keep as a new preset.
+*   **Save…**: choose which of the current settings to keep as a new preset. A preset can hold the Crop and Optics settings with the Flat Field profile, but never one frame's crop, rotation or flips.
 *   **Pen** and **Trash**: edit or delete the selected preset.
 
 ---
@@ -575,7 +575,7 @@ Removes uneven light, such as darker corners, with a shot of the bare light sour
 *   **Apply Flat Field**: applies the selected profile to this roll.
 *   **Check Flat Field**: shows how well the profile evens out its own shot. Even gray is good; a band or patch shows where it is off.
 
-A new profile becomes the default for the next roll.
+A frame keeps its own profile unless it follows its roll, so each light and film format can have one. A new frame, or a frame whose profile is missing, takes the last profile you chose.
 
 ---
 
