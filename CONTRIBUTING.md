@@ -155,6 +155,7 @@ Every developer command runs through `uv run`:
 - `make format`: auto-format with `cargo fmt` and Ruff.
 - `make rust`: `cargo fmt --check`, `cargo clippy` (warnings fail) and `cargo test` for `negpy_core`.
 - `make all`: format, Rust checks, lint, type and test in sequence.
+- `make replay` / `make bench`: check a `negpy_core` port against calls recorded on real frames, for identical results and speed. Record with `uv run python scripts/replay.py record FRAME...`; the corpus goes to `$NEGPY_CORPUS` (default `~/negpy-corpus`).
 - `make clean`: remove cache and build artifacts.
 - `make run-sim`: run with simulated scanning hardware (see [above](#running-without-scanning-hardware)).
 - `make clear-devhome`: delete the development user directory (see [above](#a-separate-user-directory-for-development)).

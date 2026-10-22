@@ -8,10 +8,40 @@ calls = ["np.partition"]
 depends = []
 note = "negpy_core::stats::percentiles"
 
+["features/exposure/analysis.py::_scope_lookup"]
+phase = 2
+status = "todo"
+calls = ["np.bincount"]
+depends = []
+
+["features/exposure/analysis.py::color_histogram"]
+phase = 2
+status = "todo"
+calls = ["np.bincount"]
+depends = []
+
+["features/exposure/analysis.py::density_histogram"]
+phase = 2
+status = "todo"
+calls = ["np.histogram"]
+depends = []
+
+["features/exposure/analysis.py::density_parade"]
+phase = 2
+status = "todo"
+calls = ["np.bincount"]
+depends = []
+
 ["features/exposure/analysis.py::loupe_acutance"]
 phase = 2
 status = "todo"
-calls = ["cv2.Laplacian"]
+calls = ["cv2.Laplacian", "np.mean"]
+depends = []
+
+["features/exposure/analysis.py::output_histogram"]
+phase = 2
+status = "todo"
+calls = ["np.bincount", "np.histogram"]
 depends = []
 
 ["features/exposure/analysis.py::paper_grid_mosaic"]
@@ -20,10 +50,40 @@ status = "todo"
 calls = ["cv2.resize"]
 depends = []
 
+["features/exposure/analysis.py::scan_full_scale_columns"]
+phase = 2
+status = "todo"
+calls = ["np.bincount"]
+depends = []
+
+["features/exposure/analysis.py::vectorscope_histogram"]
+phase = 2
+status = "todo"
+calls = ["np.bincount"]
+depends = []
+
+["features/exposure/analysis.py::waveform"]
+phase = 2
+status = "todo"
+calls = ["np.bincount"]
+depends = []
+
+["features/exposure/analysis.py::waveform_color"]
+phase = 2
+status = "todo"
+calls = ["np.bincount"]
+depends = []
+
+["features/exposure/analysis.py::waveform_parade"]
+phase = 2
+status = "todo"
+calls = ["np.bincount"]
+depends = []
+
 ["features/exposure/analysis.py::zone_anchors"]
 phase = 2
 status = "todo"
-calls = ["cv2.connectedComponentsWithStats", "cv2.distanceTransform"]
+calls = ["cv2.connectedComponentsWithStats", "cv2.distanceTransform", "np.unique"]
 depends = []
 
 ["features/exposure/analysis.py::zone_field"]
@@ -41,7 +101,19 @@ depends = []
 ["features/exposure/analysis.py::zone_region_labels"]
 phase = 2
 status = "todo"
-calls = ["cv2.connectedComponentsWithStats"]
+calls = ["cv2.connectedComponentsWithStats", "np.unique"]
+depends = []
+
+["features/exposure/analysis.py::zone_shares"]
+phase = 2
+status = "todo"
+calls = ["np.bincount"]
+depends = []
+
+["features/exposure/normalization.py::_base_blocks"]
+phase = 2
+status = "todo"
+calls = ["np.argsort"]
 depends = []
 
 ["features/exposure/normalization.py::_block_median_grid"]
@@ -92,6 +164,12 @@ status = "todo"
 calls = ["np.median"]
 depends = []
 
+["features/exposure/normalization.py::_weighted_median"]
+phase = 2
+status = "todo"
+calls = ["np.argsort", "np.cumsum"]
+depends = []
+
 ["features/exposure/normalization.py::analysis_grid"]
 phase = 2
 status = "todo"
@@ -132,6 +210,12 @@ depends = ["_block_median_grid"]
 phase = 2
 status = "todo"
 calls = ["np.median"]
+depends = ["_base_blocks"]
+
+["features/exposure/normalization.py::measure_clip_fractions"]
+phase = 2
+status = "todo"
+calls = ["np.mean"]
 depends = []
 
 ["features/exposure/normalization.py::measure_highlight_point_from_log"]
@@ -174,6 +258,18 @@ depends = []
 phase = 2
 status = "todo"
 calls = ["np.median"]
+depends = ["_weighted_median"]
+
+["features/exposure/normalization.py::resolve_crosstalk_matrix"]
+phase = 2
+status = "todo"
+calls = ["np.sum"]
+depends = []
+
+["features/exposure/normalization.py::sorted_channel_grid"]
+phase = 2
+status = "todo"
+calls = ["np.sort"]
 depends = []
 
 ["features/geometry/batch_autocrop.py::_mad"]
@@ -296,6 +392,12 @@ status = "todo"
 calls = ["np.percentile"]
 depends = []
 
+["features/geometry/logic.py::_get_threshold_autocrop_coords"]
+phase = 2
+status = "todo"
+calls = ["np.mean"]
+depends = []
+
 ["features/geometry/logic.py::_mask_from_blackhat"]
 phase = 2
 status = "todo"
@@ -325,6 +427,12 @@ phase = 2
 status = "todo"
 calls = ["np.median"]
 depends = ["_polygon_values"]
+
+["features/geometry/logic.py::_place_window_by_occupancy"]
+phase = 2
+status = "todo"
+calls = ["np.cumsum"]
+depends = []
 
 ["features/geometry/logic.py::_polygon_values"]
 phase = 2
@@ -377,13 +485,19 @@ depends = []
 ["features/geometry/logic.py::_vertical_edge_profile"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.Sobel", "np.percentile"]
+calls = ["cv2.GaussianBlur", "cv2.Sobel", "np.mean", "np.percentile"]
 depends = []
 
 ["features/geometry/logic.py::_walk_border_depth"]
 phase = 2
 status = "todo"
 calls = ["np.median"]
+depends = []
+
+["features/geometry/logic.py::_weighted_median"]
+phase = 2
+status = "todo"
+calls = ["np.argsort", "np.cumsum", "np.sum"]
 depends = []
 
 ["features/geometry/logic.py::apply_fine_rotation"]
@@ -443,14 +557,20 @@ depends = []
 ["features/geometry/skew.py::_fit_side"]
 phase = 2
 status = "todo"
-calls = ["np.median"]
-depends = ["_profile_peaks"]
+calls = ["np.mean", "np.median"]
+depends = ["_profile_peaks", "_ransac_line"]
 
 ["features/geometry/skew.py::_map"]
 phase = 2
 status = "todo"
 calls = ["cv2.getRotationMatrix2D"]
 depends = []
+
+["features/geometry/skew.py::_measure_from"]
+phase = 2
+status = "todo"
+calls = ["np.mean"]
+depends = ["_at_canvas_edges", "_profile_lines", "_unrotate"]
 
 ["features/geometry/skew.py::_profile_lines"]
 phase = 2
@@ -464,6 +584,12 @@ status = "todo"
 calls = ["cv2.GaussianBlur", "np.median"]
 depends = []
 
+["features/geometry/skew.py::_ransac_line"]
+phase = 2
+status = "todo"
+calls = ["np.unique"]
+depends = []
+
 ["features/geometry/skew.py::_unrotate"]
 phase = 2
 status = "todo"
@@ -474,6 +600,12 @@ depends = []
 phase = 3
 status = "todo"
 calls = ["np.percentile"]
+depends = []
+
+["infrastructure/loaders/pakon_loader.py::PakonLoader._looks_interleaved"]
+phase = 3
+status = "todo"
+calls = ["np.mean"]
 depends = []
 
 ["infrastructure/loaders/rawpy_loader.py::_stream_linearraw_preview"]
@@ -638,6 +770,12 @@ status = "todo"
 calls = ["cv2.resize"]
 depends = []
 
+["features/lens/logic.py::_lookup"]
+phase = 4
+status = "todo"
+calls = ["np.unique"]
+depends = []
+
 ["features/lens/logic.py::apply_lens"]
 phase = 4
 status = "todo"
@@ -662,17 +800,41 @@ status = "todo"
 calls = ["np.percentile"]
 depends = []
 
+["features/process/chart.py::detect_orientation"]
+phase = 4
+status = "todo"
+calls = ["np.mean"]
+depends = ["measure_lab"]
+
+["features/process/chart.py::grid_corners"]
+phase = 4
+status = "todo"
+calls = ["np.argsort"]
+depends = []
+
+["features/process/chart.py::measure_lab"]
+phase = 4
+status = "todo"
+calls = ["np.mean"]
+depends = ["sample_patches"]
+
 ["features/process/chart.py::sample_patches"]
 phase = 4
 status = "todo"
 calls = ["np.median"]
 depends = []
 
+["features/process/logic.py::_corr"]
+phase = 4
+status = "todo"
+calls = ["np.sum"]
+depends = []
+
 ["features/process/logic.py::detect_process_mode"]
 phase = 4
 status = "todo"
-calls = ["np.percentile"]
-depends = []
+calls = ["np.mean", "np.percentile"]
+depends = ["_corr"]
 
 ["features/process/sensor.py::_log_unmix_kernel"]
 phase = 4
@@ -755,7 +917,7 @@ depends = []
 ["features/retouch/logic.py::_erode_resize_bounded"]
 phase = 4
 status = "todo"
-calls = ["cv2.erode", "cv2.resize"]
+calls = ["cv2.erode", "cv2.resize", "np.sum"]
 depends = []
 
 ["features/retouch/logic.py::_fill_rung"]
@@ -857,7 +1019,7 @@ depends = ["_box_mean_std", "_proxy_norm"]
 ["features/retouch/logic.py::detect_luma_score"]
 phase = 4
 status = "todo"
-calls = ["cv2.connectedComponentsWithStats", "cv2.dilate", "cv2.getStructuringElement", "np.median"]
+calls = ["cv2.connectedComponentsWithStats", "cv2.dilate", "cv2.getStructuringElement", "np.median", "np.unique"]
 depends = ["_box_mean_std", "_is_hair", "_mask_to_score", "compute_dust_stats", "split_hairs"]
 
 ["features/retouch/logic.py::downsample_ir"]
@@ -929,7 +1091,7 @@ depends = ["_is_hair"]
 ["features/retouch/logic.py::strokes_to_score"]
 phase = 4
 status = "todo"
-calls = ["cv2.blur", "cv2.circle", "cv2.connectedComponents", "cv2.distanceTransform", "cv2.polylines", "np.median"]
+calls = ["cv2.blur", "cv2.circle", "cv2.connectedComponents", "cv2.distanceTransform", "cv2.polylines", "np.median", "np.unique"]
 depends = ["_mask_to_score"]
 
 ["features/retouch/logic.py::trace_scratch"]
@@ -979,6 +1141,12 @@ phase = 5
 status = "todo"
 calls = ["cv2.warpAffine"]
 depends = ["estimate_shift"]
+
+["features/rgbscan/logic.py::probe_frame"]
+phase = 5
+status = "todo"
+calls = ["np.mean"]
+depends = []
 
 ["features/stitch/logic.py::_seam_weight"]
 phase = 5
@@ -1068,6 +1236,18 @@ depends = []
 phase = 6
 status = "todo"
 calls = ["numba"]
+depends = []
+
+["features/finish/logic.py::_filed_edge"]
+phase = 6
+status = "todo"
+calls = ["np.cumsum"]
+depends = []
+
+["features/lab/logic.py::_clahe_cdfs"]
+phase = 6
+status = "todo"
+calls = ["np.bincount", "np.cumsum"]
 depends = []
 
 ["features/lab/logic.py::_edge_mask"]
@@ -1214,10 +1394,22 @@ status = "todo"
 calls = ["cv2.approxPolyDP", "cv2.contourArea", "cv2.findContours"]
 depends = []
 
+["desktop/view/sidebar/files.py::FileBrowser._measure_rebate"]
+phase = 7
+status = "todo"
+calls = ["np.mean"]
+depends = ["print_dmax"]
+
 ["desktop/view/sidebar/files.py::print_dmax"]
 phase = 7
 status = "todo"
 calls = ["np.quantile"]
+depends = []
+
+["desktop/view/sidebar/scanlight.py::ScanlightSidebar._current_raw_clip"]
+phase = 7
+status = "todo"
+calls = ["np.mean"]
 depends = []
 
 ["desktop/view/sidebar/scanlight.py::_RawClip.at"]
@@ -1248,6 +1440,12 @@ depends = []
 phase = 7
 status = "todo"
 calls = ["np.percentile"]
+depends = []
+
+["desktop/view/widgets/sensor_calibration_dialog.py::SensorCalibrationDialog._compute_and_save"]
+phase = 7
+status = "todo"
+calls = ["np.mean"]
 depends = []
 
 ["desktop/workers/chart_fit.py::ChartFitWorker.__init__"]
@@ -1292,6 +1490,12 @@ status = "todo"
 calls = ["np.median"]
 depends = []
 
+["services/assets/semantic_model.py::rank_by_similarity"]
+phase = 7
+status = "todo"
+calls = ["np.argsort"]
+depends = []
+
 ["services/assets/thumbnails.py::preview_positive"]
 phase = 7
 status = "todo"
@@ -1304,22 +1508,40 @@ status = "todo"
 calls = ["np.median"]
 depends = []
 
+["services/capture/calibration.py::clip_fraction"]
+phase = 7
+status = "todo"
+calls = ["np.mean"]
+depends = []
+
 ["services/capture/calibration.py::meter_base"]
 phase = 7
 status = "todo"
 calls = ["np.percentile"]
 depends = []
 
+["services/capture/focus_meter.py::sharpness"]
+phase = 7
+status = "todo"
+calls = ["np.mean"]
+depends = []
+
+["services/capture/meter.py::framing_mismatch"]
+phase = 7
+status = "todo"
+calls = ["np.mean"]
+depends = ["ranked_thumb"]
+
 ["services/capture/meter.py::meter_frame"]
 phase = 7
 status = "todo"
-calls = ["np.median", "np.percentile"]
+calls = ["np.mean", "np.median", "np.percentile"]
 depends = ["ranked_thumb"]
 
 ["services/capture/meter.py::ranked_thumb"]
 phase = 7
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["cv2.resize", "np.argsort"]
 depends = []
 
 ["services/export/contact_sheet.py::_place_tile"]
@@ -1340,6 +1562,12 @@ status = "todo"
 calls = ["cv2.resize"]
 depends = []
 
+["services/scanning/writer.py::_to_grey"]
+phase = 7
+status = "todo"
+calls = ["np.sum"]
+depends = []
+
 ["services/view/coordinate_mapping.py::CoordinateMapping._grid_homography"]
 phase = 7
 status = "todo"
@@ -1355,7 +1583,7 @@ depends = []
 ["features/geometry/skew.py::_coarse_angles"]
 phase = 9
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.createLineSegmentDetector", "np.percentile"]
+calls = ["cv2.GaussianBlur", "cv2.createLineSegmentDetector", "np.histogram", "np.percentile"]
 depends = []
 
 ["features/retouch/logic.py::apply_hair_inpaint"]
@@ -1381,6 +1609,18 @@ phase = 9
 status = "todo"
 calls = ["cv2.BFMatcher", "cv2.SIFT_create", "cv2.estimateAffinePartial2D"]
 depends = []
+
+["infrastructure/capture/raw_demosaic.py::_plateau_clip_fraction"]
+phase = 9
+status = "todo"
+calls = ["np.bincount"]
+depends = []
+
+["infrastructure/capture/raw_demosaic.py::raw_channel_clip_fraction"]
+phase = 9
+status = "todo"
+calls = ["np.mean"]
+depends = ["_plateau_clip_fraction"]
 
 ["infrastructure/scanners/sane_backend.py::_align_ir_to_rgb"]
 phase = 9

@@ -17,6 +17,8 @@ make run          # Launch the desktop app
 make run-sim      # Launch with a simulated camera, Scanlight and film scanners
 make all          # format + Rust checks + lint + type check + tests (run before committing)
 make rust         # cargo fmt --check + clippy -D warnings + cargo test for negpy_core
+make replay       # replay recorded real calls through the current code, bit for bit (PHASE=N)
+make bench        # one-thread speed of ported functions against the recorded Python (PHASE=N)
 make test         # pytest only
 make lint         # ruff check
 make type         # ty check (not mypy)
@@ -62,6 +64,7 @@ Edits persist in SQLite (`edits.db`, keyed by content hash), optionally mirrored
 - No `unsafe` except SIMD, each with a reason. Names mirror the Python names.
 - **Bit-exact**: a port matches the Python result bit for bit (a zero's sign may differ where NumPy ranks -0.0 and 0.0 equal), checked by a pytest oracle against the numpy or `cv2` call it replaces, run on every release OS in CI (`ci.yml` job `native`). NumPy's rules to copy: the linear percentile (virtual index in f64, interpolation in f32, the `t >= 0.5` branch from the upper value); float32 sums in NumPy's order; NEP 50 promotion (a Python float joins float32 math as float32); Numba `fastmath` as f64 with `mul_add`; Python `round` ties to even. No fast-math. Threads only over independent outputs, or integer reductions, so the core count never changes a result.
 - `negpy_core/manifest.toml` lists every function to port (phase, status, `depends`). A port sets its entries to `ported`; `uv run python scripts/core_manifest.py` refreshes the rest after a change or a merge from `main`, and `tests/test_core_manifest.py` fails while it is stale.
+- **Replay**: before a group is ported, record its calls on main (`scripts/replay.py record FRAME... --phase N`, corpus in `$NEGPY_CORPUS`). The port passes `make replay` and `make bench` (never slower on one thread). Both are local tools, not CI.
 - A port that cannot be bit-exact needs the user's agreement, then the `BOUNDS_VERSION` and `THUMBNAIL_RENDER_VERSION` bumps.
 
 ### Pipeline

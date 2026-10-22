@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "negpy_core" / "manifest.toml"
 
 ORDER_STATS = {"percentile", "median", "partition", "quantile", "nanpercentile", "nanmedian"}
+# Reductions over a whole image: the Python-overhead chains (measure_base_log, bounds) live on these.
+REDUCTIONS = {"std", "var", "mean", "sum", "histogram", "bincount", "cumsum", "sort", "argsort", "unique"}
 # cv2 calls the plan ports last, or may never port: each needs a decision of its own.
 LAST_CV2 = {"SIFT_create", "BFMatcher", "detail_DpSeamFinder", "createLineSegmentDetector", "inpaint", "phaseCorrelate", "UMat"}
 STATUSES = ("todo", "ported", "stays")
@@ -64,7 +66,7 @@ class _Scanner(ast.NodeVisitor):
                 continue
             f = n.func
             if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name):
-                if f.value.id == "cv2" or (f.value.id == "np" and f.attr in ORDER_STATS):
+                if f.value.id == "cv2" or (f.value.id == "np" and f.attr in ORDER_STATS | REDUCTIONS):
                     calls.add(f"{f.value.id}.{f.attr}")
             elif isinstance(f, ast.Name):
                 names.add(f.id)
@@ -77,7 +79,7 @@ class _Scanner(ast.NodeVisitor):
 
 
 def scan() -> dict[str, dict]:
-    """Every function under negpy/ that calls cv2, a numpy order statistic or is a Numba kernel."""
+    """Every function under negpy/ that calls cv2, a numpy order statistic or reduction, or is a Numba kernel."""
     found: dict[str, dict] = {}
     for path in sorted((ROOT / "negpy").rglob("*.py")):
         rel = path.relative_to(ROOT / "negpy").as_posix()
