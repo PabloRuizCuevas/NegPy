@@ -1092,6 +1092,7 @@ class AppController(QObject):
         self.thumbnail_render_worker.cancelled.connect(self._on_thumbnail_render_cancelled)
         self.thumbnail_render_worker.error.connect(self._on_thumbnail_render_error)
         self.session.frames_edited_offscreen.connect(self._on_frames_edited_offscreen)
+        self.session.auto_thumbnail_refresh_changed.connect(self._on_auto_thumbnail_refresh_changed)
 
         self.asset_discovery_requested.connect(self.discovery_worker.process)
         self.discovery_worker.progress.connect(self._on_discovery_progress)
@@ -4635,6 +4636,19 @@ class AppController(QObject):
             self.session.asset_model.refresh()
         if self._stale_seed_pending:
             QTimer.singleShot(0, self._seed_stale_chunk)
+        elif self.state.auto_thumbnail_refresh:
+            self._refresh_dotted_thumbnails()
+
+    def _on_auto_thumbnail_refresh_changed(self, on: bool) -> None:
+        if on:
+            self._refresh_dotted_thumbnails()
+
+    def _refresh_dotted_thumbnails(self) -> None:
+        """Reads the whole dot set: a restart seed skips frames an interrupted seed already flagged."""
+        stale = self.state.stale_thumbnails
+        hashes = [a["hash"] for a in self.state.uploaded_files if asset_thumbnail_key(a) in stale]
+        if hashes:
+            self.refresh_thumbnails_for(hashes)
 
     def _on_frames_edited_offscreen(self, hashes: list[str]) -> None:
         if self.state.auto_thumbnail_refresh:

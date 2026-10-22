@@ -940,6 +940,55 @@ class TestThumbnailRefreshController:
         gone = self.files.pop(1)
         assert self._seed([gone]) == set()
 
+    def _refreshed_on_seed(self) -> list:
+        with patch.object(self.controller, "refresh_thumbnails_for") as refresh:
+            self._seed()
+        return [sorted(c.args[0]) for c in refresh.call_args_list]
+
+    def test_a_seed_renders_flagged_thumbnails_while_automatic_updates_are_on(self) -> None:
+        self.controller.state.auto_thumbnail_refresh = True
+        self._save("other", "some-older-render")
+        assert self._refreshed_on_seed() == [["other"]]
+
+    def test_a_seed_only_flags_thumbnails_while_automatic_updates_are_off(self) -> None:
+        self._save("other", "some-older-render")
+        assert self._refreshed_on_seed() == []
+        assert self._seed() == {"other"}
+
+    def test_a_seed_over_many_chunks_renders_once_at_the_end(self) -> None:
+        from negpy.desktop.controller import _STALE_SEED_CHUNK
+
+        self.controller.state.auto_thumbnail_refresh = True
+        self.files.extend(
+            {"name": f"f{i}.dng", "path": f"/roll/f{i}.dng", "hash": f"f{i}", "diptych": False} for i in range(_STALE_SEED_CHUNK * 2)
+        )
+        self._save("f0", "some-older-render")
+        self._save(f"f{_STALE_SEED_CHUNK * 2 - 1}", "some-older-render")
+        assert self._refreshed_on_seed() == [sorted(["f0", f"f{_STALE_SEED_CHUNK * 2 - 1}"])]
+
+    def test_a_restart_seed_renders_a_frame_flagged_before_it(self) -> None:
+        from negpy.services.assets.thumbnails import asset_thumbnail_key
+
+        self.controller.state.auto_thumbnail_refresh = True
+        self.controller.state.stale_thumbnails.add(asset_thumbnail_key(self.files[1]))
+        assert self._refreshed_on_seed() == [["other"]]
+
+    def test_a_seed_that_flags_nothing_renders_nothing(self) -> None:
+        self.controller.state.auto_thumbnail_refresh = True
+        assert self._refreshed_on_seed() == []
+
+    def test_turning_automatic_updates_on_renders_dotted_thumbnails_only(self) -> None:
+        from negpy.services.assets.thumbnail_fingerprint import QUICK
+        from negpy.services.assets.thumbnails import asset_thumbnail_key
+
+        self.controller.state.stale_thumbnails.add(asset_thumbnail_key(self.files[1]))
+        self._save("third", QUICK)
+        with patch.object(self.controller, "refresh_thumbnails_for") as refresh:
+            self.controller._on_auto_thumbnail_refresh_changed(False)
+            refresh.assert_not_called()
+            self.controller._on_auto_thumbnail_refresh_changed(True)
+        refresh.assert_called_once_with(["other"])
+
 
 def test_progress_text_has_no_time_left_after_one_frame() -> None:
     assert thumbnail_refresh_progress_text(1, 49, 1.0, 1.0) == "Thumbnails 1/49"

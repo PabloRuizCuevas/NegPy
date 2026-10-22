@@ -868,6 +868,7 @@ class DesktopSessionManager(QObject):
     settings_pasted = pyqtSignal()
     # A view that reads styles.color_vision repaints on this.
     color_vision_changed = pyqtSignal()
+    auto_thumbnail_refresh_changed = pyqtSignal(bool)
     canvas_bg_changed = pyqtSignal()
     settings_synced = pyqtSignal(str)  # Bulk "Apply to selected" done — carries a status message
     frames_edited_offscreen = pyqtSignal(list)  # hashes whose saved edits changed without a render
@@ -1122,6 +1123,7 @@ class DesktopSessionManager(QObject):
         if self.state.auto_thumbnail_refresh != on:
             self.state.auto_thumbnail_refresh = on
             self.repo.save_global_setting("auto_thumbnail_refresh", on)
+            self.auto_thumbnail_refresh_changed.emit(on)
 
     def set_color_vision(self, key: str) -> None:
         if self.state.color_vision != key:
