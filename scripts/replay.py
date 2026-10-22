@@ -127,7 +127,7 @@ class Recorder:
             setattr(owner, name, fn)
 
 
-def _run_frame(path: str, repo=None) -> None:
+def _run_frame(path: str, repo=None) -> tuple:
     """The frame's saved edit (or the defaults), with Auto Crop armed so detection runs."""
     from negpy.domain.models import WorkspaceConfig
     from negpy.features.geometry.models import with_auto_crop

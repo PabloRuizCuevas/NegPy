@@ -144,6 +144,31 @@ fn np_min(a: f32, b: f32) -> f32 {
     }
 }
 
+/// `_get_threshold_autocrop_coords` on an HxW luma plane: the first and last rows and columns
+/// whose float32 mean is under `threshold` (row means pairwise, column means summed down in
+/// order, as NumPy sums them), or None with fewer than ten of either.
+pub fn threshold_box(
+    lum: &[f32],
+    h: usize,
+    w: usize,
+    threshold: f32,
+) -> Option<(usize, usize, usize, usize)> {
+    let rows: Vec<usize> = (0..h)
+        .filter(|&y| pairwise_sum_f32(&lum[y * w..(y + 1) * w]) / (w as f32) < threshold)
+        .collect();
+    let mut sums = vec![0f32; w];
+    for row in lum.chunks_exact(w) {
+        sums.iter_mut().zip(row).for_each(|(s, &v)| *s += v);
+    }
+    let cols: Vec<usize> = (0..w)
+        .filter(|&x| sums[x] / (h as f32) < threshold)
+        .collect();
+    if rows.len() < 10 || cols.len() < 10 {
+        return None;
+    }
+    Some((rows[0], rows[rows.len() - 1], cols[0], cols[cols.len() - 1]))
+}
+
 const BASE_BLOCK: usize = 8;
 const CLIP_LEVEL: f32 = 0.98;
 const FLAT_CV: f32 = 0.03;

@@ -323,13 +323,8 @@ def _get_threshold_autocrop_coords(
     if assist_luma is not None:
         threshold = float(np.clip(assist_luma - 0.02, 0.5, 0.98))
 
-    rows_det = np.where(np.mean(lum, axis=1) < threshold)[0]
-    cols_det = np.where(np.mean(lum, axis=0) < threshold)[0]
-
-    if len(rows_det) < 10 or len(cols_det) < 10:
-        return 0, h, 0, w
-
-    return int(rows_det[0]), int(rows_det[-1]), int(cols_det[0]), int(cols_det[-1])
+    box = negpy_core.threshold_box(np.ascontiguousarray(lum, dtype=np.float32), threshold)
+    return box if box is not None else (0, h, 0, w)
 
 
 def _trim_opaque_border(
@@ -1014,12 +1009,7 @@ def resolve_autocrop_rect(
     the same at any resolution. Runs at AUTOCROP_DETECT_RES in GeometryProcessor order (rot90 -> flips -> fine
     rotation -> distortion -> keystone). Excludes Crop Offset, which get_manual_rect_coords adds per render; None when
     too small, or with `require_film_box` when no film box stands out from a holder or bed."""
-    h, w = img.shape[:2]
-    det_s = min(1.0, AUTOCROP_DETECT_RES / max(h, w))
-    if det_s < 1.0:
-        tmp = cv2.resize(img, (max(1, round(w * det_s)), max(1, round(h * det_s))), interpolation=cv2.INTER_AREA)
-    else:
-        tmp = img
+    tmp, _ = _normalize_detection_input(img, AUTOCROP_DETECT_RES)
     if geometry.rotation != 0:
         tmp = np.rot90(tmp, k=geometry.rotation)
     if geometry.flip_horizontal:

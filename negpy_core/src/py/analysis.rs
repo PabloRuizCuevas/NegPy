@@ -423,6 +423,20 @@ fn block_median_grid<'py>(
     numpy::PyArray1::from_vec(py, grid).reshape(vec![h / b, w / b, c])
 }
 
+/// `_get_threshold_autocrop_coords` of an HxW float32 luma plane: (y1, y2, x1, x2) or None.
+#[pyfunction]
+fn threshold_box(
+    py: Python<'_>,
+    lum: PyReadonlyArrayDyn<'_, f32>,
+    threshold: f32,
+) -> PyResult<Option<(usize, usize, usize, usize)>> {
+    let [h, w] = lum.shape()[..] else {
+        return Err(PyValueError::new_err("threshold_box needs a 2-D array"));
+    };
+    let data = slice(&lum)?;
+    Ok(py.detach(|| analysis::threshold_box(data, h, w, threshold)))
+}
+
 type ConsensusFields = (
     analysis::Roi,
     f64,
@@ -551,6 +565,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(select_consensus, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_log_image, m)?)?;
     m.add_function(wrap_pyfunction!(block_median_grid, m)?)?;
+    m.add_function(wrap_pyfunction!(threshold_box, m)?)?;
     m.add_function(wrap_pyfunction!(film_box_covers_enough, m)?)?;
     m.add_function(wrap_pyfunction!(film_surround_is_plausible, m)?)
 }

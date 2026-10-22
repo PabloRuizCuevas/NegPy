@@ -565,8 +565,8 @@ note = "negpy_core::analysis::find_rebate_level"
 
 ["features/geometry/logic.py::_get_threshold_autocrop_coords"]
 phase = 2
-status = "todo"
-calls = ["np.mean"]
+status = "ported"
+calls = ["negpy_core.threshold_box"]
 depends = []
 
 ["features/geometry/logic.py::_mask_from_blackhat"]
@@ -823,7 +823,7 @@ note = "negpy_core::analysis::measure_film_edges"
 ["features/geometry/logic.py::resolve_autocrop_rect"]
 phase = 2
 status = "todo"
-calls = ["cv2.resize"]
+calls = []
 depends = ["_detect_film_bounds", "_normalize_detection_input", "apply_fine_rotation", "apply_keystone", "apply_radial_distortion", "get_autocrop_coords"]
 
 ["features/geometry/logic.py::resolve_meter_rect"]
