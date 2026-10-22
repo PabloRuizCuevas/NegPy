@@ -203,7 +203,7 @@ def _dark_region_bounds(image: np.ndarray) -> tuple[int, int, int, int] | None:
     mask = negpy_core.morphology_ex(mask, cv2.MORPH_OPEN, open_kernel)
     mask = negpy_core.morphology_ex(mask, cv2.MORPH_CLOSE, close_kernel, iterations=2)
 
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = negpy_core.find_external_contours(mask)
     if not contours:
         return None
 
@@ -604,7 +604,7 @@ def _candidates_from_mask(
     threshold_index: int | None = None,
     polarity: str | None = None,
 ) -> list[_FilmCandidate]:
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = negpy_core.find_external_contours(mask)
     candidates: list[_FilmCandidate] = []
     for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:12]:
         candidate = _candidate_from_contour(

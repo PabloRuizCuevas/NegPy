@@ -1,3 +1,4 @@
+pub mod contours;
 pub mod filter;
 pub mod gray;
 pub mod morph;

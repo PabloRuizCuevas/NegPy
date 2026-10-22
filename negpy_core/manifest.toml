@@ -347,13 +347,13 @@ depends = ["_oriented_boundary_evidence"]
 ["features/geometry/logic.py::_candidates_from_mask"]
 phase = 2
 status = "todo"
-calls = ["cv2.findContours"]
+calls = ["negpy_core.find_external_contours"]
 depends = ["_candidate_from_contour"]
 
 ["features/geometry/logic.py::_dark_region_bounds"]
 phase = 2
 status = "todo"
-calls = ["cv2.boundingRect", "cv2.contourArea", "cv2.findContours", "cv2.getStructuringElement", "negpy_core.bgr_to_gray", "negpy_core.morphology_ex", "np.percentile"]
+calls = ["cv2.boundingRect", "cv2.contourArea", "cv2.getStructuringElement", "negpy_core.bgr_to_gray", "negpy_core.find_external_contours", "negpy_core.morphology_ex", "np.percentile"]
 depends = []
 
 ["features/geometry/logic.py::_detection_luma"]

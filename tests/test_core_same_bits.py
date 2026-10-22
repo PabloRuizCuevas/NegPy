@@ -24,6 +24,9 @@ _CASES = {
     "gaussian_blur_u8": lambda: negpy_core.gaussian_blur_u8(_GRAY, (5, 5), 0.0),
     "otsu": lambda: negpy_core.threshold_otsu(_GRAY)[1],
     "canny": lambda: negpy_core.canny(_GRAY, 40, 160),
+    "find_external_contours": lambda: np.concatenate(
+        [c.ravel() for c in negpy_core.find_external_contours((_IMG1 > 0.5).astype(np.uint8) * np.uint8(255))[0]]
+    ),
     "morph_close_u8": lambda: negpy_core.morphology_ex((_IMG1 > 0.5).astype(np.uint8) * 255, 3, np.ones((9, 7), np.uint8), 2),
 }
 
@@ -39,6 +42,7 @@ _HASHES = {
     "gaussian_blur_u8": "7817f7444ec9c843b3c529098d650d653dd0081250770eb96bb378da20de046e",
     "otsu": "cff78130e93898fd1d8ff6080127920c71a5fa1bbecd734a35631b253866ffdb",
     "canny": "1e3125ae47a5dd1719f97531ffebffc79a6461ba1fae024d26d4d7a85b89b968",
+    "find_external_contours": "ebb4302dd2bc7226a7ed24fbb5e16e14f407d5693ce47128a649cee9e4a098be",
     "morph_close_u8": "4be9a2976881ff83eb0b92a8ec484e048c61612324afbde73b6e0c89aa92865e",
 }
 
