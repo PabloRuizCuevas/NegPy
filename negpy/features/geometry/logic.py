@@ -137,51 +137,6 @@ def _score_contour(contour: np.ndarray, image_area: float) -> tuple[float, np.nd
     return score, cv2.boxPoints(rect)
 
 
-def _odd_kernel_size(value: float, lower: int, upper: int) -> int:
-    size = int(round(value))
-    size = min(max(size, lower), upper)
-    if size % 2 == 0:
-        size = size + 1 if size < upper else size - 1
-    return max(size, 1)
-
-
-def _correction_angle_from_quad(quad: np.ndarray, aspect_ratio: float) -> float:
-    if aspect_ratio < 1.12:
-        return 0.0  # Near-square boxes do not have a stable orientation axis.
-    points = np.asarray(quad, dtype=np.float32)
-    edges = np.roll(points, -1, axis=0) - points
-    edge = edges[int(np.argmax(np.linalg.norm(edges, axis=1)))]
-    angle = math.degrees(math.atan2(float(edge[1]), float(edge[0])))
-    while angle >= 90.0:
-        angle -= 180.0
-    while angle < -90.0:
-        angle += 180.0
-    if angle > 45.0:
-        angle -= 90.0
-    elif angle < -45.0:
-        angle += 90.0
-    # OpenCV's positive fine rotation moves a horizontal edge toward a negative
-    # image-coordinate angle, so this measured residual is already the additive fix.
-    return float(np.clip(angle, -FINE_ROTATION_LIMIT, FINE_ROTATION_LIMIT))
-
-
-def _vertical_edge_profile(lum: np.ndarray) -> tuple[np.ndarray, float]:
-    if lum.size == 0:
-        return np.empty(0, dtype=np.float32), 0.0
-    gradient = np.abs(negpy_core.sobel(lum.astype(np.float32), 1, 0))
-    profile = np.mean(gradient, axis=0).astype(np.float32)
-    window = _odd_kernel_size(0.006 * profile.size, 3, 15)
-    profile = negpy_core.gaussian_blur(profile.reshape(1, -1), (window, 1), 0).ravel()
-    baseline = float(np.percentile(profile, 50.0)) if profile.size else 0.0
-    normalizer = float(np.percentile(profile, 99.5)) if profile.size else 0.0
-    contrast = max(0.0, normalizer - baseline)
-    if normalizer > 1e-8:
-        profile = np.clip(profile / normalizer, 0.0, 1.0)
-    else:
-        profile.fill(0.0)
-    return profile, contrast
-
-
 def _empty_autocrop_detection(
     vertical_edge_profile: np.ndarray,
     vertical_edge_contrast: float = 0.0,

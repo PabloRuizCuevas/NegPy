@@ -173,7 +173,7 @@ def _vertical_edge_profile(img: ImageBuffer) -> tuple[np.ndarray, float]:
 def _top_edge_slope(lum: np.ndarray, roi: ROI) -> float | None:
     """Residual tilt of the film box's top edge, in degrees, or None when unreadable.
 
-    Sign matches _correction_angle_from_quad: the measured image-coordinate residual is
+    Sign matches the film detector's quad angle: the measured image-coordinate residual is
     already the additive fix.
     """
     y1, _, x1, x2 = roi

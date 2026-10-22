@@ -711,7 +711,7 @@ note = "negpy_core::analysis::trim_film_edges"
 
 ["features/geometry/logic.py::_vertical_edge_profile"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["negpy_core.gaussian_blur", "negpy_core.sobel", "np.mean", "np.percentile"]
 depends = []
 

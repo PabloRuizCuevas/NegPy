@@ -1,7 +1,8 @@
 """Record real calls of the functions in negpy_core/manifest.toml, then replay them through the current code.
 
-  record FILE...   run each frame through the preview load and the CPU pipeline, and save every call
-                   of a recorded function: inputs, result and its time on one thread, called alone.
+  record FILE...   run each frame through the preview load, the CPU pipeline, Square Before Crop and
+                   the Auto-crop All Frames evidence, then resolve the files as one roll; save every
+                   call of a recorded function: inputs, result and its time on one thread, called alone.
   replay           call the current code with each saved input and compare the result bit for bit.
   bench            time the current code on one thread against the saved time.
 
@@ -139,6 +140,25 @@ def _run_frame(path: str, repo=None) -> None:
     config = with_auto_crop(saved or WorkspaceConfig(), True)
     # Stage caching on, as the preview runs: the base read (measure_base_log) happens only then.
     ImageProcessor(use_gpu=False).run_pipeline(buffer, config, source_hash=path, render_size_ref=1600.0, prefer_gpu=False)
+    return buffer, config
+
+
+def _crop_evidence(key: str, buffer, config):
+    """One frame of Auto-crop All Frames and Square Before Crop, as the batch worker runs them
+    (without the flat field)."""
+    from dataclasses import replace
+
+    from negpy.domain.interfaces import PipelineContext
+    from negpy.features.geometry.batch_autocrop import detect_crop_candidate
+    from negpy.features.geometry.processor import GeometryProcessor
+    from negpy.features.geometry.skew import squared_geometry
+
+    geometry = config.geometry
+    squared_geometry(buffer, geometry, config.process.process_mode)
+    detection = replace(geometry, crop_rect=None, crop_from_auto=False, autocrop_offset=0)
+    context = PipelineContext(original_size=(buffer.shape[1], buffer.shape[0]), scale_factor=1.0, process_mode=config.process.process_mode)
+    transformed = GeometryProcessor(detection).process(buffer, context)
+    return detect_crop_candidate(key, transformed, target_ratio=geometry.autocrop_ratio, rebate_trim=geometry.autocrop_rebate_trim)
 
 
 def _edits_repo(edits_db: str | None):
@@ -161,12 +181,18 @@ def record(files: list[str], phases: list[int] | None, edits_db: str | None) -> 
     import negpy.services.rendering.image_processor  # noqa: F401  (load the pipeline before wrapping)
     import negpy.services.rendering.preview_manager  # noqa: F401
 
+    from negpy.features.geometry.batch_autocrop import resolve_roll_crops
+
     recorder = Recorder(keys)
     try:
+        evidence = []
         for path in files:
             recorder.frame, recorder.per_frame = Path(path).name, {}
-            _run_frame(path, repo)
+            buffer, config = _run_frame(path, repo)
+            evidence.append(_crop_evidence(str(len(evidence)), buffer, config))
             print(f"recorded {path}")
+        recorder.frame, recorder.per_frame = "roll", {}
+        resolve_roll_crops(evidence)
     finally:
         recorder.restore()
     for key in keys:
