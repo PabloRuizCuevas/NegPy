@@ -790,13 +790,13 @@ def _sample_log_bounds(
         margin = -percentile_clip
     p_low, p_high = np.float64(clip), np.float64(100.0 - clip)
 
-    def _pct(p) -> list:
-        if sorted_grid is not None:
-            return [float(v) for v in percentile_from_sorted(sorted_grid, p)]
-        return [float(np.percentile(img_log[:, :, ch], p)) for ch in range(3)]
-
-    floors = _pct(p_low)
-    ceils = _pct(p_high)
+    if sorted_grid is not None:
+        floors = [float(v) for v in percentile_from_sorted(sorted_grid, p_low)]
+        ceils = [float(v) for v in percentile_from_sorted(sorted_grid, p_high)]
+    else:
+        per_channel = negpy_core.channel_percentiles(np.ascontiguousarray(img_log, dtype=np.float32), [float(p_low), float(p_high)])
+        floors = [lo for lo, _ in per_channel]
+        ceils = [hi for _, hi in per_channel]
 
     if margin > 0.0:
         # Expand outward; per-channel sign handles both f < c and f > c.
@@ -832,53 +832,22 @@ def _same_pixel_color_floor_refs(
     from negpy.features.exposure.models import EXPOSURE_CONSTANTS
 
     c = EXPOSURE_CONSTANTS
-    q = float(c["neutral_axis_chroma_quantile"])
-    cap = float(c["neutral_axis_chroma_cap"])
-    min_px = int(c["neutral_axis_min_pixels"])
-    width = float(c["color_bounds_band_width"])
-    epsilon = 1e-6
-
-    flat = img_log.reshape(-1, 3).astype(np.float64)
-    base = np.asarray(base_refs, dtype=np.float64)
-    norm = np.empty_like(flat)
-    for ch in range(3):
-        denom = luma_ceils[ch] - luma_floors[ch]
-        if abs(denom) < epsilon:
-            denom = epsilon if denom >= 0 else -epsilon
-        norm[:, ch] = (flat[:, ch] - luma_floors[ch]) / denom
-    luma = LUMA_R * norm[:, 0] + LUMA_G * norm[:, 1] + LUMA_B * norm[:, 2]
-
-    clip = max(0.00001, min(50.0 - width, float(color_clip)))
-    lo, hi = np.percentile(luma, [clip, clip + width])
-    band = (luma >= lo) & (luma <= hi)
-    if int(band.sum()) < min_px:
-        return None
-    d = flat[band] - base[None, :]
-
-    def _select(gamma: np.ndarray) -> Optional[Tuple[np.ndarray, float]]:
-        g = gamma.copy()
-        g[np.abs(g) < epsilon] = epsilon
-        chroma = _rms_chroma(d / g[None, :])
-        thr = float(np.quantile(chroma, q))
-        sel = chroma <= thr
-        if int(sel.sum()) < min_px:
-            return None
-        return sel, float(np.median(chroma[sel]))
-
-    spans = np.array([luma_floors[ch] - base_refs[ch] for ch in range(3)], dtype=np.float64)
-    first = _select(spans)
-    # Pass-1 loose cap: a homogeneous colored cluster would otherwise be self-normalized to
-    # zero chroma by pass 2 and read as neutral.
-    if first is None or first[1] > float(c["neutral_axis_first_pass_cap"]):
-        return None
-    provisional = np.median(d[first[0]], axis=0)
-    if np.any(np.abs(provisional) < epsilon):
-        return None
-    second = _select(provisional)
-    if second is None or second[1] > cap:
-        return None
-    refs = base + np.median(d[second[0]], axis=0)
-    return (float(refs[0]), float(refs[1]), float(refs[2]))
+    constants = (
+        float(c["neutral_axis_chroma_quantile"]),
+        float(c["neutral_axis_chroma_cap"]),
+        float(c["neutral_axis_first_pass_cap"]),
+        int(c["neutral_axis_min_pixels"]),
+        float(c["color_bounds_band_width"]),
+    )
+    refs = negpy_core.same_pixel_color_floor_refs(
+        np.ascontiguousarray(img_log, dtype=np.float32),
+        [float(v) for v in luma_floors],
+        [float(v) for v in luma_ceils],
+        [float(v) for v in base_refs],
+        float(color_clip),
+        constants,
+    )
+    return None if refs is None else (refs[0], refs[1], refs[2])
 
 
 def analyze_log_exposure_bounds(

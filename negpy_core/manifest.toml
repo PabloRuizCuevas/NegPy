@@ -187,25 +187,25 @@ depends = []
 
 ["features/exposure/normalization.py::_same_pixel_color_floor_refs"]
 phase = 2
-status = "todo"
-calls = ["np.median", "np.percentile", "np.quantile"]
-depends = ["_select"]
+status = "ported"
+calls = ["negpy_core.same_pixel_color_floor_refs"]
+depends = []
 
 ["features/exposure/normalization.py::_same_pixel_color_floor_refs._select"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.median", "np.quantile"]
 depends = []
 
 ["features/exposure/normalization.py::_sample_log_bounds"]
 phase = 2
-status = "todo"
-calls = ["np.percentile"]
-depends = ["_pct"]
+status = "ported"
+calls = ["negpy_core.channel_percentiles"]
+depends = []
 
 ["features/exposure/normalization.py::_sample_log_bounds._pct"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.percentile"]
 depends = []
 
