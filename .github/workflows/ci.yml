@@ -41,7 +41,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libdbus-1-3 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 x11-utils libgl1
+          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libdbus-1-3 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 x11-utils libgl1 mesa-vulkan-drivers
 
       - name: Install Dependencies
         # pieusb / plustek are pure Python (+ bundled libusb where needed); without
@@ -73,6 +73,10 @@ jobs:
             --ignore "call-non-callable"
 
       - name: Run Tests
+        # Lavapipe (Mesa's software Vulkan) runs the GPU tests; without the backend pin,
+        # wgpu picks the GL adapter first.
+        env:
+          WGPU_BACKEND_TYPE: Vulkan
         run: uv run pytest tests/ --cov=negpy --cov-report=term-missing --cov-report=xml
 
       - name: Upload Coverage Report
