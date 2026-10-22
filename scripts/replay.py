@@ -125,21 +125,39 @@ class Recorder:
             setattr(owner, name, fn)
 
 
-def _run_frame(path: str) -> None:
+def _run_frame(path: str, repo=None) -> None:
+    """The frame's saved edit (or the defaults), with Auto Crop armed so detection runs."""
     from negpy.domain.models import WorkspaceConfig
     from negpy.features.geometry.models import with_auto_crop
+    from negpy.kernel.image.logic import file_hashes
     from negpy.services.rendering.image_processor import ImageProcessor
     from negpy.services.rendering.preview_manager import PreviewManager
 
     buffer, _, _ = PreviewManager().load_linear_preview(path)
-    config = with_auto_crop(WorkspaceConfig(), True)
+    saved = repo.load_file_settings(file_hashes(path)[0]) if repo else None
+    config = with_auto_crop(saved or WorkspaceConfig(), True)
     ImageProcessor(use_gpu=False).run_pipeline(
         buffer, config, source_hash=path, render_size_ref=1600.0, prefer_gpu=False, cache_stages=False
     )
 
 
-def record(files: list[str], phases: list[int] | None) -> None:
+def _edits_repo(edits_db: str | None):
+    """A repository over a copy of *edits_db*, so recording never writes to the user's edits."""
+    if not edits_db:
+        return None
+    import shutil
+    import tempfile
+
+    from negpy.infrastructure.storage.repository import StorageRepository
+
+    folder = Path(tempfile.mkdtemp(prefix="negpy-replay-"))
+    shutil.copy(edits_db, folder / "edits.db")
+    return StorageRepository(str(folder / "edits.db"), str(folder / "settings.db"))
+
+
+def record(files: list[str], phases: list[int] | None, edits_db: str | None) -> None:
     keys = _targets(phases, ("todo",))
+    repo = _edits_repo(edits_db)
     import negpy.services.rendering.image_processor  # noqa: F401  (load the pipeline before wrapping)
     import negpy.services.rendering.preview_manager  # noqa: F401
 
@@ -147,7 +165,7 @@ def record(files: list[str], phases: list[int] | None) -> None:
     try:
         for path in files:
             recorder.frame, recorder.per_frame = Path(path).name, {}
-            _run_frame(path)
+            _run_frame(path, repo)
             print(f"recorded {path}")
     finally:
         recorder.restore()
@@ -216,11 +234,12 @@ def main() -> None:
     parser.add_argument("mode", choices=("record", "replay", "bench"))
     parser.add_argument("files", nargs="*")
     parser.add_argument("--phase", type=int, action="append", help="only functions of this phase (repeatable)")
+    parser.add_argument("--edits", help="record each frame with its saved edit from this edits.db (read from a copy)")
     args = parser.parse_args()
     if args.mode == "record":
         if not args.files:
             parser.error("record needs at least one frame")
-        record(args.files, args.phase)
+        record(args.files, args.phase, args.edits)
     else:
         sys.exit((replay if args.mode == "replay" else bench)(args.phase))
 

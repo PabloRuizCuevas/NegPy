@@ -416,12 +416,6 @@ status = "todo"
 calls = ["cv2.GaussianBlur", "cv2.getStructuringElement", "cv2.morphologyEx", "cv2.threshold"]
 depends = []
 
-["features/geometry/logic.py::_normalize_detection_input"]
-phase = 2
-status = "todo"
-calls = ["cv2.resize"]
-depends = []
-
 ["features/geometry/logic.py::_oriented_boundary_evidence"]
 phase = 2
 status = "todo"
@@ -546,7 +540,7 @@ depends = []
 phase = 2
 status = "todo"
 calls = ["cv2.resize"]
-depends = ["_normalize_detection_input", "apply_fine_rotation", "apply_keystone", "apply_radial_distortion"]
+depends = ["apply_fine_rotation", "apply_keystone", "apply_radial_distortion"]
 
 ["features/geometry/skew.py::_at_canvas_edges"]
 phase = 2

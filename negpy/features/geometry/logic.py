@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
 
 import cv2
+import negpy_core
 import numpy as np
 
 from negpy.domain.types import ROI, ImageBuffer
@@ -104,7 +105,7 @@ def _normalize_detection_input(img: ImageBuffer, detect_res: int) -> tuple[np.nd
     if det_scale >= 1.0:
         return img, 1.0
     d_w, d_h = max(1, round(w * det_scale)), max(1, round(h * det_scale))
-    det = cv2.resize(np.ascontiguousarray(img), (d_w, d_h), interpolation=cv2.INTER_AREA)
+    det = negpy_core.resize_area(np.ascontiguousarray(img, dtype=np.float32), (d_w, d_h))
     return det, det_scale
 
 
