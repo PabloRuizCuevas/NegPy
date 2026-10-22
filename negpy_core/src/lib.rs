@@ -4,6 +4,7 @@ pub mod filter;
 pub mod gray;
 pub mod morph;
 pub mod resize;
+pub mod shapes;
 pub mod stats;
 
 #[cfg(feature = "python")]
