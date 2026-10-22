@@ -15,18 +15,19 @@ Guidance for Claude Code in this repository. It holds rules and traps the code d
 ```bash
 make run          # Launch the desktop app
 make run-sim      # Launch with a simulated camera, Scanlight and film scanners
-make all          # lint + type check + tests (run before committing)
+make all          # format + Rust checks + lint + type check + tests (run before committing)
+make rust         # cargo fmt --check + clippy -D warnings + cargo test for negpy_core
 make test         # pytest only
 make lint         # ruff check
 make type         # ty check (not mypy)
-make format       # ruff format + autofix
+make format       # cargo fmt + ruff format + autofix
 make translations # Extract translation sources and preserve existing translations
 
 # Single test
 uv run pytest tests/test_exposure_logic.py::test_name -v
 ```
 
-All commands run through `uv run`; never invoke pytest/ruff/ty directly. Run `make format` before committing; if it reformats unrelated files, commit those as lint fixes.
+All commands run through `uv run`; never invoke pytest/ruff/ty directly. `uv run` compiles `negpy_core` again after a Rust file changes (`tool.uv.cache-keys`). Run `make format` before committing; if it reformats unrelated files, commit those as lint fixes.
 
 ## Architecture
 
@@ -49,6 +50,18 @@ Edits persist in SQLite (`edits.db`, keyed by content hash), optionally mirrored
 **Roll-scoped edit fork**: a photo in more than one Roll has one edit, unless a per-frame fork gives it its own edit for one Roll. A fork is the content hash suffixed `#roll:<id>` (`roll_edit_hash`), like a half-frame's `#N`. Triage marks and legacy-hash migration strip the suffix (`unforked_hash`), because they belong to the physical scan.
 
 **Film edge print** (`services/film_edge/`): a stock's own marks, DX number and respool source (`prints_as`) are the `edge` object in `gear/film_stocks.json`, and each entry names its `source`. The `edge-print-from-photo` skill adds a stock from a photo of the film.
+
+### negpy_core (Rust)
+
+`negpy_core/` is a PyO3 extension (abi3-py313, maturin, a `uv` workspace member) that takes over CPU kernels one group at a time.
+
+- A ported function keeps its Python signature; the Python body becomes a call into `negpy_core`, and the Python implementation goes in the same change. No runtime switch, no fallback.
+- Core code in `src/<area>.rs` takes slices or `ndarray` views and plain numbers, never config. `src/py/<area>.rs` holds only the wrappers: dtype, shape and contiguity checks, `py.detach` around the work, errors as Python exceptions. No panic crosses into Python.
+- `cargo test` builds without Python: PyO3 is behind the `python` feature, which maturin turns on.
+- Pure Rust: no dependency compiles C or C++ (`deny.toml` bans `cc`, `cmake`, `bindgen`). Codecs that need C stay on their Python wheels. A new crate's license goes in `NOTICE.md`.
+- No `unsafe` except SIMD, each with a reason. Names mirror the Python names.
+- **Bit-exact**: a port matches the Python result bit for bit, checked by a pytest oracle against the numpy or `cv2` call it replaces, run on every release OS in CI (`ci.yml` job `native`). NumPy's rules to copy: the linear percentile (virtual index in f64, interpolation in f32, the `t >= 0.5` branch from the upper value); float32 sums in NumPy's order; NEP 50 promotion (a Python float joins float32 math as float32); Numba `fastmath` as f64 with `mul_add`; Python `round` ties to even. No fast-math. Threads only over independent outputs, or integer reductions, so the core count never changes a result.
+- A port that cannot be bit-exact needs the user's agreement, then the `BOUNDS_VERSION` and `THUMBNAIL_RENDER_VERSION` bumps.
 
 ### Pipeline
 

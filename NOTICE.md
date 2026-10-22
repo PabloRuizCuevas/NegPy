@@ -58,3 +58,9 @@ without warranties:
 Modified by NegPy: each four-digit DX number is split into the part 1 and part 2
 of the film edge barcode. NegPy distributes them under the GPL v3, which
 Creative Commons lists as a BY-SA compatible license.
+
+The negpy_core extension module links these Rust crates: PyO3 and rust-numpy
+(MIT OR Apache-2.0; rust-numpy BSD-2-Clause), rayon and crossbeam (MIT OR
+Apache-2.0), ndarray, num-traits, num-complex, num-integer, matrixmultiply and
+rawpointer (MIT OR Apache-2.0), libc, once_cell, either, portable-atomic and
+rustc-hash (MIT OR Apache-2.0). negpy_core/Cargo.lock lists the exact versions.
