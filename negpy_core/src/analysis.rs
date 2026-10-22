@@ -43,7 +43,7 @@ pub fn normalize_to_uint8(img: &[f32], dst: &mut [u8]) {
         p[1] as f64
     };
     let (low32, scale32) = (low as f32, (255.0 / (high - low)) as f32);
-    dst.par_iter_mut().zip(img.par_iter()).for_each(|(d, &v)| {
+    crate::par_zip(dst, img, move |d, &v| {
         let s = ((v - low32) * scale32).clamp(0.0, 255.0);
         // NumPy's float32 to uint8 cast truncates, NaN to 0 on x86; Rust's `as` does the same.
         *d = s as u8;
@@ -60,7 +60,7 @@ pub fn detection_luma(lum: &[f32], dst: &mut [f32]) -> Option<()> {
     } else {
         p.max(1e-6) as f32
     };
-    dst.par_iter_mut().zip(lum.par_iter()).for_each(|(d, &v)| {
+    crate::par_zip(dst, lum, move |d, &v| {
         *d = (v / anchor).clamp(0.0, 2.0);
     });
     Some(())

@@ -22,9 +22,9 @@ pub fn find_external_contours(src: &[u8], h: usize, w: usize) -> Vec<Vec<(i32, i
     // One pixel of zero border, values thresholded to 0/1, as findContours prepares them.
     let (pw, ph) = (w + 2, h + 2);
     let mut img = vec![0i8; pw * ph];
-    for y in 0..h {
-        for x in 0..w {
-            img[(y + 1) * pw + x + 1] = (src[y * w + x] > 0) as i8;
+    for (line, row) in img.chunks_exact_mut(pw).skip(1).zip(src.chunks_exact(w)) {
+        for (d, &v) in line[1..=w].iter_mut().zip(row) {
+            *d = (v > 0) as i8;
         }
     }
     let delta = |s: usize| DELTAS[s % 8].0 + DELTAS[s % 8].1 * pw as isize;
@@ -36,14 +36,12 @@ pub fn find_external_contours(src: &[u8], h: usize, w: usize) -> Vec<Vec<(i32, i
         let mut prev: i8 = 0;
         let mut x = 1;
         while x < width {
-            let mut p = img[y * pw + x];
-            while x < width && p == prev {
-                x += 1;
-                p = img[y * pw + x];
+            let line = &img[y * pw..y * pw + width];
+            match first_other(&line[x..], prev) {
+                Some(skip) => x += skip,
+                None => break,
             }
-            if x >= width {
-                break;
-            }
+            let p = img[y * pw + x];
             // contourScan for RETR_EXTERNAL: start only at an outer border whose left
             // neighbour is not inside an already traced contour.
             let mut start = false;
@@ -75,6 +73,20 @@ pub fn find_external_contours(src: &[u8], h: usize, w: usize) -> Vec<Vec<(i32, i
     }
     found.reverse();
     found
+}
+
+/// The index of the first byte that is not `v`, eight bytes at a time over the long runs.
+fn first_other(line: &[i8], v: i8) -> Option<usize> {
+    let run = u64::from_ne_bytes([v as u8; 8]);
+    let (words, _) = line.as_chunks::<8>();
+    let mut i = 0;
+    for word in words {
+        if u64::from_ne_bytes(word.map(|b| b as u8)) != run {
+            break;
+        }
+        i += 8;
+    }
+    line[i..].iter().position(|&b| b != v).map(|p| i + p)
 }
 
 /// `icvFetchContourEx<schar>` for an outer border from `start` (an index into the padded image),

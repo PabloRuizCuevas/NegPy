@@ -1,18 +1,17 @@
 //! OpenCV's uint8 grayscale operations, all integer arithmetic: BGR to gray, the fixed-point
 //! GaussianBlur, Otsu's threshold and Canny.
 
+use multiversion::multiversion;
 use rayon::prelude::*;
 
 use crate::filter::{Border, border_interpolate, gaussian_kernel_f64};
 
 /// `cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)`: 15-bit fixed-point weights, rounded.
 pub fn bgr_to_gray(src: &[u8], dst: &mut [u8]) {
-    dst.par_iter_mut()
-        .zip(src.par_chunks_exact(3))
-        .for_each(|(d, p)| {
-            *d = ((p[0] as u32 * 3735 + p[1] as u32 * 19235 + p[2] as u32 * 9798 + (1 << 14)) >> 15)
-                as u8;
-        });
+    crate::par_zip(dst, src.as_chunks::<3>().0, move |d, p| {
+        *d = ((p[0] as u32 * 3735 + p[1] as u32 * 19235 + p[2] as u32 * 9798 + (1 << 14)) >> 15)
+            as u8;
+    });
 }
 
 /// `getGaussianKernelFixedPoint_ED`: the bit-exact kernel in 8 fractional bits, rounding errors
@@ -83,33 +82,63 @@ pub fn gaussian_blur_u8(
         .map(|px| border_interpolate(px as isize - rx as isize, w, border))
         .collect();
 
-    let mut rows = vec![0u32; h * n];
+    // Kernel-major sums over a padded row: integer, so the order leaves the bits alone. A row sum
+    // is at most 255 * 256, so rows fit u16, as in OpenCV.
+    let mut rows = vec![0u16; h * n];
     rows.par_chunks_mut(n).enumerate().for_each(|(y, out)| {
         let row = &src[y * n..(y + 1) * n];
-        let px = |p: usize, c: usize| xmap[p].map_or(0, |sx| row[sx * cn + c] as u32);
-        for x in 0..w {
-            for c in 0..cn {
-                out[x * cn + c] = (0..kw).map(|j| kx[j] * px(x + j, c)).sum();
+        let mut pad = vec![0u16; (w + 2 * rx) * cn];
+        for (p, &v) in pad[rx * cn..(rx + w) * cn].iter_mut().zip(row) {
+            *p = v as u16;
+        }
+        for p in (0..rx).chain(rx + w..w + 2 * rx) {
+            if let Some(sx) = xmap[p] {
+                for c in 0..cn {
+                    pad[p * cn + c] = row[sx * cn + c] as u16;
+                }
             }
+        }
+        for (j, &k) in kx.iter().enumerate() {
+            mac_u16(out, &pad[j * cn..j * cn + n], k as u16);
         }
     });
     dst.par_chunks_mut(n).enumerate().for_each(|(y, out)| {
-        let lines: Vec<Option<&[u32]>> = (0..kh)
-            .map(|j| {
-                border_interpolate(y as isize + j as isize - ry as isize, h, border)
-                    .map(|sy| &rows[sy * n..(sy + 1) * n])
-            })
-            .collect();
-        for (i, o) in out.iter_mut().enumerate() {
-            let v: u32 = lines
-                .iter()
-                .zip(&ky)
-                .map(|(l, &k)| l.map_or(0, |l| k * l[i]))
-                .sum();
+        let mut acc = vec![0u32; n];
+        for (j, &k) in ky.iter().enumerate() {
+            if let Some(sy) = border_interpolate(y as isize + j as isize - ry as isize, h, border) {
+                mac_u32(&mut acc, &rows[sy * n..(sy + 1) * n], k);
+            }
+        }
+        for (o, &v) in out.iter_mut().zip(&acc) {
             *o = ((v + (1 << 15)) >> 16).min(255) as u8;
         }
     });
     Some(())
+}
+
+#[multiversion(targets("x86_64+avx2", "aarch64+neon"))]
+fn mac_u16(out: &mut [u16], src: &[u16], k: u16) {
+    for (o, &v) in out.iter_mut().zip(src) {
+        *o += k * v;
+    }
+}
+
+#[multiversion(targets("x86_64+avx2", "aarch64+neon"))]
+fn mac_u32(out: &mut [u32], src: &[u16], k: u32) {
+    for (o, &v) in out.iter_mut().zip(src) {
+        *o += k * v as u32;
+    }
+}
+
+#[multiversion(targets("x86_64+avx2", "aarch64+neon"))]
+fn sobel_row(a: &[i16], b: &[i16], c: &[i16], rx: &mut [i16], ry: &mut [i16], rm: &mut [i16]) {
+    for x in 0..rx.len() {
+        let gx = (a[x + 2] + 2 * b[x + 2] + c[x + 2]) - (a[x] + 2 * b[x] + c[x]);
+        let gy = (c[x] + 2 * c[x + 1] + c[x + 2]) - (a[x] + 2 * a[x + 1] + a[x + 2]);
+        rx[x] = gx;
+        ry[x] = gy;
+        rm[x] = gx.abs() + gy.abs();
+    }
 }
 
 /// Otsu's threshold for uint8 (`getThreshVal_Otsu`), in its double arithmetic and first-max rule.
@@ -149,7 +178,7 @@ pub fn otsu_threshold(src: &[u8]) -> f64 {
 pub fn threshold_binary(src: &[u8], dst: &mut [u8], thresh: f64, maxval: u8, invert: bool) {
     // OpenCV compares against cvFloor(thresh) for uint8.
     let t = thresh.floor().clamp(-1.0, 255.0) as i32;
-    dst.par_iter_mut().zip(src.par_iter()).for_each(|(d, &s)| {
+    crate::par_zip(dst, src, move |d, &s| {
         *d = if (s as i32 > t) != invert { maxval } else { 0 };
     });
 }
@@ -161,68 +190,75 @@ pub fn canny(src: &[u8], dst: &mut [u8], h: usize, w: usize, low: f64, high: f64
     }
     let (low, high) = if low > high { (high, low) } else { (low, high) };
     let (low, high) = (low.floor() as i32, high.floor() as i32);
-    let at = |y: isize, x: isize| {
-        src[y.clamp(0, h as isize - 1) as usize * w + x.clamp(0, w as isize - 1) as usize] as i32
-    };
-
-    // Sobel 3x3 in 16-bit integers with a replicated border, then |dx| + |dy|.
-    let mut dx = vec![0i32; h * w];
-    let mut dy = vec![0i32; h * w];
+    // Sobel 3x3 over a replicated one-pixel border, then |dx| + |dy| in a frame of zeros.
+    let pw = w + 2;
+    let mut pad = vec![0i16; (h + 2) * pw];
+    for py in 0..h + 2 {
+        let sy = py.saturating_sub(1).min(h - 1);
+        let line = &mut pad[py * pw..(py + 1) * pw];
+        for (px, v) in line.iter_mut().enumerate() {
+            *v = src[sy * w + px.saturating_sub(1).min(w - 1)] as i16;
+        }
+    }
+    let mut dx = vec![0i16; h * w];
+    let mut dy = vec![0i16; h * w];
+    let mut mag = vec![0i16; (h + 2) * pw];
     dx.par_chunks_mut(w)
         .zip(dy.par_chunks_mut(w))
+        .zip(mag.par_chunks_mut(pw).skip(1))
         .enumerate()
-        .for_each(|(y, (rx, ry))| {
-            let y = y as isize;
-            for x in 0..w {
-                let xi = x as isize;
-                let col = |c: isize| at(y - 1, c) + 2 * at(y, c) + at(y + 1, c);
-                let row = |r: isize| at(r, xi - 1) + 2 * at(r, xi) + at(r, xi + 1);
-                rx[x] = col(xi + 1) - col(xi - 1);
-                ry[x] = row(y + 1) - row(y - 1);
-            }
+        .for_each(|(y, ((rx, ry), rm))| {
+            sobel_row(
+                &pad[y * pw..(y + 1) * pw],
+                &pad[(y + 1) * pw..(y + 2) * pw],
+                &pad[(y + 2) * pw..(y + 3) * pw],
+                rx,
+                ry,
+                &mut rm[1..w + 1],
+            );
         });
-    let mag = |y: isize, x: isize| -> i32 {
-        if y < 0 || y >= h as isize || x < 0 || x >= w as isize {
-            0
-        } else {
-            let i = y as usize * w + x as usize;
-            dx[i].abs() + dy[i].abs()
-        }
-    };
 
     // Map: 0 may be an edge, 1 cannot, 2 is one. A one-pixel frame of 1 surrounds the image.
     const TG22: i64 = 13573;
-    let mw = w + 2;
+    let mw = pw;
     let mut map = vec![1u8; (h + 2) * mw];
     map.par_chunks_mut(mw)
         .enumerate()
         .skip(1)
         .take(h)
         .for_each(|(my, line)| {
-            let y = my as isize - 1;
+            let y = my - 1;
+            let (up, mid, down) = (
+                &mag[(my - 1) * pw..my * pw],
+                &mag[my * pw..(my + 1) * pw],
+                &mag[(my + 1) * pw..(my + 2) * pw],
+            );
             for x in 0..w {
-                let xi = x as isize;
-                let m = mag(y, xi);
+                let px = x + 1;
+                let m = mid[px] as i32;
                 let mut v = 1u8;
                 if m > low {
-                    let i = y as usize * w + x;
+                    let i = y * w + x;
                     let (xs, ys) = (dx[i], dy[i]);
                     let ax = xs.abs() as i64;
                     let ay = (ys.abs() as i64) << 15;
                     let tg22x = ax * TG22;
+                    let m = m as i16;
                     let peak = if ay < tg22x {
-                        m > mag(y, xi - 1) && m >= mag(y, xi + 1)
+                        m > mid[px - 1] && m >= mid[px + 1]
                     } else if ay > tg22x + (ax << 16) {
-                        m > mag(y - 1, xi) && m >= mag(y + 1, xi)
+                        m > up[px] && m >= down[px]
+                    } else if (xs ^ ys) < 0 {
+                        m > up[px + 1] && m > down[px - 1]
                     } else {
-                        let s: isize = if (xs ^ ys) < 0 { -1 } else { 1 };
-                        m > mag(y - 1, xi - s) && m > mag(y + 1, xi + s)
+                        m > up[px - 1] && m > down[px + 1]
                     };
+                    let m = m as i32;
                     if peak {
                         v = if m > high { 2 } else { 0 };
                     }
                 }
-                line[x + 1] = v;
+                line[px] = v;
             }
         });
 

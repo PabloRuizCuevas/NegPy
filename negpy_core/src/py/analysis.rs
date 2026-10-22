@@ -346,6 +346,145 @@ fn refine_roi_to_image<'py>(
     })
 }
 
+type DetectionFields<'py> = (
+    Option<ConsensusFields>,
+    Bound<'py, numpy::PyArray1<f32>>,
+    f64,
+);
+
+/// `detect_film_bounds_with_confidence(img)` for an HxW or HxWx3 float32 image:
+/// ((roi, angle, confidence, sides, corners, sources, geometry) or None, profile, contrast).
+#[pyfunction]
+fn detect_film_bounds<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<DetectionFields<'py>> {
+    let (h, w, cn) = match img.shape()[..] {
+        [h, w] => (h, w, 1),
+        [h, w, 3] => (h, w, 3),
+        _ => {
+            return Err(PyValueError::new_err(
+                "detect_film_bounds needs an HxW or HxWx3 array",
+            ));
+        }
+    };
+    let data = slice(&img)?;
+    let d = py.detach(|| crate::detect::detect_film_bounds(data, h, w, cn));
+    Ok((
+        d.consensus.map(consensus_fields),
+        numpy::PyArray1::from_vec(py, d.profile),
+        d.contrast,
+    ))
+}
+
+type ConsensusFields = (
+    analysis::Roi,
+    f64,
+    f64,
+    Vec<&'static str>,
+    Vec<&'static str>,
+    Vec<&'static str>,
+    f64,
+);
+
+fn consensus_fields(c: crate::detect::Consensus) -> ConsensusFields {
+    (
+        c.roi,
+        c.correction_angle,
+        c.confidence,
+        c.sides,
+        c.corners,
+        c.sources,
+        c.geometry_score,
+    )
+}
+
+fn known(value: &str, names: &[&'static str]) -> PyResult<&'static str> {
+    names
+        .iter()
+        .find(|n| **n == value)
+        .copied()
+        .ok_or_else(|| PyValueError::new_err(format!("unknown name {value:?}")))
+}
+
+fn flags(values: &[String], names: &[&'static str]) -> PyResult<[bool; 4]> {
+    let mut out = [false; 4];
+    for v in values {
+        out[names
+            .iter()
+            .position(|n| n == v)
+            .ok_or_else(|| PyValueError::new_err(format!("unknown name {v:?}")))?] = true;
+    }
+    Ok(out)
+}
+
+type CandidateFields = (
+    analysis::Roi,
+    f64,
+    String,
+    Option<usize>,
+    String,
+    f64,
+    f64,
+    Vec<String>,
+    Vec<String>,
+);
+
+/// `_select_consensus_cluster` over (roi, angle, source, threshold index, polarity, boundary,
+/// geometry, sides, corners) candidates in an HxW image.
+#[pyfunction]
+fn select_consensus(
+    candidates: Vec<CandidateFields>,
+    h: usize,
+    w: usize,
+) -> PyResult<Option<ConsensusFields>> {
+    use crate::detect::{CORNER_SIDES, Candidate, EVIDENCE_SOURCE_ORDER, SIDE_NAMES};
+    let corners: Vec<&'static str> = CORNER_SIDES.iter().map(|c| c.0).collect();
+    let cands = candidates
+        .into_iter()
+        .map(
+            |(roi, angle, source, index, polarity, boundary, geometry, s, c)| {
+                Ok(Candidate {
+                    roi,
+                    correction_angle: angle,
+                    source: known(&source, &EVIDENCE_SOURCE_ORDER)?,
+                    threshold_index: index,
+                    polarity: known(&polarity, &["dark", "bright"])?,
+                    boundary_score: boundary,
+                    geometry_score: geometry,
+                    sides: flags(&s, &SIDE_NAMES)?,
+                    corners: flags(&c, &corners)?,
+                })
+            },
+        )
+        .collect::<PyResult<Vec<_>>>()?;
+    Ok(crate::detect::select_consensus(&cands, h, w).map(consensus_fields))
+}
+
+fn lum_dims<'a>(lum: &'a PyReadonlyArrayDyn<'_, f32>) -> PyResult<(&'a [f32], usize, usize)> {
+    match lum.shape()[..] {
+        [h, w] => Ok((slice(lum)?, h, w)),
+        _ => Err(PyValueError::new_err("needs an HxW array")),
+    }
+}
+
+/// `_film_box_covers_enough(lum, roi)`.
+#[pyfunction]
+fn film_box_covers_enough(lum: PyReadonlyArrayDyn<'_, f32>, roi: analysis::Roi) -> PyResult<bool> {
+    let (_, h, w) = lum_dims(&lum)?;
+    Ok(crate::detect::film_box_covers_enough(h, w, &roi))
+}
+
+/// `_film_surround_is_plausible(lum, roi)`.
+#[pyfunction]
+fn film_surround_is_plausible(
+    lum: PyReadonlyArrayDyn<'_, f32>,
+    roi: analysis::Roi,
+) -> PyResult<bool> {
+    let (data, h, w) = lum_dims(&lum)?;
+    Ok(crate::detect::film_surround_is_plausible(data, h, w, &roi))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(luminance, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_to_uint8, m)?)?;
@@ -361,5 +500,9 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(snap_edge_to_gradient, m)?)?;
     m.add_function(wrap_pyfunction!(refine_film_roi_by_tiers, m)?)?;
     m.add_function(wrap_pyfunction!(refine_frame_bounds, m)?)?;
-    m.add_function(wrap_pyfunction!(refine_roi_to_image, m)?)
+    m.add_function(wrap_pyfunction!(refine_roi_to_image, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_film_bounds, m)?)?;
+    m.add_function(wrap_pyfunction!(select_consensus, m)?)?;
+    m.add_function(wrap_pyfunction!(film_box_covers_enough, m)?)?;
+    m.add_function(wrap_pyfunction!(film_surround_is_plausible, m)?)
 }

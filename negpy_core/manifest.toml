@@ -469,13 +469,13 @@ depends = ["_map_rect_between_rotations", "_rect_from_edge_profile", "build_roll
 
 ["features/geometry/logic.py::_adaptive_threshold_levels"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.percentile"]
 depends = []
 
 ["features/geometry/logic.py::_adaptive_threshold_mask"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["cv2.getStructuringElement", "negpy_core.morphology_ex"]
 depends = []
 
@@ -488,13 +488,13 @@ note = "negpy_core::analysis::border_edge_scatter (Python deleted)"
 
 ["features/geometry/logic.py::_candidate_from_contour"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["cv2.boundingRect", "cv2.boxPoints", "cv2.contourArea", "cv2.minAreaRect"]
 depends = ["_oriented_boundary_evidence"]
 
 ["features/geometry/logic.py::_candidates_from_mask"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["negpy_core.find_external_contours"]
 depends = ["_candidate_from_contour"]
 
@@ -540,7 +540,7 @@ note = "negpy_core::analysis::estimate_tier_levels (Python deleted)"
 
 ["features/geometry/logic.py::_film_surround_is_plausible"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.median", "np.percentile"]
 depends = []
 
@@ -565,19 +565,19 @@ depends = []
 
 ["features/geometry/logic.py::_mask_from_blackhat"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["cv2.getStructuringElement", "negpy_core.gaussian_blur_u8", "negpy_core.morphology_ex", "negpy_core.threshold_otsu"]
 depends = []
 
 ["features/geometry/logic.py::_mask_from_edges"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["cv2.getStructuringElement", "negpy_core.canny", "negpy_core.gaussian_blur_u8", "negpy_core.morphology_ex"]
 depends = []
 
 ["features/geometry/logic.py::_mask_from_inverse_threshold"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["cv2.getStructuringElement", "negpy_core.gaussian_blur_u8", "negpy_core.morphology_ex", "negpy_core.threshold_otsu"]
 depends = []
 
@@ -596,7 +596,7 @@ note = "negpy_core::analysis::normalize_to_uint8"
 
 ["features/geometry/logic.py::_oriented_boundary_evidence"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.median"]
 depends = ["_polygon_values"]
 
@@ -608,7 +608,7 @@ depends = []
 
 ["features/geometry/logic.py::_polygon_values"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["cv2.fillConvexPoly"]
 depends = []
 
@@ -667,7 +667,7 @@ depends = []
 
 ["features/geometry/logic.py::_select_consensus_cluster"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_weighted_median"]
 
@@ -686,13 +686,13 @@ note = "negpy_core::analysis::snap_edge_to_gradient"
 
 ["features/geometry/logic.py::_snap_film_bounds_to_bed_gradient"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_snap_edge_to_gradient"]
 
 ["features/geometry/logic.py::_threshold_polarities"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.median"]
 depends = []
 
@@ -718,7 +718,7 @@ note = "negpy_core::analysis::walk_border_depth"
 
 ["features/geometry/logic.py::_weighted_median"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.argsort", "np.cumsum", "np.sum"]
 depends = []
 
@@ -754,9 +754,9 @@ depends = ["_find_autocrop_roi_from_contours", "_get_threshold_autocrop_coords",
 
 ["features/geometry/logic.py::detect_film_bounds_with_confidence"]
 phase = 2
-status = "todo"
-calls = ["negpy_core.bgr_to_gray", "negpy_core.gaussian_blur", "np.median", "np.percentile"]
-depends = ["_adaptive_threshold_levels", "_adaptive_threshold_mask", "_candidates_from_mask", "_detection_luma", "_film_surround_is_plausible", "_mask_from_blackhat", "_mask_from_edges", "_mask_from_inverse_threshold", "_normalize_to_uint8", "_select_consensus_cluster", "_snap_film_bounds_to_bed_gradient", "_threshold_polarities", "_vertical_edge_profile"]
+status = "ported"
+calls = ["negpy_core.detect_film_bounds"]
+depends = []
 
 ["features/geometry/logic.py::film_and_picture"]
 phase = 2

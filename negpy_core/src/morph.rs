@@ -240,23 +240,17 @@ pub fn morphology<T: Pixel>(
         Op::Gradient => {
             ed(src, &mut tmp, false);
             ed(src, dst, true);
-            dst.par_iter_mut()
-                .zip(tmp.par_iter())
-                .for_each(|(d, &t)| *d = t.sub(*d));
+            crate::par_zip(dst, &tmp, move |d, &t| *d = t.sub(*d));
         }
         Op::TopHat => {
             ed(src, &mut tmp, true);
             ed(&tmp, dst, false);
-            dst.par_iter_mut()
-                .zip(src.par_iter())
-                .for_each(|(d, &s)| *d = s.sub(*d));
+            crate::par_zip(dst, src, move |d, &s| *d = s.sub(*d));
         }
         Op::BlackHat => {
             ed(src, &mut tmp, false);
             ed(&tmp, dst, true);
-            dst.par_iter_mut()
-                .zip(src.par_iter())
-                .for_each(|(d, &s)| *d = d.sub(s));
+            crate::par_zip(dst, src, move |d, &s| *d = d.sub(s));
         }
     }
     Some(())

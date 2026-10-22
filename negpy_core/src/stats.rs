@@ -125,13 +125,9 @@ fn select_ranks(values: &[f32], ranks: &[usize]) -> Vec<f32> {
         .collect()
 }
 
-/// `np.percentile(values, q)` (method "linear") for each q, bit for bit, except that -0.0 and
-/// 0.0 may swap: `np.partition` ranks them equal and returns either. `None` for an empty input.
-pub fn percentiles(values: &[f32], qs: &[f64]) -> Option<Vec<f32>> {
+/// The two samples around each q's virtual rank and the weight between them.
+fn rank_pairs(values: &[f32], qs: &[f64]) -> Vec<(f32, f32, f64)> {
     let n = values.len();
-    if n == 0 {
-        return None;
-    }
     let spans: Vec<(usize, usize, f64)> = qs
         .iter()
         .map(|&q| {
@@ -144,12 +140,43 @@ pub fn percentiles(values: &[f32], qs: &[f64]) -> Option<Vec<f32>> {
     ranks.dedup();
     let picked = select_ranks(values, &ranks);
     let at = |r: usize| picked[ranks.binary_search(&r).unwrap_or_default()];
+    spans
+        .iter()
+        .map(|&(lo, hi, t)| (at(lo), at(hi), t))
+        .collect()
+}
+
+/// `np.percentile(values, q)` (method "linear") for each q, bit for bit, except that -0.0 and
+/// 0.0 may swap: `np.partition` ranks them equal and returns either. `None` for an empty input.
+pub fn percentiles(values: &[f32], qs: &[f64]) -> Option<Vec<f32>> {
+    if values.is_empty() {
+        return None;
+    }
     Some(
-        spans
-            .iter()
-            .map(|&(lo, hi, t)| interpolate(at(lo), at(hi), t))
+        rank_pairs(values, qs)
+            .into_iter()
+            .map(|(a, b, t)| interpolate(a, b, t))
             .collect(),
     )
+}
+
+/// `np.percentile(values, (a, b, ...))`: a sequence of q interpolates in float64. NaN for every
+/// q when any value is NaN or the input is empty.
+pub fn np_percentiles_f64(values: &[f32], qs: &[f64]) -> Vec<f64> {
+    if values.is_empty() || values.iter().any(|v| v.is_nan()) {
+        return vec![f64::NAN; qs.len()];
+    }
+    rank_pairs(values, qs)
+        .into_iter()
+        .map(|(a, b, t)| {
+            let (a, b) = (a as f64, b as f64);
+            if t >= 0.5 {
+                b - (b - a) * (1.0 - t)
+            } else {
+                a + (b - a) * t
+            }
+        })
+        .collect()
 }
 
 /// NumPy's float32 sum of a contiguous run: one pairwise sum (blocks of 128, eight

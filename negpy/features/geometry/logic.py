@@ -19,15 +19,6 @@ from negpy.kernel.image.logic import get_luminance
 from negpy.kernel.image.validation import ensure_image
 
 AUTOCROP_DETECT_RES = 1800
-_ADAPTIVE_THRESHOLD_COUNT = 7
-_SIDE_NAMES = ("top", "right", "bottom", "left")
-_CORNER_SIDES = {
-    "top_left": frozenset({"top", "left"}),
-    "top_right": frozenset({"top", "right"}),
-    "bottom_right": frozenset({"bottom", "right"}),
-    "bottom_left": frozenset({"bottom", "left"}),
-}
-_EVIDENCE_SOURCE_ORDER = ("adaptive-dark", "adaptive-bright", "inverse-threshold", "blackhat", "edges")
 
 
 @dataclass(frozen=True)
@@ -67,32 +58,6 @@ class AutocropDetection:
         profile = np.asarray(self.vertical_edge_profile, dtype=np.float32).reshape(-1).copy()
         profile.setflags(write=False)
         object.__setattr__(self, "vertical_edge_profile", profile)
-
-
-@dataclass(frozen=True)
-class _FilmCandidate:
-    roi: ROI
-    correction_angle: float
-    source: str
-    threshold_index: int | None
-    polarity: str
-    boundary_score: float
-    geometry_score: float
-    supported_sides: frozenset[str]
-    supported_corners: frozenset[str]
-
-
-@dataclass(frozen=True)
-class _FilmConsensus:
-    roi: ROI
-    correction_angle: float
-    confidence: float
-    supported_sides: frozenset[str]
-    supported_corners: frozenset[str]
-    evidence_sources: tuple[str, ...]
-    geometry_score: float
-    dispersion: float
-    polarity: str
 
 
 def _normalize_detection_input(img: ImageBuffer, detect_res: int) -> tuple[np.ndarray, float]:
@@ -147,33 +112,6 @@ def _refine_frame_bounds(image: np.ndarray) -> tuple[np.ndarray, tuple[int, int,
     return image[top:bottom, left:right], (left, top, right, bottom)
 
 
-def _mask_from_blackhat(gray: np.ndarray) -> np.ndarray:
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (31, 31))
-    blackhat = negpy_core.morphology_ex(gray, cv2.MORPH_BLACKHAT, kernel)
-    blackhat = negpy_core.gaussian_blur_u8(blackhat, (5, 5), 0)
-    _, thresh = negpy_core.threshold_otsu(blackhat)
-    close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (21, 21))
-    return negpy_core.morphology_ex(thresh, cv2.MORPH_CLOSE, close_kernel, iterations=2)
-
-
-def _mask_from_inverse_threshold(gray: np.ndarray) -> np.ndarray:
-    blurred = negpy_core.gaussian_blur_u8(gray, (7, 7), 0)
-    _, thresh = negpy_core.threshold_otsu(blurred, 255, True)
-    close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 17))
-    open_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-    cleaned = negpy_core.morphology_ex(thresh, cv2.MORPH_CLOSE, close_kernel, iterations=2)
-    return negpy_core.morphology_ex(cleaned, cv2.MORPH_OPEN, open_kernel, iterations=1)
-
-
-def _mask_from_edges(gray: np.ndarray) -> np.ndarray:
-    blurred = negpy_core.gaussian_blur_u8(gray, (5, 5), 0)
-    edges = negpy_core.canny(blurred, 40, 160)
-    dilate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
-    close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
-    dilated = negpy_core.morphology_ex(edges, cv2.MORPH_DILATE, dilate_kernel, iterations=2)
-    return negpy_core.morphology_ex(dilated, cv2.MORPH_CLOSE, close_kernel, iterations=2)
-
-
 def _score_contour(contour: np.ndarray, image_area: float) -> tuple[float, np.ndarray] | None:
     rect = cv2.minAreaRect(contour)
     width, height = rect[1]
@@ -207,146 +145,6 @@ def _odd_kernel_size(value: float, lower: int, upper: int) -> int:
     return max(size, 1)
 
 
-def _outer_ring_values(lum: np.ndarray) -> np.ndarray:
-    # 2% not 5%: a tightly framed scan leaves only 1-3% of bed around the film, so a
-    # wider ring reads mostly film, fails the ring_delta gate in
-    # _oriented_boundary_evidence, and abstains on an otherwise perfect box.
-    h, w = lum.shape[:2]
-    ring_width = max(2, round(0.02 * min(h, w)))
-    ring_width = min(ring_width, max(1, min(h, w) // 2))
-    parts = [lum[:ring_width, :].reshape(-1), lum[-ring_width:, :].reshape(-1)]
-    if h > 2 * ring_width:
-        parts.extend(
-            [
-                lum[ring_width:-ring_width, :ring_width].reshape(-1),
-                lum[ring_width:-ring_width, -ring_width:].reshape(-1),
-            ]
-        )
-    return np.concatenate(parts)
-
-
-def _threshold_polarities(lum: np.ndarray, robust_span: float, ring_median: float) -> tuple[str, ...]:
-    h, w = lum.shape[:2]
-    y1, y2 = round(0.2 * h), round(0.8 * h)
-    x1, x2 = round(0.2 * w), round(0.8 * w)
-    center = lum[y1 : max(y2, y1 + 1), x1 : max(x2, x1 + 1)]
-    center_median = float(np.median(center))
-    direction_gate = max(0.025, 0.05 * robust_span)
-    if ring_median - center_median > direction_gate:
-        return ("dark",)
-    if center_median - ring_median > direction_gate:
-        return ("bright",)
-    return ("dark", "bright")
-
-
-def _adaptive_threshold_levels(lum: np.ndarray, polarity: str) -> tuple[float, ...]:
-    lo, hi = (float(value) for value in np.percentile(lum, (2.0, 98.0)))
-    if hi - lo < 0.04:
-        return ()
-    if polarity == "dark":
-        # Bias toward the bright surround. On a three-tier negative this gives the
-        # outer film/rebate edge at least as many trials as the inner image edge.
-        fractions = (0.35, 0.50, 0.62, 0.72, 0.80, 0.87, 0.93)
-    else:
-        # Mirror the sampling pressure toward a dark holder for positive polarity.
-        fractions = (0.07, 0.13, 0.20, 0.28, 0.38, 0.50, 0.65)
-    return tuple(lo + fraction * (hi - lo) for fraction in fractions)
-
-
-def _adaptive_threshold_mask(blurred_lum: np.ndarray, threshold: float, polarity: str) -> np.ndarray:
-    selected = blurred_lum <= threshold if polarity == "dark" else blurred_lum >= threshold
-    mask = selected.astype(np.uint8) * 255
-    min_dim = min(mask.shape[:2])
-    close_size = _odd_kernel_size(0.010 * min_dim, 3, 21)
-    open_size = _odd_kernel_size(0.003 * min_dim, 3, 9)
-    close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (close_size, close_size))
-    open_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (open_size, open_size))
-    mask = negpy_core.morphology_ex(mask, cv2.MORPH_CLOSE, close_kernel, iterations=1)
-    return negpy_core.morphology_ex(mask, cv2.MORPH_OPEN, open_kernel, iterations=1)
-
-
-def _order_quad(quad: np.ndarray) -> np.ndarray:
-    points = np.asarray(quad, dtype=np.float32).reshape(4, 2)
-    ordered = np.empty((4, 2), dtype=np.float32)
-    sums = points.sum(axis=1)
-    diffs = np.diff(points, axis=1).reshape(-1)
-    ordered[0] = points[int(np.argmin(sums))]  # top-left
-    ordered[1] = points[int(np.argmin(diffs))]  # top-right
-    ordered[2] = points[int(np.argmax(sums))]  # bottom-right
-    ordered[3] = points[int(np.argmax(diffs))]  # bottom-left
-    return ordered
-
-
-def _polygon_values(lum: np.ndarray, polygon: np.ndarray) -> np.ndarray:
-    h, w = lum.shape[:2]
-    points = np.asarray(polygon, dtype=np.float32)
-    left = max(0, int(math.floor(float(np.min(points[:, 0])))))
-    right = min(w, int(math.ceil(float(np.max(points[:, 0])))) + 1)
-    top = max(0, int(math.floor(float(np.min(points[:, 1])))))
-    bottom = min(h, int(math.ceil(float(np.max(points[:, 1])))) + 1)
-    if right <= left or bottom <= top:
-        return np.empty(0, dtype=np.float32)
-    local_points = np.rint(points - np.array([left, top], dtype=np.float32)).astype(np.int32)
-    mask = np.zeros((bottom - top, right - left), dtype=np.uint8)
-    cv2.fillConvexPoly(mask, local_points, 1)
-    values = lum[top:bottom, left:right][mask.astype(bool)]
-    return values[np.isfinite(values)].astype(np.float32, copy=False)
-
-
-def _oriented_boundary_evidence(
-    lum: np.ndarray,
-    quad: np.ndarray,
-    polarity: str,
-    ring_median: float,
-    robust_span: float,
-) -> tuple[float, frozenset[str], frozenset[str]]:
-    ordered = _order_quad(quad)
-    edge_lengths = np.linalg.norm(np.roll(ordered, -1, axis=0) - ordered, axis=1)
-    band = float(max(2, min(24, round(0.012 * max(1.0, float(np.min(edge_lengths)))))))
-    contrast_gate = max(0.02, 0.04 * robust_span)
-    contrast_scale = max(0.06, 0.20 * robust_span)
-    ring_tolerance = max(0.06, 0.16 * robust_span)
-
-    supported: set[str] = set()
-    side_scores: list[float] = []
-    for index, name in enumerate(_SIDE_NAMES):
-        start = ordered[index]
-        end = ordered[(index + 1) % 4]
-        vector = end - start
-        length = float(np.linalg.norm(vector))
-        if length < 4.0:
-            continue
-        # Ignore corners, where interpolation and sprocket holes mix the two populations.
-        # Ordered points run clockwise in image coordinates, so (-dy, dx) is the inward normal.
-        inner_start = start + 0.08 * vector
-        inner_end = end - 0.08 * vector
-        inward = np.array([-vector[1], vector[0]], dtype=np.float32) / length
-        inside_polygon = np.array([inner_start, inner_end, inner_end + inward * band, inner_start + inward * band])
-        outside_polygon = np.array([inner_start, inner_end, inner_end - inward * band, inner_start - inward * band])
-        inside = _polygon_values(lum, inside_polygon)
-        outside = _polygon_values(lum, outside_polygon)
-        expected = max(8.0, 0.20 * 0.84 * length * band)
-        if inside.size < expected or outside.size < expected:
-            continue
-
-        inside_median = float(np.median(inside))
-        outside_median = float(np.median(outside))
-        contrast = outside_median - inside_median if polarity == "dark" else inside_median - outside_median
-        ring_delta = abs(outside_median - ring_median)
-        if contrast < contrast_gate or ring_delta > ring_tolerance:
-            continue
-
-        contrast_score = float(np.clip(contrast / contrast_scale, 0.0, 1.0))
-        ring_score = float(np.clip(1.0 - ring_delta / ring_tolerance, 0.0, 1.0))
-        supported.add(name)
-        side_scores.append(0.75 * contrast_score + 0.25 * ring_score)
-
-    supported_sides = frozenset(supported)
-    supported_corners = frozenset(name for name, sides in _CORNER_SIDES.items() if sides <= supported_sides)
-    boundary_score = float(sum(side_scores) / 4.0)
-    return boundary_score, supported_sides, supported_corners
-
-
 def _correction_angle_from_quad(quad: np.ndarray, aspect_ratio: float) -> float:
     if aspect_ratio < 1.12:
         return 0.0  # Near-square boxes do not have a stable orientation axis.
@@ -365,240 +163,6 @@ def _correction_angle_from_quad(quad: np.ndarray, aspect_ratio: float) -> float:
     # OpenCV's positive fine rotation moves a horizontal edge toward a negative
     # image-coordinate angle, so this measured residual is already the additive fix.
     return float(np.clip(angle, -FINE_ROTATION_LIMIT, FINE_ROTATION_LIMIT))
-
-
-def _candidate_from_contour(
-    contour: np.ndarray,
-    image_shape: tuple[int, int],
-    lum: np.ndarray,
-    ring_median: float,
-    robust_span: float,
-    source: str,
-    threshold_index: int | None,
-    polarity: str | None,
-) -> _FilmCandidate | None:
-    h, w = image_shape
-    image_area = float(h * w)
-    rect = cv2.minAreaRect(contour)
-    rect_width, rect_height = (float(value) for value in rect[1])
-    rect_area = rect_width * rect_height
-    if rect_area <= 0.0:
-        return None
-    contour_area = float(cv2.contourArea(contour))
-    area_ratio = rect_area / max(image_area, 1.0)
-    short_side = min(rect_width, rect_height)
-    long_side = max(rect_width, rect_height)
-    aspect_ratio = long_side / max(short_side, 1.0)
-    rectangularity = contour_area / rect_area
-    if area_ratio < 0.08 or area_ratio > 1.02:
-        return None
-    if short_side < max(8.0, 0.04 * min(h, w)) or aspect_ratio > 8.0:
-        return None
-    if rectangularity < 0.30:
-        return None
-
-    quad = cv2.boxPoints(rect).astype(np.float32)
-    x, y, box_width, box_height = cv2.boundingRect(quad)
-    roi = (max(0, y), min(h, y + box_height), max(0, x), min(w, x + box_width))
-    if roi[1] <= roi[0] or roi[3] <= roi[2]:
-        return None
-
-    best: _FilmCandidate | None = None
-    for candidate_polarity in (polarity,) if polarity is not None else ("dark", "bright"):
-        boundary_score, supported_sides, supported_corners = _oriented_boundary_evidence(
-            lum, quad, candidate_polarity, ring_median, robust_span
-        )
-        if len(supported_sides) < 2:
-            continue
-        rectangularity_score = float(np.clip((rectangularity - 0.30) / 0.65, 0.0, 1.0))
-        geometry_score = 0.70 * rectangularity_score + 0.30 * (len(supported_sides) / 4.0)
-        candidate = _FilmCandidate(
-            roi=roi,
-            correction_angle=_correction_angle_from_quad(quad, aspect_ratio),
-            source=source,
-            threshold_index=threshold_index,
-            polarity=candidate_polarity,
-            boundary_score=boundary_score,
-            geometry_score=float(np.clip(geometry_score, 0.0, 1.0)),
-            supported_sides=supported_sides,
-            supported_corners=supported_corners,
-        )
-        if best is None or (candidate.boundary_score, candidate.geometry_score) > (best.boundary_score, best.geometry_score):
-            best = candidate
-    return best
-
-
-def _candidates_from_mask(
-    mask: np.ndarray,
-    image_shape: tuple[int, int],
-    lum: np.ndarray,
-    ring_median: float,
-    robust_span: float,
-    source: str,
-    threshold_index: int | None = None,
-    polarity: str | None = None,
-) -> list[_FilmCandidate]:
-    contours, _ = negpy_core.find_external_contours(mask)
-    candidates: list[_FilmCandidate] = []
-    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:12]:
-        candidate = _candidate_from_contour(
-            contour,
-            image_shape,
-            lum,
-            ring_median,
-            robust_span,
-            source,
-            threshold_index,
-            polarity,
-        )
-        if candidate is not None:
-            candidates.append(candidate)
-    return candidates
-
-
-def _roi_iou(first: ROI, second: ROI) -> float:
-    y1 = max(first[0], second[0])
-    y2 = min(first[1], second[1])
-    x1 = max(first[2], second[2])
-    x2 = min(first[3], second[3])
-    intersection = max(0, y2 - y1) * max(0, x2 - x1)
-    first_area = max(0, first[1] - first[0]) * max(0, first[3] - first[2])
-    second_area = max(0, second[1] - second[0]) * max(0, second[3] - second[2])
-    return intersection / max(float(first_area + second_area - intersection), 1.0)
-
-
-def _normalized_edge_distance(first: ROI, second: ROI, image_shape: tuple[int, int]) -> float:
-    h, w = image_shape
-    scales = (max(h, 1), max(h, 1), max(w, 1), max(w, 1))
-    return max(abs(a - b) / scale for a, b, scale in zip(first, second, scales))
-
-
-def _cluster_film_candidates(candidates: list[_FilmCandidate], image_shape: tuple[int, int]) -> list[list[_FilmCandidate]]:
-    count = len(candidates)
-    parents = list(range(count))
-
-    def find(index: int) -> int:
-        while parents[index] != index:
-            parents[index] = parents[parents[index]]
-            index = parents[index]
-        return index
-
-    def union(first: int, second: int) -> None:
-        first_root, second_root = find(first), find(second)
-        if first_root != second_root:
-            parents[second_root] = first_root
-
-    for first in range(count):
-        for second in range(first + 1, count):
-            if _roi_iou(candidates[first].roi, candidates[second].roi) < 0.78:
-                continue
-            if _normalized_edge_distance(candidates[first].roi, candidates[second].roi, image_shape) <= 0.035:
-                union(first, second)
-
-    grouped: dict[int, list[_FilmCandidate]] = {}
-    for index, candidate in enumerate(candidates):
-        grouped.setdefault(find(index), []).append(candidate)
-    return list(grouped.values())
-
-
-def _weighted_median(values: list[float], weights: list[float]) -> float:
-    order = np.argsort(np.asarray(values, dtype=np.float64))
-    ordered_values = np.asarray(values, dtype=np.float64)[order]
-    ordered_weights = np.asarray(weights, dtype=np.float64)[order]
-    cutoff = 0.5 * float(np.sum(ordered_weights))
-    index = int(np.searchsorted(np.cumsum(ordered_weights), cutoff, side="left"))
-    return float(ordered_values[min(index, ordered_values.size - 1)])
-
-
-def _dedupe_cluster(cluster: list[_FilmCandidate]) -> list[_FilmCandidate]:
-    by_trial: dict[tuple[str, int | None, str], _FilmCandidate] = {}
-    for candidate in cluster:
-        key = (candidate.source, candidate.threshold_index, candidate.polarity)
-        current = by_trial.get(key)
-        if current is None or (candidate.boundary_score, candidate.geometry_score) > (current.boundary_score, current.geometry_score):
-            by_trial[key] = candidate
-    return list(by_trial.values())
-
-
-def _source_tuple(cluster: list[_FilmCandidate]) -> tuple[str, ...]:
-    present = {candidate.source for candidate in cluster}
-    ordered = [source for source in _EVIDENCE_SOURCE_ORDER if source in present]
-    ordered.extend(sorted(present - set(ordered)))
-    return tuple(ordered)
-
-
-def _supported_by_majority(cluster: list[_FilmCandidate], attribute: str) -> frozenset[str]:
-    values = {value for candidate in cluster for value in getattr(candidate, attribute)}
-    needed = max(1, math.ceil(0.5 * len(cluster)))
-    return frozenset(value for value in values if sum(value in getattr(candidate, attribute) for candidate in cluster) >= needed)
-
-
-def _select_consensus_cluster(candidates: list[_FilmCandidate], image_shape: tuple[int, int]) -> _FilmConsensus | None:
-    h, w = image_shape
-    accepted: list[_FilmConsensus] = []
-    for raw_cluster in _cluster_film_candidates(candidates, image_shape):
-        cluster = _dedupe_cluster(raw_cluster)
-        adaptive_trials = {
-            (candidate.polarity, candidate.threshold_index)
-            for candidate in cluster
-            if candidate.source.startswith("adaptive-") and candidate.threshold_index is not None
-        }
-        structural_sources = {candidate.source for candidate in cluster if not candidate.source.startswith("adaptive-")}
-        if len(adaptive_trials) < 3 and not (len(adaptive_trials) >= 2 and len(structural_sources) >= 2):
-            continue
-
-        weights = [max(0.05, candidate.boundary_score * candidate.geometry_score) for candidate in cluster]
-        roi_values = list(zip(*(candidate.roi for candidate in cluster)))
-        roi = tuple(int(round(_weighted_median(list(values), weights))) for values in roi_values)
-        if roi[1] <= roi[0] or roi[3] <= roi[2]:
-            continue
-
-        scales = (max(h, 1), max(h, 1), max(w, 1), max(w, 1))
-        edge_mads = []
-        for edge_index, values in enumerate(roi_values):
-            center = _weighted_median(list(values), weights)
-            edge_mads.append(_weighted_median([abs(value - center) / scales[edge_index] for value in values], weights))
-        dispersion = float(max(edge_mads, default=1.0))
-        stability = float(np.clip(1.0 - dispersion / 0.03, 0.0, 1.0))
-
-        angles = [candidate.correction_angle for candidate in cluster]
-        correction_angle = _weighted_median(angles, weights)
-        angle_mad = _weighted_median([abs(angle - correction_angle) for angle in angles], weights)
-        angle_stability = float(np.clip(1.0 - angle_mad / 3.0, 0.0, 1.0))
-        median_geometry = _weighted_median([candidate.geometry_score for candidate in cluster], weights)
-        geometry_score = float(np.clip(0.55 * median_geometry + 0.25 * stability + 0.20 * angle_stability, 0.0, 1.0))
-        boundary_score = _weighted_median([candidate.boundary_score for candidate in cluster], weights)
-        support = min(1.0, len(adaptive_trials) / _ADAPTIVE_THRESHOLD_COUNT)
-        corroboration = min(1.0, len(structural_sources) / 3.0)
-        confidence = float(
-            np.clip(0.40 * support + 0.25 * stability + 0.20 * boundary_score + 0.10 * geometry_score + 0.05 * corroboration, 0.0, 1.0)
-        )
-        if confidence < 0.55:
-            continue
-
-        polarity_weights = {
-            polarity: sum(weight for candidate, weight in zip(cluster, weights) if candidate.polarity == polarity)
-            for polarity in ("dark", "bright")
-        }
-        accepted.append(
-            _FilmConsensus(
-                roi=roi,
-                correction_angle=correction_angle,
-                confidence=confidence,
-                supported_sides=_supported_by_majority(cluster, "supported_sides"),
-                supported_corners=_supported_by_majority(cluster, "supported_corners"),
-                evidence_sources=_source_tuple(cluster),
-                geometry_score=geometry_score,
-                dispersion=dispersion,
-                polarity=max(polarity_weights, key=polarity_weights.get),
-            )
-        )
-
-    if not accepted:
-        return None
-    # Confidence is primary. A small area preference breaks equivalent inner/outer clusters
-    # toward the film extent instead of picture content.
-    return max(accepted, key=lambda result: (result.confidence, (result.roi[1] - result.roi[0]) * (result.roi[3] - result.roi[2])))
 
 
 def _vertical_edge_profile(lum: np.ndarray) -> tuple[np.ndarray, float]:
@@ -636,141 +200,30 @@ def _empty_autocrop_detection(
 
 
 def detect_film_bounds_with_confidence(img: ImageBuffer) -> AutocropDetection:
-    """Detect the outer film box by agreement across adaptive thresholds.
-
-    Adaptive intensity trials provide the required consensus. The previous
-    inverse-threshold, black-hat, and edge masks are retained as independent
-    corroborating evidence, but no structural mask can win by itself.
-    """
+    """Detect the outer film box by agreement across adaptive thresholds, corroborated by
+    structural masks that cannot win alone; negpy_core holds the rules."""
     if img.ndim < 2 or img.shape[0] < 2 or img.shape[1] < 2:
         return _empty_autocrop_detection(np.empty(0, dtype=np.float32))
-
-    lum = _detection_luma(img)
-    vertical_edge_profile, vertical_edge_contrast = _vertical_edge_profile(lum)
-    lo, hi = (float(value) for value in np.percentile(lum, (2.0, 98.0)))
-    robust_span = hi - lo
-    if robust_span < 0.04:
-        return _empty_autocrop_detection(vertical_edge_profile, vertical_edge_contrast)
-    ring_values = _outer_ring_values(lum)
-    ring_median = float(np.median(ring_values))
-    polarities = _threshold_polarities(lum, robust_span, ring_median)
-
-    min_dim = min(lum.shape[:2])
-    blur_size = _odd_kernel_size(0.004 * min_dim, 3, 9)
-    blurred_lum = negpy_core.gaussian_blur(lum.astype(np.float32), (blur_size, blur_size), 0)
-    image_shape = lum.shape[:2]
-    candidates: list[_FilmCandidate] = []
-    for polarity in polarities:
-        source = f"adaptive-{polarity}"
-        for threshold_index, threshold in enumerate(_adaptive_threshold_levels(lum, polarity)):
-            mask = _adaptive_threshold_mask(blurred_lum, threshold, polarity)
-            candidates.extend(
-                _candidates_from_mask(
-                    mask,
-                    image_shape,
-                    lum,
-                    ring_median,
-                    robust_span,
-                    source,
-                    threshold_index=threshold_index,
-                    polarity=polarity,
-                )
-            )
-
-    color = _ensure_color(img)
-    preview = _normalize_to_uint8(color)
-    gray = negpy_core.bgr_to_gray(preview)
-    structural_masks = (
-        ("inverse-threshold", _mask_from_inverse_threshold(gray)),
-        ("blackhat", _mask_from_blackhat(gray)),
-        ("edges", _mask_from_edges(gray)),
-    )
-    for source, mask in structural_masks:
-        candidates.extend(_candidates_from_mask(mask, image_shape, lum, ring_median, robust_span, source))
-
-    consensus = _select_consensus_cluster(candidates, image_shape)
-    if consensus is None or not _film_box_covers_enough(lum, consensus.roi) or not _film_surround_is_plausible(lum, consensus.roi):
-        return _empty_autocrop_detection(vertical_edge_profile, vertical_edge_contrast)
-
-    roi = _snap_film_bounds_to_bed_gradient(consensus.roi, lum)
+    consensus, profile, contrast = negpy_core.detect_film_bounds(np.ascontiguousarray(img, dtype=np.float32))
+    if consensus is None:
+        return _empty_autocrop_detection(profile, contrast)
+    roi, angle, confidence, sides, corners, sources, geometry = consensus
     return AutocropDetection(
         roi=roi,
-        correction_angle=consensus.correction_angle,
-        confidence=consensus.confidence,
-        supported_sides=consensus.supported_sides,
-        supported_corners=consensus.supported_corners,
-        evidence_sources=consensus.evidence_sources,
-        geometry_score=consensus.geometry_score,
-        vertical_edge_contrast=vertical_edge_contrast,
-        vertical_edge_profile=vertical_edge_profile,
+        correction_angle=angle,
+        confidence=confidence,
+        supported_sides=frozenset(sides),
+        supported_corners=frozenset(corners),
+        evidence_sources=tuple(sources),
+        geometry_score=geometry,
+        vertical_edge_contrast=contrast,
+        vertical_edge_profile=profile,
     )
 
 
 def _detect_film_bounds(img: ImageBuffer) -> ROI | None:
     """Compatibility wrapper returning only the half-open outer-film ROI."""
     return detect_film_bounds_with_confidence(img).roi
-
-
-# How much of the frame a detected film box must cover to be read as film. Film fills most
-# of a scan under every holder we have samples for, and on a positive whose bed clips to
-# white a dark subject can otherwise satisfy every other check on its own geometry. The
-# smallest legitimate box in the corpus covers 62.5%, so this sits clear of real geometry.
-_MIN_FILM_BOX_COVERAGE = 0.25
-
-
-def _film_box_covers_enough(lum: np.ndarray, roi: ROI) -> bool:
-    h, w = lum.shape[:2]
-    y1, y2, x1, x2 = roi
-    return h > 0 and w > 0 and (y2 - y1) * (x2 - x1) >= _MIN_FILM_BOX_COVERAGE * h * w
-
-
-def _film_surround_is_plausible(lum: np.ndarray, roi: ROI) -> bool:
-    """
-    A real film box sits on a light bed (uniform, near-clipping surround) or in a
-    dark holder. A mid-tone textured surround means the contour latched onto image
-    content in a borderless scan — reject so detection falls back to full frame.
-    """
-    h, w = lum.shape[:2]
-    y1, y2, x1, x2 = roi
-    out_mask = np.ones((h, w), dtype=bool)
-    out_mask[y1:y2, x1:x2] = False
-    out = lum[out_mask]
-    if out.size < 0.005 * lum.size:
-        return True  # box covers nearly the whole scan; no surround evidence either way
-    out_med = float(np.median(out))
-    out_high = float(np.percentile(out, 90))
-    box_med = float(np.median(lum[y1:y2, x1:x2]))
-    # Near-clipping, not merely bright. On a thin negative the picture itself clears 0.85,
-    # so a median alone accepts a blown region as bed and cuts the frame down to whatever is
-    # darker beside it. The bed is the light source and sits at the top of the histogram,
-    # where _detection_luma's anchor puts it. A highlight does not.
-    bed_like = out_med >= 0.85 and out_high >= 0.98
-    holder_like = out_med <= 0.30 and out_med <= box_med - 0.15
-    return bed_like or holder_like
-
-
-def _snap_film_bounds_to_bed_gradient(roi: ROI, lum: np.ndarray) -> ROI:
-    """
-    Refines contour film bounds to the strongest bed->film luminance gradient within
-    a +/-2% window per edge (contour morphology kernels inflate/deflate bounds by
-    ~10-20px). Each edge moves only on a dominant gradient; otherwise it is kept.
-    """
-    h, w = lum.shape[:2]
-    y1, y2, x1, x2 = roi
-    col_profile = lum[y1:y2, :].mean(axis=0)
-    row_profile = lum[:, x1:x2].mean(axis=1)
-    # 16px floor: contour morphology kernels are fixed-pixel (21-31px), so their
-    # inflation doesn't shrink with image size the way the 2% window does.
-    snap = dict(window_out=0.02, window_in=0.02, min_dominance=3.0, min_window_px=16)
-    nx1 = _snap_edge_to_gradient(col_profile, x1, is_start=True, **snap)
-    nx2 = _snap_edge_to_gradient(col_profile, x2, is_start=False, **snap)
-    ny1 = _snap_edge_to_gradient(row_profile, y1, is_start=True, **snap)
-    ny2 = _snap_edge_to_gradient(row_profile, y2, is_start=False, **snap)
-    if ny2 - ny1 <= 0 or nx2 - nx1 <= 0:
-        return roi
-    # Keep the bed-to-film transition rows inside the box: downstream refinement needs them,
-    # and the (2+offset) crop margin re-tightens afterwards.
-    return max(0, ny1 - 2), min(h, ny2 + 2), max(0, nx1 - 2), min(w, nx2 + 2)
 
 
 def _detection_luma(img: np.ndarray) -> np.ndarray:
@@ -845,26 +298,6 @@ def _find_rebate_level(lum: np.ndarray, film_roi: ROI, bed: Optional[float] = No
     percentile of `lum`, for a caller that already has it.
     """
     return negpy_core.find_rebate_level(np.ascontiguousarray(lum, dtype=np.float32), tuple(int(v) for v in film_roi), bed)
-
-
-def _snap_edge_to_gradient(
-    profile: np.ndarray,
-    idx: int,
-    is_start: bool,
-    window_out: float = 0.06,
-    window_in: float = 0.02,
-    min_dominance: float = 2.0,
-    min_window_px: int = 3,
-) -> int:
-    """
-    Snaps a coarse edge index to the strongest |gradient| of the smoothed profile
-    within an asymmetric window biased outward (toward the film border) — recovers
-    frame area when bright content touching the edge suppresses occupancy.
-    Keeps idx unless the peak clearly dominates the window (>= 2x median).
-    """
-    return negpy_core.snap_edge_to_gradient(
-        np.ascontiguousarray(profile, dtype=np.float32), int(idx), bool(is_start), window_out, window_in, min_dominance, int(min_window_px)
-    )
 
 
 def _refine_film_roi_by_tiers(lum: np.ndarray, film_roi: ROI) -> Optional[Tuple[ROI, np.ndarray, np.ndarray]]:

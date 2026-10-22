@@ -44,7 +44,7 @@ _MIN_INLIER_FRACTION = 0.5
 _MAX_LINE_RESIDUAL = 0.15
 # Opposite edges this close together cannot separate keystone from noise.
 _MIN_PAIR_SEPARATION = 0.3
-# A box bounds its edge to within the film detector's snap window (`_snap_film_bounds_to_bed_gradient`).
+# A box bounds its edge to within the film detector's snap window (`snap_film_bounds` in negpy_core).
 _BOX_TOLERANCE = 0.02
 _BOX_TOLERANCE_PX = 16
 # A tight scan's border lines sit within this fraction of the cross extent from the canvas edge.
