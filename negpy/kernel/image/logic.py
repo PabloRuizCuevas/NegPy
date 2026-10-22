@@ -1,6 +1,7 @@
 import hashlib
 import os
 from typing import Any, Optional, Sequence
+import negpy_core
 import numpy as np
 from numba import njit, prange  # type: ignore
 from negpy.kernel.system.parallel import parallel_njit
@@ -723,14 +724,8 @@ def percentile_from_sorted(sorted_grid: np.ndarray, q: float) -> np.ndarray:
 
 
 def percentiles(values: np.ndarray, qs: Sequence[float]) -> tuple:
-    """`np.percentile(values, q)` for each q, bit for bit, from one partition instead of one per q."""
-    flat = values.ravel()
-    n = flat.size
-    if n == 0:
-        raise IndexError("percentiles of an empty array")
-    ranks = []
-    for q in qs:
-        lo = min(max(int(np.floor((n - 1) * np.true_divide(q, 100))), 0), n - 1)
-        ranks += [lo, min(lo + 1, n - 1)]
-    part = np.partition(flat, sorted(set(ranks)))
-    return tuple(percentile_from_sorted(part, q) for q in qs)
+    """`np.percentile(values, q)` of a float32 array for each Python-number q, bit for bit."""
+    if values.dtype != np.float32:
+        raise TypeError(f"percentiles needs float32, got {values.dtype}")
+    flat = np.ascontiguousarray(values).ravel()
+    return tuple(np.float32(v) for v in negpy_core.percentiles(flat, [float(q) for q in qs]))

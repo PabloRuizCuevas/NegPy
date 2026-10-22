@@ -12,6 +12,9 @@ _ARRAYS = {
     "len10001": _RNG.random(10_001, dtype=np.float32),
     "repeats": np.round(_RNG.random(5_000, dtype=np.float32), 2),
     "image": _RNG.random((37, 53), dtype=np.float32) ** 2.2,
+    "large_signed": (_RNG.standard_normal(1_000_003) * 3).astype(np.float32),
+    "large_repeats": np.round(_RNG.random(200_000, dtype=np.float32) * 8) / 8 - 0.5,
+    "strided": (_RNG.random((300, 400), dtype=np.float32))[::2, 1::3],
 }
 
 
@@ -31,6 +34,11 @@ def test_percentiles_leave_the_input_unchanged():
     a = _ARRAYS["len10001"].copy()
     percentiles(a, (1, 99))
     np.testing.assert_array_equal(a, _ARRAYS["len10001"])
+
+
+def test_percentiles_reject_other_dtypes():
+    with pytest.raises(TypeError):
+        percentiles(np.arange(10, dtype=np.float64), (50,))
 
 
 def test_percentiles_empty_raises():
