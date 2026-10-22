@@ -18,6 +18,7 @@ class ThemeConfig:
     font_size_micro: int = 9
 
     # Colors. Surfaces, darkest first.
+    # bg_dark is also the macOS window background (view/mac_window.py): an alternate theme updates that fix.
     bg_dark: str = "#0D0D0D"
     bg_panel: str = "#0D0D0D"
     bg_input: str = "#0A0A0A"
