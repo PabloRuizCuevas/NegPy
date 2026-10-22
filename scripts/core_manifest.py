@@ -14,6 +14,8 @@ REDUCTIONS = {"std", "var", "mean", "sum", "histogram", "bincount", "cumsum", "s
 # cv2 calls the plan ports last, or may never port: each needs a decision of its own.
 LAST_CV2 = {"SIFT_create", "BFMatcher", "detail_DpSeamFinder", "createLineSegmentDetector", "inpaint", "phaseCorrelate", "UMat"}
 STATUSES = ("todo", "ported", "stays")
+# Where a pure-Python caller of ported code is itself ported; orchestration elsewhere stays.
+CHAIN_PREFIXES = ("features/", "kernel/image/")
 
 # First match wins. Entries keep a hand-set phase; this only seeds new ones.
 PHASE_BY_PATH = [
@@ -72,8 +74,8 @@ class _Scanner(ast.NodeVisitor):
                 names.add(f.id)
         if jit:
             calls.add("numba")
-        if calls:
-            self.found[f"{self.rel}::{'.'.join(self.stack)}"] = {"calls": sorted(calls), "names": names}
+        # Every function is kept for now; scan() drops those outside the closure.
+        self.found[f"{self.rel}::{'.'.join(self.stack)}"] = {"calls": sorted(calls), "names": names}
         self.generic_visit(node)
         self.stack.pop()
 
@@ -86,6 +88,16 @@ def scan() -> dict[str, dict]:
         scanner = _Scanner(rel)
         scanner.visit(ast.parse(path.read_text(encoding="utf-8")))
         found.update(scanner.found)
+    # In scope: a function with a hot call, or one that calls an in-scope function by name (the
+    # pure-Python links of a chain such as measure_base_log), to a fixed point.
+    scope = {k for k, v in found.items() if v["calls"]}
+    while True:
+        names_in = {k.split("::")[1].split(".")[-1] for k in scope}
+        grown = {k for k, v in found.items() if k not in scope and k.startswith(CHAIN_PREFIXES) and v["names"] & names_in}
+        if not grown:
+            break
+        scope |= grown
+    found = {k: v for k, v in found.items() if k in scope}
     by_module: dict[str, set[str]] = {}
     for key in found:
         module, qual = key.split("::")

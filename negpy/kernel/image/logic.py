@@ -6,23 +6,9 @@ import numpy as np
 from numba import njit, prange  # type: ignore
 from negpy.kernel.system.parallel import parallel_njit
 from negpy.domain.types import LUMA_R, LUMA_G, LUMA_B
-from negpy.kernel.image.validation import ensure_image
 from negpy.kernel.system.logging import get_logger
 
 logger = get_logger(__name__)
-
-
-@njit(cache=True, nogil=True, fastmath=True)
-def _get_luminance_jit(img: np.ndarray) -> np.ndarray:
-    """
-    Rec. 709 luminance.
-    """
-    h, w, _ = img.shape
-    res = np.empty((h, w), dtype=np.float32)
-    for y in range(h):
-        for x in range(w):
-            res[y, x] = LUMA_R * img[y, x, 0] + LUMA_G * img[y, x, 1] + LUMA_B * img[y, x, 2]
-    return res
 
 
 @njit(cache=True, nogil=True, fastmath=True)
@@ -633,7 +619,7 @@ def get_luminance(img: np.ndarray) -> np.ndarray:
     Calculates relative luminance. Supports (H, W, 3) and (N, 3) arrays.
     """
     if img.ndim == 3:
-        return ensure_image(_get_luminance_jit(np.ascontiguousarray(img.astype(np.float32))))
+        return negpy_core.luminance(np.ascontiguousarray(img, dtype=np.float32))
 
     return LUMA_R * img[..., 0] + LUMA_G * img[..., 1] + LUMA_B * img[..., 2]
 

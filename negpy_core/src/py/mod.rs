@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod contours;
 pub mod filter;
 pub mod gray;

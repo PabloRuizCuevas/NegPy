@@ -127,19 +127,7 @@ def _scale_roi(roi: ROI, det_scale: float, h: int, w: int) -> ROI:
 def _normalize_to_uint8(image: np.ndarray) -> np.ndarray:
     if image.dtype == np.uint8:
         return image
-
-    image_float = image.astype(np.float32)
-    finite_mask = np.isfinite(image_float)
-    if not np.any(finite_mask):
-        return np.zeros(image.shape, dtype=np.uint8)
-
-    valid = image_float[finite_mask]
-    low, high = (float(v) for v in percentiles(valid, (1, 99)))
-    if high <= low:
-        high = low + 1.0
-
-    scaled = np.clip((image_float - low) * (255.0 / (high - low)), 0, 255)
-    return scaled.astype(np.uint8)
+    return negpy_core.normalize_to_uint8(np.ascontiguousarray(image, dtype=np.float32))
 
 
 def _ensure_color(image: np.ndarray) -> np.ndarray:
@@ -956,9 +944,7 @@ def _detection_luma(img: np.ndarray) -> np.ndarray:
     Luminance normalized so the light bed sits near 1.0 (anchored at P99.5).
     Content-stable alternative to _normalize_to_uint8's 1/99 stretch.
     """
-    lum = get_luminance(ensure_image(_ensure_color(img)))
-    anchor = float(np.percentile(lum, 99.5))
-    return np.clip(lum / max(anchor, 1e-6), 0.0, 2.0)
+    return negpy_core.detection_luma(get_luminance(ensure_image(_ensure_color(img))))
 
 
 BORDER_SIDES: Tuple[str, ...] = ("top", "bottom", "left", "right")

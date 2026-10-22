@@ -5,7 +5,6 @@ import pytest
 _KERNELS = [
     ("negpy.kernel.image.logic", name)
     for name in (
-        "_get_luminance_jit",
         "_to_uint16_jit",
         "_to_uint8_jit",
         "uint8_to_float32",
