@@ -631,6 +631,40 @@ def test_a_drop_right_after_selecting_moves_the_new_selection(browser, qapp):
     browser.hide()
 
 
+def test_a_frame_that_is_not_selected_drags_at_once(browser, qapp):
+    table = _found_roll(browser, qapp, [0, 0, 1, 1, None])
+    seen = []
+    browser.controller.add_to_found_scene.side_effect = lambda k: seen.append((k, sorted(browser.session.state.selected_indices)))
+    _select(table, [3])
+
+    _drag(table, 0, 2)
+
+    assert seen == [(1, [0])]
+    assert _selected(table) == [0]
+    browser.hide()
+
+
+def test_the_dragged_frame_follows_the_pointer_and_leaves_a_faint_slot(browser, qapp):
+    table = _found_roll(browser, qapp, [0, 0, 1, 1, None])
+    _thumbs(browser, [(300, 200)] * 5)
+    QTest.qWait(3 * _RESHAPE_MS)
+    empty = QPoint(_centre(table, 2).x(), table.visualRect(table.model().index(4, 0)).bottom() + 80)
+    near, slot = empty - QPoint(4, 4), _centre(table, 0)
+    before = table.viewport().grab().toImage()
+
+    QTest.mousePress(table.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, slot)
+    QTest.mouseMove(table.viewport(), empty)
+    qapp.processEvents()
+    during = table.viewport().grab().toImage()
+    QTest.mouseRelease(table.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, empty)
+
+    bg = before.pixelColor(near)
+    gap = lambda c: abs(c.red() - bg.red()) + abs(c.green() - bg.green()) + abs(c.blue() - bg.blue())  # noqa: E731
+    assert gap(during.pixelColor(near)) > 60, "the frame is drawn under the pointer"
+    assert gap(during.pixelColor(slot)) < gap(before.pixelColor(slot)) / 2, "its own place fades to the table"
+    browser.hide()
+
+
 def test_dragging_onto_a_frame_with_no_scene_leaves_the_frames_out(browser, qapp):
     table = _found_roll(browser, qapp, [0, 0, 1, 1, None])
     _select(table, [2, 3])

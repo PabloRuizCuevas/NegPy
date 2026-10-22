@@ -399,7 +399,7 @@
   "Check Flat Field (how well the profile corrects its reference)": "检查平场：查看配置对参考图的校正效果",
   "Check Flat Field: show how well the profile evens out its own reference, where even gray is good.": "检查平场：显示配置对其自身参考图的均匀效果，均匀的灰色表示良好。",
   "Check R, G, B or IR in Live View to pick what Retake shoots again": "在实时取景中勾选 R、G、B 或 IR，选择重拍要重新拍摄的曝光",
-  "Check each group on the Light Table. To change one, drag selected frames onto another group or right-click › Scene.": "在灯箱中检查每个组。要更改组，请把选中的帧拖到另一个组，或右键 › 场景。",
+  "Check each group on the Light Table. To change one, drag frames onto another group or right-click › Scene.": "在灯箱中检查每个组。要更改组，请把帧拖到另一个组，或右键 › 场景。",
   "Check for Updates": "检查更新",
   "Check for Updates…": "检查更新…",
   "Check for updates": "检查更新",

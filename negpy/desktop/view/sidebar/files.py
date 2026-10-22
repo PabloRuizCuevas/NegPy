@@ -14,6 +14,7 @@ from PyQt6.QtCore import (
     QItemSelectionModel,
     QModelIndex,
     QPersistentModelIndex,
+    QPoint,
     QPropertyAnimation,
     QRect,
     QRectF,
@@ -885,6 +886,7 @@ class _FilmGridView(ThumbnailGridView):
         self.set_table_color(table_color(AppState.canvas_bg_index))
 
     def set_table_color(self, color: str) -> None:
+        self._table_color = color
         # A new stylesheet lays every cell out again, even when it is the same.
         qss = self._table_qss(color)
         if qss != self.styleSheet():
@@ -1073,18 +1075,42 @@ class _FilmGridView(ThumbnailGridView):
         return runs
 
     def _starts_scene_move(self, event, index: QModelIndex) -> bool:
-        """A plain press on a selected frame while found scenes wait for review. Qt's own press would
-        collapse the selection to this frame, so the press waits until the gesture moves or not."""
-        sel = self.selectionModel()
+        """A plain press on a frame while found scenes wait for review. Qt's own press would collapse the
+        selection to this frame, so the press waits until the gesture moves or not."""
         return (
             not self.DRAG_SELECTS
             and event.button() == Qt.MouseButton.LeftButton
             and event.modifiers() == Qt.KeyboardModifier.NoModifier
             and index.isValid()
-            and sel is not None
-            and sel.isSelected(index)
             and bool(getattr(self.model(), "has_found_scenes", False))
         )
+
+    def _lift(self, move: dict) -> None:
+        """Starts a drag: the pressed frame alone unless it is selected, and pictures of the first two frames
+        to carry under the pointer."""
+        model, sel = self.model(), self.selectionModel()
+        pressed = model.index(move["row"], 0)
+        if not sel.isSelected(pressed):
+            sel.setCurrentIndex(pressed, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+        rows = sorted(index.row() for index in sel.selectedIndexes())
+        carried = [move["row"], *(row for row in rows if row != move["row"])][:2]
+        move.update(
+            rows=rows, grab=move["press"] - self.visualRect(pressed).topLeft(), ghosts=[self._ghost(model.index(row, 0)) for row in carried]
+        )
+
+    def _ghost(self, index: QModelIndex) -> QPixmap:
+        """The frame as its cell shows it, unselected."""
+        size, ratio = self.visualRect(index).size(), self.devicePixelRatioF()
+        pixmap = QPixmap(size * ratio)
+        pixmap.setDevicePixelRatio(ratio)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        option = QStyleOptionViewItem()
+        self.initViewItemOption(option)
+        option.rect = QRect(0, 0, size.width(), size.height())
+        painter = QPainter(pixmap)
+        self.itemDelegate().paint(painter, option, index)
+        painter.end()
+        return pixmap
 
     @staticmethod
     def _drop_target(index: QModelIndex) -> Optional[int]:
@@ -1111,6 +1137,8 @@ class _FilmGridView(ThumbnailGridView):
             return
         pos = event.position().toPoint()
         if move["dragging"] or (pos - move["press"]).manhattanLength() >= QApplication.startDragDistance():
+            if not move["dragging"]:
+                self._lift(move)
             move.update(dragging=True, pos=pos, target=self._drop_target(self.indexAt(pos)))
             self.viewport().update()
 
@@ -1144,11 +1172,16 @@ class _FilmGridView(ThumbnailGridView):
             self.viewport().update()
 
     def _paint_scene_move(self, painter: QPainter) -> None:
-        """While frames are dragged: the target scene's frames outlined in its color, and a chip at the
-        pointer that says where the frames go."""
+        """While frames are dragged: their places faded to the table, the target scene's frames outlined in
+        its color, the frames under the pointer, and a chip below them that says where the frames go."""
         move, model = self._scene_move, self.model()
         if move is None or not move["dragging"] or model is None:
             return
+        delegate = self.itemDelegate()
+        painter.setPen(QPen(QColor(THEME.border_checked), 2, Qt.PenStyle.DashLine))
+        painter.setBrush(with_alpha(self._table_color, 215))
+        for row in move["rows"]:
+            painter.drawRoundedRect(QRectF(delegate._window(self.visualRect(model.index(row, 0)))), _CHIP_RADIUS, _CHIP_RADIUS)
         target, name, color = move["target"], "", THEME.text_hint
         lines: list[QRect] = []
         last_row = None
@@ -1170,7 +1203,19 @@ class _FilmGridView(ThumbnailGridView):
         for rect in lines:
             painter.drawRoundedRect(QRectF(rect).adjusted(1, 1, -1, -1), _CHIP_RADIUS, _CHIP_RADIUS)
 
-        frames = count_of(len(self.selectionModel().selectedIndexes()), "frame")
+        scale, grab, pos = 0.9, move["grab"], move["pos"]
+        size = move["ghosts"][0].deviceIndependentSize()
+        for k in reversed(range(len(move["ghosts"]))):
+            painter.save()
+            painter.translate(pos + QPoint(THEME.space_md, THEME.space_sm) * k)
+            painter.rotate(3 if k else -2)
+            painter.scale(scale, scale)
+            painter.setOpacity(0.85 if k else 0.95)
+            painter.fillRect(QRectF(-grab.x(), THEME.space_sm - grab.y(), size.width(), size.height()), with_alpha(THEME.mark_shadow, 120))
+            painter.drawPixmap(-grab, move["ghosts"][k])
+            painter.restore()
+
+        frames = count_of(len(move["rows"]), "frame")
         if target is None:
             text = frames
         elif target < 0:
@@ -1182,9 +1227,17 @@ class _FilmGridView(ThumbnailGridView):
         font.setBold(True)
         painter.setFont(font)
         metrics, pad = painter.fontMetrics(), THEME.space_sm
+        if len(move["rows"]) > 1:
+            side = metrics.height() + pad
+            corner = QRectF(pos.x() + (size.width() - grab.x()) * scale - side / 2, pos.y() - grab.y() * scale - side / 2, side, side)
+            painter.setPen(QPen(QColor(THEME.border_checked_hover), 1))
+            painter.setBrush(QColor(THEME.bg_primary))
+            painter.drawEllipse(corner)
+            painter.setPen(QColor(THEME.text_primary))
+            painter.drawText(corner, Qt.AlignmentFlag.AlignCenter, str(len(move["rows"])))
         chip = QRectF(
-            move["pos"].x() + THEME.space_xl,
-            move["pos"].y() + THEME.space_xl,
+            pos.x() + THEME.space_xl,
+            pos.y() + (size.height() - grab.y()) * scale + THEME.space_md,
             metrics.horizontalAdvance(text) + 2 * pad,
             metrics.height() + pad,
         )
@@ -1217,6 +1270,8 @@ class _FilmGridView(ThumbnailGridView):
         """A muted red mat over a selected frame's border, the lighter red on the open frame."""
         model, selection = self.model(), self.selectionModel()
         rows = {index.row() for index in selection.selectedIndexes()} if selection is not None else set()
+        if self._scene_move is not None and self._scene_move["dragging"]:
+            rows -= set(self._scene_move["rows"])
         # As wide on every side: the border around the picture, then one pixel at 90% and one at 80%; on
         # the left and right it reaches over the neighbors' border.
         rings = ((delegate._BORDER, 1.0), (delegate._BORDER + 1, 0.9), (delegate._BORDER + 2, 0.8))

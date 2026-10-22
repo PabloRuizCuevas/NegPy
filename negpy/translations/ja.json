@@ -399,7 +399,7 @@
   "Check Flat Field (how well the profile corrects its reference)": "フラット フィールドのチェック (プロファイルが参照をどの程度修正しているか)",
   "Check Flat Field: show how well the profile evens out its own reference, where even gray is good.": "フラットフィールドを確認: プロファイルが自身の基準画像をどれだけ均一にするかを表示します。均一なグレーなら良好です。",
   "Check R, G, B or IR in Live View to pick what Retake shoots again": "ライブビューで R、G、B または IR にチェックを入れ、リテイクで撮り直す露出を選びます",
-  "Check each group on the Light Table. To change one, drag selected frames onto another group or right-click › Scene.": "ライトテーブルで各グループを確認します。変更するには、選択したフレームを別のグループにドラッグするか、右クリック › シーンを使います。",
+  "Check each group on the Light Table. To change one, drag frames onto another group or right-click › Scene.": "ライトテーブルで各グループを確認します。変更するには、フレームを別のグループにドラッグするか、右クリック › シーンを使います。",
   "Check for Updates": "アップデートをチェックする",
   "Check for Updates…": "アップデートを確認…",
   "Check for updates": "アップデートを確認する",

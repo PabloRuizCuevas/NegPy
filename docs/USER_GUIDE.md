@@ -546,7 +546,7 @@ Measures the whole roll once and shares the result, so the frames of one film pr
 *   **Baseline**: says where the baseline came from (roll, scene or frame). It warns when there is none or when it is out of date.
 *   **Rolls**: pick another roll's saved baseline. A ticked roll has one.
 *   **Scenes**: groups of frames with their own baseline, such as one subject under one light ([Scenes](#scenes)). **Analyze** measures the scene, **Select** selects its frames and **Delete** removes the group.
-*   **Detect Scenes**: finds the groups of frames under another light than the roll, in any frame order, and shows them on the Light Table. Each group waits under **Found**. To change a group, drag selected frames onto another group, or onto a frame with no scene to leave them out; right-click › **Scene** does the same. Give it a name, then **Accept** it as a scene with its own baseline, or **Discard** it.
+*   **Detect Scenes**: finds the groups of frames under another light than the roll, in any frame order, and shows them on the Light Table. Each group waits under **Found**. To change a group, drag frames onto another group, or onto a frame with no scene to leave them out; right-click › **Scene** does the same. Give it a name, then **Accept** it as a scene with its own baseline, or **Discard** it.
 
 <!-- panel:demosaic -->
 ### 10.6 Raw Decode

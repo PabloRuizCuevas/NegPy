@@ -77,7 +77,7 @@ class RollAnalysisSidebar(BaseSidebar):
         self._found_rows_layout.setContentsMargins(0, 0, 0, 0)
         self.layout.addWidget(self.found_rows)
         self.found_hint = hint_label(
-            tr("Check each group on the Light Table. To change one, drag selected frames onto another group or right-click › Scene."),
+            tr("Check each group on the Light Table. To change one, drag frames onto another group or right-click › Scene."),
             "muted",
         )
         self.layout.addWidget(self.found_hint)
