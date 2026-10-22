@@ -3,7 +3,7 @@
 use multiversion::multiversion;
 use rayon::prelude::*;
 
-use crate::stats::percentiles;
+use crate::stats::{np_percentiles, percentiles};
 
 const LUMA_R: f64 = 0.2126;
 const LUMA_G: f64 = 0.7152;
@@ -52,9 +52,9 @@ pub fn normalize_to_uint8(img: &[f32], dst: &mut [u8]) {
 /// `_detection_luma` of a float32 luminance plane: divided by its 99.5th percentile and
 /// clipped to 0..2, in float32.
 pub fn detection_luma(lum: &[f32], dst: &mut [f32]) -> Option<()> {
-    // np.percentile is NaN when any value is, and Python's max(nan, 1e-6) keeps the NaN.
-    let p = percentiles(lum, &[99.5])?[0] as f64;
-    let anchor = if lum.iter().any(|v| v.is_nan()) {
+    // Python's max(nan, 1e-6) keeps the NaN.
+    let p = np_percentiles(lum, &[99.5])?[0] as f64;
+    let anchor = if p.is_nan() {
         f32::NAN
     } else {
         p.max(1e-6) as f32
@@ -160,6 +160,83 @@ pub fn base_blocks(det: &[f32], band: &[u8], h: usize, w: usize) -> Option<Vec<[
         }
     }
     best.map(|g| g.iter().map(|&i| cand[i]).collect())
+}
+
+/// A copy of `img[y1:y2, x1:x2]` of an HxW plane, row by row.
+fn crop(img: &[f32], w: usize, (y1, y2, x1, x2): (usize, usize, usize, usize)) -> Vec<f32> {
+    (y1..y2)
+        .flat_map(|y| img[y * w + x1..y * w + x2].iter().copied())
+        .collect()
+}
+
+/// Python's round() of a float: half to even.
+fn py_round(v: f64) -> i64 {
+    v.round_ties_even() as i64
+}
+
+/// `_find_rebate_level(lum, film_roi, bed)`: the brightest uniform rebate plateau on a side of
+/// the film box, (level, spread), when two opposite sides show one.
+pub fn find_rebate_level(
+    lum: &[f32],
+    h: usize,
+    w: usize,
+    roi: (usize, usize, usize, usize),
+    bed: Option<f64>,
+) -> Option<(f64, f64)> {
+    let (y1, y2, x1, x2) = (roi.0.min(h), roi.1.min(h), roi.2.min(w), roi.3.min(w));
+    let (bh, bw) = (y2.saturating_sub(y1), x2.saturating_sub(x1));
+    if bh < 16 || bw < 16 {
+        return None;
+    }
+    let bed = match bed {
+        Some(b) => b,
+        None => np_percentiles(lum, &[99.0])?[0] as f64,
+    };
+    let boxed = crop(lum, w, (y1, y2, x1, x2));
+    let box_median = np_percentiles(&boxed, &[50.0])?[0] as f64;
+    let ring = py_round(0.04 * bh.min(bw) as f64).max(3) as usize;
+    let ring_h = ring.min(bh);
+    let ring_w = ring.min(bw);
+    // top, bottom, left, right: NumPy slices of the box, in its row-major order.
+    let sides = [
+        crop(&boxed, bw, (0, ring_h, 0, bw)),
+        crop(&boxed, bw, (bh - ring_h, bh, 0, bw)),
+        crop(&boxed, bw, (0, bh, 0, ring_w)),
+        crop(&boxed, bw, (0, bh, bw - ring_w, bw)),
+    ];
+    // NEP 50: the Python float threshold joins the float32 comparison as float32.
+    let cut = (bed - 0.05) as f32;
+    let mut qualifying: [Option<(f64, f64)>; 4] = [None; 4];
+    for (slot, strip) in qualifying.iter_mut().zip(&sides) {
+        let vals: Vec<f32> = strip.iter().copied().filter(|&v| v < cut).collect();
+        if (vals.len() as f64) < 0.25 * strip.len() as f64 {
+            continue;
+        }
+        let Some(p) = percentiles(&vals, &[80.0, 20.0, 60.0]) else {
+            continue;
+        };
+        let spread = (p[0] - p[1]) as f64;
+        if spread > 0.10 {
+            continue;
+        }
+        let p60 = p[2] as f64;
+        if p60 < box_median + 0.10 {
+            continue;
+        }
+        *slot = Some((p60, spread));
+    }
+    let [top, bottom, left, right] = qualifying;
+    if !((top.is_some() && bottom.is_some()) || (left.is_some() && right.is_some())) {
+        return None;
+    }
+    // max() keeps the first of equal levels, in the order the sides were checked.
+    qualifying
+        .into_iter()
+        .flatten()
+        .fold(None, |best: Option<(f64, f64)>, q| match best {
+            Some(b) if q.0 <= b.0 => Some(b),
+            _ => Some(q),
+        })
 }
 
 #[cfg(test)]

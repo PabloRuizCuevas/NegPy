@@ -15,7 +15,7 @@ from negpy.features.geometry.models import (
     AutocropMode,
     GeometryConfig,
 )
-from negpy.kernel.image.logic import get_luminance, percentiles
+from negpy.kernel.image.logic import get_luminance
 from negpy.kernel.image.validation import ensure_image
 
 AUTOCROP_DETECT_RES = 1800
@@ -1320,45 +1320,7 @@ def _find_rebate_level(lum: np.ndarray, film_roi: ROI, bed: Optional[float] = No
     qualifying plateau wins. Returns (rebate_level, spread) or None. `bed` is the 99th
     percentile of `lum`, for a caller that already has it.
     """
-    y1, y2, x1, x2 = film_roi
-    box = lum[y1:y2, x1:x2]
-    bh, bw = box.shape[:2]
-    if bh < 16 or bw < 16:
-        return None
-    if bed is None:
-        bed = float(np.percentile(lum, 99))
-    box_median = float(np.percentile(box, 50))
-    ring_w = max(3, round(0.04 * min(bh, bw)))
-    sides = {
-        "top": box[:ring_w, :],
-        "bottom": box[-ring_w:, :],
-        "left": box[:, :ring_w],
-        "right": box[:, -ring_w:],
-    }
-
-    qualifying: dict[str, Tuple[float, float]] = {}
-    for name, strip in sides.items():
-        vals = strip[strip < bed - 0.05]  # exclude sprocket holes / bed slop in the box
-        if vals.size < 0.25 * strip.size:
-            continue
-        p80, p20, p60 = percentiles(vals, (80, 20, 60))
-        spread = float(p80 - p20)
-        if spread > 0.10:
-            continue  # textured strip = image content reaches this film edge
-        p60 = float(p60)
-        if p60 < box_median + 0.10:
-            continue  # rebate is the lowest-density tier: must sit clearly above the
-            # image interior; a plateau near the median is bright image content
-            # reaching the film edge (full-bleed) or holder slop, not film base
-        qualifying[name] = (p60, spread)
-
-    # A genuine film rebate borders the frame, so it shows up as an opposite pair. A lone
-    # qualifying side is almost always a uniform bright scene region in a full-bleed frame,
-    # and trusting it carves the picture down to a dark subject. Require a pair.
-    has_pair = ("top" in qualifying and "bottom" in qualifying) or ("left" in qualifying and "right" in qualifying)
-    if not has_pair:
-        return None
-    return max(qualifying.values(), key=lambda t: t[0])
+    return negpy_core.find_rebate_level(np.ascontiguousarray(lum, dtype=np.float32), tuple(int(v) for v in film_roi), bed)
 
 
 def _estimate_tier_levels(lum: np.ndarray, film_roi: ROI) -> Optional[_TierLevels]:

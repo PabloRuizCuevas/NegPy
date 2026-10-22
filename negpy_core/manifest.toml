@@ -548,9 +548,10 @@ depends = ["_detect_film_bounds", "_refine_roi_to_image"]
 
 ["features/geometry/logic.py::_find_rebate_level"]
 phase = 2
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.find_rebate_level"]
 depends = []
+note = "negpy_core::analysis::find_rebate_level"
 
 ["features/geometry/logic.py::_get_threshold_autocrop_coords"]
 phase = 2

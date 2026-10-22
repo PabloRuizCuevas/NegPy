@@ -116,9 +116,26 @@ fn base_blocks<'py>(
         .transpose()
 }
 
+/// `_find_rebate_level(lum, film_roi, bed)` for a 2-D float32 plane: (level, spread) or None.
+#[pyfunction]
+#[pyo3(signature = (lum, film_roi, bed=None))]
+fn find_rebate_level(
+    py: Python<'_>,
+    lum: PyReadonlyArrayDyn<'_, f32>,
+    film_roi: (usize, usize, usize, usize),
+    bed: Option<f64>,
+) -> PyResult<Option<(f64, f64)>> {
+    let [h, w] = lum.shape()[..] else {
+        return Err(PyValueError::new_err("find_rebate_level needs a 2-D array"));
+    };
+    let data = slice(&lum)?;
+    Ok(py.detach(|| analysis::find_rebate_level(data, h, w, film_roi, bed)))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(luminance, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_to_uint8, m)?)?;
     m.add_function(wrap_pyfunction!(detection_luma, m)?)?;
-    m.add_function(wrap_pyfunction!(base_blocks, m)?)
+    m.add_function(wrap_pyfunction!(base_blocks, m)?)?;
+    m.add_function(wrap_pyfunction!(find_rebate_level, m)?)
 }

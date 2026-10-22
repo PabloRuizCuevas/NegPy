@@ -152,6 +152,16 @@ pub fn percentiles(values: &[f32], qs: &[f64]) -> Option<Vec<f32>> {
     )
 }
 
+/// `np.percentile` itself, which is NaN for every q when any value is NaN; `percentiles`
+/// matches NegPy's partition helper, which callers feed only finite values.
+pub fn np_percentiles(values: &[f32], qs: &[f64]) -> Option<Vec<f32>> {
+    let out = percentiles(values, qs)?;
+    if values.iter().any(|v| v.is_nan()) {
+        return Some(vec![f32::NAN; qs.len()]);
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
