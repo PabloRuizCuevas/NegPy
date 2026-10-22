@@ -458,6 +458,39 @@ fn batch_edge_profile<'py>(
     Ok((numpy::PyArray1::from_vec(py, profile), contrast))
 }
 
+/// The HxW of an HxWx3 detection image.
+fn det_dims(det: &PyReadonlyArrayDyn<'_, f32>) -> PyResult<(usize, usize)> {
+    match det.shape()[..] {
+        [h, w, 3] => Ok((h, w)),
+        _ => Err(PyValueError::new_err("needs an HxWx3 array")),
+    }
+}
+
+/// `film_and_picture(det)` of an HxWx3 float32 detection image: (film roi or None, gate).
+#[pyfunction]
+fn film_and_picture(
+    py: Python<'_>,
+    det: PyReadonlyArrayDyn<'_, f32>,
+) -> PyResult<(Option<analysis::Roi>, analysis::Roi)> {
+    let (h, w) = det_dims(&det)?;
+    let data = slice(&det)?;
+    py.detach(|| analysis::film_and_picture(data, h, w))
+        .ok_or_else(|| {
+            PyValueError::new_err("film_and_picture: image too small for the Sobel path")
+        })
+}
+
+/// `measure_base_log` of an HxWx3 float32 detection image: (r, g, b) log10 or None.
+#[pyfunction]
+fn measure_base_log(
+    py: Python<'_>,
+    det: PyReadonlyArrayDyn<'_, f32>,
+) -> PyResult<Option<[f64; 3]>> {
+    let (h, w) = det_dims(&det)?;
+    let data = slice(&det)?;
+    Ok(py.detach(|| analysis::measure_base_log(data, h, w)))
+}
+
 type ConsensusFields = (
     analysis::Roi,
     f64,
@@ -588,6 +621,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(block_median_grid, m)?)?;
     m.add_function(wrap_pyfunction!(threshold_box, m)?)?;
     m.add_function(wrap_pyfunction!(batch_edge_profile, m)?)?;
+    m.add_function(wrap_pyfunction!(film_and_picture, m)?)?;
+    m.add_function(wrap_pyfunction!(measure_base_log, m)?)?;
     m.add_function(wrap_pyfunction!(film_box_covers_enough, m)?)?;
     m.add_function(wrap_pyfunction!(film_surround_is_plausible, m)?)
 }

@@ -270,12 +270,7 @@ def film_and_picture(det: np.ndarray) -> Tuple[Optional[ROI], ROI]:
     """The film box (None when the scan shows no film edge) and the picture gate inside it,
     at detection resolution. With no film box the gate is refined over the whole frame; a
     degenerate gate (a blank or dark frame) falls back to the whole frame."""
-    h, w = det.shape[:2]
-    film = detect_film_bounds_with_confidence(det)
-    gate, _, _ = _refine_roi_to_image(det, film.roi if film.roi is not None else (0, h, 0, w))
-    if gate[1] <= gate[0] or gate[3] <= gate[2]:
-        gate = (0, h, 0, w)
-    return film.roi, gate
+    return negpy_core.film_and_picture(np.ascontiguousarray(det, dtype=np.float32))
 
 
 def rebate_mask(shape: Tuple[int, int], film_roi: Optional[ROI], gate: ROI) -> np.ndarray:

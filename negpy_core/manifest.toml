@@ -289,9 +289,9 @@ depends = ["_block_median_grid"]
 
 ["features/exposure/normalization.py::measure_base_log"]
 phase = 2
-status = "todo"
-calls = ["np.median"]
-depends = ["_base_blocks"]
+status = "ported"
+calls = ["negpy_core.measure_base_log"]
+depends = []
 
 ["features/exposure/normalization.py::measure_clip_fractions"]
 phase = 2
@@ -766,9 +766,9 @@ depends = []
 
 ["features/geometry/logic.py::film_and_picture"]
 phase = 2
-status = "todo"
-calls = []
-depends = ["_refine_roi_to_image", "detect_film_bounds_with_confidence"]
+status = "ported"
+calls = ["negpy_core.film_and_picture"]
+depends = []
 
 ["features/geometry/logic.py::get_autocrop_coords"]
 phase = 2

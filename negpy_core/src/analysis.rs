@@ -227,6 +227,86 @@ pub fn batch_edge_profile(img: &[f32], h: usize, w: usize, cn: usize) -> (Vec<f3
     (profile, contrast)
 }
 
+/// The end of `measure_base_log`: per-channel log10 of the base blocks' median, or None when
+/// the base is not brighter than the picture inside `gate` (median of the float32 pixel means,
+/// summed left to right).
+pub fn base_log_from_blocks(
+    det: &[f32],
+    w: usize,
+    (gy1, gy2, gx1, gx2): (usize, usize, usize, usize),
+    base: &[[f32; 3]],
+) -> Option<[f64; 3]> {
+    let mean = |p: &[f32]| (p[0] + p[1] + p[2]) / 3.0;
+    let mut picture: Vec<f32> = (gy1..gy2)
+        .flat_map(|y| (gx1..gx2).map(move |x| (y * w + x) * 3))
+        .map(|i| mean(&det[i..i + 3]))
+        .collect();
+    let mut base_means: Vec<f32> = base.iter().map(|p| mean(p)).collect();
+    // `<=` is false for NaN, so a NaN median keeps the base.
+    if np_median(&mut base_means) <= np_median(&mut picture) {
+        return None;
+    }
+    Some(std::array::from_fn(|c| {
+        let mut col: Vec<f32> = base.iter().map(|p| p[c]).collect();
+        libm::log10((np_median(&mut col) as f64).max(1e-6))
+    }))
+}
+
+/// `film_and_picture(det)` for an HxWx3 detection image: the film box (None when the scan
+/// shows no film edge) and the picture gate inside it, or over the whole frame without a box; a
+/// degenerate gate falls back to the whole frame. None when the frame is too small to refine.
+pub fn film_and_picture(det: &[f32], h: usize, w: usize) -> Option<(Option<Roi>, Roi)> {
+    let film = crate::detect::detect_film_bounds(det, h, w, 3)
+        .consensus
+        .map(|c| c.roi);
+    let whole = (0, h as i64, 0, w as i64);
+    let (gate, _) = refine_roi_to_image(det, h, w, 3, film.unwrap_or(whole))?;
+    let gate = if gate.1 <= gate.0 || gate.3 <= gate.2 {
+        whole
+    } else {
+        gate
+    };
+    Some((film, gate))
+}
+
+// The band inside the film box, per side, that holds rebate, perforations and picture edge.
+const BASE_MARGIN: f64 = 0.15;
+
+/// `measure_base_log(image)` on its HxWx3 detection image: per-channel log10 transmittance of
+/// the clear base, the median of the flat blocks in the film box's margin band. None without a
+/// film box, with too few flat blocks, or when the base is darker than the picture, because a
+/// negative's base is its thinnest film.
+pub fn measure_base_log(det: &[f32], h: usize, w: usize) -> Option<[f64; 3]> {
+    let (film, gate) = film_and_picture(det, h, w)?;
+    let (fy1, fy2, fx1, fx2) = film?;
+    let (my, mx) = (
+        ((fy2 - fy1) as f64 * BASE_MARGIN) as i64,
+        ((fx2 - fx1) as f64 * BASE_MARGIN) as i64,
+    );
+    let clamp = |v: i64, n: usize| v.clamp(0, n as i64) as usize;
+    let mut band = vec![0u8; h * w];
+    for y in clamp(fy1, h)..clamp(fy2, h) {
+        band[y * w + clamp(fx1, w)..y * w + clamp(fx2, w).max(clamp(fx1, w))].fill(1);
+    }
+    let (cy1, cy2, cx1, cx2) = (
+        clamp(fy1 + my, h),
+        clamp(fy2 - my, h),
+        clamp(fx1 + mx, w),
+        clamp(fx2 - mx, w),
+    );
+    for y in cy1..cy2.max(cy1) {
+        band[y * w + cx1..y * w + cx2.max(cx1)].fill(0);
+    }
+    let base = base_blocks(det, &band, h, w)?;
+    let gate = (
+        clamp(gate.0, h),
+        clamp(gate.1, h),
+        clamp(gate.2, w),
+        clamp(gate.3, w),
+    );
+    base_log_from_blocks(det, w, gate, &base)
+}
+
 const BASE_BLOCK: usize = 8;
 const CLIP_LEVEL: f32 = 0.98;
 const FLAT_CV: f32 = 0.03;

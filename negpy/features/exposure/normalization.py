@@ -4,8 +4,8 @@ import cv2
 import negpy_core
 import numpy as np
 
-from negpy.domain.types import LUMA_B, LUMA_G, LUMA_R, ROI, ImageBuffer
-from negpy.features.geometry.logic import AUTOCROP_DETECT_RES, _normalize_detection_input, film_and_picture
+from negpy.domain.types import LUMA_B, LUMA_G, LUMA_R, ImageBuffer
+from negpy.features.geometry.logic import AUTOCROP_DETECT_RES, _normalize_detection_input
 from negpy.features.process.models import ProcessMode
 from negpy.kernel.image.logic import percentile_from_sorted
 from negpy.kernel.image.validation import ensure_image
@@ -363,53 +363,19 @@ def measure_neutral_axis(
     return measure_neutral_axis_from_log(img_log, bounds, roi, analysis_buffer)
 
 
-#: The clear base is read from flat blocks in the film box's margin, grouped by brightness, the
-#: way negdensity.py reads it. The film box comes from the crop's detector at its own resolution,
-#: whose edge walk is calibrated there.
-_BASE_MARGIN = 0.15  # the band inside the film box, per side, that holds rebate, perforations and picture edge
 _OPEN_LIGHT_GAP = 0.08  # decades a brighter, smaller group must clear the base to be bare light
-
-
-def _margin_band(shape: Tuple[int, int], film_roi: ROI) -> np.ndarray:
-    """Inside the film box, outside its central core: where the rebate and the perforations lie."""
-    fy1, fy2, fx1, fx2 = film_roi
-    band = np.zeros(shape, bool)
-    band[fy1:fy2, fx1:fx2] = True
-    my, mx = int((fy2 - fy1) * _BASE_MARGIN), int((fx2 - fx1) * _BASE_MARGIN)
-    band[fy1 + my : fy2 - my, fx1 + mx : fx2 - mx] = False
-    return band
-
-
-def _base_blocks(det: np.ndarray, band: np.ndarray) -> Optional[np.ndarray]:
-    """Per-channel means of the band's flat blocks that are clear base, or None without enough.
-
-    Flat blocks are grouped by brightness; the largest group is the base. A smaller group
-    well above it is bare light through a perforation or past the film's edge. A flat
-    picture region in the band that outnumbers the base is taken for it. negpy_core holds the
-    rules: 8x8 blocks, flat under 3% std over mean, unclipped under 0.98, groups split at 0.04
-    decades, at least max(5, 2%) blocks."""
-    return negpy_core.base_blocks(np.ascontiguousarray(det, dtype=np.float32), np.ascontiguousarray(band, dtype=bool))
 
 
 def measure_base_log(image: ImageBuffer) -> Optional[Tuple[float, float, float]]:
     """Per-channel log10 transmittance of the clear base: the median of the flat base blocks in
     the film box's margin on the uncropped frame. None when the scan shows no film box, the
     margin holds too few flat blocks, or the base is darker than the picture, because a
-    negative's base is its thinnest film."""
+    negative's base is its thinnest film. The blocks group by brightness, the way negdensity.py
+    reads the base; the film box comes from the crop's detector at its own resolution, whose
+    edge walk is calibrated there."""
     det, _ = _normalize_detection_input(image, AUTOCROP_DETECT_RES)
-    det = np.ascontiguousarray(det, dtype=np.float32)
-    film_roi, gate = film_and_picture(det)
-    if film_roi is None:
-        return None
-    base = _base_blocks(det, _margin_band(det.shape[:2], film_roi))
-    if base is None:
-        return None
-    gy1, gy2, gx1, gx2 = gate
-    picture = det[gy1:gy2, gx1:gx2].reshape(-1, 3)
-    if np.median(base.mean(axis=1)) <= np.median(picture.mean(axis=1)):
-        return None
-    r, g, b = (float(np.log10(max(float(v), 1e-6))) for v in np.median(base, axis=0))
-    return (r, g, b)
+    base = negpy_core.measure_base_log(np.ascontiguousarray(det, dtype=np.float32))
+    return None if base is None else (base[0], base[1], base[2])
 
 
 def log_from_val(val_rgb: Tuple[float, float, float], bounds: LogNegativeBounds) -> Tuple[float, float, float]:
