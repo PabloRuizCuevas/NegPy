@@ -31,7 +31,12 @@ fn luminance_chunk(rgb: &[f32], dst: &mut [f32]) {
 /// `_normalize_to_uint8` for a float32 image: the 1st and 99th percentiles of its finite
 /// values stretched to 0..255, NumPy's float32 arithmetic (NEP 50) and truncating cast.
 pub fn normalize_to_uint8(img: &[f32], dst: &mut [u8]) {
-    let valid: Vec<f32> = img.iter().copied().filter(|v| v.is_finite()).collect();
+    let finite = img.iter().fold(true, |all, v| all & v.is_finite());
+    let valid: std::borrow::Cow<[f32]> = if finite {
+        img.into()
+    } else {
+        img.iter().copied().filter(|v| v.is_finite()).collect()
+    };
     let Some(p) = percentiles(&valid, &[1.0, 99.0]) else {
         dst.fill(0);
         return;

@@ -54,17 +54,34 @@ fn select_ranks(values: &[f32], ranks: &[usize]) -> Vec<f32> {
             .collect();
     }
 
+    // One histogram per thread-sized block: each costs a megabyte to clear and merge. Four
+    // interleaved u32 lanes, because on a smooth image neighbours share a bucket and one counter
+    // would serialize on its own increments.
+    let block = values
+        .len()
+        .div_ceil(rayon::current_num_threads())
+        .max(CHUNK);
     let hist = values
-        .par_chunks(CHUNK)
-        .fold(
-            || vec![0usize; BUCKETS],
-            |mut h, chunk| {
-                for &v in chunk {
-                    h[(order_key(v) >> 16) as usize] += 1;
+        .par_chunks(block)
+        .map(|chunk| {
+            let mut h = vec![0u32; 4 * BUCKETS];
+            let (quads, rest) = chunk.as_chunks::<4>();
+            for q in quads {
+                for (j, &v) in q.iter().enumerate() {
+                    h[j * BUCKETS + (order_key(v) >> 16) as usize] += 1;
                 }
-                h
-            },
-        )
+            }
+            for &v in rest {
+                h[(order_key(v) >> 16) as usize] += 1;
+            }
+            let mut sum = vec![0usize; BUCKETS];
+            for lane in h.as_chunks::<BUCKETS>().0 {
+                sum.iter_mut()
+                    .zip(lane)
+                    .for_each(|(s, &c)| *s += c as usize);
+            }
+            sum
+        })
         .reduce(
             || vec![0usize; BUCKETS],
             |mut a, b| {
@@ -85,23 +102,30 @@ fn select_ranks(values: &[f32], ranks: &[usize]) -> Vec<f32> {
         located.push((bucket, r - below));
     }
 
-    let mut slot_of = vec![u32::MAX; BUCKETS];
-    let mut wanted: Vec<usize> = located.iter().map(|&(b, _)| b).collect();
+    let mut wanted: Vec<u32> = located.iter().map(|&(b, _)| b as u32).collect();
     wanted.dedup();
-    for (slot, &b) in wanted.iter().enumerate() {
-        slot_of[b] = slot as u32;
-    }
+    let slot = |key: u32| wanted.iter().position(|&b| b == key >> 16);
 
+    // Matches are rare: a vectorized test per block skips the blocks with none.
     let gathered = values
         .par_chunks(CHUNK)
         .fold(
             || vec![Vec::new(); wanted.len()],
             |mut g: Vec<Vec<u32>>, chunk| {
-                for &v in chunk {
-                    let key = order_key(v);
-                    let slot = slot_of[(key >> 16) as usize];
-                    if slot != u32::MAX {
-                        g[slot as usize].push(key);
+                for block in chunk.chunks(64) {
+                    // One pass per wanted bucket keeps the test a plain vector compare.
+                    let hit = wanted.iter().fold(false, |any, &b| {
+                        any | block
+                            .iter()
+                            .fold(false, |a, &v| a | (order_key(v) >> 16 == b))
+                    });
+                    if hit {
+                        for &v in block {
+                            let key = order_key(v);
+                            if let Some(i) = slot(key) {
+                                g[i].push(key);
+                            }
+                        }
                     }
                 }
                 g
@@ -119,7 +143,7 @@ fn select_ranks(values: &[f32], ranks: &[usize]) -> Vec<f32> {
     located
         .iter()
         .map(|&(b, r)| {
-            let keys = &mut gathered[slot_of[b] as usize];
+            let keys = &mut gathered[wanted.iter().position(|&w| w as usize == b).unwrap_or(0)];
             from_key(*keys.select_nth_unstable(r).1)
         })
         .collect()
