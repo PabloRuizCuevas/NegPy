@@ -132,10 +132,30 @@ fn find_rebate_level(
     Ok(py.detach(|| analysis::find_rebate_level(data, h, w, film_roi, bed)))
 }
 
+/// `_walk_border_depth(lines, limit, bridge, relative_step)` for an L x N float32 array.
+#[pyfunction]
+fn walk_border_depth<'py>(
+    py: Python<'py>,
+    lines: PyReadonlyArrayDyn<'py, f32>,
+    limit: usize,
+    bridge: i64,
+    relative_step: bool,
+) -> PyResult<Bound<'py, numpy::PyArray1<i64>>> {
+    let [rows, n] = lines.shape()[..] else {
+        return Err(PyValueError::new_err("walk_border_depth needs a 2-D array"));
+    };
+    let data = slice(&lines)?;
+    let out = py
+        .detach(|| analysis::walk_border_depth(data, rows, n, limit, bridge, relative_step))
+        .ok_or_else(|| PyValueError::new_err("walk_border_depth needs at least limit + 3 rows"))?;
+    Ok(numpy::PyArray1::from_vec(py, out))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(luminance, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_to_uint8, m)?)?;
     m.add_function(wrap_pyfunction!(detection_luma, m)?)?;
     m.add_function(wrap_pyfunction!(base_blocks, m)?)?;
-    m.add_function(wrap_pyfunction!(find_rebate_level, m)?)
+    m.add_function(wrap_pyfunction!(find_rebate_level, m)?)?;
+    m.add_function(wrap_pyfunction!(walk_border_depth, m)?)
 }

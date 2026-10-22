@@ -694,9 +694,10 @@ depends = []
 
 ["features/geometry/logic.py::_walk_border_depth"]
 phase = 2
-status = "todo"
-calls = ["np.median"]
+status = "ported"
+calls = ["negpy_core.walk_border_depth"]
 depends = []
+note = "negpy_core::analysis::walk_border_depth"
 
 ["features/geometry/logic.py::_weighted_median"]
 phase = 2

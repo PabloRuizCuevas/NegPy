@@ -1044,30 +1044,14 @@ def _roi_from_measured_border(lum: np.ndarray, film_roi: ROI) -> ROI | None:
     return roi
 
 
-# Camera-scan holder mask against a bed normalized to 1.0. Dense negative bottoms out near
-# 0.05, so the cut sits below that. The mask is not always this clean, which is why the walk
-# bridges instead of classifying every pixel.
-_EDGE_MASK_LEVEL = 0.03
-# Clear film base / bare bed. _detection_luma anchors P99.5 at 1.0, so the bed is a stable
-# landmark; picture only reaches here when the frame carries no base at all.
-_EDGE_BASE_LEVEL = 0.95
 # Gap the walk carries across, covering the mid-gray ramp between mask and base.
 _EDGE_BRIDGE = 8
 _EDGE_TRIM_CAP = 0.03
 _EDGE_CORE = 0.70
 _EDGE_QUANTILE = 80
 _EDGE_MIN_SUPPORT = 0.45
-# Borders that no absolute level finds, read against the picture on the same line. A rebate
-# on a thin negative sits above the picture but below the bed, because the frame's own
-# highlights set the P99.5 anchor. A holder edge sits below the picture but above the mask
-# cut, shading from near-black to mid-grey along the side. Both must end in a step, which is
-# what separates them from a bright subject or a deep shadow touching the frame edge.
-_EDGE_REBATE_MARGIN = 0.10
-# The dark side runs a wider margin: dense negative crowds the bottom of the range, so a
-# shadow sits nearer the picture median than a highlight does.
-_EDGE_SHADE_MARGIN = 0.16
+# Mirrored in negpy_core/src/analysis.rs (EDGE_REBATE_STEP) until its other users move.
 _EDGE_REBATE_STEP = 0.18
-_EDGE_REBATE_REF = 60
 
 # Second, deeper walk. _EDGE_TRIM_CAP is the depth a border may reach on trust alone. Past
 # it a border must prove itself, because that much of a side is worth real picture. A wide
@@ -1084,11 +1068,8 @@ _EDGE_DEEP_STRAIGHT = 0.025
 # Proof two: the walk stopped on its own. Reaching the allowance means no boundary was
 # found inside it, and the depth is then an artefact of where the search was cut off.
 _EDGE_DEEP_FULL = 0.92
-# Proof three: the step carries most of the drop from the outer level to the picture. A
-# boundary does that and a subject shading toward the edge does not. Replaces the fixed
-# _EDGE_REBATE_STEP at depth, where a dense frame compresses every level.
-_EDGE_STEP_SHARE = 0.45
-_EDGE_STEP_FLOOR = 0.06
+# Proof three: the step carries most of the drop from the outer level to the picture (the
+# walk's EDGE_STEP_SHARE in negpy_core).
 # Proof four: the outermost pixels are one material. Mask, bed and film base each hold their
 # level along the whole side, so the outer level barely moves from line to line, while
 # picture reaching the frame edge moves with the subject.
@@ -1114,80 +1095,9 @@ def _walk_border_depth(lines: np.ndarray, limit: int, bridge: int, relative_step
     first picture-like pixel.
 
     relative_step scales the step a soft-ended run must show by that run's own drop,
-    instead of the fixed _EDGE_REBATE_STEP; see _EDGE_STEP_SHARE.
+    instead of the fixed _EDGE_REBATE_STEP; negpy_core's walk_border_depth holds the rule.
     """
-    head = lines[: limit + 1]
-    # Picture level per line, taken past the deepest cut allowed so a thick border
-    # cannot raise its own reference and hide itself.
-    picture = np.median(lines[limit : limit + _EDGE_REBATE_REF], axis=0)
-
-    firm = (head < _EDGE_MASK_LEVEL) | (head > _EDGE_BASE_LEVEL)
-    # Tiers no absolute level reaches, read against the picture on the same line: a rebate
-    # brighter than the picture but under the bed, and a holder edge darker than the picture
-    # but over the mask cut. A holder edge shades from near-black to mid-grey along the side,
-    # so the absolute cut catches only the dark end.
-    reference = picture[None, :]
-    border = firm | (head > reference + _EDGE_REBATE_MARGIN) | (head < reference - _EDGE_SHADE_MARGIN)
-
-    depth = np.zeros(head.shape[1], dtype=np.int32)
-    last = np.full(head.shape[1], -1, dtype=np.int32)
-    soft = np.zeros(head.shape[1], dtype=bool)
-    alive = np.ones(head.shape[1], dtype=bool)
-    # Tracked alongside: how deep the mask and bed alone reach. Firm evidence is its own
-    # proof, so wherever it runs the border runs and the gradient below never arbitrates. It
-    # matters when the border stacks two firm tiers, mask outside and film base inside: the
-    # outer boundary is the stronger step, and a gradient picks that and leaves the base
-    # inside the frame.
-    firm_depth = np.zeros(head.shape[1], dtype=np.int32)
-    firm_last = np.full(head.shape[1], -1, dtype=np.int32)
-    firm_alive = np.ones(head.shape[1], dtype=bool)
-    for i in range(head.shape[0]):
-        # Evidence must chain back to the frame edge: the border tiers are the outermost
-        # things on the film, never something found well inside the picture.
-        alive &= (i - last) <= bridge
-        firm_alive &= (i - firm_last) <= bridge
-        if not alive.any() and not firm_alive.any():
-            break
-        hit = alive & border[i]
-        last = np.where(hit, i, last)
-        depth = np.where(hit, i + 1, depth)
-        soft = np.where(hit, ~firm[i], soft)
-
-        firm_hit = firm_alive & firm[i]
-        firm_last = np.where(firm_hit, i, firm_last)
-        firm_depth = np.where(firm_hit, i + 1, firm_depth)
-
-    # Where the walk ended on a relative test alone, the border edge comes from the strongest
-    # gradient inside the run, not from where the level test gave out. A level test only
-    # nominates candidates: against a bright picture, "darker than the reference" stays true
-    # well into the picture's own shadows and the run ends mid-ramp. The gradient is the
-    # boundary.
-    #
-    # That peak must also be a real step. A border stops at the frame edge, a hard boundary,
-    # while a bright subject or deep shadow running to the picture edge shades off, and
-    # reading that as a border carves the frame down. Magnitude, not sign: a rebate is
-    # brighter than the picture it ends against and a holder edge is darker. Mask and bed
-    # need no such proof, since nothing else on the film reaches those levels.
-    span = np.abs(lines[3 : limit + 3] - lines[:limit])
-    reach = np.arange(span.shape[0])[:, None] < depth[None, :]
-    masked = np.where(reach, span, -1.0)
-    peak = masked.max(axis=0)
-    # The outermost span that nearly matches the peak, not the peak itself. Where the picture
-    # keeps rising past the boundary, a span straddling the step plus some picture outscores
-    # the step alone and drags the cut inward. Ties go outward, keeping picture.
-    peak_at = np.argmax(masked >= (0.9 * peak)[None, :], axis=0)
-    # span[j] compares j against j+3, so a step between j+2 and j+3 first peaks at j: the
-    # boundary is the far end of the winning span, not its middle.
-    resolved = np.clip(peak_at + 3, 0, limit)
-    if relative_step:
-        # Scaled by the run's own drop, not fixed. A dense frame compresses every level toward
-        # black, so its borders step by less while still stepping by nearly all there is.
-        outer = np.median(head[:3], axis=0)
-        gate = np.maximum(_EDGE_STEP_FLOOR, _EDGE_STEP_SHARE * np.abs(outer - picture))
-    else:
-        gate = np.full(peak.shape, _EDGE_REBATE_STEP, dtype=peak.dtype)
-    depth = np.where(soft, np.where(peak >= gate, resolved, 0), depth)
-    return np.maximum(depth, firm_depth)
+    return negpy_core.walk_border_depth(np.ascontiguousarray(lines, dtype=np.float32), int(limit), int(bridge), bool(relative_step))
 
 
 def _pool_border_depth(depth: np.ndarray, limit: int) -> int:

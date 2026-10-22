@@ -239,6 +239,148 @@ pub fn find_rebate_level(
         })
 }
 
+// Camera-scan holder mask against a bed normalized to 1.0. Dense negative bottoms out near
+// 0.05, so the cut sits below that. The mask is not always this clean, which is why the walk
+// bridges instead of classifying every pixel.
+const EDGE_MASK_LEVEL: f32 = 0.03;
+// Clear film base / bare bed. _detection_luma anchors P99.5 at 1.0, so the bed is a stable
+// landmark; picture only reaches here when the frame carries no base at all.
+const EDGE_BASE_LEVEL: f32 = 0.95;
+// Borders that no absolute level finds, read against the picture on the same line. A rebate
+// on a thin negative sits above the picture but below the bed, because the frame's own
+// highlights set the P99.5 anchor. A holder edge sits below the picture but above the mask
+// cut, shading from near-black to mid-grey along the side. Both must end in a step, which is
+// what separates them from a bright subject or a deep shadow touching the frame edge.
+const EDGE_REBATE_MARGIN: f32 = 0.10;
+// The dark side runs a wider margin: dense negative crowds the bottom of the range, so a
+// shadow sits nearer the picture median than a highlight does.
+const EDGE_SHADE_MARGIN: f32 = 0.16;
+// Mirrors geometry/logic.py's _EDGE_REBATE_STEP while it has Python users.
+const EDGE_REBATE_STEP: f32 = 0.18;
+const EDGE_REBATE_REF: usize = 60;
+// The step carries most of the drop from the outer level to the picture. A boundary does that
+// and a subject shading toward the edge does not. Replaces the fixed EDGE_REBATE_STEP at
+// depth, where a dense frame compresses every level.
+const EDGE_STEP_SHARE: f32 = 0.45;
+const EDGE_STEP_FLOOR: f32 = 0.06;
+
+/// `np.median` of a column of float32 values: the middle one, or the float32 mean of the two
+/// middle ones; NaN when any value is NaN.
+fn np_median(col: &mut [f32]) -> f32 {
+    if col.iter().any(|v| v.is_nan()) {
+        return f32::NAN;
+    }
+    let n = col.len();
+    let (_, &mut hi, _) = col.select_nth_unstable_by(n / 2, f32::total_cmp);
+    if n % 2 == 1 {
+        return hi;
+    }
+    let lo = col[..n / 2]
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, f32::max);
+    (lo + hi) / 2.0
+}
+
+/// np.max with NaN propagation.
+fn np_max(a: f32, b: f32) -> f32 {
+    if a.is_nan() || b.is_nan() {
+        f32::NAN
+    } else {
+        a.max(b)
+    }
+}
+
+/// `_walk_border_depth(lines, limit, bridge, relative_step)`: `lines` is L x N (steps inward x
+/// lines), the result one depth per line.
+pub fn walk_border_depth(
+    lines: &[f32],
+    rows: usize,
+    n: usize,
+    limit: usize,
+    bridge: i64,
+    relative_step: bool,
+) -> Option<Vec<i64>> {
+    if rows < limit + 3 || lines.len() != rows * n {
+        return None;
+    }
+    let at = |r: usize, c: usize| lines[r * n + c];
+    let ref_end = (limit + EDGE_REBATE_REF).min(rows);
+    let picture: Vec<f32> = (0..n)
+        .map(|c| np_median(&mut (limit..ref_end).map(|r| at(r, c)).collect::<Vec<_>>()))
+        .collect();
+
+    let mut depth = vec![0i64; n];
+    let mut last = vec![-1i64; n];
+    let mut soft = vec![false; n];
+    let mut alive = vec![true; n];
+    let mut firm_depth = vec![0i64; n];
+    let mut firm_last = vec![-1i64; n];
+    let mut firm_alive = vec![true; n];
+    for i in 0..=limit {
+        let ii = i as i64;
+        for c in 0..n {
+            alive[c] &= ii - last[c] <= bridge;
+            firm_alive[c] &= ii - firm_last[c] <= bridge;
+        }
+        if !alive.iter().any(|&a| a) && !firm_alive.iter().any(|&a| a) {
+            break;
+        }
+        for c in 0..n {
+            let v = at(i, c);
+            let firm = v < EDGE_MASK_LEVEL || v > EDGE_BASE_LEVEL;
+            let border =
+                firm || v > picture[c] + EDGE_REBATE_MARGIN || v < picture[c] - EDGE_SHADE_MARGIN;
+            if alive[c] && border {
+                last[c] = ii;
+                depth[c] = ii + 1;
+                soft[c] = !firm;
+            }
+            if firm_alive[c] && firm {
+                firm_last[c] = ii;
+                firm_depth[c] = ii + 1;
+            }
+        }
+    }
+
+    let out = (0..n)
+        .map(|c| {
+            // span[j] = |lines[j + 3] - lines[j]|, masked to -1 past the walk's depth.
+            let masked: Vec<f32> = (0..limit)
+                .map(|j| {
+                    if (j as i64) < depth[c] {
+                        (at(j + 3, c) - at(j, c)).abs()
+                    } else {
+                        -1.0
+                    }
+                })
+                .collect();
+            let peak = masked.iter().copied().fold(masked[0], np_max);
+            let near = 0.9f32 * peak;
+            let peak_at = masked.iter().position(|&m| m >= near).unwrap_or(0) as i64;
+            let resolved = (peak_at + 3).clamp(0, limit as i64);
+            let gate = if relative_step {
+                let outer = np_median(&mut [at(0, c), at(1, c), at(2, c)]);
+                let g = EDGE_STEP_SHARE * (outer - picture[c]).abs();
+                if g.is_nan() {
+                    g
+                } else {
+                    g.max(EDGE_STEP_FLOOR)
+                }
+            } else {
+                EDGE_REBATE_STEP
+            };
+            let d = if soft[c] {
+                if peak >= gate { resolved } else { 0 }
+            } else {
+                depth[c]
+            };
+            d.max(firm_depth[c])
+        })
+        .collect();
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
