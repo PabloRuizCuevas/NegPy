@@ -1,0 +1,1401 @@
+# One entry per Python function that negpy_core replaces. scripts/core_manifest.py writes
+# calls and depends; phase, status (todo, ported, stays), owner and note are kept by hand.
+
+["kernel/image/logic.py::percentiles"]
+phase = 1
+status = "ported"
+calls = ["np.partition"]
+depends = []
+note = "negpy_core::stats::percentiles"
+
+["features/exposure/analysis.py::loupe_acutance"]
+phase = 2
+status = "todo"
+calls = ["cv2.Laplacian"]
+depends = []
+
+["features/exposure/analysis.py::paper_grid_mosaic"]
+phase = 2
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["features/exposure/analysis.py::zone_anchors"]
+phase = 2
+status = "todo"
+calls = ["cv2.connectedComponentsWithStats", "cv2.distanceTransform"]
+depends = []
+
+["features/exposure/analysis.py::zone_field"]
+phase = 2
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.medianBlur", "cv2.resize"]
+depends = []
+
+["features/exposure/analysis.py::zone_grid"]
+phase = 2
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["features/exposure/analysis.py::zone_region_labels"]
+phase = 2
+status = "todo"
+calls = ["cv2.connectedComponentsWithStats"]
+depends = []
+
+["features/exposure/normalization.py::_block_median_grid"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = ["_median"]
+
+["features/exposure/normalization.py::_block_median_grid._median"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/exposure/normalization.py::_normalize_log_image_jit"]
+phase = 2
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/exposure/normalization.py::_same_pixel_color_floor_refs"]
+phase = 2
+status = "todo"
+calls = ["np.median", "np.percentile", "np.quantile"]
+depends = ["_select"]
+
+["features/exposure/normalization.py::_same_pixel_color_floor_refs._select"]
+phase = 2
+status = "todo"
+calls = ["np.median", "np.quantile"]
+depends = []
+
+["features/exposure/normalization.py::_sample_log_bounds"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = ["_pct"]
+
+["features/exposure/normalization.py::_sample_log_bounds._pct"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["features/exposure/normalization.py::_smooth_along_scan_order"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/exposure/normalization.py::analysis_grid"]
+phase = 2
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["features/exposure/normalization.py::contrast_mask_plane"]
+phase = 2
+status = "todo"
+calls = ["cv2.GaussianBlur"]
+depends = ["analysis_grid"]
+
+["features/exposure/normalization.py::density_above_base"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/exposure/normalization.py::detect_light_groups"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = ["_smooth_along_scan_order", "pool_neutral_axis"]
+
+["features/exposure/normalization.py::diffusion_grid"]
+phase = 2
+status = "todo"
+calls = ["cv2.GaussianBlur"]
+depends = ["analysis_grid"]
+
+["features/exposure/normalization.py::measure_anchor_from_log"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = ["_block_median_grid"]
+
+["features/exposure/normalization.py::measure_base_log"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/exposure/normalization.py::measure_highlight_point_from_log"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = ["_block_median_grid"]
+
+["features/exposure/normalization.py::measure_neutral_axis_from_log"]
+phase = 2
+status = "todo"
+calls = ["np.median", "np.percentile", "np.quantile"]
+depends = ["_band_refs", "_block_median_grid"]
+
+["features/exposure/normalization.py::measure_neutral_axis_from_log._band_refs"]
+phase = 2
+status = "todo"
+calls = ["np.median", "np.percentile", "np.quantile"]
+depends = []
+
+["features/exposure/normalization.py::measure_shadow_point_from_log"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = ["_block_median_grid"]
+
+["features/exposure/normalization.py::measure_textural_range_from_log"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = ["_block_median_grid"]
+
+["features/exposure/normalization.py::pool_frame_bounds"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/exposure/normalization.py::pool_neutral_axis"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/geometry/batch_autocrop.py::_mad"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/geometry/batch_autocrop.py::_map_rect_between_rotations"]
+phase = 2
+status = "todo"
+calls = ["cv2.getRotationMatrix2D"]
+depends = []
+
+["features/geometry/batch_autocrop.py::_rect_from_edge_profile"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["features/geometry/batch_autocrop.py::_roll_border"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/geometry/batch_autocrop.py::_threshold_fallback_frames"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/geometry/batch_autocrop.py::_top_edge_slope"]
+phase = 2
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.Sobel", "np.median", "np.quantile"]
+depends = []
+
+["features/geometry/batch_autocrop.py::_vertical_edge_profile"]
+phase = 2
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.Sobel", "np.percentile"]
+depends = []
+
+["features/geometry/batch_autocrop.py::build_roll_template"]
+phase = 2
+status = "todo"
+calls = ["np.median", "np.percentile"]
+depends = ["_mad", "_roll_border", "_threshold_fallback_frames"]
+
+["features/geometry/logic.py::_adaptive_threshold_levels"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["features/geometry/logic.py::_adaptive_threshold_mask"]
+phase = 2
+status = "todo"
+calls = ["cv2.getStructuringElement", "cv2.morphologyEx"]
+depends = []
+
+["features/geometry/logic.py::_border_edge_scatter"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/geometry/logic.py::_candidate_from_contour"]
+phase = 2
+status = "todo"
+calls = ["cv2.boundingRect", "cv2.boxPoints", "cv2.contourArea", "cv2.minAreaRect"]
+depends = ["_oriented_boundary_evidence"]
+
+["features/geometry/logic.py::_candidates_from_mask"]
+phase = 2
+status = "todo"
+calls = ["cv2.findContours"]
+depends = ["_candidate_from_contour"]
+
+["features/geometry/logic.py::_dark_region_bounds"]
+phase = 2
+status = "todo"
+calls = ["cv2.boundingRect", "cv2.contourArea", "cv2.cvtColor", "cv2.findContours", "cv2.getStructuringElement", "cv2.morphologyEx", "np.percentile"]
+depends = ["_ensure_color"]
+
+["features/geometry/logic.py::_detection_luma"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = ["_ensure_color"]
+
+["features/geometry/logic.py::_edge_border_depth"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = ["_border_edge_scatter", "_pool_border_depth", "_walk_border_depth"]
+
+["features/geometry/logic.py::_ensure_color"]
+phase = 2
+status = "todo"
+calls = ["cv2.cvtColor"]
+depends = []
+
+["features/geometry/logic.py::_estimate_tier_levels"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = ["_find_rebate_level"]
+
+["features/geometry/logic.py::_film_surround_is_plausible"]
+phase = 2
+status = "todo"
+calls = ["np.median", "np.percentile"]
+depends = []
+
+["features/geometry/logic.py::_find_rebate_level"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["features/geometry/logic.py::_mask_from_blackhat"]
+phase = 2
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.getStructuringElement", "cv2.morphologyEx", "cv2.threshold"]
+depends = []
+
+["features/geometry/logic.py::_mask_from_edges"]
+phase = 2
+status = "todo"
+calls = ["cv2.Canny", "cv2.GaussianBlur", "cv2.dilate", "cv2.getStructuringElement", "cv2.morphologyEx"]
+depends = []
+
+["features/geometry/logic.py::_mask_from_inverse_threshold"]
+phase = 2
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.getStructuringElement", "cv2.morphologyEx", "cv2.threshold"]
+depends = []
+
+["features/geometry/logic.py::_normalize_detection_input"]
+phase = 2
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["features/geometry/logic.py::_oriented_boundary_evidence"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = ["_polygon_values"]
+
+["features/geometry/logic.py::_polygon_values"]
+phase = 2
+status = "todo"
+calls = ["cv2.fillConvexPoly"]
+depends = []
+
+["features/geometry/logic.py::_pool_border_depth"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["features/geometry/logic.py::_pre_keystone_point"]
+phase = 2
+status = "todo"
+calls = ["cv2.getRotationMatrix2D"]
+depends = []
+
+["features/geometry/logic.py::_refine_frame_bounds"]
+phase = 2
+status = "todo"
+calls = ["cv2.Sobel", "cv2.convertScaleAbs", "cv2.cvtColor", "np.percentile"]
+depends = ["_dark_region_bounds", "_ensure_color"]
+
+["features/geometry/logic.py::_remap_tiled"]
+phase = 2
+status = "todo"
+calls = ["cv2.remap"]
+depends = []
+
+["features/geometry/logic.py::_score_contour"]
+phase = 2
+status = "todo"
+calls = ["cv2.boxPoints", "cv2.contourArea", "cv2.minAreaRect"]
+depends = []
+
+["features/geometry/logic.py::_snap_edge_to_gradient"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/geometry/logic.py::_threshold_polarities"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/geometry/logic.py::_vertical_edge_profile"]
+phase = 2
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.Sobel", "np.percentile"]
+depends = []
+
+["features/geometry/logic.py::_walk_border_depth"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/geometry/logic.py::apply_fine_rotation"]
+phase = 2
+status = "todo"
+calls = ["cv2.getRotationMatrix2D", "cv2.invertAffineTransform", "cv2.warpAffine"]
+depends = ["_remap_tiled"]
+
+["features/geometry/logic.py::apply_keystone"]
+phase = 2
+status = "todo"
+calls = ["cv2.warpPerspective"]
+depends = ["_remap_tiled"]
+
+["features/geometry/logic.py::apply_radial_distortion"]
+phase = 2
+status = "todo"
+calls = ["cv2.remap"]
+depends = ["_remap_tiled"]
+
+["features/geometry/logic.py::compute_geometry_crop_rect"]
+phase = 2
+status = "todo"
+calls = ["cv2.getRotationMatrix2D"]
+depends = []
+
+["features/geometry/logic.py::detect_film_bounds_with_confidence"]
+phase = 2
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.cvtColor", "np.median", "np.percentile"]
+depends = ["_adaptive_threshold_levels", "_adaptive_threshold_mask", "_candidates_from_mask", "_detection_luma", "_ensure_color", "_film_surround_is_plausible", "_mask_from_blackhat", "_mask_from_edges", "_mask_from_inverse_threshold", "_threshold_polarities", "_vertical_edge_profile"]
+
+["features/geometry/logic.py::keystone_matrix_normalized"]
+phase = 2
+status = "todo"
+calls = ["cv2.getPerspectiveTransform"]
+depends = []
+
+["features/geometry/logic.py::measure_film_border"]
+phase = 2
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["features/geometry/logic.py::resolve_autocrop_rect"]
+phase = 2
+status = "todo"
+calls = ["cv2.resize"]
+depends = ["_normalize_detection_input", "apply_fine_rotation", "apply_keystone", "apply_radial_distortion"]
+
+["features/geometry/skew.py::_at_canvas_edges"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/geometry/skew.py::_fit_side"]
+phase = 2
+status = "todo"
+calls = ["np.median"]
+depends = ["_profile_peaks"]
+
+["features/geometry/skew.py::_map"]
+phase = 2
+status = "todo"
+calls = ["cv2.getRotationMatrix2D"]
+depends = []
+
+["features/geometry/skew.py::_profile_lines"]
+phase = 2
+status = "todo"
+calls = ["cv2.Sobel", "cv2.dilate", "np.percentile"]
+depends = ["_fit_side"]
+
+["features/geometry/skew.py::_profile_peaks"]
+phase = 2
+status = "todo"
+calls = ["cv2.GaussianBlur", "np.median"]
+depends = []
+
+["features/geometry/skew.py::_unrotate"]
+phase = 2
+status = "todo"
+calls = ["cv2.getRotationMatrix2D"]
+depends = []
+
+["infrastructure/loaders/logluv.py::normalize_linear"]
+phase = 3
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["infrastructure/loaders/rawpy_loader.py::_stream_linearraw_preview"]
+phase = 3
+status = "todo"
+calls = ["cv2.erode", "cv2.getStructuringElement", "cv2.resize"]
+depends = []
+
+["kernel/image/logic.py::_float_to_uint16_luma_jit"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_float_to_uint8_luma_jit"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_gamut_aware_chroma_scale_kernel"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = ["_in_gamut_lab"]
+
+["kernel/image/logic.py::_get_luminance_jit"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_in_gamut_lab"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_lab_to_rgb_kernel"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_matmul_3x3_kernel"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_oetf_decode_flat"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_oetf_encode_flat"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_rgb_to_lab_kernel"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_skin_chroma_rein_kernel"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = ["_skin_weight"]
+
+["kernel/image/logic.py::_skin_weight"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = ["_smoothstep_scalar"]
+
+["kernel/image/logic.py::_smoothstep_scalar"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_to_uint16_jit"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_to_uint8_jit"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::rgb_to_rgba_into"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::rgba_to_rgb_into"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::uint16_to_float32"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::uint8_to_float32"]
+phase = 3
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/flatfield/logic.py::_evenness"]
+phase = 4
+status = "todo"
+calls = ["np.median", "np.percentile"]
+depends = ["_lit_mask"]
+
+["features/flatfield/logic.py::_fill_from_nearest"]
+phase = 4
+status = "todo"
+calls = ["cv2.distanceTransformWithLabels"]
+depends = []
+
+["features/flatfield/logic.py::_lit_mask"]
+phase = 4
+status = "todo"
+calls = ["cv2.erode", "np.percentile"]
+depends = []
+
+["features/flatfield/logic.py::apply_flatfield"]
+phase = 4
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["features/flatfield/logic.py::compute_gain"]
+phase = 4
+status = "todo"
+calls = ["cv2.GaussianBlur"]
+depends = ["_fill_from_nearest", "_lit_mask", "work_copy"]
+
+["features/flatfield/logic.py::self_corrected"]
+phase = 4
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["features/flatfield/logic.py::work_copy"]
+phase = 4
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["features/lens/logic.py::apply_lens"]
+phase = 4
+status = "todo"
+calls = ["cv2.remap"]
+depends = []
+
+["features/lens/warps.py::RectilinearWarp.remap"]
+phase = 4
+status = "todo"
+calls = ["cv2.undistortPointsIter"]
+depends = []
+
+["features/local/logic.py::rasterise"]
+phase = 4
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.fillPoly"]
+depends = []
+
+["features/process/capture_color.py::lightbox_level"]
+phase = 4
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["features/process/chart.py::sample_patches"]
+phase = 4
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/process/logic.py::detect_process_mode"]
+phase = 4
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["features/process/sensor.py::_log_unmix_kernel"]
+phase = 4
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/process/sensor.py::_two_scale_kernel"]
+phase = 4
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/process/sensor.py::_two_scale_layer_kernel"]
+phase = 4
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/process/sensor.py::_two_scale_unmix"]
+phase = 4
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.resize"]
+depends = ["_two_scale_kernel", "_two_scale_layer_kernel", "film_base"]
+
+["features/process/sensor.py::_unmix_kernel"]
+phase = 4
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/process/sensor.py::film_base"]
+phase = 4
+status = "todo"
+calls = ["cv2.resize", "np.median", "np.percentile", "np.quantile"]
+depends = []
+
+["features/retouch/clone.py::_cover"]
+phase = 4
+status = "todo"
+calls = ["cv2.circle", "cv2.polylines"]
+depends = []
+
+["features/retouch/clone.py::_local_mean"]
+phase = 4
+status = "todo"
+calls = ["cv2.GaussianBlur"]
+depends = []
+
+["features/retouch/clone.py::apply_clone_stroke"]
+phase = 4
+status = "todo"
+calls = ["cv2.distanceTransform"]
+depends = ["_cover", "_local_mean"]
+
+["features/retouch/logic.py::_add_floor_deficit"]
+phase = 4
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/retouch/logic.py::_blend_fill"]
+phase = 4
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/retouch/logic.py::_borrow_clean_grain"]
+phase = 4
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.distanceTransformWithLabels"]
+depends = []
+
+["features/retouch/logic.py::_box_mean_std"]
+phase = 4
+status = "todo"
+calls = ["cv2.blur"]
+depends = []
+
+["features/retouch/logic.py::_erode_resize_bounded"]
+phase = 4
+status = "todo"
+calls = ["cv2.erode", "cv2.resize"]
+depends = []
+
+["features/retouch/logic.py::_fill_rung"]
+phase = 4
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/retouch/logic.py::_fit_refraction_gammas"]
+phase = 4
+status = "todo"
+calls = ["cv2.Laplacian", "np.median", "np.percentile"]
+depends = []
+
+["features/retouch/logic.py::_hair_encode"]
+phase = 4
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/retouch/logic.py::_ir_clean_base"]
+phase = 4
+status = "todo"
+calls = ["cv2.blur", "cv2.dilate", "cv2.getStructuringElement"]
+depends = []
+
+["features/retouch/logic.py::_ir_decontaminate"]
+phase = 4
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["features/retouch/logic.py::_ir_glare"]
+phase = 4
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/retouch/logic.py::_ir_live"]
+phase = 4
+status = "todo"
+calls = ["cv2.connectedComponentsWithStats"]
+depends = []
+
+["features/retouch/logic.py::_ir_normalize_ratio"]
+phase = 4
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/retouch/logic.py::_is_hair"]
+phase = 4
+status = "todo"
+calls = ["cv2.distanceTransform"]
+depends = []
+
+["features/retouch/logic.py::_mask_to_score"]
+phase = 4
+status = "todo"
+calls = ["cv2.distanceTransform"]
+depends = []
+
+["features/retouch/logic.py::_proxy_norm"]
+phase = 4
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["features/retouch/logic.py::_scratch_ridge"]
+phase = 4
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.blur"]
+depends = []
+
+["features/retouch/logic.py::_shear_rows"]
+phase = 4
+status = "todo"
+calls = ["cv2.warpAffine"]
+depends = []
+
+["features/retouch/logic.py::apply_ir_attenuation"]
+phase = 4
+status = "todo"
+calls = ["cv2.multiply", "cv2.resize"]
+depends = []
+
+["features/retouch/logic.py::apply_score_repair"]
+phase = 4
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.resize"]
+depends = ["_add_floor_deficit", "_blend_fill", "_borrow_clean_grain", "score_weighted_fill"]
+
+["features/retouch/logic.py::compute_dust_stats"]
+phase = 4
+status = "todo"
+calls = ["cv2.blur", "cv2.getStructuringElement", "cv2.medianBlur", "cv2.morphologyEx"]
+depends = ["_box_mean_std", "_proxy_norm"]
+
+["features/retouch/logic.py::detect_luma_score"]
+phase = 4
+status = "todo"
+calls = ["cv2.connectedComponentsWithStats", "cv2.dilate", "cv2.getStructuringElement", "np.median"]
+depends = ["_box_mean_std", "_is_hair", "_mask_to_score", "compute_dust_stats", "split_hairs"]
+
+["features/retouch/logic.py::downsample_ir"]
+phase = 4
+status = "todo"
+calls = ["cv2.erode", "cv2.getStructuringElement", "cv2.resize"]
+depends = ["_erode_resize_bounded"]
+
+["features/retouch/logic.py::drop_exclusions"]
+phase = 4
+status = "todo"
+calls = ["cv2.distanceTransform"]
+depends = ["exclusion_cover"]
+
+["features/retouch/logic.py::exclusion_cover"]
+phase = 4
+status = "todo"
+calls = ["cv2.circle", "cv2.polylines"]
+depends = []
+
+["features/retouch/logic.py::ir_defect_score"]
+phase = 4
+status = "todo"
+calls = ["cv2.erode"]
+depends = []
+
+["features/retouch/logic.py::ir_ratio_and_gain"]
+phase = 4
+status = "todo"
+calls = ["cv2.resize"]
+depends = ["_fit_refraction_gammas", "_ir_clean_base", "_ir_decontaminate", "_ir_glare", "_ir_live", "_ir_normalize_ratio", "normalize_ir"]
+
+["features/retouch/logic.py::lines_to_score"]
+phase = 4
+status = "todo"
+calls = ["cv2.blur"]
+depends = ["_mask_to_score", "_shear_rows"]
+
+["features/retouch/logic.py::normalize_ir"]
+phase = 4
+status = "todo"
+calls = ["cv2.blur", "cv2.dilate", "cv2.getStructuringElement"]
+depends = []
+
+["features/retouch/logic.py::repair_components"]
+phase = 4
+status = "todo"
+calls = ["cv2.connectedComponentsWithStats", "cv2.resize"]
+depends = ["apply_score_repair"]
+
+["features/retouch/logic.py::route_wide_defects"]
+phase = 4
+status = "todo"
+calls = ["cv2.connectedComponentsWithStats", "cv2.dilate", "cv2.distanceTransform", "cv2.getStructuringElement"]
+depends = []
+
+["features/retouch/logic.py::score_weighted_fill"]
+phase = 4
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.boxFilter"]
+depends = ["_fill_rung"]
+
+["features/retouch/logic.py::split_hairs"]
+phase = 4
+status = "todo"
+calls = ["cv2.connectedComponentsWithStats"]
+depends = ["_is_hair"]
+
+["features/retouch/logic.py::strokes_to_score"]
+phase = 4
+status = "todo"
+calls = ["cv2.blur", "cv2.circle", "cv2.connectedComponents", "cv2.distanceTransform", "cv2.polylines", "np.median"]
+depends = ["_mask_to_score"]
+
+["features/retouch/logic.py::trace_scratch"]
+phase = 4
+status = "todo"
+calls = ["cv2.blur", "np.median"]
+depends = ["_shear_rows"]
+
+["features/hdr/logic.py::_accumulate"]
+phase = 5
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/hdr/logic.py::_align"]
+phase = 5
+status = "todo"
+calls = ["cv2.warpAffine"]
+depends = []
+
+["features/hdr/logic.py::_count_clipped_rows"]
+phase = 5
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/hdr/logic.py::measure_exposure"]
+phase = 5
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["features/hdr/logic.py::output_scale"]
+phase = 5
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/hdr/logic.py::pair_ratio"]
+phase = 5
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["features/rgbscan/logic.py::_align_to"]
+phase = 5
+status = "todo"
+calls = ["cv2.warpAffine"]
+depends = ["estimate_shift"]
+
+["features/stitch/logic.py::_seam_weight"]
+phase = 5
+status = "todo"
+calls = ["cv2.distanceTransform"]
+depends = []
+
+["features/stitch/logic.py::build_proxy"]
+phase = 5
+status = "todo"
+calls = ["cv2.resize", "np.percentile"]
+depends = []
+
+["features/stitch/logic.py::compute_canvas"]
+phase = 5
+status = "todo"
+calls = ["cv2.transform"]
+depends = []
+
+["features/stitch/logic.py::feather_blend"]
+phase = 5
+status = "todo"
+calls = ["cv2.distanceTransform"]
+depends = []
+
+["features/stitch/logic.py::warp_into_canvas"]
+phase = 5
+status = "todo"
+calls = ["cv2.warpAffine"]
+depends = []
+
+["features/exposure/logic.py::_apply_print_curve_kernel"]
+phase = 6
+status = "todo"
+calls = ["numba"]
+depends = ["_black_hold", "_fast_sigmoid", "_softplus", "plane_taps", "quadratic_core", "separation_damping_gain", "tone_key_weight"]
+
+["features/exposure/logic.py::_black_hold"]
+phase = 6
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/exposure/logic.py::_fast_sigmoid"]
+phase = 6
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/exposure/logic.py::_softplus"]
+phase = 6
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/exposure/logic.py::expand_mask_plane"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["features/exposure/logic.py::plane_taps"]
+phase = 6
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/exposure/logic.py::quadratic_core"]
+phase = 6
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/exposure/logic.py::separation_damping_gain"]
+phase = 6
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/exposure/logic.py::tone_key_weight"]
+phase = 6
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/exposure/print_lut.py::tetra_lookup"]
+phase = 6
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["features/lab/logic.py::_edge_mask"]
+phase = 6
+status = "todo"
+calls = ["cv2.blur"]
+depends = []
+
+["features/lab/logic.py::_usm_sharpening_block"]
+phase = 6
+status = "todo"
+calls = ["cv2.dilate", "cv2.erode", "cv2.merge", "cv2.sepFilter2D", "cv2.split"]
+depends = ["_edge_mask"]
+
+["features/lab/logic.py::apply_chroma_denoise"]
+phase = 6
+status = "todo"
+calls = ["cv2.sepFilter2D"]
+depends = ["chroma_edge_keep"]
+
+["features/lab/logic.py::apply_glow_and_halation"]
+phase = 6
+status = "todo"
+calls = ["cv2.GaussianBlur"]
+depends = []
+
+["features/lab/logic.py::apply_rl_sharpening"]
+phase = 6
+status = "todo"
+calls = ["cv2.sepFilter2D"]
+depends = ["_edge_mask"]
+
+["features/lab/logic.py::chroma_edge_keep"]
+phase = 6
+status = "todo"
+calls = ["cv2.filter2D"]
+depends = []
+
+["features/sabattier/logic.py::apply_sabattier"]
+phase = 6
+status = "todo"
+calls = ["cv2.sepFilter2D"]
+depends = []
+
+["features/toning/logic.py::_apply_chemical_toning_jit"]
+phase = 6
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["services/rendering/gpu_engine.py::GPUEngine._process_tiled"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = ["_downsample_for_analysis"]
+
+["services/rendering/gpu_engine.py::_downsample_for_analysis"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["services/rendering/image_processor.py::ImageProcessor.render_display_array"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = ["_downsample_to_long_edge"]
+
+["services/rendering/image_processor.py::_downsample_to_long_edge"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["services/rendering/image_processor.py::_resize_mask"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["services/rendering/preview_manager.py::PreviewManager._load_from_open_raw"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["services/rendering/preview_manager.py::PreviewManager._try_splash_from_open_raw"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_hdr"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = ["_load"]
+
+["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_hdr._load"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_rgb"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = ["_match"]
+
+["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_rgb._match"]
+phase = 6
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["desktop/controller.py::AppController._paint_flatfield_peek"]
+phase = 7
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["desktop/controller.py::_interactive_proxy"]
+phase = 7
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["desktop/view/canvas/overlay.py::CanvasOverlay._ir_layer_qimage"]
+phase = 7
+status = "todo"
+calls = ["cv2.remap"]
+depends = []
+
+["desktop/view/canvas/overlay.py::CanvasOverlay._mask_wash_qimage"]
+phase = 7
+status = "todo"
+calls = ["cv2.remap"]
+depends = []
+
+["desktop/view/canvas/overlay.py::CanvasOverlay._zone_outline"]
+phase = 7
+status = "todo"
+calls = ["cv2.approxPolyDP", "cv2.contourArea", "cv2.findContours"]
+depends = []
+
+["desktop/view/sidebar/files.py::print_dmax"]
+phase = 7
+status = "todo"
+calls = ["np.quantile"]
+depends = []
+
+["desktop/view/sidebar/scanlight.py::_RawClip.at"]
+phase = 7
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["desktop/view/widgets/charts.py::VectorscopeWidget._trace_image"]
+phase = 7
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["desktop/view/widgets/charts.py::WaveformWidget._trace_images"]
+phase = 7
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["desktop/view/widgets/prescan_dialog.py::_preview_u8"]
+phase = 7
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["desktop/view/widgets/scan_preview_common.py::preview_positive"]
+phase = 7
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["desktop/workers/chart_fit.py::ChartFitWorker.__init__"]
+phase = 7
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["desktop/workers/export.py::_looks_border_crushed"]
+phase = 7
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["infrastructure/display/icc_lut.py::_apply_lut_f32_jit"]
+phase = 7
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["infrastructure/display/icc_lut.py::_apply_lut_u16_jit"]
+phase = 7
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["infrastructure/display/icc_lut.py::_matrix_trc_u8_jit"]
+phase = 7
+status = "todo"
+calls = ["numba"]
+depends = []
+
+["services/assets/half_frame.py::_edge_band"]
+phase = 7
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["services/assets/half_frame.py::_gutter_scan"]
+phase = 7
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["services/assets/thumbnails.py::preview_positive"]
+phase = 7
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["services/capture/calibration.py::_ladder_stops"]
+phase = 7
+status = "todo"
+calls = ["np.median"]
+depends = []
+
+["services/capture/calibration.py::meter_base"]
+phase = 7
+status = "todo"
+calls = ["np.percentile"]
+depends = []
+
+["services/capture/meter.py::meter_frame"]
+phase = 7
+status = "todo"
+calls = ["np.median", "np.percentile"]
+depends = ["ranked_thumb"]
+
+["services/capture/meter.py::ranked_thumb"]
+phase = 7
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["services/export/contact_sheet.py::_place_tile"]
+phase = 7
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["services/export/linear_output.py::_apply_ice"]
+phase = 7
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["services/export/print.py::PrintService.apply_layout"]
+phase = 7
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["services/view/coordinate_mapping.py::CoordinateMapping._grid_homography"]
+phase = 7
+status = "todo"
+calls = ["cv2.getPerspectiveTransform"]
+depends = []
+
+["services/view/coordinate_mapping.py::CoordinateMapping.create_uv_grid"]
+phase = 7
+status = "todo"
+calls = ["cv2.getRotationMatrix2D", "cv2.invertAffineTransform"]
+depends = []
+
+["features/geometry/skew.py::_coarse_angles"]
+phase = 9
+status = "todo"
+calls = ["cv2.GaussianBlur", "cv2.createLineSegmentDetector", "np.percentile"]
+depends = []
+
+["features/retouch/logic.py::apply_hair_inpaint"]
+phase = 9
+status = "todo"
+calls = ["cv2.connectedComponentsWithStats", "cv2.dilate", "cv2.distanceTransform", "cv2.getStructuringElement", "cv2.inpaint", "cv2.resize", "np.percentile"]
+depends = ["_borrow_clean_grain", "_hair_encode"]
+
+["features/rgbscan/logic.py::estimate_shift"]
+phase = 9
+status = "todo"
+calls = ["cv2.createHanningWindow", "cv2.phaseCorrelate", "cv2.resize"]
+depends = []
+
+["features/stitch/logic.py::find_seams"]
+phase = 9
+status = "todo"
+calls = ["cv2.UMat", "cv2.detail_DpSeamFinder", "cv2.resize"]
+depends = []
+
+["features/stitch/logic.py::register_pair"]
+phase = 9
+status = "todo"
+calls = ["cv2.BFMatcher", "cv2.SIFT_create", "cv2.estimateAffinePartial2D"]
+depends = []
+
+["infrastructure/scanners/sane_backend.py::_align_ir_to_rgb"]
+phase = 9
+status = "todo"
+calls = ["cv2.createHanningWindow", "cv2.phaseCorrelate", "cv2.resize"]
+depends = []
+
+["infrastructure/scanners/sane_backend.py::_resample_rows_to_dpi"]
+phase = 9
+status = "todo"
+calls = ["cv2.resize"]
+depends = []
+
+["infrastructure/simulated/gphoto.py::SimGphoto.preview_jpeg"]
+phase = 9
+status = "stays"
+calls = ["cv2.cvtColor", "cv2.imencode"]
+depends = []

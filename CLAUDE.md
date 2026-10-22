@@ -61,6 +61,7 @@ Edits persist in SQLite (`edits.db`, keyed by content hash), optionally mirrored
 - Pure Rust: no dependency compiles C or C++ (`deny.toml` bans `cc`, `cmake`, `pkg-config`, `bindgen`). Codecs that need C stay on their Python wheels. A new crate's license goes in `NOTICE.md`.
 - No `unsafe` except SIMD, each with a reason. Names mirror the Python names.
 - **Bit-exact**: a port matches the Python result bit for bit (a zero's sign may differ where NumPy ranks -0.0 and 0.0 equal), checked by a pytest oracle against the numpy or `cv2` call it replaces, run on every release OS in CI (`ci.yml` job `native`). NumPy's rules to copy: the linear percentile (virtual index in f64, interpolation in f32, the `t >= 0.5` branch from the upper value); float32 sums in NumPy's order; NEP 50 promotion (a Python float joins float32 math as float32); Numba `fastmath` as f64 with `mul_add`; Python `round` ties to even. No fast-math. Threads only over independent outputs, or integer reductions, so the core count never changes a result.
+- `negpy_core/manifest.toml` lists every function to port (phase, status, `depends`). A port sets its entries to `ported`; `uv run python scripts/core_manifest.py` refreshes the rest after a change or a merge from `main`, and `tests/test_core_manifest.py` fails while it is stale.
 - A port that cannot be bit-exact needs the user's agreement, then the `BOUNDS_VERSION` and `THUMBNAIL_RENDER_VERSION` bumps.
 
 ### Pipeline
