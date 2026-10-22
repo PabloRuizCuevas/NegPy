@@ -170,7 +170,7 @@ The right-click menu also copies, pastes and resets settings, applies them to ot
 
 ### Scenes
 
-A scene is a group of frames shot in the same light. It gets its own Roll Analysis baseline, so its frames match each other. Select frames, then right-click → **Scene → Group as Scene…**. The same menu adds and removes frames, runs **Analyze Scene…**, and renames or deletes the scene. **Sort → Scene** groups them in the strip. Scenes need a roll.
+A scene is a group of frames shot in the same light. It gets its own Roll Analysis baseline, so its frames match each other. **Detect Scenes** in Roll Analysis finds these groups for you. To make one yourself, select frames, then right-click → **Scene → Group as Scene…**. The same menu adds and removes frames, runs **Analyze Scene…**, and renames or deletes the scene. **Sort → Scene** groups them in the strip. Scenes need a roll.
 
 ---
 
@@ -222,7 +222,7 @@ Two cards: **Crop** sets the part of the picture you keep, and **Straighten** tu
 
 Choose the part of the picture to keep, by hand or with Auto Crop.
 
-*   **Draw**: drag a crop on the picture. Drag a corner to resize it, the inside to move it, or outside the box to rotate. The **×** removes a crop you drew. Drawing turns Auto Crop off.
+*   **Draw**: drag a crop on the picture. Drag a corner to resize it, the inside to move it, or outside the box to rotate. `Enter` or **Done** keeps the crop, and `Esc` puts back the crop you had before. The **×** removes a crop you drew. Drawing turns Auto Crop off.
 *   **Auto Crop**: finds the edges of the picture and crops to them.
 *   **Ratio**: the crop shape, such as `3:2` or `1:1`, turned to fit the frame. **Free** uses the shape NegPy finds, and you can drag one side at a time. **Detect** picks the nearest standard shape.
 *   **Guide**: composition lines, such as thirds, while you draw. The rotate button turns them.
@@ -291,7 +291,7 @@ How light or dark the print is, and how much contrast it has.
 
 The paper the picture prints on, and how it turns light into tones from black to white.
 
-*   **Print stock**: the paper. A real paper sets the contrast curve and the colors from its maker's data. **Digital (Adobe RGB)**, the default, is an ideal paper. **Digital (Pakon Minilab)** has the colors of a Pakon lab scanner.
+*   **Print stock**: the paper. A real paper sets the contrast curve and the colors from its maker's data. **Digital (Adobe RGB)**, the default, is an ideal paper. **Digital (Pakon)** has the colors of a Pakon lab scanner. **Digital (Frontier)** has the colors and the contrast curve of a Fujifilm Frontier lab scan.
 *   **Paper Test Strip** (the striped button): prints the frame on every paper. Click a paper to see it large, step with the arrow keys, and press **Keep** to use it.
 *   **Dye Separation**: color strength in the print. 1 is unchanged. **Separation Damping** puts more of the change on dull colors and less on strong ones. **Chroma** on the Look tab changes all colors evenly instead.
 *   **Paper White**: shows the white of real paper, a little darker than pure white.
@@ -427,7 +427,7 @@ Your most-used sliders in one place. It is empty until you fill it: click **Edit
 Saved settings you can apply to other frames.
 
 *   **Apply** (or double-click a preset): applies the selected preset to this frame.
-*   **Save…**: choose which of the current settings to keep as a new preset.
+*   **Save…**: choose which of the current settings to keep as a new preset. A preset can hold the Crop and Optics settings with the Flat Field profile, but never one frame's crop, rotation or flips.
 *   **Pen** and **Trash**: edit or delete the selected preset.
 
 ---
@@ -470,9 +470,9 @@ The scanning choices are one setting for the whole app. They set how a RAW file 
 | Scanned with | Light | Decode | Print stock |
 | --- | --- | --- | --- |
 | Camera | White | Camera WB | Digital (Adobe RGB) |
-| Camera | Narrowband | Linear RAW | Digital (Pakon Minilab) |
+| Camera | Narrowband | Linear RAW | Digital (Pakon) |
 | Film scanner | White | Linear RAW | Digital (Adobe RGB) |
-| Film scanner | Narrowband | Linear RAW | Digital (Pakon Minilab) |
+| Film scanner | Narrowband | Linear RAW | Digital (Pakon) |
 
 A camera shows the Raw Decode and Optics cards. A camera with narrowband light also shows Trichrome and Calibration. A change updates every open frame (Ctrl+Z undoes it per frame), but a print stock you picked yourself stays. A camera Scan sets the decode and the print stock for each frame from its own light.
 
@@ -524,7 +524,7 @@ Corrects color errors that come from your light, camera and film.
 To turn a negative into a positive, NegPy measures its darkest and brightest parts (the black and white points) and the color of the film. These controls set what it measures.
 
 *   **Reanalyze Frame**: measures this frame again from its current crop.
-*   **Draw Region**: draw an area, and NegPy measures only that area. Double-click inside to confirm; **×** clears it.
+*   **Draw Region**: draw an area, and NegPy measures only that area. Double-click inside or press `Enter` to confirm, and `Esc` puts back the region you had before. **×** clears it.
 *   **Film Base**: click the clear film between frames to set the roll's film base, for the Analysis readout. **×** clears it.
 *   **Analysis Buffer**: ignores a border around the frame when measuring, so film edges and holders do not count.
 *   **Clipping**: how much of the print is pure black or pure white.
@@ -542,10 +542,11 @@ Measures the whole roll once and shares the result, so the frames of one film pr
 
 *   **Reanalyze**: measures every loaded frame (except scene and locked frames) and saves the average as the roll's baseline. Frames very different from the rest keep their own. It first crops the frames that wait for Auto Crop.
 *   **Use This Frame**: makes this frame's measurement the roll's baseline.
-*   **Use average**: **Luma** uses the roll's black and white points, **Color** the roll's color balance, and **Cast** (color negatives) the roll's gray balance for Cast Removal. With Luma and Color on, the roll prints evenly; with both off, each frame is measured on its own.
+*   **Use average**: **Luma** uses the roll's black and white points, **Color** the roll's color balance, and **Cast** (color negatives) the roll's gray balance for Cast Removal. With Cast on, a frame shot under a different light keeps some of that light, as on a Frontier print. A magenta cast stays, a warm or green cast stays in part, and a blue cast goes. With Luma and Color on, the roll prints evenly; with both off, each frame is measured on its own.
 *   **Baseline**: says where the baseline came from (roll, scene or frame). It warns when there is none or when it is out of date.
 *   **Rolls**: pick another roll's saved baseline. A ticked roll has one.
 *   **Scenes**: groups of frames with their own baseline, such as one subject under one light ([Scenes](#scenes)). **Analyze** measures the scene, **Select** selects its frames and **Delete** removes the group.
+*   **Detect Scenes**: finds the groups of frames under another light than the roll, in any frame order, and shows them on the Light Table. Each group waits under **Found**. To change a group, drag frames onto another group, or onto a frame with no scene to leave them out; right-click › **Scene** does the same. Give it a name, then **Accept** it as a scene with its own baseline, or **Discard** it.
 
 <!-- panel:demosaic -->
 ### 10.6 Raw Decode
@@ -574,7 +575,7 @@ Removes uneven light, such as darker corners, with a shot of the bare light sour
 *   **Apply Flat Field**: applies the selected profile to this roll.
 *   **Check Flat Field**: shows how well the profile evens out its own shot. Even gray is good; a band or patch shows where it is off.
 
-A new profile becomes the default for the next roll.
+A frame keeps its own profile unless it follows its roll, so each light and film format can have one. A new frame, or a frame whose profile is missing, takes the last profile you chose.
 
 ---
 

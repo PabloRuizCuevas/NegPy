@@ -112,7 +112,8 @@ def _context_cancel(controller, window) -> None:
     """Esc ladder: whatever has taken the canvas over goes first — a test strip, any peek,
     the before/after split — then the grain focuser loupe, then an armed zone, then
     in-progress tool geometry (polyline points, straighten line, zone pins), then the tool
-    itself, or the Zone Overlay when no tool is armed."""
+    itself (Crop and Draw Region put back what they changed), or the Zone Overlay when no
+    tool is armed."""
     if window.light_table_active():
         window.set_light_table(False)
         return
@@ -154,7 +155,7 @@ def _context_cancel(controller, window) -> None:
     if controller.state.active_tool == ToolMode.NONE and controller.state.zones_overlay:
         controller.toggle_zones_overlay(force=False)
         return
-    controller.cancel_active_tool()
+    controller.revert_active_tool()
 
 
 def _toggle_tool_button(window, tab_key: str, button) -> None:
@@ -588,6 +589,7 @@ class ShortcutManager:
             "toggle_tab_cards": lambda: _fire_tab_header(right, "cards"),
             "roll_batch_analysis": controller.request_batch_normalization,
             "analyze_all_scenes": controller.request_analyze_all_scenes,
+            "detect_scenes": controller.request_detect_scenes,
             "roll_settings": lambda: self.window.file_browser.roll_settings_btn.click(),
             "contact_sheet": lambda: right.export_sidebar.contact_sheet_btn.click(),
             "save_as_roll": lambda: self.window.file_browser.save_roll_action.trigger(),
