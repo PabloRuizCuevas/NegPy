@@ -767,6 +767,248 @@ pub fn roi_from_measured_border(
     (out.1 > out.0 && out.3 > out.2).then_some(out)
 }
 
+// Smallest fraction of a film-box side the tier refinement may keep. A rebate never takes half
+// a side, so anything below this is a broken occupancy run, not a frame.
+const TIER_MIN_KEEP: f64 = 0.5;
+
+/// `_smooth_signal(signal, window)`: `np.convolve(signal, ones(window) / window, "same")` in
+/// NumPy's float32 arithmetic. A full-overlap output of a window up to 11 goes through NumPy's
+/// small_correlate (float32 sums); every other output through BLAS sdot (float32 products, a
+/// float64 sum). None for a window over 31 (BLAS's vector path) or longer than the signal
+/// (np.convolve swaps the arrays): no caller uses either.
+pub fn smooth_signal(signal: &[f32], window: usize) -> Option<Vec<f32>> {
+    let n = signal.len();
+    if window <= 1 || n == 0 {
+        return Some(signal.to_vec());
+    }
+    if window > 31 || window > n {
+        return None;
+    }
+    let k = 1.0f32 / window as f32;
+    let left = window / 2;
+    (0..n)
+        .map(|o| {
+            let lo = left.saturating_sub(o);
+            let hi = window.min(n + left - o);
+            let terms = (lo..hi).map(|j| signal[o + j - left] * k);
+            if lo == 0 && hi == window && window <= 11 {
+                terms.fold(0f32, |s, p| s + p)
+            } else {
+                terms.fold(0f64, |s, p| s + p as f64) as f32
+            }
+        })
+        .collect::<Vec<f32>>()
+        .into()
+}
+
+/// `_snap_edge_to_gradient`'s windows: outward and inward fractions of the profile, the
+/// dominance over the window median, and the smallest window in pixels.
+#[derive(Clone, Copy)]
+pub struct Snap {
+    pub window_out: f64,
+    pub window_in: f64,
+    pub min_dominance: f64,
+    pub min_window_px: i64,
+}
+
+impl Default for Snap {
+    fn default() -> Self {
+        Snap {
+            window_out: 0.06,
+            window_in: 0.02,
+            min_dominance: 2.0,
+            min_window_px: 3,
+        }
+    }
+}
+
+/// `_snap_edge_to_gradient(profile, idx, is_start, ...)`: the edge moved to the strongest step
+/// of the smoothed profile in a window biased outward, when that step dominates the window.
+pub fn snap_edge_to_gradient(profile: &[f32], idx: i64, is_start: bool, snap: Snap) -> i64 {
+    let n = profile.len();
+    if n < 8 {
+        return idx;
+    }
+    let Some(sm) = smooth_signal(profile, py_round(0.01 * n as f64).max(3) as usize) else {
+        return idx;
+    };
+    let grad: Vec<f32> = sm.windows(2).map(|w| (w[1] - w[0]).abs()).collect();
+    let out_px = py_round(snap.window_out * n as f64).max(snap.min_window_px);
+    let in_px = py_round(snap.window_in * n as f64).max(snap.min_window_px);
+    let (lo, hi) = if is_start {
+        ((idx - out_px).max(0), (idx + in_px).min(n as i64 - 1))
+    } else {
+        ((idx - in_px).max(0), (idx + out_px).min(n as i64 - 1))
+    };
+    if hi <= lo {
+        return idx;
+    }
+    let window = &grad[lo as usize..hi as usize];
+    let peak = window.iter().copied().fold(window[0], np_max);
+    let median = np_median(&mut window.to_vec());
+    if (peak as f64) < snap.min_dominance * median as f64 + 1e-6 || peak.is_nan() || median.is_nan()
+    {
+        return idx;
+    }
+    // np.isclose(window, peak, rtol=1e-5, atol=1e-7): the difference in float32, the tolerance
+    // a Python float joining the comparison as float32 (NEP 50).
+    let tol = (1e-7 + 1e-5 * (peak as f64).abs()) as f32;
+    let mut best: Option<(i64, i64)> = None;
+    for (i, &v) in window.iter().enumerate() {
+        if (v - peak).abs() <= tol || v == peak {
+            let t = lo + i as i64 + 1;
+            let d = (t - idx).abs();
+            if best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((t, d));
+            }
+        }
+    }
+    best.map_or(idx, |(t, _)| t)
+}
+
+/// `_longest_run_above(profile, threshold)`: the longest half-open run with profile >= threshold,
+/// the first of equal length.
+fn longest_run_above(profile: &[f64], threshold: f64) -> Option<(i64, i64)> {
+    let idx: Vec<i64> = (0..profile.len())
+        .filter(|&i| profile[i] >= threshold)
+        .map(|i| i as i64)
+        .collect();
+    if idx.is_empty() {
+        return None;
+    }
+    let mut best = (idx[0], idx[0]);
+    let mut start = idx[0];
+    for w in 0..idx.len() {
+        let end_here = w + 1 == idx.len() || idx[w + 1] - idx[w] > 1;
+        if end_here {
+            if idx[w] - start > best.1 - best.0 {
+                best = (start, idx[w]);
+            }
+            if w + 1 < idx.len() {
+                start = idx[w + 1];
+            }
+        }
+    }
+    Some((best.0, best.1 + 1))
+}
+
+/// `_estimate_tier_levels(lum, film_roi)`: (bed, rebate, image, ring spread), or None.
+fn estimate_tier_levels(
+    lum: &[f32],
+    h: usize,
+    w: usize,
+    roi: (usize, usize, usize, usize),
+) -> Option<(f64, f64, f64, f64)> {
+    let bed = np_percentiles(lum, &[99.0])?[0] as f64;
+    let (rebate, ring_spread) = find_rebate_level(lum, h, w, roi, Some(bed))?;
+    let (y1, y2, x1, x2) = (roi.0.min(h), roi.1.min(h), roi.2.min(w), roi.3.min(w));
+    let boxed = crop(lum, w, (y1, y2, x1, x2));
+    let cut = (rebate - 0.02) as f32;
+    let dark: Vec<f32> = boxed.iter().copied().filter(|&v| v < cut).collect();
+    if (dark.len() as f64) < 0.05 * boxed.len() as f64 {
+        return None;
+    }
+    let image = np_percentiles(&dark, &[30.0])?[0] as f64;
+    if rebate - image < 0.04f64.max(3.0 * ring_spread) {
+        return None;
+    }
+    Some((bed, rebate, image, ring_spread))
+}
+
+pub struct TierRefinement {
+    pub roi: (i64, i64, i64, i64),
+    pub rows: Vec<f32>,
+    pub cols: Vec<f32>,
+}
+
+/// `_refine_film_roi_by_tiers(lum, film_roi)`: the picture box from rebate/image occupancy runs
+/// snapped to the strongest gradients, with the full-length occupancy profiles.
+pub fn refine_film_roi_by_tiers(
+    lum: &[f32],
+    h: usize,
+    w: usize,
+    roi: (usize, usize, usize, usize),
+) -> Option<TierRefinement> {
+    let (_, rebate, image, ring_spread) = estimate_tier_levels(lum, h, w, roi)?;
+    let (y1, y2, x1, x2) = (roi.0.min(h), roi.1.min(h), roi.2.min(w), roi.3.min(w));
+    let (bh, bw) = (y2 - y1, x2 - x1);
+    let boxed = crop(lum, w, (y1, y2, x1, x2));
+    let threshold = (0.5 * (rebate + image)).max(rebate - 0.04f64.max(3.0 * ring_spread)) as f32;
+    let mask: Vec<bool> = boxed.iter().map(|&v| v < threshold).collect();
+    let count = |r0: usize, r1: usize, c0: usize, c1: usize, by_row: bool| -> Vec<f64> {
+        if by_row {
+            (r0..r1)
+                .map(|r| {
+                    mask[r * bw + c0..r * bw + c1]
+                        .iter()
+                        .filter(|&&m| m)
+                        .count() as f64
+                        / (c1 - c0) as f64
+                })
+                .collect()
+        } else {
+            (c0..c1)
+                .map(|c| (r0..r1).filter(|&r| mask[r * bw + c]).count() as f64 / (r1 - r0) as f64)
+                .collect()
+        }
+    };
+    let row_occ = count(0, bh, 0, bw, true);
+    let (vt, vb) = longest_run_above(&row_occ, 0.55)?;
+    let col_occ = count(vt as usize, vb as usize, 0, bw, false);
+    let (hl, hr) = longest_run_above(&col_occ, 0.55)?;
+    if ((vb - vt) as f64) < TIER_MIN_KEEP * bh as f64
+        || ((hr - hl) as f64) < TIER_MIN_KEEP * bw as f64
+    {
+        return None;
+    }
+    let area = ((vb - vt) * (hr - hl)) as f64 / (bh * bw) as f64;
+    if !(0.25..=0.95).contains(&area) {
+        return None;
+    }
+    // box[vt:vb, :].mean(axis=0) sums down the columns; box[:, hl:hr].mean(axis=1) is a pairwise
+    // sum per row.
+    let (vtu, vbu, hlu, hru) = (vt as usize, vb as usize, hl as usize, hr as usize);
+    let mut col_profile = vec![0f32; bw];
+    for r in vtu..vbu {
+        for (c, p) in col_profile.iter_mut().enumerate() {
+            *p += boxed[r * bw + c];
+        }
+    }
+    col_profile
+        .iter_mut()
+        .for_each(|p| *p /= (vbu - vtu) as f32);
+    let row_profile: Vec<f32> = (0..bh)
+        .map(|r| pairwise_sum_f32(&boxed[r * bw + hlu..r * bw + hru]) / (hru - hlu) as f32)
+        .collect();
+    let hl = snap_edge_to_gradient(&col_profile, hl, true, Snap::default());
+    let hr = snap_edge_to_gradient(&col_profile, hr, false, Snap::default());
+    let vt = snap_edge_to_gradient(&row_profile, vt, true, Snap::default());
+    let vb = snap_edge_to_gradient(&row_profile, vb, false, Snap::default());
+    let pad_y = py_round(0.004 * bh as f64).max(2);
+    let pad_x = py_round(0.004 * bw as f64).max(2);
+    let (vt, vb) = ((vt - pad_y).max(0), (vb + pad_y).min(bh as i64));
+    let (hl, hr) = ((hl - pad_x).max(0), (hr + pad_x).min(bw as i64));
+    if vb - vt <= 0 || hr - hl <= 0 {
+        return None;
+    }
+    let mut rows = vec![0f32; h];
+    rows[y1..y2]
+        .iter_mut()
+        .zip(&row_occ)
+        .for_each(|(d, &v)| *d = v as f32);
+    let mut cols = vec![0f32; w];
+    cols[x1..x2]
+        .iter_mut()
+        .zip(&col_occ)
+        .for_each(|(d, &v)| *d = v as f32);
+    let (y1, x1) = (y1 as i64, x1 as i64);
+    Some(TierRefinement {
+        roi: (y1 + vt, y1 + vb, x1 + hl, x1 + hr),
+        rows,
+        cols,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

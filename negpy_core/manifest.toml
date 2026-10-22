@@ -532,9 +532,10 @@ depends = ["_place_window_by_occupancy"]
 
 ["features/geometry/logic.py::_estimate_tier_levels"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.percentile"]
 depends = ["_find_rebate_level"]
+note = "negpy_core::analysis::estimate_tier_levels (Python deleted)"
 
 ["features/geometry/logic.py::_film_surround_is_plausible"]
 phase = 2
@@ -625,15 +626,16 @@ depends = []
 
 ["features/geometry/logic.py::_refine_film_roi_by_tiers"]
 phase = 2
-status = "todo"
-calls = []
-depends = ["_estimate_tier_levels", "_snap_edge_to_gradient"]
+status = "ported"
+calls = ["negpy_core.refine_film_roi_by_tiers"]
+depends = []
+note = "negpy_core::analysis::refine_film_roi_by_tiers"
 
 ["features/geometry/logic.py::_refine_frame_bounds"]
 phase = 2
 status = "todo"
 calls = ["negpy_core.bgr_to_gray", "negpy_core.sobel", "np.percentile"]
-depends = ["_dark_region_bounds", "_normalize_to_uint8"]
+depends = ["_dark_region_bounds", "_normalize_to_uint8", "_smooth_signal"]
 
 ["features/geometry/logic.py::_refine_roi_to_image"]
 phase = 2
@@ -666,11 +668,18 @@ status = "todo"
 calls = []
 depends = ["_weighted_median"]
 
-["features/geometry/logic.py::_snap_edge_to_gradient"]
+["features/geometry/logic.py::_smooth_signal"]
 phase = 2
 status = "todo"
-calls = ["np.median"]
+calls = ["negpy_core.smooth_signal"]
 depends = []
+
+["features/geometry/logic.py::_snap_edge_to_gradient"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.snap_edge_to_gradient"]
+depends = []
+note = "negpy_core::analysis::snap_edge_to_gradient"
 
 ["features/geometry/logic.py::_snap_film_bounds_to_bed_gradient"]
 phase = 2

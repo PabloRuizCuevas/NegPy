@@ -1,7 +1,7 @@
 import math
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
-from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import cv2
 import negpy_core
@@ -137,11 +137,7 @@ def _ensure_color(image: np.ndarray) -> np.ndarray:
 
 
 def _smooth_signal(signal: np.ndarray, window: int) -> np.ndarray:
-    if window <= 1 or signal.size == 0:
-        return signal.astype(np.float32)
-
-    kernel = np.ones(window, dtype=np.float32) / window
-    return np.convolve(signal.astype(np.float32), kernel, mode="same")
+    return negpy_core.smooth_signal(np.ascontiguousarray(signal, dtype=np.float32), int(window))
 
 
 def _boundary_candidates(signal: np.ndarray, *, from_start: bool) -> tuple[int, float, int, float]:
@@ -927,18 +923,6 @@ def _snap_film_bounds_to_bed_gradient(roi: ROI, lum: np.ndarray) -> ROI:
     return max(0, ny1 - 2), min(h, ny2 + 2), max(0, nx1 - 2), min(w, nx2 + 2)
 
 
-class _TierLevels(NamedTuple):
-    bed: float
-    rebate: float
-    image: float
-    ring_spread: float
-
-
-# Smallest fraction of a film-box side the tier refinement may keep. A rebate never takes
-# half a side, so anything below this is a broken occupancy run, not a frame.
-_TIER_MIN_KEEP = 0.5
-
-
 def _detection_luma(img: np.ndarray) -> np.ndarray:
     """
     Luminance normalized so the light bed sits near 1.0 (anchored at P99.5).
@@ -1013,45 +997,6 @@ def _find_rebate_level(lum: np.ndarray, film_roi: ROI, bed: Optional[float] = No
     return negpy_core.find_rebate_level(np.ascontiguousarray(lum, dtype=np.float32), tuple(int(v) for v in film_roi), bed)
 
 
-def _estimate_tier_levels(lum: np.ndarray, film_roi: ROI) -> Optional[_TierLevels]:
-    """
-    Estimates the three luminance tiers (bed, rebate, exposed image) for a film box.
-    Returns None when the tiers are not reliably separable.
-    """
-    y1, y2, x1, x2 = film_roi
-    box = lum[y1:y2, x1:x2]
-
-    bed = float(np.percentile(lum, 99))
-    found = _find_rebate_level(lum, film_roi, bed)
-    if found is None:
-        return None
-    rebate, ring_spread = found
-
-    dark = box[box < rebate - 0.02]
-    if dark.size < 0.05 * box.size:
-        return None
-    image_level = float(np.percentile(dark, 30))
-
-    separation = rebate - image_level
-    if separation < max(0.04, 3.0 * ring_spread):
-        return None
-    return _TierLevels(bed, rebate, image_level, ring_spread)
-
-
-def _longest_run_above(profile: np.ndarray, threshold: float) -> Optional[Tuple[int, int]]:
-    """
-    Longest contiguous half-open index run with profile >= threshold.
-    """
-    idx = np.where(profile >= threshold)[0]
-    if idx.size == 0:
-        return None
-    breaks = np.where(np.diff(idx) > 1)[0]
-    starts = np.concatenate(([0], breaks + 1))
-    ends = np.concatenate((breaks, [idx.size - 1]))
-    k = int(np.argmax(idx[ends] - idx[starts]))
-    return int(idx[starts[k]]), int(idx[ends[k]]) + 1
-
-
 def _snap_edge_to_gradient(
     profile: np.ndarray,
     idx: int,
@@ -1067,30 +1012,9 @@ def _snap_edge_to_gradient(
     frame area when bright content touching the edge suppresses occupancy.
     Keeps idx unless the peak clearly dominates the window (>= 2x median).
     """
-    n = profile.size
-    if n < 8:
-        return idx
-    sm = _smooth_signal(profile, max(3, round(0.01 * n)))
-    grad = np.abs(np.diff(sm))
-    out_px = max(min_window_px, round(window_out * n))
-    in_px = max(min_window_px, round(window_in * n))
-    if is_start:
-        lo, hi = max(0, idx - out_px), min(n - 1, idx + in_px)
-    else:
-        lo, hi = max(0, idx - in_px), min(n - 1, idx + out_px)
-    window = grad[lo:hi]
-    if window.size == 0:
-        return idx
-    peak = float(np.max(window))
-    if peak >= min_dominance * float(np.median(window)) + 1e-6:
-        # Box smoothing turns a sharp step into a nearly flat plateau, so picking the first
-        # raw maximum lets sub-ULP OpenCV differences move the snapped edge by several pixels
-        # across resolutions and platforms. Treat equivalent maxima as one peak and keep the
-        # transition nearest the coarse contour edge.
-        near_peak = np.flatnonzero(np.isclose(window, peak, rtol=1e-5, atol=1e-7))
-        transitions = lo + near_peak + 1
-        return int(transitions[np.argmin(np.abs(transitions - idx))])
-    return idx
+    return negpy_core.snap_edge_to_gradient(
+        np.ascontiguousarray(profile, dtype=np.float32), int(idx), bool(is_start), window_out, window_in, min_dominance, int(min_window_px)
+    )
 
 
 def _refine_film_roi_by_tiers(lum: np.ndarray, film_roi: ROI) -> Optional[Tuple[ROI, np.ndarray, np.ndarray]]:
@@ -1101,66 +1025,7 @@ def _refine_film_roi_by_tiers(lum: np.ndarray, film_roi: ROI) -> Optional[Tuple[
     detection-image coords (profiles padded to full image length), or None when tiers
     are not separable (caller falls back to the Sobel path).
     """
-    levels = _estimate_tier_levels(lum, film_roi)
-    if levels is None:
-        return None
-
-    y1, y2, x1, x2 = film_roi
-    box = lum[y1:y2, x1:x2]
-    bh, bw = box.shape[:2]
-    # Image pixels are anything meaningfully darker than the rebate plateau, since any
-    # exposure adds density over base+fog. This keeps thin, bright frame regions classified as
-    # image. The midpoint is the floor for tightly separated tiers.
-    threshold = max(
-        0.5 * (levels.rebate + levels.image),
-        levels.rebate - max(0.04, 3.0 * levels.ring_spread),
-    )
-    mask = box < threshold
-
-    row_occ = mask.mean(axis=1)
-    vrun = _longest_run_above(row_occ, 0.55)
-    if vrun is None:
-        return None
-    vt, vb = vrun
-    # Restrict to the vertical run so rebate rows don't dilute column occupancy.
-    col_occ = mask[vt:vb].mean(axis=0)
-    hrun = _longest_run_above(col_occ, 0.55)
-    if hrun is None:
-        return None
-    hl, hr = hrun
-
-    # Single-frame sanity. Multi-frame strip scans fail here and fall back to Sobel.
-    # The floor is half a side: no rebate eats more than that, so a shorter run means the
-    # occupancy broke on bright picture content inside a full-bleed frame and the "rebate"
-    # tier was really the picture reaching the film edge. That splits the frame into a
-    # sliver, and the sliver is what the caller would crop to.
-    if (vb - vt) < _TIER_MIN_KEEP * bh or (hr - hl) < _TIER_MIN_KEEP * bw:
-        return None
-    area_ratio = ((vb - vt) * (hr - hl)) / float(bh * bw)
-    if not (0.25 <= area_ratio <= 0.95):
-        return None
-
-    col_profile = box[vt:vb, :].mean(axis=0)
-    row_profile = box[:, hl:hr].mean(axis=1)
-    hl = _snap_edge_to_gradient(col_profile, hl, is_start=True)
-    hr = _snap_edge_to_gradient(col_profile, hr, is_start=False)
-    vt = _snap_edge_to_gradient(row_profile, vt, is_start=True)
-    vb = _snap_edge_to_gradient(row_profile, vb, is_start=False)
-
-    pad_y = max(2, round(0.004 * bh))
-    pad_x = max(2, round(0.004 * bw))
-    vt, vb = max(0, vt - pad_y), min(bh, vb + pad_y)
-    hl, hr = max(0, hl - pad_x), min(bw, hr + pad_x)
-    if vb - vt <= 0 or hr - hl <= 0:
-        return None
-
-    h_det, w_det = lum.shape[:2]
-    row_occ_full = np.zeros(h_det, dtype=np.float32)
-    row_occ_full[y1:y2] = row_occ
-    col_occ_full = np.zeros(w_det, dtype=np.float32)
-    col_occ_full[x1:x2] = col_occ
-
-    return (y1 + vt, y1 + vb, x1 + hl, x1 + hr), row_occ_full, col_occ_full
+    return negpy_core.refine_film_roi_by_tiers(np.ascontiguousarray(lum, dtype=np.float32), tuple(int(v) for v in film_roi))
 
 
 def film_and_picture(det: np.ndarray) -> Tuple[Optional[ROI], ROI]:

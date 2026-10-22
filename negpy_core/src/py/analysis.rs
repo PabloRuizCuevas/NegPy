@@ -215,6 +215,76 @@ fn roi_from_measured_border(
     Ok(py.detach(|| analysis::roi_from_measured_border(data, h, w, film_roi)))
 }
 
+/// `_smooth_signal(signal, window)` for a 1-D float32 signal.
+#[pyfunction]
+fn smooth_signal<'py>(
+    py: Python<'py>,
+    signal: PyReadonlyArrayDyn<'py, f32>,
+    window: usize,
+) -> PyResult<Bound<'py, numpy::PyArray1<f32>>> {
+    let data = slice(&signal)?.to_vec();
+    let out = py
+        .detach(|| analysis::smooth_signal(&data, window))
+        .ok_or_else(|| {
+            PyValueError::new_err(
+                "smooth_signal covers a window of at most 31, no longer than the signal",
+            )
+        })?;
+    Ok(numpy::PyArray1::from_vec(py, out))
+}
+
+/// `_snap_edge_to_gradient(profile, idx, is_start, window_out, window_in, min_dominance, min_window_px)`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn snap_edge_to_gradient(
+    py: Python<'_>,
+    profile: PyReadonlyArrayDyn<'_, f32>,
+    idx: i64,
+    is_start: bool,
+    window_out: f64,
+    window_in: f64,
+    min_dominance: f64,
+    min_window_px: i64,
+) -> PyResult<i64> {
+    let data = slice(&profile)?;
+    let snap = analysis::Snap {
+        window_out,
+        window_in,
+        min_dominance,
+        min_window_px,
+    };
+    Ok(py.detach(|| analysis::snap_edge_to_gradient(data, idx, is_start, snap)))
+}
+
+type Refined<'py> = (
+    (i64, i64, i64, i64),
+    Bound<'py, numpy::PyArray1<f32>>,
+    Bound<'py, numpy::PyArray1<f32>>,
+);
+
+/// `_refine_film_roi_by_tiers(lum, film_roi)`: (roi, row occupancy, column occupancy) or None.
+#[pyfunction]
+fn refine_film_roi_by_tiers<'py>(
+    py: Python<'py>,
+    lum: PyReadonlyArrayDyn<'py, f32>,
+    film_roi: (usize, usize, usize, usize),
+) -> PyResult<Option<Refined<'py>>> {
+    let [h, w] = lum.shape()[..] else {
+        return Err(PyValueError::new_err(
+            "refine_film_roi_by_tiers needs a 2-D array",
+        ));
+    };
+    let data = slice(&lum)?;
+    let found = py.detach(|| analysis::refine_film_roi_by_tiers(data, h, w, film_roi));
+    Ok(found.map(|r| {
+        (
+            r.roi,
+            numpy::PyArray1::from_vec(py, r.rows),
+            numpy::PyArray1::from_vec(py, r.cols),
+        )
+    }))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(luminance, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_to_uint8, m)?)?;
@@ -225,5 +295,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(measure_film_edges, m)?)?;
     m.add_function(wrap_pyfunction!(trim_film_edges, m)?)?;
     m.add_function(wrap_pyfunction!(measure_film_border, m)?)?;
-    m.add_function(wrap_pyfunction!(roi_from_measured_border, m)?)
+    m.add_function(wrap_pyfunction!(roi_from_measured_border, m)?)?;
+    m.add_function(wrap_pyfunction!(smooth_signal, m)?)?;
+    m.add_function(wrap_pyfunction!(snap_edge_to_gradient, m)?)?;
+    m.add_function(wrap_pyfunction!(refine_film_roi_by_tiers, m)?)
 }
