@@ -88,8 +88,16 @@ fn soft_exp(x: f64) -> f64 {
         * (((((a0 * x0 + a1) * x0 + a2) * x0 + a3) * x0 + a4) * x0 + a5)
 }
 
-/// `cv2.getGaussianKernel(n, sigma, cv2.CV_32F)` (`getGaussianKernelBitExact`).
+/// `cv2.getGaussianKernel(n, sigma, cv2.CV_32F)`.
 pub fn gaussian_kernel(n: usize, sigma: f64) -> Vec<f32> {
+    gaussian_kernel_f64(n, sigma)
+        .iter()
+        .map(|&v| v as f32)
+        .collect()
+}
+
+/// `getGaussianKernelBitExact`, in its softdouble (here f64) values.
+pub fn gaussian_kernel_f64(n: usize, sigma: f64) -> Vec<f64> {
     if sigma <= 0.0 {
         let fixed: Option<&[f64]> = match n {
             1 => Some(&[1.0]),
@@ -112,7 +120,7 @@ pub fn gaussian_kernel(n: usize, sigma: f64) -> Vec<f32> {
             _ => None,
         };
         if let Some(k) = fixed {
-            return k.iter().map(|&v| v as f32).collect();
+            return k.to_vec();
         }
     }
     let sigma_x = if sigma > 0.0 {
@@ -150,7 +158,7 @@ pub fn gaussian_kernel(n: usize, sigma: f64) -> Vec<f32> {
     if n.is_multiple_of(2) {
         result[n2 + 1] = result[n2];
     }
-    result.iter().map(|&v| v as f32).collect()
+    result
 }
 
 /// `createGaussianKernels`' size from sigma for a float image.

@@ -353,26 +353,20 @@ depends = ["_candidate_from_contour"]
 ["features/geometry/logic.py::_dark_region_bounds"]
 phase = 2
 status = "todo"
-calls = ["cv2.boundingRect", "cv2.contourArea", "cv2.cvtColor", "cv2.findContours", "cv2.getStructuringElement", "negpy_core.morphology_ex", "np.percentile"]
-depends = ["_ensure_color"]
+calls = ["cv2.boundingRect", "cv2.contourArea", "cv2.findContours", "cv2.getStructuringElement", "negpy_core.bgr_to_gray", "negpy_core.morphology_ex", "np.percentile"]
+depends = []
 
 ["features/geometry/logic.py::_detection_luma"]
 phase = 2
 status = "todo"
 calls = ["np.percentile"]
-depends = ["_ensure_color"]
+depends = []
 
 ["features/geometry/logic.py::_edge_border_depth"]
 phase = 2
 status = "todo"
 calls = ["np.median"]
 depends = ["_border_edge_scatter", "_pool_border_depth", "_walk_border_depth"]
-
-["features/geometry/logic.py::_ensure_color"]
-phase = 2
-status = "todo"
-calls = ["cv2.cvtColor"]
-depends = []
 
 ["features/geometry/logic.py::_estimate_tier_levels"]
 phase = 2
@@ -401,19 +395,19 @@ depends = []
 ["features/geometry/logic.py::_mask_from_blackhat"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.getStructuringElement", "cv2.threshold", "negpy_core.morphology_ex"]
+calls = ["cv2.getStructuringElement", "negpy_core.gaussian_blur_u8", "negpy_core.morphology_ex", "negpy_core.threshold_otsu"]
 depends = []
 
 ["features/geometry/logic.py::_mask_from_edges"]
 phase = 2
 status = "todo"
-calls = ["cv2.Canny", "cv2.GaussianBlur", "cv2.getStructuringElement", "negpy_core.morphology_ex"]
+calls = ["cv2.getStructuringElement", "negpy_core.canny", "negpy_core.gaussian_blur_u8", "negpy_core.morphology_ex"]
 depends = []
 
 ["features/geometry/logic.py::_mask_from_inverse_threshold"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.getStructuringElement", "cv2.threshold", "negpy_core.morphology_ex"]
+calls = ["cv2.getStructuringElement", "negpy_core.gaussian_blur_u8", "negpy_core.morphology_ex", "negpy_core.threshold_otsu"]
 depends = []
 
 ["features/geometry/logic.py::_normalize_detection_input"]
@@ -455,8 +449,8 @@ depends = []
 ["features/geometry/logic.py::_refine_frame_bounds"]
 phase = 2
 status = "todo"
-calls = ["cv2.Sobel", "cv2.convertScaleAbs", "cv2.cvtColor", "np.percentile"]
-depends = ["_dark_region_bounds", "_ensure_color"]
+calls = ["negpy_core.bgr_to_gray", "negpy_core.sobel", "np.percentile"]
+depends = ["_dark_region_bounds"]
 
 ["features/geometry/logic.py::_remap_tiled"]
 phase = 2
@@ -527,8 +521,8 @@ depends = []
 ["features/geometry/logic.py::detect_film_bounds_with_confidence"]
 phase = 2
 status = "todo"
-calls = ["cv2.cvtColor", "negpy_core.gaussian_blur", "np.median", "np.percentile"]
-depends = ["_adaptive_threshold_levels", "_adaptive_threshold_mask", "_candidates_from_mask", "_detection_luma", "_ensure_color", "_film_surround_is_plausible", "_mask_from_blackhat", "_mask_from_edges", "_mask_from_inverse_threshold", "_threshold_polarities", "_vertical_edge_profile"]
+calls = ["negpy_core.bgr_to_gray", "negpy_core.gaussian_blur", "np.median", "np.percentile"]
+depends = ["_adaptive_threshold_levels", "_adaptive_threshold_mask", "_candidates_from_mask", "_detection_luma", "_film_surround_is_plausible", "_mask_from_blackhat", "_mask_from_edges", "_mask_from_inverse_threshold", "_threshold_polarities", "_vertical_edge_profile"]
 
 ["features/geometry/logic.py::keystone_matrix_normalized"]
 phase = 2

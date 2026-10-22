@@ -144,7 +144,7 @@ def _normalize_to_uint8(image: np.ndarray) -> np.ndarray:
 
 def _ensure_color(image: np.ndarray) -> np.ndarray:
     if image.ndim == 2:
-        return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        return np.repeat(image[..., None], 3, axis=2)
     return image
 
 
@@ -194,7 +194,7 @@ def _boundary_candidates(signal: np.ndarray, *, from_start: bool) -> tuple[int, 
 
 def _dark_region_bounds(image: np.ndarray) -> tuple[int, int, int, int] | None:
     preview = _normalize_to_uint8(_ensure_color(image))
-    gray = cv2.cvtColor(preview, cv2.COLOR_BGR2GRAY)
+    gray = negpy_core.bgr_to_gray(preview)
 
     threshold = float(np.percentile(gray, 55))
     mask = (gray <= threshold).astype(np.uint8) * 255
@@ -236,10 +236,10 @@ def _dark_region_bounds(image: np.ndarray) -> tuple[int, int, int, int] | None:
 
 def _refine_frame_bounds(image: np.ndarray) -> tuple[np.ndarray, tuple[int, int, int, int]]:
     preview = _normalize_to_uint8(_ensure_color(image))
-    gray = cv2.cvtColor(preview, cv2.COLOR_BGR2GRAY)
+    gray = negpy_core.bgr_to_gray(preview)
 
-    grad_x = cv2.convertScaleAbs(cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3))
-    grad_y = cv2.convertScaleAbs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3))
+    grad_x = np.minimum(np.abs(negpy_core.sobel(gray.astype(np.float32), 1, 0)), 255).astype(np.uint8)
+    grad_y = np.minimum(np.abs(negpy_core.sobel(gray.astype(np.float32), 0, 1)), 255).astype(np.uint8)
     col_signal = _smooth_signal(np.percentile(grad_x, 95, axis=0), 31)
     row_signal = _smooth_signal(np.percentile(grad_y, 95, axis=1), 31)
 
@@ -316,15 +316,15 @@ def _refine_frame_bounds(image: np.ndarray) -> tuple[np.ndarray, tuple[int, int,
 def _mask_from_blackhat(gray: np.ndarray) -> np.ndarray:
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (31, 31))
     blackhat = negpy_core.morphology_ex(gray, cv2.MORPH_BLACKHAT, kernel)
-    blackhat = cv2.GaussianBlur(blackhat, (5, 5), 0)
-    _, thresh = cv2.threshold(blackhat, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    blackhat = negpy_core.gaussian_blur_u8(blackhat, (5, 5), 0)
+    _, thresh = negpy_core.threshold_otsu(blackhat)
     close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (21, 21))
     return negpy_core.morphology_ex(thresh, cv2.MORPH_CLOSE, close_kernel, iterations=2)
 
 
 def _mask_from_inverse_threshold(gray: np.ndarray) -> np.ndarray:
-    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
-    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    blurred = negpy_core.gaussian_blur_u8(gray, (7, 7), 0)
+    _, thresh = negpy_core.threshold_otsu(blurred, 255, True)
     close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 17))
     open_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     cleaned = negpy_core.morphology_ex(thresh, cv2.MORPH_CLOSE, close_kernel, iterations=2)
@@ -332,8 +332,8 @@ def _mask_from_inverse_threshold(gray: np.ndarray) -> np.ndarray:
 
 
 def _mask_from_edges(gray: np.ndarray) -> np.ndarray:
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blurred, 40, 160)
+    blurred = negpy_core.gaussian_blur_u8(gray, (5, 5), 0)
+    edges = negpy_core.canny(blurred, 40, 160)
     dilate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
     close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
     dilated = negpy_core.morphology_ex(edges, cv2.MORPH_DILATE, dilate_kernel, iterations=2)
@@ -845,7 +845,7 @@ def detect_film_bounds_with_confidence(img: ImageBuffer) -> AutocropDetection:
 
     color = _ensure_color(img)
     preview = _normalize_to_uint8(color)
-    gray = cv2.cvtColor(preview, cv2.COLOR_BGR2GRAY)
+    gray = negpy_core.bgr_to_gray(preview)
     structural_masks = (
         ("inverse-threshold", _mask_from_inverse_threshold(gray)),
         ("blackhat", _mask_from_blackhat(gray)),
