@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass, replace
 
 import cv2
+import negpy_core
 import numpy as np
 
 from negpy.domain.interfaces import PipelineContext
@@ -106,7 +107,7 @@ def _coarse_angles(lum: np.ndarray) -> list[float]:
         return []
     bins = np.arange(-_MAX_SKEW_DEGREES, _MAX_SKEW_DEGREES + _ANGLE_BIN, _ANGLE_BIN)
     hist, _ = np.histogram(angle[keep], bins=bins, weights=length[keep] ** 2)
-    hist = cv2.GaussianBlur(hist.astype(np.float32).reshape(1, -1), (0, 0), 3.0).ravel()
+    hist = negpy_core.gaussian_blur(hist.astype(np.float32).reshape(1, -1), (0, 0), 3.0).ravel()
     first = int(np.argmax(hist))
     modes = [float(bins[first] + _ANGLE_BIN / 2)]
     rest = hist.copy()
@@ -121,7 +122,7 @@ def _profile_peaks(profile: np.ndarray) -> np.ndarray:
     """Subpixel positions of the strong gradient steps along one profile."""
     if profile.size < 5:
         return np.empty(0)
-    grad = np.abs(np.gradient(cv2.GaussianBlur(profile.reshape(-1, 1).astype(np.float32), (1, 0), 1.0).ravel()))
+    grad = np.abs(np.gradient(negpy_core.gaussian_blur(profile.reshape(-1, 1).astype(np.float32), (1, 0), 0, 1.0).ravel()))
     peak = float(grad.max())
     if peak <= 3.0 * float(np.median(grad)) + 1e-6:
         return np.empty(0)
@@ -297,7 +298,7 @@ def _profile_lines(lum: np.ndarray) -> list[EdgeLine]:
     h, w = lum.shape
     lines: list[EdgeLine] = []
     spread = max(3, int(0.02 * max(h, w)))
-    gy = np.abs(cv2.Sobel(lum.astype(np.float32), cv2.CV_32F, 0, 1, ksize=3))
+    gy = np.abs(negpy_core.sobel(lum.astype(np.float32), 0, 1))
     strong = (gy >= 0.25 * float(np.percentile(gy, 99.5))).astype(np.uint8)
     strong = cv2.dilate(strong, np.ones((2 * spread + 1, 1), np.uint8))
     rows = _outer_peaks(strong[:, int(0.05 * w) : int(0.95 * w)].mean(axis=1), 0.35)
@@ -308,7 +309,7 @@ def _profile_lines(lum: np.ndarray) -> list[EdgeLine]:
             if line is not None:
                 lines.append(line)
 
-    gx = np.abs(cv2.Sobel(lum.astype(np.float32), cv2.CV_32F, 1, 0, ksize=3))
+    gx = np.abs(negpy_core.sobel(lum.astype(np.float32), 1, 0))
     strong = (gx >= 0.25 * float(np.percentile(gx, 99.5))).astype(np.uint8)
     strong = cv2.dilate(strong, np.ones((1, 2 * spread + 1), np.uint8))
     lo, hi = top + int(0.05 * (bottom - top)), bottom - int(0.05 * (bottom - top))

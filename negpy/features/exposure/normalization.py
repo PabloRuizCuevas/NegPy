@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional, TYPE_CHECKING, Tuple
 
 import cv2
+import negpy_core
 import numpy as np
 from numba import njit  # type: ignore
 
@@ -821,7 +822,7 @@ def contrast_mask_plane(
     val = normalize_log_image(unmix_log_image(prefilter_log_grid(image, None, 0.0), unmix), bounds)
     lum = LUMA_R * val[:, :, 0] + LUMA_G * val[:, :, 1] + LUMA_B * val[:, :, 2]
     sigma = min(max(spacer, MASK_SPACER_MIN), MASK_SPACER_MAX) * 0.01 * min(lum.shape[:2])
-    blurred = cv2.GaussianBlur(np.ascontiguousarray(lum, dtype=np.float32), (0, 0), sigma, borderType=cv2.BORDER_REPLICATE)
+    blurred = negpy_core.gaussian_blur(np.ascontiguousarray(lum, dtype=np.float32), (0, 0), sigma, 0, cv2.BORDER_REPLICATE)
     centre = float(blurred.mean())
     return blurred - centre, centre
 
@@ -843,7 +844,7 @@ def diffusion_grid(
     image = analysis_grid(image, rotation, fine_rotation, flip_horizontal, flip_vertical, distortion_k1, converge_v, converge_h, roi_norm)
     light = np.ascontiguousarray(10.0 ** unmix_log_image(prefilter_log_grid(image, None, 0.0), unmix), dtype=np.float32)
     sigma = DIFFUSION_SPREAD * 0.01 * min(light.shape[:2])
-    return np.log10(cv2.GaussianBlur(light, (0, 0), sigma, borderType=cv2.BORDER_REPLICATE))
+    return np.log10(negpy_core.gaussian_blur(light, (0, 0), sigma, 0, cv2.BORDER_REPLICATE))
 
 
 def diffusion_plane(grid: np.ndarray, bounds: LogNegativeBounds, panchromatic: bool = False) -> Optional[np.ndarray]:

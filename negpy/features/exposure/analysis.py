@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Any, List, Optional, Sequence, Tuple
 
 import cv2
+import negpy_core
 import numpy as np
 
 from negpy.kernel.image.logic import get_luminance, rgb_to_lab_working, working_oetf_decode, working_oetf_encode
@@ -381,7 +382,7 @@ def zone_field(rgb: Any, max_edge: int = ZONE_FIELD_MAX_EDGE) -> Optional[np.nda
     scale = min(1.0, max_edge / max(small.shape[:2]))
     sh, sw = small.shape[:2]
     lum = get_luminance(cv2.resize(small, (max(1, round(sw * scale)), max(1, round(sh * scale))), interpolation=cv2.INTER_AREA))
-    lum = cv2.GaussianBlur(np.ascontiguousarray(lum, dtype=np.float32), (0, 0), 2.0)
+    lum = negpy_core.gaussian_blur(np.ascontiguousarray(lum, dtype=np.float32), (0, 0), 2.0)
     zones = np.clip(np.rint(np.nan_to_num(zone_of_encoded(lum))), 0, ZONE_COUNT).astype(np.uint8)
     return cv2.medianBlur(zones, 5)
 

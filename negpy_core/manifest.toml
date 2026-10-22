@@ -4,7 +4,7 @@
 ["kernel/image/logic.py::percentiles"]
 phase = 1
 status = "ported"
-calls = ["np.partition"]
+calls = ["negpy_core.percentiles"]
 depends = []
 note = "negpy_core::stats::percentiles"
 
@@ -89,7 +89,7 @@ depends = []
 ["features/exposure/analysis.py::zone_field"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.medianBlur", "cv2.resize"]
+calls = ["cv2.medianBlur", "cv2.resize", "negpy_core.gaussian_blur"]
 depends = []
 
 ["features/exposure/analysis.py::zone_grid"]
@@ -179,7 +179,7 @@ depends = []
 ["features/exposure/normalization.py::contrast_mask_plane"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur"]
+calls = ["negpy_core.gaussian_blur"]
 depends = ["analysis_grid"]
 
 ["features/exposure/normalization.py::density_above_base"]
@@ -197,7 +197,7 @@ depends = ["_smooth_along_scan_order", "pool_neutral_axis"]
 ["features/exposure/normalization.py::diffusion_grid"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur"]
+calls = ["negpy_core.gaussian_blur"]
 depends = ["analysis_grid"]
 
 ["features/exposure/normalization.py::measure_anchor_from_log"]
@@ -305,13 +305,13 @@ depends = []
 ["features/geometry/batch_autocrop.py::_top_edge_slope"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.Sobel", "np.median", "np.quantile"]
+calls = ["negpy_core.gaussian_blur", "negpy_core.sobel", "np.median", "np.quantile"]
 depends = []
 
 ["features/geometry/batch_autocrop.py::_vertical_edge_profile"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.Sobel", "np.percentile"]
+calls = ["negpy_core.gaussian_blur", "negpy_core.sobel", "np.percentile"]
 depends = []
 
 ["features/geometry/batch_autocrop.py::build_roll_template"]
@@ -416,6 +416,12 @@ status = "todo"
 calls = ["cv2.GaussianBlur", "cv2.getStructuringElement", "cv2.morphologyEx", "cv2.threshold"]
 depends = []
 
+["features/geometry/logic.py::_normalize_detection_input"]
+phase = 2
+status = "todo"
+calls = ["negpy_core.resize_area"]
+depends = []
+
 ["features/geometry/logic.py::_oriented_boundary_evidence"]
 phase = 2
 status = "todo"
@@ -479,7 +485,7 @@ depends = []
 ["features/geometry/logic.py::_vertical_edge_profile"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.Sobel", "np.mean", "np.percentile"]
+calls = ["negpy_core.gaussian_blur", "negpy_core.sobel", "np.mean", "np.percentile"]
 depends = []
 
 ["features/geometry/logic.py::_walk_border_depth"]
@@ -521,7 +527,7 @@ depends = []
 ["features/geometry/logic.py::detect_film_bounds_with_confidence"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.cvtColor", "np.median", "np.percentile"]
+calls = ["cv2.cvtColor", "negpy_core.gaussian_blur", "np.median", "np.percentile"]
 depends = ["_adaptive_threshold_levels", "_adaptive_threshold_mask", "_candidates_from_mask", "_detection_luma", "_ensure_color", "_film_surround_is_plausible", "_mask_from_blackhat", "_mask_from_edges", "_mask_from_inverse_threshold", "_threshold_polarities", "_vertical_edge_profile"]
 
 ["features/geometry/logic.py::keystone_matrix_normalized"]
@@ -540,7 +546,7 @@ depends = []
 phase = 2
 status = "todo"
 calls = ["cv2.resize"]
-depends = ["apply_fine_rotation", "apply_keystone", "apply_radial_distortion"]
+depends = ["_normalize_detection_input", "apply_fine_rotation", "apply_keystone", "apply_radial_distortion"]
 
 ["features/geometry/skew.py::_at_canvas_edges"]
 phase = 2
@@ -569,13 +575,13 @@ depends = ["_at_canvas_edges", "_profile_lines", "_unrotate"]
 ["features/geometry/skew.py::_profile_lines"]
 phase = 2
 status = "todo"
-calls = ["cv2.Sobel", "cv2.dilate", "np.percentile"]
+calls = ["cv2.dilate", "negpy_core.sobel", "np.percentile"]
 depends = ["_fit_side"]
 
 ["features/geometry/skew.py::_profile_peaks"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur", "np.median"]
+calls = ["negpy_core.gaussian_blur", "np.median"]
 depends = []
 
 ["features/geometry/skew.py::_ransac_line"]
@@ -1577,7 +1583,7 @@ depends = []
 ["features/geometry/skew.py::_coarse_angles"]
 phase = 9
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.createLineSegmentDetector", "np.histogram", "np.percentile"]
+calls = ["cv2.createLineSegmentDetector", "negpy_core.gaussian_blur", "np.histogram", "np.percentile"]
 depends = []
 
 ["features/retouch/logic.py::apply_hair_inpaint"]

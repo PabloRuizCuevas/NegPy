@@ -66,7 +66,7 @@ class _Scanner(ast.NodeVisitor):
                 continue
             f = n.func
             if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name):
-                if f.value.id == "cv2" or (f.value.id == "np" and f.attr in ORDER_STATS | REDUCTIONS):
+                if f.value.id in ("cv2", "negpy_core") or (f.value.id == "np" and f.attr in ORDER_STATS | REDUCTIONS):
                     calls.add(f"{f.value.id}.{f.attr}")
             elif isinstance(f, ast.Name):
                 names.add(f.id)
@@ -79,7 +79,7 @@ class _Scanner(ast.NodeVisitor):
 
 
 def scan() -> dict[str, dict]:
-    """Every function under negpy/ that calls cv2, a numpy order statistic or reduction, or is a Numba kernel."""
+    """Every function under negpy/ that calls cv2, negpy_core, a numpy order statistic or reduction, or is a Numba kernel."""
     found: dict[str, dict] = {}
     for path in sorted((ROOT / "negpy").rglob("*.py")):
         rel = path.relative_to(ROOT / "negpy").as_posix()

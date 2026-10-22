@@ -98,6 +98,32 @@ fn sep_filter2d<'py>(
     })
 }
 
+/// `cv2.Sobel(src, cv2.CV_32F, dx, dy, ksize=3, borderType=border)` for float32: sepFilter2D
+/// with getDerivKernels' 3-tap kernels.
+#[pyfunction]
+#[pyo3(signature = (src, dx, dy, border_type=4))]
+fn sobel<'py>(
+    py: Python<'py>,
+    src: PyReadonlyArrayDyn<'py, f32>,
+    dx: u8,
+    dy: u8,
+    border_type: i32,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let kernel = |order: u8| match order {
+        0 => Ok(vec![1.0f32, 2.0, 1.0]),
+        1 => Ok(vec![-1.0f32, 0.0, 1.0]),
+        _ => Err(PyValueError::new_err(
+            "sobel covers derivative orders 0 and 1",
+        )),
+    };
+    let (kx, ky) = (kernel(dx)?, kernel(dy)?);
+    let img = image(&src)?;
+    let b = border(border_type)?;
+    filled(py, &img.shape, |dst| {
+        filter::sep_filter2d(img.data, dst, img.dims, (&kx, &ky), b)
+    })
+}
+
 /// `cv2.getGaussianKernel(n, sigma, cv2.CV_32F)` as a flat list.
 #[pyfunction]
 fn gaussian_kernel(n: usize, sigma: f64) -> Vec<f32> {
@@ -107,5 +133,6 @@ fn gaussian_kernel(n: usize, sigma: f64) -> Vec<f32> {
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gaussian_blur, m)?)?;
     m.add_function(wrap_pyfunction!(sep_filter2d, m)?)?;
+    m.add_function(wrap_pyfunction!(sobel, m)?)?;
     m.add_function(wrap_pyfunction!(gaussian_kernel, m)?)
 }

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field, replace
 from typing import Sequence
 
 import cv2
+import negpy_core
 import numpy as np
 
 from negpy.domain.types import ROI, ImageBuffer
@@ -156,12 +157,12 @@ def _vertical_edge_profile(img: ImageBuffer) -> tuple[np.ndarray, float]:
     low, high = np.percentile(finite, (2.0, 98.0))
     span = max(float(high - low), 1e-6)
     normalized = np.clip((gray - low) / span, 0.0, 1.0).astype(np.float32)
-    grad = np.abs(cv2.Sobel(normalized, cv2.CV_32F, 1, 0, ksize=3))
+    grad = np.abs(negpy_core.sobel(normalized, 1, 0))
     profile = np.percentile(grad, 80, axis=0).astype(np.float32)
     window = max(5, int(round(profile.size * 0.012)))
     if window % 2 == 0:
         window += 1
-    profile = cv2.GaussianBlur(profile.reshape(1, -1), (window, 1), 0).ravel()
+    profile = negpy_core.gaussian_blur(profile.reshape(1, -1), (window, 1), 0).ravel()
     peak = float(np.max(profile)) if profile.size else 0.0
     contrast = max(0.0, float(np.percentile(profile, 99.5)) - float(np.percentile(profile, 50.0))) if profile.size else 0.0
     if peak > 0.0:
@@ -188,7 +189,7 @@ def _top_edge_slope(lum: np.ndarray, roi: ROI) -> float | None:
     if high - low < 4:
         return None
 
-    gradient = np.abs(cv2.Sobel(cv2.GaussianBlur(lum.astype(np.float32), (0, 0), 1.5), cv2.CV_32F, 0, 1, ksize=3))
+    gradient = np.abs(negpy_core.sobel(negpy_core.gaussian_blur(lum.astype(np.float32), (0, 0), 1.5), 0, 1))
     band = gradient[low:high, columns]
     rows = low + np.argmax(band, axis=0)
     strength = band.max(axis=0)

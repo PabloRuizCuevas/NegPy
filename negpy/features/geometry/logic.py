@@ -770,10 +770,10 @@ def _select_consensus_cluster(candidates: list[_FilmCandidate], image_shape: tup
 def _vertical_edge_profile(lum: np.ndarray) -> tuple[np.ndarray, float]:
     if lum.size == 0:
         return np.empty(0, dtype=np.float32), 0.0
-    gradient = np.abs(cv2.Sobel(lum.astype(np.float32), cv2.CV_32F, 1, 0, ksize=3))
+    gradient = np.abs(negpy_core.sobel(lum.astype(np.float32), 1, 0))
     profile = np.mean(gradient, axis=0).astype(np.float32)
     window = _odd_kernel_size(0.006 * profile.size, 3, 15)
-    profile = cv2.GaussianBlur(profile.reshape(1, -1), (window, 1), 0).ravel()
+    profile = negpy_core.gaussian_blur(profile.reshape(1, -1), (window, 1), 0).ravel()
     baseline = float(np.percentile(profile, 50.0)) if profile.size else 0.0
     normalizer = float(np.percentile(profile, 99.5)) if profile.size else 0.0
     contrast = max(0.0, normalizer - baseline)
@@ -823,7 +823,7 @@ def detect_film_bounds_with_confidence(img: ImageBuffer) -> AutocropDetection:
 
     min_dim = min(lum.shape[:2])
     blur_size = _odd_kernel_size(0.004 * min_dim, 3, 9)
-    blurred_lum = cv2.GaussianBlur(lum.astype(np.float32), (blur_size, blur_size), 0)
+    blurred_lum = negpy_core.gaussian_blur(lum.astype(np.float32), (blur_size, blur_size), 0)
     image_shape = lum.shape[:2]
     candidates: list[_FilmCandidate] = []
     for polarity in polarities:
