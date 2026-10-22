@@ -780,16 +780,6 @@ QPushButton:focus, QToolButton:focus {
     border: 1px solid @border_focus;
 }
 
-/* The ring grows inward: a 2px border on a 12px content box would make the
-   handle 16px wide while the groove clamps its height, so it reads as an egg. */
-QSlider::handle:horizontal:focus {
-    border: 2px solid @text_on_accent;
-    width: 8px;
-    height: 8px;
-    margin: -4px 0;
-    border-radius: 6px;
-}
-
 /* Find (see widgets/command_palette.py). */
 QDialog#command_palette {
     border: 1px solid @border_hover;
