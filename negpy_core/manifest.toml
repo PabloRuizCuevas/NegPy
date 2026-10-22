@@ -451,8 +451,8 @@ depends = []
 
 ["features/geometry/batch_autocrop.py::_vertical_edge_profile"]
 phase = 2
-status = "todo"
-calls = ["negpy_core.gaussian_blur", "negpy_core.sobel", "np.percentile"]
+status = "ported"
+calls = ["negpy_core.batch_edge_profile"]
 depends = []
 
 ["features/geometry/batch_autocrop.py::build_roll_template"]

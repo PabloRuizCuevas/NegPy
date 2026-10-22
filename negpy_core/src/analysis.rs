@@ -169,6 +169,64 @@ pub fn threshold_box(
     Some((rows[0], rows[rows.len() - 1], cols[0], cols[cols.len() - 1]))
 }
 
+/// `_vertical_edge_profile` of batch autocrop for an HxW or HxWxC float32 image: the 80th
+/// percentile of each column's |Sobel x| on the 2..98 percentile stretch of the channel mean,
+/// blurred along the row and scaled to its peak, and its 99.5 - 50 percentile contrast.
+pub fn batch_edge_profile(img: &[f32], h: usize, w: usize, cn: usize) -> (Vec<f32>, f64) {
+    let gray: Vec<f32> = if cn == 1 {
+        img.to_vec()
+    } else {
+        img.chunks_exact(cn)
+            .map(|p| (p[0] + p[1] + p[2]) / 3.0)
+            .collect()
+    };
+    let finite: Vec<f32> = gray.iter().copied().filter(|v| v.is_finite()).collect();
+    if finite.is_empty() || w < 2 {
+        return (vec![0.0; w], 0.0);
+    }
+    let p = crate::stats::np_percentiles_f64(&finite, &[2.0, 98.0]);
+    let (low, span) = (p[0], (p[1] - p[0]).max(1e-6));
+    let normalized: Vec<f32> = gray
+        .iter()
+        .map(|&v| ((v as f64 - low) / span).clamp(0.0, 1.0) as f32)
+        .collect();
+    let mut grad = vec![0f32; h * w];
+    let _ = crate::filter::sep_filter2d(
+        &normalized,
+        &mut grad,
+        (h, w, 1),
+        (&[-1.0, 0.0, 1.0], &[1.0, 2.0, 1.0]),
+        Border::Reflect101,
+    );
+    let columns: Vec<f32> = (0..w)
+        .into_par_iter()
+        .map(|x| {
+            let col: Vec<f32> = (0..h).map(|y| grad[y * w + x].abs()).collect();
+            np_percentiles(&col, &[80.0]).map_or(f32::NAN, |p| p[0])
+        })
+        .collect();
+    let window = {
+        let k = 5.max((w as f64 * 0.012).round_ties_even() as usize);
+        if k % 2 == 0 { k + 1 } else { k }
+    };
+    let mut profile = vec![0f32; w];
+    let _ = crate::filter::gaussian_blur(
+        &columns,
+        &mut profile,
+        (1, w, 1),
+        (window, 1),
+        (0.0, 0.0),
+        Border::Reflect101,
+    );
+    let peak = profile.iter().copied().fold(f32::NEG_INFINITY, np_max);
+    let pct = |q: f64| np_percentiles(&profile, &[q]).map_or(f32::NAN, |p| p[0]) as f64;
+    let contrast = 0f64.max(pct(99.5) - pct(50.0));
+    if peak > 0.0 {
+        profile.iter_mut().for_each(|v| *v /= peak);
+    }
+    (profile, contrast)
+}
+
 const BASE_BLOCK: usize = 8;
 const CLIP_LEVEL: f32 = 0.98;
 const FLAT_CV: f32 = 0.03;

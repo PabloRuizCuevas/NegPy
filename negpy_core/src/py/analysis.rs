@@ -437,6 +437,27 @@ fn threshold_box(
     Ok(py.detach(|| analysis::threshold_box(data, h, w, threshold)))
 }
 
+/// Batch autocrop's `_vertical_edge_profile` of an HxW or HxWxC (C >= 3) float32 image:
+/// (profile, contrast).
+#[pyfunction]
+fn batch_edge_profile<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<(Bound<'py, numpy::PyArray1<f32>>, f64)> {
+    let (h, w, cn) = match img.shape()[..] {
+        [h, w] | [h, w, 1] => (h, w, 1),
+        [h, w, c] if c >= 3 => (h, w, c),
+        _ => {
+            return Err(PyValueError::new_err(
+                "batch_edge_profile needs an HxW, HxWx1 or HxWxC array, C >= 3",
+            ));
+        }
+    };
+    let data = slice(&img)?;
+    let (profile, contrast) = py.detach(|| analysis::batch_edge_profile(data, h, w, cn));
+    Ok((numpy::PyArray1::from_vec(py, profile), contrast))
+}
+
 type ConsensusFields = (
     analysis::Roi,
     f64,
@@ -566,6 +587,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(normalize_log_image, m)?)?;
     m.add_function(wrap_pyfunction!(block_median_grid, m)?)?;
     m.add_function(wrap_pyfunction!(threshold_box, m)?)?;
+    m.add_function(wrap_pyfunction!(batch_edge_profile, m)?)?;
     m.add_function(wrap_pyfunction!(film_box_covers_enough, m)?)?;
     m.add_function(wrap_pyfunction!(film_surround_is_plausible, m)?)
 }

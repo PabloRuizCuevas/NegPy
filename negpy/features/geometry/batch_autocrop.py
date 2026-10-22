@@ -144,30 +144,10 @@ class ResolvedCrop:
 
 
 def _vertical_edge_profile(img: ImageBuffer) -> tuple[np.ndarray, float]:
-    """Return a contrast-normalized vertical-edge profile for template fallback."""
-    arr = np.asarray(img, dtype=np.float32)
-    if arr.ndim == 3:
-        gray = arr[..., :3].mean(axis=2)
-    else:
-        gray = arr
-    finite = gray[np.isfinite(gray)]
-    if finite.size == 0 or gray.shape[1] < 2:
-        return np.zeros(gray.shape[1], dtype=np.float32), 0.0
-
-    low, high = np.percentile(finite, (2.0, 98.0))
-    span = max(float(high - low), 1e-6)
-    normalized = np.clip((gray - low) / span, 0.0, 1.0).astype(np.float32)
-    grad = np.abs(negpy_core.sobel(normalized, 1, 0))
-    profile = np.percentile(grad, 80, axis=0).astype(np.float32)
-    window = max(5, int(round(profile.size * 0.012)))
-    if window % 2 == 0:
-        window += 1
-    profile = negpy_core.gaussian_blur(profile.reshape(1, -1), (window, 1), 0).ravel()
-    peak = float(np.max(profile)) if profile.size else 0.0
-    contrast = max(0.0, float(np.percentile(profile, 99.5)) - float(np.percentile(profile, 50.0))) if profile.size else 0.0
-    if peak > 0.0:
-        profile /= peak
-    return profile.astype(np.float32), contrast
+    """Return a contrast-normalized vertical-edge profile for template fallback; negpy_core
+    holds the rules."""
+    profile, contrast = negpy_core.batch_edge_profile(np.ascontiguousarray(img, dtype=np.float32))
+    return profile, contrast
 
 
 def _top_edge_slope(lum: np.ndarray, roi: ROI) -> float | None:
