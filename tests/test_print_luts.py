@@ -180,6 +180,29 @@ def test_frontier_lut_keeps_grays_neutral_and_turns_red_to_orange():
     assert 5.0 < turn < 35.0
 
 
+def test_frontier_lut_turns_skin_hues_without_corners():
+    # A skin gradient's chroma must change smoothly: the 8-bit cube's corners show as steps at chroma x3.
+    s = np.linspace(0, 1, 100)
+    e = np.array([0.25, 0.45, 0.65]) + s[None, :, None] * 1.1 + s[:, None, None] * np.array([-0.05, 0.55, 0.15])
+    lut = load_print_lut("frontier")
+    ab = rgb_to_lab_working(np.array([tetra_lookup(lut.table, lut.e_max, *v) for v in e.reshape(-1, 3)]))[:, 1:]
+    gy, gx = np.gradient(ab.reshape(100, 100, 2), s, s, axis=(0, 1))
+    rate = np.hypot(np.linalg.norm(gx, axis=-1), np.linalg.norm(gy, axis=-1))
+    assert np.hypot(*np.gradient(rate, s, s)).max() < 1500.0
+
+
+def test_blur_nodes_keeps_a_flat_grid_and_spreads_a_spike():
+    import build_print_luts as b
+
+    flat = np.full((8, 8, 8, 3), 7.0)
+    np.testing.assert_allclose(b.blur_nodes(flat, 1.0), flat)
+    spike = np.zeros((9, 9, 9, 3))
+    spike[4, 4, 4] = 1.0
+    out = b.blur_nodes(spike, 1.0)
+    assert out.sum() == pytest.approx(3.0)
+    assert 0.0 < out[4, 4, 4, 0] < 0.1
+
+
 def test_build_spec_ships_print_luts():
     spec = (pathlib.Path(__file__).parents[1] / "build.py").read_text()
     assert "negpy/features/exposure/print_luts:negpy/features/exposure/print_luts" in spec

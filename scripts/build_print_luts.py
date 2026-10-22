@@ -76,6 +76,10 @@ FRONTIER = {
 FRONTIER_HEADROOM = 0.3
 # LUT key -> source, for a Frontier 350/370's own tables read from --frontier-dir (not in the repo).
 D35 = {"frontier": "Fujifilm Frontier 350/370 file output (A1 v7.6 tables)"}
+# Gaussian blur, in nodes, of the chroma of the Frontier's 32^3 cube. Its 8-bit nodes sit 32 codes apart and turn some
+# hues within one step, which a trilinear lookup draws as corners in a smooth gradient. Each node keeps its channel mean,
+# so the near-black neutral solve stays on Fuji's luminance.
+FRONTIER_CUBE_BLUR = 1.0
 FRONTIER_DIR = pathlib.Path.home() / "code" / "frontier" / "frontier_sw" / "EZ171" / "fujifilm" / "Frontier"
 SHIPPED = ("kodak_e4070", "kodak_e4021", "kodak_2383", "kodak_2393", *LOOKS, *FRONTIER, *D35)
 
@@ -368,6 +372,19 @@ def trilinear(grid, f):
     return out
 
 
+def blur_nodes(grid, sigma):
+    """Gaussian blur of an (n, n, n, 3) node grid over its node axes, edges held."""
+    r = int(4 * sigma + 0.5)
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    for ax in range(3):
+        pad = [(0, 0)] * grid.ndim
+        pad[ax] = (r, r)
+        g = np.pad(grid, pad, mode="edge")
+        grid = sum(w * np.take(g, np.arange(i, i + grid.shape[ax]), axis=ax) for i, w in enumerate(k))
+    return grid
+
+
 def d35_lab(frontier_dir):
     """Device RGB in 0..1 (the Frontier's 10-bit print density) -> Lab of its file output read as sRGB, relative to its
     white, D50. The hardware stores the tone curves G, R, B and clips them at 991. Dpen2Srgb.3dp is not applied: no
@@ -376,6 +393,8 @@ def d35_lab(frontier_dir):
     data = (imgp / "ColorData.dat").read_bytes()
     tone = np.frombuffer(data, "<i2", 3 * 1024).reshape(3, 1024)[[1, 0, 2]].astype(np.float64)
     cube = np.frombuffer(data, np.uint8, 3 * 32**3, 0x3C000).reshape(3, 32, 32, 32).transpose(3, 2, 1, 0).astype(np.float64)
+    mean = cube.mean(-1, keepdims=True)
+    cube = mean + blur_nodes(cube - mean, FRONTIER_CUBE_BLUR)
     matrix = D35_MATRIX / D35_MATRIX.sum(1, keepdims=True)
 
     def xyz(device):
