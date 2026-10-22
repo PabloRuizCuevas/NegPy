@@ -1150,7 +1150,7 @@ def test_safe_roll_name_is_trimmed_consistently(tmp_path):
 
 def test_temp_label_hides_when_no_reading():
     w = _sidebar()
-    assert w.light_temp.isHidden()  # starts hidden — an empty label paints a dark #0D0D0D box
+    assert w.light_temp.isHidden()  # starts hidden — an empty label paints a dark bg_panel box
     w._on_light_temp(42.0)  # a reading arrives
     assert not w.light_temp.isHidden() and "42" in w.light_temp.text()
     w._on_light_temp(None)  # light unplugged / no telemetry
