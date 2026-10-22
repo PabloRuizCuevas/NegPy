@@ -19,6 +19,7 @@ _CASES = {
     "gaussian_sigma2_replicate": lambda: negpy_core.gaussian_blur(_IMG1, (0, 0), 2.0, 0.0, 1),
     "gaussian_kernel_17": lambda: np.array(negpy_core.gaussian_kernel(17, 2.0), np.float32),
     "sobel_x": lambda: negpy_core.sep_filter2d(_IMG1, np.array([-1, 0, 1], np.float32), np.array([1, 2, 1], np.float32)),
+    "morph_close_u8": lambda: negpy_core.morphology_ex((_IMG1 > 0.5).astype(np.uint8) * 255, 3, np.ones((9, 7), np.uint8), 2),
 }
 
 _HASHES = {
@@ -29,6 +30,7 @@ _HASHES = {
     "gaussian_sigma2_replicate": "2b9be6f95b7f66a03493795d8c7a5e1bb2565a28087578f1981a9cd329c8a74f",
     "gaussian_kernel_17": "5c2eb92d43931221106d80ca89a0b6dea1dca09b261b0fbf6ff51fdcae748d8b",
     "sobel_x": "ba798e861db64c102fee6b08fd7aa34d488cce431ae0d95fc3e7836e1dedb44a",
+    "morph_close_u8": "4be9a2976881ff83eb0b92a8ec484e048c61612324afbde73b6e0c89aa92865e",
 }
 
 

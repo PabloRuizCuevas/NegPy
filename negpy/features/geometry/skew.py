@@ -300,7 +300,7 @@ def _profile_lines(lum: np.ndarray) -> list[EdgeLine]:
     spread = max(3, int(0.02 * max(h, w)))
     gy = np.abs(negpy_core.sobel(lum.astype(np.float32), 0, 1))
     strong = (gy >= 0.25 * float(np.percentile(gy, 99.5))).astype(np.uint8)
-    strong = cv2.dilate(strong, np.ones((2 * spread + 1, 1), np.uint8))
+    strong = negpy_core.morphology_ex(strong, cv2.MORPH_DILATE, np.ones((2 * spread + 1, 1), np.uint8))
     rows = _outer_peaks(strong[:, int(0.05 * w) : int(0.95 * w)].mean(axis=1), 0.35)
     top, bottom = rows if rows is not None else (0, h)
     if rows is not None:
@@ -311,7 +311,7 @@ def _profile_lines(lum: np.ndarray) -> list[EdgeLine]:
 
     gx = np.abs(negpy_core.sobel(lum.astype(np.float32), 1, 0))
     strong = (gx >= 0.25 * float(np.percentile(gx, 99.5))).astype(np.uint8)
-    strong = cv2.dilate(strong, np.ones((1, 2 * spread + 1), np.uint8))
+    strong = negpy_core.morphology_ex(strong, cv2.MORPH_DILATE, np.ones((1, 2 * spread + 1), np.uint8))
     lo, hi = top + int(0.05 * (bottom - top)), bottom - int(0.05 * (bottom - top))
     cols = _outer_peaks(strong[lo:hi].mean(axis=0), 0.35) if hi - lo > 10 else None
     if cols is not None:

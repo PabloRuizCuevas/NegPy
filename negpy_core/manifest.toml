@@ -329,7 +329,7 @@ depends = []
 ["features/geometry/logic.py::_adaptive_threshold_mask"]
 phase = 2
 status = "todo"
-calls = ["cv2.getStructuringElement", "cv2.morphologyEx"]
+calls = ["cv2.getStructuringElement", "negpy_core.morphology_ex"]
 depends = []
 
 ["features/geometry/logic.py::_border_edge_scatter"]
@@ -353,7 +353,7 @@ depends = ["_candidate_from_contour"]
 ["features/geometry/logic.py::_dark_region_bounds"]
 phase = 2
 status = "todo"
-calls = ["cv2.boundingRect", "cv2.contourArea", "cv2.cvtColor", "cv2.findContours", "cv2.getStructuringElement", "cv2.morphologyEx", "np.percentile"]
+calls = ["cv2.boundingRect", "cv2.contourArea", "cv2.cvtColor", "cv2.findContours", "cv2.getStructuringElement", "negpy_core.morphology_ex", "np.percentile"]
 depends = ["_ensure_color"]
 
 ["features/geometry/logic.py::_detection_luma"]
@@ -401,19 +401,19 @@ depends = []
 ["features/geometry/logic.py::_mask_from_blackhat"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.getStructuringElement", "cv2.morphologyEx", "cv2.threshold"]
+calls = ["cv2.GaussianBlur", "cv2.getStructuringElement", "cv2.threshold", "negpy_core.morphology_ex"]
 depends = []
 
 ["features/geometry/logic.py::_mask_from_edges"]
 phase = 2
 status = "todo"
-calls = ["cv2.Canny", "cv2.GaussianBlur", "cv2.dilate", "cv2.getStructuringElement", "cv2.morphologyEx"]
+calls = ["cv2.Canny", "cv2.GaussianBlur", "cv2.getStructuringElement", "negpy_core.morphology_ex"]
 depends = []
 
 ["features/geometry/logic.py::_mask_from_inverse_threshold"]
 phase = 2
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.getStructuringElement", "cv2.morphologyEx", "cv2.threshold"]
+calls = ["cv2.GaussianBlur", "cv2.getStructuringElement", "cv2.threshold", "negpy_core.morphology_ex"]
 depends = []
 
 ["features/geometry/logic.py::_normalize_detection_input"]
@@ -575,7 +575,7 @@ depends = ["_at_canvas_edges", "_profile_lines", "_unrotate"]
 ["features/geometry/skew.py::_profile_lines"]
 phase = 2
 status = "todo"
-calls = ["cv2.dilate", "negpy_core.sobel", "np.percentile"]
+calls = ["negpy_core.morphology_ex", "negpy_core.sobel", "np.percentile"]
 depends = ["_fit_side"]
 
 ["features/geometry/skew.py::_profile_peaks"]

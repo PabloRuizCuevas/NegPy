@@ -514,13 +514,9 @@ pub fn sep_filter2d(
     let row_pass = |padded: &mut [f32], sy: usize, out: &mut [f32]| {
         let row = &src[sy * n..(sy + 1) * n];
         padded[rx * cn..(rx + w) * cn].copy_from_slice(row);
-        for (px, m) in xmap
-            .iter()
-            .enumerate()
-            .filter(|(px, _)| *px < rx || *px >= rx + w)
-        {
+        for px in (0..rx).chain(rx + w..w + 2 * rx) {
             let chunk = &mut padded[px * cn..(px + 1) * cn];
-            match m {
+            match xmap[px] {
                 Some(sxi) => chunk.copy_from_slice(&row[sxi * cn..(sxi + 1) * cn]),
                 None => chunk.fill(0.0),
             }

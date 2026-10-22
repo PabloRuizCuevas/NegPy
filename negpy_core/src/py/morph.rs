@@ -1,0 +1,82 @@
+use numpy::{
+    Element, PyArrayDyn, PyArrayMethods, PyReadonlyArray2, PyReadonlyArrayDyn,
+    PyUntypedArrayMethods,
+};
+use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::prelude::*;
+
+use crate::filter::Border;
+use crate::morph::{self, Op, Pixel};
+
+fn run<'py, T: Pixel + Element>(
+    py: Python<'py>,
+    src: &Bound<'py, PyAny>,
+    op: Op,
+    ksize: (usize, usize),
+    iterations: usize,
+    border: Border,
+    dtype: &str,
+) -> PyResult<Bound<'py, PyAny>> {
+    let src: PyReadonlyArrayDyn<'py, T> = src.extract()?;
+    let shape = src.shape().to_vec();
+    let dims = match shape.as_slice() {
+        [h, w] => (*h, *w, 1),
+        [h, w, c] => (*h, *w, *c),
+        _ => return Err(PyValueError::new_err("needs a 2-D or 3-D array")),
+    };
+    let data = src
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous array"))?;
+    let out = py
+        .import("numpy")?
+        .getattr("empty")?
+        .call1((shape.clone(), dtype))?
+        .cast_into::<PyArrayDyn<T>>()?;
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        py.detach(|| morph::morphology(data, dst, dims, op, ksize, iterations, border))
+            .ok_or_else(|| PyValueError::new_err("invalid morphology input"))?;
+    }
+    Ok(out.into_any())
+}
+
+/// `cv2.morphologyEx(src, op, kernel, iterations=..., borderType=...)` for a uint8 or float32
+/// image and a kernel of all ones, with OpenCV's default anchor and border value.
+#[pyfunction]
+#[pyo3(signature = (src, op, kernel, iterations=1, border_type=0))]
+fn morphology_ex<'py>(
+    py: Python<'py>,
+    src: &Bound<'py, PyAny>,
+    op: i32,
+    kernel: PyReadonlyArray2<'py, u8>,
+    iterations: usize,
+    border_type: i32,
+) -> PyResult<Bound<'py, PyAny>> {
+    let op =
+        Op::from_cv(op).ok_or_else(|| PyValueError::new_err(format!("unsupported op {op}")))?;
+    let border = Border::from_cv(border_type)
+        .ok_or_else(|| PyValueError::new_err(format!("unsupported border type {border_type}")))?;
+    let k = kernel.as_array();
+    if k.iter().any(|&v| v == 0) {
+        return Err(PyValueError::new_err(
+            "negpy_core morphology covers rectangular kernels only",
+        ));
+    }
+    let ksize = (k.ncols(), k.nrows());
+    if src.extract::<PyReadonlyArrayDyn<u8>>().is_ok() {
+        run::<u8>(py, src, op, ksize, iterations, border, "uint8")
+    } else if src.extract::<PyReadonlyArrayDyn<f32>>().is_ok() {
+        run::<f32>(py, src, op, ksize, iterations, border, "float32")
+    } else {
+        Err(PyTypeError::new_err(
+            "morphology needs a uint8 or float32 array",
+        ))
+    }
+}
+
+pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(morphology_ex, m)?)
+}

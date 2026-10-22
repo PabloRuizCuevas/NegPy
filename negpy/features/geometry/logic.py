@@ -200,8 +200,8 @@ def _dark_region_bounds(image: np.ndarray) -> tuple[int, int, int, int] | None:
     mask = (gray <= threshold).astype(np.uint8) * 255
     open_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
     close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (31, 31))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel, iterations=2)
+    mask = negpy_core.morphology_ex(mask, cv2.MORPH_OPEN, open_kernel)
+    mask = negpy_core.morphology_ex(mask, cv2.MORPH_CLOSE, close_kernel, iterations=2)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
@@ -315,11 +315,11 @@ def _refine_frame_bounds(image: np.ndarray) -> tuple[np.ndarray, tuple[int, int,
 
 def _mask_from_blackhat(gray: np.ndarray) -> np.ndarray:
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (31, 31))
-    blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
+    blackhat = negpy_core.morphology_ex(gray, cv2.MORPH_BLACKHAT, kernel)
     blackhat = cv2.GaussianBlur(blackhat, (5, 5), 0)
     _, thresh = cv2.threshold(blackhat, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (21, 21))
-    return cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, close_kernel, iterations=2)
+    return negpy_core.morphology_ex(thresh, cv2.MORPH_CLOSE, close_kernel, iterations=2)
 
 
 def _mask_from_inverse_threshold(gray: np.ndarray) -> np.ndarray:
@@ -327,8 +327,8 @@ def _mask_from_inverse_threshold(gray: np.ndarray) -> np.ndarray:
     _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 17))
     open_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-    cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, close_kernel, iterations=2)
-    return cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, open_kernel, iterations=1)
+    cleaned = negpy_core.morphology_ex(thresh, cv2.MORPH_CLOSE, close_kernel, iterations=2)
+    return negpy_core.morphology_ex(cleaned, cv2.MORPH_OPEN, open_kernel, iterations=1)
 
 
 def _mask_from_edges(gray: np.ndarray) -> np.ndarray:
@@ -336,8 +336,8 @@ def _mask_from_edges(gray: np.ndarray) -> np.ndarray:
     edges = cv2.Canny(blurred, 40, 160)
     dilate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
     close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
-    dilated = cv2.dilate(edges, dilate_kernel, iterations=2)
-    return cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, close_kernel, iterations=2)
+    dilated = negpy_core.morphology_ex(edges, cv2.MORPH_DILATE, dilate_kernel, iterations=2)
+    return negpy_core.morphology_ex(dilated, cv2.MORPH_CLOSE, close_kernel, iterations=2)
 
 
 def _score_contour(contour: np.ndarray, image_area: float) -> tuple[float, np.ndarray] | None:
@@ -427,8 +427,8 @@ def _adaptive_threshold_mask(blurred_lum: np.ndarray, threshold: float, polarity
     open_size = _odd_kernel_size(0.003 * min_dim, 3, 9)
     close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (close_size, close_size))
     open_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (open_size, open_size))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel, iterations=1)
-    return cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_kernel, iterations=1)
+    mask = negpy_core.morphology_ex(mask, cv2.MORPH_CLOSE, close_kernel, iterations=1)
+    return negpy_core.morphology_ex(mask, cv2.MORPH_OPEN, open_kernel, iterations=1)
 
 
 def _order_quad(quad: np.ndarray) -> np.ndarray:
