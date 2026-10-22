@@ -113,7 +113,14 @@ jobs:
           workspaces: negpy_core
 
       - name: Rust tests
-        run: cargo test --manifest-path negpy_core/Cargo.toml
+        working-directory: negpy_core
+        run: cargo test
+
+      - name: Install System Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libdbus-1-3 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 x11-utils libgl1
 
       - name: Install Dependencies
         run: uv sync --group dev

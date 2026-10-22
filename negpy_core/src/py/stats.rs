@@ -11,6 +11,11 @@ fn percentiles(
     values: PyReadonlyArray1<'_, f32>,
     qs: Vec<f64>,
 ) -> PyResult<Vec<f32>> {
+    if qs.iter().any(|q| !(0.0..=100.0).contains(q)) {
+        return Err(PyValueError::new_err(
+            "Percentiles must be in the range [0, 100]",
+        ));
+    }
     let values = values
         .as_slice()
         .map_err(|_| PyValueError::new_err("percentiles needs a contiguous array"))?;

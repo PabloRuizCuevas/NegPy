@@ -85,11 +85,11 @@ fn select_ranks(values: &[f32], ranks: &[usize]) -> Vec<f32> {
         located.push((bucket, r - below));
     }
 
-    let mut slot_of = vec![u8::MAX; BUCKETS];
+    let mut slot_of = vec![u32::MAX; BUCKETS];
     let mut wanted: Vec<usize> = located.iter().map(|&(b, _)| b).collect();
     wanted.dedup();
     for (slot, &b) in wanted.iter().enumerate() {
-        slot_of[b] = slot as u8;
+        slot_of[b] = slot as u32;
     }
 
     let gathered = values
@@ -100,7 +100,7 @@ fn select_ranks(values: &[f32], ranks: &[usize]) -> Vec<f32> {
                 for &v in chunk {
                     let key = order_key(v);
                     let slot = slot_of[(key >> 16) as usize];
-                    if slot != u8::MAX {
+                    if slot != u32::MAX {
                         g[slot as usize].push(key);
                     }
                 }
@@ -125,8 +125,8 @@ fn select_ranks(values: &[f32], ranks: &[usize]) -> Vec<f32> {
         .collect()
 }
 
-/// `np.percentile(values, q)` (method "linear") for each q, bit for bit.
-/// `None` for an empty input, where numpy raises.
+/// `np.percentile(values, q)` (method "linear") for each q, bit for bit, except that -0.0 and
+/// 0.0 may swap: `np.partition` ranks them equal and returns either. `None` for an empty input.
 pub fn percentiles(values: &[f32], qs: &[f64]) -> Option<Vec<f32>> {
     let n = values.len();
     if n == 0 {
@@ -251,6 +251,16 @@ mod tests {
                     "n={n} q={q}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn histogram_path_with_more_buckets_than_a_byte() {
+        let v = lcg(100_000, 4);
+        let qs: Vec<f64> = (0..300).map(|i| i as f64 / 3.0).collect();
+        let got = percentiles(&v, &qs).unwrap();
+        for (g, &q) in got.iter().zip(&qs) {
+            assert_eq!(g.to_bits(), sorted_percentile(&v, q).to_bits(), "q={q}");
         }
     }
 

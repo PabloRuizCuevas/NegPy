@@ -19,8 +19,8 @@ endif
 # maturin reads ARCHFLAGS on every OS, so a stray "-arch x86_64" builds negpy_core for macOS.
 unexport ARCHFLAGS
 
-CARGO = cargo --quiet
-CORE = --manifest-path negpy_core/Cargo.toml
+# From inside negpy_core/, so rustup picks the toolchain pinned in its rust-toolchain.toml.
+CARGO = cd negpy_core && cargo --quiet
 
 # Default target
 .PHONY: all
@@ -30,9 +30,9 @@ all: format rust lint type test
 .PHONY: rust
 rust:
 	@echo "Running Rust checks (cargo fmt, clippy, test)..."
-	@$(CARGO) fmt $(CORE) --check
-	@$(CARGO) clippy $(CORE) --all-targets --all-features -- -D warnings
-	@$(CARGO) test $(CORE)
+	@$(CARGO) fmt --check
+	@$(CARGO) clippy --all-targets --all-features -- -D warnings
+	@$(CARGO) test
 
 .PHONY: translations translations-check
 translations:
@@ -88,7 +88,7 @@ test:
 .PHONY: format
 format:
 	@echo "Running ruff format and fix..."
-	@$(CARGO) fmt $(CORE)
+	@$(CARGO) fmt
 	@$(UV) ruff format .
 	@$(UV) ruff check --fix .
 
