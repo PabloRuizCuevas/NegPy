@@ -77,7 +77,7 @@ A new frame gets the roll's film type, and the crop, print stock and Lab setting
 
 ### Viewing
 
-*   **Before / After** (`\`, or the **Print** menu): splits the canvas between the default conversion and your edit. Hold `\` to see the default alone.
+*   **Before / After** (`\`, or the **Print** menu): splits the canvas between the default conversion and your edit. Hold `\` to see the default alone. To compare with an earlier version, right-click it in **History**.
 *   **Peeks**: hold `N` for the scan as loaded (the negative), `M` for the flat master, and `P` for the camera's own JPEG. The **Print** menu has them too.
 *   **Reference View** (`Shift+R`): pins this frame beside the canvas, to match other frames to it.
 *   **Probe at Cursor** (`Shift+I`, **Overlays** menu): shows the density and zone under the pointer.
@@ -441,13 +441,13 @@ A **work print** is a version of this frame that you keep under a name, like the
 
 *   **Save Work Print…** (`Ctrl+Shift+S`) keeps the current edit.
 *   **Click** a work print to use it. `Ctrl+Z` goes back.
-*   **⋮** or right-click: **Export This Version…**, **Rename…** or **Delete…**.
+*   **⋮** or right-click: **Compare With This Version**, **Export This Version…**, **Rename…** or **Delete…**. **Compare With This Version** opens **Before / After** with the work print on the left.
 *   **Load Metadata** (off at first): also restores the metadata saved with the work print.
 
 <!-- panel:edit_history -->
 ### Edit history
 
-Every change you made, newest on top (the last 100). **Now** marks the current state; after an undo, later steps show as **Undone** until your next edit. Click a step to go back to it. **⋮** or right-click → **Export This Version…** exports a past state.
+Every change you made, newest on top (the last 100). **Now** marks the current state; after an undo, later steps show as **Undone** until your next edit. Click a step to go back to it. **⋮** or right-click → **Export This Version…** exports a past state. **Compare With This Step** opens **Before / After** with that step on the left, on your current crop. Press `\` to close it.
 
 ---
 

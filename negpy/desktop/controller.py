@@ -412,6 +412,24 @@ def baseline_compare_config(config: WorkspaceConfig) -> WorkspaceConfig:
     )
 
 
+def reference_compare_config(reference: WorkspaceConfig, config: WorkspaceConfig) -> WorkspaceConfig:
+    """
+    The 'before' config for a split against a history step or work print: its look on the
+    current framing, composite, flat field and output settings, so both halves line up.
+    The preview source is not decoded again, so a step's other source settings take no effect.
+    """
+    return replace(
+        reference,
+        geometry=config.geometry,
+        stitch=config.stitch,
+        hdr=config.hdr,
+        flatfield=config.flatfield,
+        rgbscan=config.rgbscan,
+        metadata=config.metadata,
+        export=config.export,
+    )
+
+
 # Solved knee fields under their slider names (sidebar/tone.py).
 _KNEE_LABELS = {
     "shadow_grade": tr("Shadows Grade"),
@@ -7369,6 +7387,9 @@ class AppController(QObject):
         self.render_requested.emit(task)
 
     def _baseline_compare_config(self) -> WorkspaceConfig:
+        reference = self.state.compare_reference
+        if reference is not None:
+            return reference_compare_config(reference, self.state.config)
         return baseline_compare_config(self.state.config)
 
     def _compare_before_key(self) -> str:
@@ -7404,9 +7425,41 @@ class AppController(QObject):
         self.state.compare_before = None
         self.state.compare_before_rect = None
         self.state.compare_before_key = ""
+        self.state.compare_reference = None
+        self.state.compare_reference_label = ""
         if self.state.compare_mode:
             self.state.compare_mode = False
             self.compare_changed.emit(False)
+
+    def compare_with_history_step(self, index: int) -> None:
+        """Open the split against a history step instead of the default conversion."""
+        file_hash = self.state.current_file_hash
+        if not file_hash:
+            return
+        # The live top step may not be persisted yet: it lives in state.config.
+        config = self.state.config if index == self.state.undo_index else self.session.repo.load_history_step(file_hash, index)
+        self._compare_with(config, tr("STEP {number}", number=index))
+
+    def compare_with_work_print(self, name: str) -> None:
+        """Open the split against a work print instead of the default conversion."""
+        file_hash = self.state.current_file_hash
+        if not file_hash:
+            return
+        self._compare_with(self.session.repo.load_work_print(file_hash, name), name.upper())
+
+    def _compare_with(self, config: Optional[WorkspaceConfig], label: str) -> None:
+        if config is None or self.state.preview_raw is None:
+            return
+        self.state.compare_reference = config
+        self.state.compare_reference_label = label
+        if not self.state.compare_mode:
+            self.toggle_compare()
+            return
+        # Drop the old reference's pixels, or they show under the new badge until the render lands.
+        self.state.compare_before = None
+        self.state.compare_before_key = ""
+        self.compare_frame_ready.emit()
+        self._request_compare_baseline()
 
     def begin_compare_hold(self) -> None:
         """Show the baseline over the whole picture until end_compare_hold. Only over the print:
@@ -7434,7 +7487,8 @@ class AppController(QObject):
             self.compare_hold_changed.emit(False)
 
     def toggle_compare(self) -> None:
-        """Toggle the before/after split between the edit and the auto baseline."""
+        """Toggle the before/after split between the edit and the auto baseline, or the
+        history step or work print set by _compare_with."""
         if self.state.preview_raw is None:
             return
         if self.state.compare_mode:

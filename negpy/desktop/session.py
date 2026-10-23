@@ -328,6 +328,10 @@ class AppState:
     compare_split: float = 0.5
     # True while the compare key is held: the whole picture shows the baseline.
     compare_hold: bool = False
+    # A history step or work print the split compares against instead of the default
+    # conversion, and its badge text. Held as a config: a later edit can delete the step.
+    compare_reference: Optional[Any] = None
+    compare_reference_label: str = ""
 
     # Export presets (globally managed, not per-file)
     export_presets: List[ExportPreset] = field(default_factory=list)
