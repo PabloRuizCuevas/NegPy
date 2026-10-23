@@ -83,6 +83,8 @@ fn textured_range(
 type Band = (f32, f32);
 type Sector = (f32, f32, f32);
 type Triplet = (f64, f64, f64);
+/// (midtone, shadow, highlight or None, confidence).
+type Axis = (Triplet, Triplet, Option<Triplet>, f64);
 /// quantile, cap, first-pass cap, min pixels, highlight/mid/shadow bands, foliage and sky
 /// sectors, n0, agreement (dead zone, scale), width (dead zone, scale).
 type Consts = (
@@ -114,7 +116,7 @@ fn neutral_axis(
     ceils: Triplet,
     exclude_subjects: bool,
     consts: Consts,
-) -> PyResult<Option<(Triplet, Triplet, Option<Triplet>, f64)>> {
+) -> PyResult<Option<Axis>> {
     let (data, _, _) = grid_of(&grid)?;
     let (
         quantile,
