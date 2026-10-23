@@ -17,3 +17,4 @@ tolerance listed for each entry.
 | `kernel/image/logic.py::_rgb_to_lab_kernel` (and `rgb_to_lab_working`) | The cube root is `mathf::pow_f64`, not glibc's correctly rounded pow; a* and b* near zero take the float64 difference in a few ULP. | abs=1e-6 |
 | `kernel/image/logic.py::_lab_to_rgb_kernel` (and `lab_to_rgb_working`) | One value in the corpus rounds the other way; the float64 operation order copies Numba's fastmath build. | ulp=1 |
 | `kernel/image/logic.py::_skin_chroma_rein_kernel` (and `skin_chroma_rein`) | `atan2f` and `exp` are `mathf`'s, not glibc's; Numba's own serial and parallel builds of the kernel already differ in the last bit. | ulp=1 |
+| `features/exposure/analysis.py::vectorscope_histogram` | atan2 and log1p are `mathf`'s, not SVML's; a sample on a bin edge can change bin (none did in 39 recorded frames). | abs=2 |

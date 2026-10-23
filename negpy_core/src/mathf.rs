@@ -27,13 +27,18 @@ pub fn log10f(x: f32) -> f32 {
     (e * HI + (e * LO + 2.0 * s * p * std::f64::consts::LOG10_E)) as f32
 }
 
-/// atan2 of finite f32 in f64, rounded once: |y/x| folded to [0, 1], then to |u| <= tan(pi/8)
-/// by atan(r) = pi/4 + atan((r - 1) / (r + 1)), where the Taylor series reaches f64 accuracy.
-/// Signed zeros follow C's atan2.
+/// atan2 of finite f32 in f64, rounded once. Signed zeros follow C's atan2.
 #[inline(always)]
 pub fn atan2f(y: f32, x: f32) -> f32 {
+    atan2_f64(y as f64, x as f64) as f32
+}
+
+/// atan2 of finite values within 2^-37 relative: |y/x| folded to [0, 1], then to
+/// |u| <= tan(pi/8) by atan(r) = pi/4 + atan((r - 1) / (r + 1)), and a Taylor series.
+#[inline(always)]
+pub fn atan2_f64(y: f64, x: f64) -> f64 {
     use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
-    let (ay, ax) = ((y as f64).abs(), (x as f64).abs());
+    let (ay, ax) = (y.abs(), x.abs());
     let swap = ay > ax;
     let (n, d) = if swap { (ax, ay) } else { (ay, ax) };
     let r = if d == 0.0 { 0.0 } else { n / d };
@@ -64,13 +69,13 @@ pub fn atan2f(y: f32, x: f32) -> f32 {
     a = if big { FRAC_PI_4 + a } else { a };
     a = if swap { FRAC_PI_2 - a } else { a };
     a = if x.is_sign_negative() { PI - a } else { a };
-    (a as f32).copysign(y)
+    a.copysign(y)
 }
 
 /// ln of a positive normal f64 to about 1 ULP: x = m * 2^e with m in [sqrt(1/2), sqrt(2)),
 /// ln(m) from the atanh series.
 #[inline(always)]
-fn ln_f64(x: f64) -> f64 {
+pub fn ln_f64(x: f64) -> f64 {
     let bits = x.to_bits();
     let e = (bits.wrapping_sub(0x3fe6_a09e_667f_3bcd) as i64) >> 52;
     let m = f64::from_bits(bits.wrapping_sub((e as u64) << 52));

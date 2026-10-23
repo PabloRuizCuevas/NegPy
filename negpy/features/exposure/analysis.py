@@ -7,7 +7,17 @@ import cv2
 import negpy_core
 import numpy as np
 
-from negpy.kernel.image.logic import get_luminance, rgb_to_lab_working, working_oetf_decode, working_oetf_encode
+from negpy.kernel.image.logic import (
+    _LAB_EPS,
+    _LAB_KAPPA,
+    _WORKING_GAMMA,
+    _WORKING_TO_XYZ,
+    _WORKING_WHITE,
+    get_luminance,
+    rgb_to_lab_working,
+    working_oetf_decode,
+    working_oetf_encode,
+)
 
 # Mirrored by the chart's x-range (PhotometricCurveWidget._X_MIN/_X_MAX) and the WGSL
 # literals in shaders/density_hist.wgsl. Keep them in lock step.
@@ -155,13 +165,15 @@ def vectorscope_histogram(buffer: Any) -> Optional[np.ndarray]:
     if buffer.ndim != 3 or buffer.shape[-1] < 3 or min(buffer.shape[:2]) < 1:
         return None
     step = max(1, round(np.sqrt(buffer.shape[0] * buffer.shape[1] / _SCOPE_MAX_SAMPLES)))
-    if step > 1:
-        buffer = buffer[::step, ::step]
-    encoded = np.clip(np.nan_to_num(np.asarray(buffer[..., :3], dtype=np.float32)), 0.0, 1.0)
-    lab = rgb_to_lab_working(np.asarray(working_oetf_decode(encoded)))
-    flat = _scope_bins(lab[..., 1].ravel().astype(np.float64), lab[..., 2].ravel().astype(np.float64))
-    counts = np.bincount(flat, minlength=SCOPE_HUE_BINS * SCOPE_CHROMA_BINS)
-    return counts.reshape(SCOPE_HUE_BINS, SCOPE_CHROMA_BINS).astype(float)
+    return negpy_core.vectorscope_histogram(
+        np.ascontiguousarray(buffer, dtype=np.float32),
+        step,
+        _WORKING_TO_XYZ,
+        _WORKING_WHITE,
+        np.float32(_LAB_EPS),
+        np.float32(_LAB_KAPPA),
+        np.float32(_WORKING_GAMMA),
+    )
 
 
 def scope_point(rgb: Sequence[float]) -> Tuple[float, float, float]:

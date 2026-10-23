@@ -2,9 +2,10 @@ use numpy::{PyArrayMethods, PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::color::LabSpace;
 use crate::histogram::{
-    self, COLOR_HIST_BINS, DENSITY_HIST_BINS, OUTPUT_HIST_BINS, Samples, WAVEFORM_BINS,
-    WAVEFORM_COLS, Waveform,
+    self, COLOR_HIST_BINS, DENSITY_HIST_BINS, OUTPUT_HIST_BINS, SCOPE_CHROMA_BINS, SCOPE_HUE_BINS,
+    Samples, WAVEFORM_BINS, WAVEFORM_COLS, Waveform,
 };
 
 type Counts<'py> = Bound<'py, numpy::PyArrayDyn<f64>>;
@@ -138,7 +139,39 @@ fn scan_full_scale_columns<'py>(
     numpy::PyArray1::from_vec(py, counts).reshape(vec![3, WAVEFORM_COLS])
 }
 
+/// `vectorscope_histogram` of an HxWxC float32 encoded frame sampled every `step`, through the
+/// working space (`m` RGB to XYZ, `white`, `eps`, `kappa`, `gamma`): (180, 64) counts.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn vectorscope_histogram<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    step: usize,
+    m: numpy::PyReadonlyArray2<'py, f32>,
+    white: numpy::PyReadonlyArray1<'py, f32>,
+    eps: f32,
+    kappa: f32,
+    gamma: f32,
+) -> PyResult<Counts<'py>> {
+    let s = frame(&img, step)?;
+    let (m, white) = (m.as_array(), white.as_array());
+    if m.shape() != [3, 3] || white.len() != 3 {
+        return Err(PyValueError::new_err(
+            "needs a 3x3 matrix and a 3-vector white",
+        ));
+    }
+    let space = LabSpace::new(
+        std::array::from_fn(|r| std::array::from_fn(|c| m[[r, c]])),
+        std::array::from_fn(|c| white[c]),
+        eps,
+        kappa,
+    );
+    let counts = py.detach(|| histogram::vectorscope_histogram(s, space, gamma));
+    numpy::PyArray1::from_vec(py, counts).reshape(vec![SCOPE_HUE_BINS, SCOPE_CHROMA_BINS])
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(vectorscope_histogram, m)?)?;
     m.add_function(wrap_pyfunction!(density_histogram, m)?)?;
     m.add_function(wrap_pyfunction!(density_parade, m)?)?;
     m.add_function(wrap_pyfunction!(output_histogram, m)?)?;

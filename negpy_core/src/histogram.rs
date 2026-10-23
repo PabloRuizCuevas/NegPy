@@ -5,6 +5,7 @@ use multiversion::multiversion;
 use rayon::prelude::*;
 
 use crate::analysis::luminance_chunk;
+use crate::color::{self, LabSpace};
 
 pub const DENSITY_HIST_BINS: usize = 120;
 const DENSITY_HIST_RANGE: (f64, f64) = (-0.1, 1.1);
@@ -355,5 +356,73 @@ mod tests {
         for (i, &o) in out[4..].iter().enumerate() {
             assert_eq!(o as usize, i, "edge {i}");
         }
+    }
+}
+
+pub const SCOPE_HUE_BINS: usize = 180;
+pub const SCOPE_CHROMA_BINS: usize = 64;
+const SCOPE_MAX_CHROMA: f64 = 60.0;
+const SCOPE_LOG_KNEE: f64 = 4.0;
+
+/// `vectorscope_histogram`: a*b* counts of the sampled pixels, (hue, chroma) bins in float64
+/// as `_scope_bins` computes them. The encoded values are clipped to 0..1 (NaN to 0), decoded
+/// with `gamma` and converted to Lab by the working-space kernels.
+pub fn vectorscope_histogram(s: Samples, space: LabSpace, gamma: f32) -> Vec<f64> {
+    let mut rgb = Vec::new();
+    let mut buf = Vec::new();
+    for y in s.row_starts() {
+        rgb.extend_from_slice(s.rgb_row(y, &mut buf));
+    }
+    for v in rgb.iter_mut() {
+        *v = if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) };
+    }
+    let mut lin = vec![0f32; rgb.len()];
+    color::oetf_decode(&rgb, &mut lin, gamma);
+    color::rgb_to_lab(&lin, &mut rgb, space);
+    let denom = libm::log1p(SCOPE_MAX_CHROMA / SCOPE_LOG_KNEE);
+    let bins = SCOPE_HUE_BINS * SCOPE_CHROMA_BINS;
+    rgb.par_chunks(3 * 4096)
+        .fold(
+            || vec![0u32; bins],
+            |mut acc, chunk| {
+                let mut idx = [0u16; 4096];
+                scope_bins(chunk, &mut idx, denom);
+                for &i in &idx[..chunk.len() / 3] {
+                    acc[i as usize] += 1;
+                }
+                acc
+            },
+        )
+        .reduce(
+            || vec![0u32; bins],
+            |mut a, b| {
+                a.iter_mut().zip(b).for_each(|(a, b)| *a += b);
+                a
+            },
+        )
+        .into_iter()
+        .map(f64::from)
+        .collect()
+}
+
+/// `_scope_bins` of Lab triplets: the hue bin of atan2(b, a) and the chroma bin of the log
+/// radius, flat as hue * SCOPE_CHROMA_BINS + chroma.
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2+fma",
+    "aarch64+neon"
+))]
+fn scope_bins(lab: &[f32], idx: &mut [u16], denom: f64) {
+    use std::f64::consts::PI;
+    for (i, p) in idx.iter_mut().zip(lab.as_chunks::<3>().0) {
+        let (a, b) = (p[1] as f64, p[2] as f64);
+        let turn = (crate::mathf::atan2_f64(b, a) + PI) / (2.0 * PI) * SCOPE_HUE_BINS as f64;
+        let hue = crate::convert::trunc_bits(turn.floor()) as usize % SCOPE_HUE_BINS;
+        let chroma = (a * a + b * b).sqrt();
+        let radius = crate::mathf::ln_f64(1.0 + chroma / SCOPE_LOG_KNEE) / denom;
+        let c = (radius * SCOPE_CHROMA_BINS as f64)
+            .floor()
+            .clamp(0.0, (SCOPE_CHROMA_BINS - 1) as f64);
+        *i = (hue * SCOPE_CHROMA_BINS + crate::convert::trunc_bits(c) as usize) as u16;
     }
 }

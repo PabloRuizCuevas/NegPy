@@ -95,8 +95,8 @@ depends = ["_scope_lookup"]
 
 ["features/exposure/analysis.py::vectorscope_histogram"]
 phase = 2
-status = "todo"
-calls = ["np.bincount"]
+status = "ported"
+calls = ["negpy_core.vectorscope_histogram"]
 depends = []
 
 ["features/exposure/analysis.py::waveform"]

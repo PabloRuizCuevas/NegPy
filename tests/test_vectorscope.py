@@ -12,13 +12,25 @@ from negpy.domain.models import WorkspaceConfig
 from negpy.features.exposure.analysis import (
     SCOPE_CHROMA_BINS,
     SCOPE_HUE_BINS,
+    _scope_bins,
     scope_chroma,
     scope_radius,
     vectorscope_density,
     vectorscope_histogram,
 )
 from negpy.features.process.models import ProcessMode
+from negpy.kernel.image.logic import rgb_to_lab_working, working_oetf_decode
 from negpy.infrastructure.gpu.device import GPUDevice
+
+
+def test_counts_match_the_numpy_binning() -> None:
+    rng = np.random.default_rng(3)
+    frame = rng.random((300, 400, 3), dtype=np.float32) * 1.2 - 0.1
+    frame[0, :4] = np.array([np.nan, np.inf, -np.inf, 0.5], np.float32)[:, None]
+    lab = rgb_to_lab_working(working_oetf_decode(np.clip(np.nan_to_num(frame), 0.0, 1.0)))
+    flat = _scope_bins(lab[..., 1].ravel().astype(np.float64), lab[..., 2].ravel().astype(np.float64))
+    want = np.bincount(flat, minlength=SCOPE_HUE_BINS * SCOPE_CHROMA_BINS).reshape(SCOPE_HUE_BINS, SCOPE_CHROMA_BINS)
+    assert np.abs(vectorscope_histogram(frame) - want).sum() <= 2
 
 
 def test_a_gray_frame_lands_in_the_first_chroma_bin() -> None:
