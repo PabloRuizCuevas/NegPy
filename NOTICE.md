@@ -71,3 +71,9 @@ negpy_core/src/resize.rs and negpy_core/src/filter.rs port OpenCV's float32 area
 resize, separable filter engine and bit-exact Gaussian kernel (including its
 softfloat exp table) so their results match cv2 bit for bit. OpenCV, Apache
 License 2.0. https://github.com/opencv/opencv
+
+negpy_core/src/sift.rs and negpy_core/src/register.rs port OpenCV 4.13's SIFT
+detector and descriptor (sift.dispatch.cpp, sift.simd.hpp), its RANSAC
+similarity estimate and Levenberg-Marquardt refinement (ptsetreg.cpp,
+levmarq.cpp). OpenCV, Apache License 2.0. SIFT is by David G. Lowe; its patent
+expired in March 2020.

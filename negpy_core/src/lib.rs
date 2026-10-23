@@ -21,10 +21,12 @@ pub mod median;
 pub mod meter;
 pub mod morph;
 pub mod print_curve;
+pub mod register;
 pub mod resize;
 pub mod retouch;
 pub mod sensor;
 pub mod shapes;
+pub mod sift;
 pub mod skew;
 pub mod stats;
 pub mod stitch;
@@ -74,5 +76,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::finish::register(m)?;
     py::flatfield::register(m)?;
     py::stitch::register(m)?;
+    py::register::register(m)?;
     py::skew::register(m)
 }
