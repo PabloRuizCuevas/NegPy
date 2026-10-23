@@ -603,6 +603,213 @@ pub fn gaussian_blur(
     sep_filter2d(src, dst, (h, w, cn), (&kx, &ky), border)
 }
 
+/// `cv2.boxFilter(src, -1, (kw, kh), normalize=..., borderType=border)` (and `cv2.blur`) for
+/// float32, anchor at the center. Row sums in float64: a fresh sum per output up to five wide,
+/// a running sum (`s += a - b`) past that. Column sums keep a running total: add the new row
+/// sum, write, subtract the row sum from `kh - 1` rows back. Both OpenCV paths (`blockSum` and
+/// the filter engine) run that recurrence.
+pub fn box_filter(
+    src: &[f32],
+    dst: &mut [f32],
+    (h, w, cn): (usize, usize, usize),
+    (kw, kh): (usize, usize),
+    normalize: bool,
+    border: Border,
+) -> Option<()> {
+    if h == 0
+        || w == 0
+        || cn == 0
+        || kw == 0
+        || kh == 0
+        || src.len() != h * w * cn
+        || dst.len() != src.len()
+    {
+        return None;
+    }
+    let (ax, ay) = (kw / 2, kh / 2);
+    let n = w * cn;
+    let scale = if normalize {
+        1.0 / (kw * kh) as f64
+    } else {
+        1.0
+    };
+    let xmap: Vec<Option<usize>> = (0..w + kw - 1)
+        .map(|p| border_interpolate(p as isize - ax as isize, w, border))
+        .collect();
+
+    let ymap: Vec<Option<usize>> = (0..h + kh - 1)
+        .map(|r| border_interpolate(r as isize - ay as isize, h, border))
+        .collect();
+    let row_sums = |y: Option<usize>, pad: &mut Vec<f64>, out: &mut [f64]| {
+        let Some(y) = y else {
+            out.fill(0.0);
+            return;
+        };
+        let row = &src[y * n..(y + 1) * n];
+        let tap = |p: usize, c: usize| xmap[p].map_or(0.0, |sx| row[sx * cn + c] as f64);
+        if kw <= 5 {
+            // Each output sums its taps left to right from zero. Outputs whose taps all lie
+            // inside the row run kernel-major straight off the source.
+            let lo = ax.min(w);
+            let hi = (w + ax + 1).saturating_sub(kw).max(lo);
+            for x in (0..lo).chain(hi..w) {
+                for c in 0..cn {
+                    out[x * cn + c] = (0..kw).fold(0.0, |s, k| s + tap(x + k, c));
+                }
+            }
+            if hi == lo {
+                return;
+            }
+            let inner = &mut out[lo * cn..hi * cn];
+            let tap_row = |k: usize| &row[(lo + k - ax) * cn..];
+            let f = |v: f32| v as f64;
+            match kw {
+                1 => inner
+                    .iter_mut()
+                    .zip(tap_row(0))
+                    .for_each(|(o, &a)| *o = 0.0 + f(a)),
+                2 => inner
+                    .iter_mut()
+                    .zip(tap_row(0).iter().zip(tap_row(1)))
+                    .for_each(|(o, (&a, &b))| *o = (0.0 + f(a)) + f(b)),
+                3 => inner
+                    .iter_mut()
+                    .zip(tap_row(0).iter().zip(tap_row(1)).zip(tap_row(2)))
+                    .for_each(|(o, ((&a, &b), &c))| *o = ((0.0 + f(a)) + f(b)) + f(c)),
+                4 => inner
+                    .iter_mut()
+                    .zip(
+                        tap_row(0)
+                            .iter()
+                            .zip(tap_row(1))
+                            .zip(tap_row(2))
+                            .zip(tap_row(3)),
+                    )
+                    .for_each(|(o, (((&a, &b), &c), &d))| {
+                        *o = (((0.0 + f(a)) + f(b)) + f(c)) + f(d)
+                    }),
+                _ => inner
+                    .iter_mut()
+                    .zip(
+                        tap_row(0)
+                            .iter()
+                            .zip(tap_row(1))
+                            .zip(tap_row(2))
+                            .zip(tap_row(3))
+                            .zip(tap_row(4)),
+                    )
+                    .for_each(|(o, ((((&a, &b), &c), &d), &e))| {
+                        *o = ((((0.0 + f(a)) + f(b)) + f(c)) + f(d)) + f(e)
+                    }),
+            }
+            return;
+        }
+        pad.clear();
+        pad.resize((w + kw - 1) * cn, 0.0);
+        for (p, &v) in pad[ax * cn..ax * cn + n].iter_mut().zip(row) {
+            *p = v as f64;
+        }
+        for p in (0..ax).chain(ax + w..w + kw - 1) {
+            for c in 0..cn {
+                pad[p * cn + c] = tap(p, c);
+            }
+        }
+        for c in 0..cn {
+            let mut s = (0..kw).fold(0.0, |s, k| s + pad[k * cn + c]);
+            out[c] = s;
+            for x in 1..w {
+                s += pad[(x + kw - 1) * cn + c] - pad[(x - 1) * cn + c];
+                out[x * cn + c] = s;
+            }
+        }
+    };
+
+    // Bands of rows: their row sums in parallel, then the column recurrence (sequential down a
+    // column, independent across columns) in parallel strips, each into its own tile. The ring
+    // keeps the row sums a later row still subtracts.
+    const BAND: usize = 128;
+    const STRIP: usize = 512;
+    let slots = kh + BAND;
+    let mut ring: Vec<Vec<f64>> = vec![vec![0f64; n]; slots];
+    let mut sum = vec![0f64; n];
+    let zeros = vec![0f64; n];
+    let total = h + kh - 1;
+    let mut rc0 = 0;
+    while rc0 < total {
+        let rc1 = (rc0 + BAND).min(total);
+        let band: Vec<(usize, &mut Vec<f64>)> = ring
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(slot, row)| {
+                // The band row in this slot, if any: rc0 + ((slot - rc0) mod slots).
+                let rc = rc0 + (slot + slots - rc0 % slots) % slots;
+                (rc < rc1).then_some((rc, row))
+            })
+            .collect();
+        band.into_par_iter()
+            .for_each_init(Vec::new, |pad, (rc, out)| row_sums(ymap[rc], pad, out));
+        let ring = &ring;
+        let line = |rc: usize| &ring[rc % slots][..];
+        // Output rows this band writes: extended row rc writes image row rc - (kh - 1).
+        let y0 = rc0.max(kh - 1) - (kh - 1);
+        let y1 = rc1.saturating_sub(kh - 1).max(y0);
+        // One strip per thread; when one strip spans the row it writes straight into dst.
+        let threads = rayon::current_num_threads();
+        let strip = n.div_ceil(threads).max(STRIP);
+        let column = |x0: usize, s: &mut [f64], tile: &mut [f32], tile_w: usize, tile_x0: usize| {
+            let sw = s.len();
+            for rc in rc0..rc1 {
+                let sp = &line(rc)[x0..x0 + sw];
+                // Before kh - 1 rows have passed, nothing leaves the window yet.
+                let old = if rc + 1 >= kh {
+                    &line(rc + 1 - kh)[x0..x0 + sw]
+                } else {
+                    &zeros[..sw]
+                };
+                if let Some(y) = rc.checked_sub(kh - 1) {
+                    let at = (y - y0) * tile_w + tile_x0;
+                    let o = &mut tile[at..at + sw];
+                    for i in 0..sw {
+                        let s0 = s[i] + sp[i];
+                        o[i] = (s0 * scale) as f32;
+                        s[i] = s0 - old[i];
+                    }
+                } else {
+                    for i in 0..sw {
+                        s[i] = (s[i] + sp[i]) - old[i];
+                    }
+                }
+            }
+        };
+        if strip >= n {
+            column(0, &mut sum, &mut dst[y0 * n..y1 * n], n, 0);
+        } else {
+            let tiles: Vec<Vec<f32>> = sum
+                .par_chunks_mut(strip)
+                .enumerate()
+                .map(|(si, s)| {
+                    let mut tile = vec![0f32; (y1 - y0) * s.len()];
+                    let sw = s.len();
+                    column(si * strip, s, &mut tile, sw, 0);
+                    tile
+                })
+                .collect();
+            dst[y0 * n..y1 * n]
+                .par_chunks_mut(n)
+                .enumerate()
+                .for_each(|(j, out)| {
+                    for (si, tile) in tiles.iter().enumerate() {
+                        let sw = tile.len() / (y1 - y0);
+                        out[si * strip..si * strip + sw]
+                            .copy_from_slice(&tile[j * sw..(j + 1) * sw]);
+                    }
+                });
+        }
+        rc0 = rc1;
+    }
+    Some(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

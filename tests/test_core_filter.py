@@ -65,3 +65,14 @@ def test_sep_filter2d_matches_cv2_bit_for_bit(shape, border, name):
 def test_sep_filter2d_rejects_a_kernel_it_does_not_cover():
     with pytest.raises(ValueError):
         negpy_core.sep_filter2d(_image(9, 9, 1), np.array([0.2, 0.5, 0.3], np.float32), np.array([1], np.float32))
+
+
+@pytest.mark.parametrize("shape", _SHAPES + [(9, 700, 1)])
+@pytest.mark.parametrize("border", _BORDERS)
+@pytest.mark.parametrize("ksize", [(1, 1), (3, 3), (5, 5), (2, 4), (4, 2), (7, 7), (3, 9), (9, 3), (15, 15), (6, 11), (31, 1), (1, 31)])
+@pytest.mark.parametrize("normalize", [True, False])
+def test_box_filter_matches_cv2_bit_for_bit(shape, border, ksize, normalize):
+    img = (_image(*shape) * _RNG.choice([1.0, 1e3])).astype(np.float32)
+    want = cv2.boxFilter(img, -1, ksize, normalize=normalize, borderType=border)
+    got = negpy_core.box_filter(img, ksize, normalize, border)
+    assert got.tobytes() == want.tobytes()

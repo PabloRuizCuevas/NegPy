@@ -124,6 +124,23 @@ fn sobel<'py>(
     })
 }
 
+/// `cv2.boxFilter(src, -1, ksize, normalize=normalize, borderType=border_type)` for float32.
+#[pyfunction]
+#[pyo3(signature = (src, ksize, normalize=true, border_type=4))]
+fn box_filter<'py>(
+    py: Python<'py>,
+    src: PyReadonlyArrayDyn<'py, f32>,
+    ksize: (usize, usize),
+    normalize: bool,
+    border_type: i32,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let img = image(&src)?;
+    let b = border(border_type)?;
+    filled(py, &img.shape, |dst| {
+        filter::box_filter(img.data, dst, img.dims, ksize, normalize, b)
+    })
+}
+
 /// `cv2.getGaussianKernel(n, sigma, cv2.CV_32F)` as a flat list.
 #[pyfunction]
 fn gaussian_kernel(n: usize, sigma: f64) -> Vec<f32> {
@@ -131,6 +148,7 @@ fn gaussian_kernel(n: usize, sigma: f64) -> Vec<f32> {
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(box_filter, m)?)?;
     m.add_function(wrap_pyfunction!(gaussian_blur, m)?)?;
     m.add_function(wrap_pyfunction!(sep_filter2d, m)?)?;
     m.add_function(wrap_pyfunction!(sobel, m)?)?;
