@@ -1820,8 +1820,9 @@ depends = []
 
 ["features/cyanotype/logic.py::apply_cyanotype"]
 phase = 6
-status = "todo"
-calls = []
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.cyanotype"]
 depends = []
 
 ["features/cyanotype/processor.py::CyanotypeProcessor.process"]
@@ -2122,8 +2123,9 @@ depends = []
 
 ["features/lith/logic.py::apply_lith"]
 phase = 6
-status = "todo"
-calls = []
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.lith"]
 depends = []
 
 ["features/lith/processor.py::LithProcessor.process"]
@@ -2134,8 +2136,9 @@ depends = []
 
 ["features/sabattier/logic.py::apply_sabattier"]
 phase = 6
-status = "todo"
-calls = ["cv2.sepFilter2D"]
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.sabattier"]
 depends = []
 
 ["features/sabattier/processor.py::SabattierProcessor.process"]

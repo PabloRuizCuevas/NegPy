@@ -533,33 +533,36 @@ pub fn sep_filter2d(
         row_filter(fast, padded, out, cn, kx, sx);
     };
 
-    // Strips of output rows, each with the row-filtered rows it reads kept in cache.
-    const STRIP: usize = 32;
-    dst.par_chunks_mut(STRIP * n).enumerate().for_each_init(
-        || {
-            (
-                vec![0f32; (w + 2 * rx) * cn],
-                vec![0f32; (STRIP + 2 * ry) * n],
-            )
-        },
-        |(padded, buf), (strip, out)| {
-            let y0 = strip * STRIP;
-            let count = out.len() / n;
-            for t in 0..count + 2 * ry {
-                let line = &mut buf[t * n..(t + 1) * n];
-                match border_interpolate((y0 + t) as isize - ry as isize, h, border) {
-                    Some(sy) => row_pass(padded, sy, line),
-                    None => line.fill(0.0),
+    // Strips of output rows, each with the row-filtered rows it reads kept in cache. A strip
+    // filters its 2 * ry halo rows again, so it grows with the kernel.
+    let strip_rows = (8 * ry).max(32);
+    dst.par_chunks_mut(strip_rows * n)
+        .enumerate()
+        .for_each_init(
+            || {
+                (
+                    vec![0f32; (w + 2 * rx) * cn],
+                    vec![0f32; (strip_rows + 2 * ry) * n],
+                )
+            },
+            |(padded, buf), (strip, out)| {
+                let y0 = strip * strip_rows;
+                let count = out.len() / n;
+                for t in 0..count + 2 * ry {
+                    let line = &mut buf[t * n..(t + 1) * n];
+                    match border_interpolate((y0 + t) as isize - ry as isize, h, border) {
+                        Some(sy) => row_pass(padded, sy, line),
+                        None => line.fill(0.0),
+                    }
                 }
-            }
-            for (yy, line) in out.chunks_exact_mut(n).enumerate() {
-                let rows: Vec<&[f32]> = (0..ky.len())
-                    .map(|j| &buf[(yy + j) * n..(yy + j + 1) * n])
-                    .collect();
-                column_filter(fast, &rows, line, ky, sy);
-            }
-        },
-    );
+                for (yy, line) in out.chunks_exact_mut(n).enumerate() {
+                    let rows: Vec<&[f32]> = (0..ky.len())
+                        .map(|j| &buf[(yy + j) * n..(yy + j + 1) * n])
+                        .collect();
+                    column_filter(fast, &rows, line, ky, sy);
+                }
+            },
+        );
     Some(())
 }
 

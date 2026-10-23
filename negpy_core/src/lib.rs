@@ -1,3 +1,4 @@
+pub mod altprocess;
 pub mod analysis;
 pub mod bounds;
 pub mod color;
@@ -63,5 +64,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::display::register(m)?;
     py::analysis::register(m)?;
     py::warp::register(m)?;
-    py::lab::register(m)
+    py::lab::register(m)?;
+    py::altprocess::register(m)
 }
