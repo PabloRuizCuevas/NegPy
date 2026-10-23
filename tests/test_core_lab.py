@@ -6,6 +6,7 @@ from core_oracle import cv2_oracle
 
 from negpy.features.lab.logic import _smoothstep, gaussian_kernel_1d, sharpen_shadow_gain
 from negpy.features.lab.logic import LUM_B, LUM_G, LUM_R, RL_EPS, apply_clahe, apply_glow_and_halation, apply_rl_sharpening, rl_iterations
+from negpy.features.toning.logic import apply_split_toning
 from negpy.kernel.image.logic import WORKING_LAB, lab_to_rgb_working, rgb_to_lab_working, working_oetf_encode
 
 pytestmark = cv2_oracle
@@ -178,3 +179,26 @@ def _rl_reference(img, amount, radius, masking):
 def test_rl_sharpen_matches_numpy_and_cv2(shape, amount, radius, masking):
     img = cv2.GaussianBlur(_RNG.random((*shape, 3), dtype=np.float32), (0, 0), 1.0) - np.float32(0.05)
     assert apply_rl_sharpening(img, amount, radius, masking).tobytes() == _rl_reference(img, amount, radius, masking).tobytes()
+
+
+def _split_reference(img, shadow_hue, shadow_strength, highlight_hue, highlight_strength):
+    """The NumPy split toning that negpy_core.split_toning replaces."""
+    lab = rgb_to_lab_working(img)
+    lum = lab[:, :, 0]
+    for hue, strength, t in (
+        (shadow_hue, shadow_strength, 1.0 - lum / 50.0),
+        (highlight_hue, highlight_strength, (lum - 50.0) / 50.0),
+    ):
+        if strength > 0.0:
+            t = np.clip(t, 0.0, 1.0)
+            mask = t * t * (3.0 - 2.0 * t)
+            rad = np.radians(hue)
+            lab[:, :, 1] += np.cos(rad) * 20.0 * strength * mask
+            lab[:, :, 2] += np.sin(rad) * 20.0 * strength * mask
+    return np.clip(lab_to_rgb_working(lab), 0.0, 1.0)
+
+
+@pytest.mark.parametrize("args", [(30.0, 0.4, 210.0, 0.0), (0.0, 0.0, 45.0, 0.7), (300.0, 1.0, 120.0, 0.5)])
+def test_split_toning_matches_numpy(args):
+    img = _RNG.random((61, 83, 3), dtype=np.float32)
+    assert apply_split_toning(img, *args).tobytes() == _split_reference(img, *args).tobytes()

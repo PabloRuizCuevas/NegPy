@@ -1,10 +1,10 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import negpy_core
 
 from negpy.domain.types import ImageBuffer
-from negpy.kernel.image.logic import lab_to_rgb_working, rgb_to_lab_working
+from negpy.kernel.image.logic import WORKING_LAB
 from negpy.kernel.image.validation import ensure_image
 
 TONING_CONSTANTS: Dict[str, Any] = {
@@ -176,25 +176,13 @@ def apply_split_toning(
     if shadow_strength == 0.0 and highlight_strength == 0.0:
         return img
 
-    lab = rgb_to_lab_working(img.astype(np.float32))
-    L = lab[:, :, 0]  # 0–100 CIELAB (Adobe RGB working space)
+    def tint(hue: float, strength: float) -> Optional[Tuple[float, float]]:
+        rad = np.radians(hue)
+        return (float(np.cos(rad) * 20.0 * strength), float(np.sin(rad) * 20.0 * strength)) if strength > 0.0 else None
 
-    # Smoothstep masks, as toning.wgsl.
-    if shadow_strength > 0.0:
-        t = np.clip(1.0 - L / 50.0, 0.0, 1.0)
-        s_mask = t * t * (3.0 - 2.0 * t)
-        rad = np.radians(shadow_hue)
-        lab[:, :, 1] += np.cos(rad) * 20.0 * shadow_strength * s_mask
-        lab[:, :, 2] += np.sin(rad) * 20.0 * shadow_strength * s_mask
-
-    if highlight_strength > 0.0:
-        t = np.clip((L - 50.0) / 50.0, 0.0, 1.0)
-        h_mask = t * t * (3.0 - 2.0 * t)
-        rad = np.radians(highlight_hue)
-        lab[:, :, 1] += np.cos(rad) * 20.0 * highlight_strength * h_mask
-        lab[:, :, 2] += np.sin(rad) * 20.0 * highlight_strength * h_mask
-
-    return ensure_image(np.clip(lab_to_rgb_working(lab), 0.0, 1.0))
+    # Smoothstep masks of L* below and above 50, as toning.wgsl.
+    shadow, highlight = tint(shadow_hue, shadow_strength), tint(highlight_hue, highlight_strength)
+    return negpy_core.split_toning(np.ascontiguousarray(img, dtype=np.float32), shadow, highlight, *WORKING_LAB)
 
 
 def apply_chemical_toning(

@@ -427,3 +427,34 @@ pub fn rl_sharpen(
         });
     Some(())
 }
+
+/// `apply_split_toning`: each tint is (cos, sin) of its hue times 20 times its strength, as
+/// float64; NumPy adds tint * mask to a* and b* in float64 and rounds once. The masks are the
+/// float32 smoothsteps of L* below and above 50.
+pub fn split_toning(
+    src: &[f32],
+    (shadow, highlight): (Option<[f64; 2]>, Option<[f64; 2]>),
+    (to_lab, to_rgb): (LabSpace, LabSpace),
+    dst: &mut [f32],
+) {
+    let mut lab = vec![0f32; src.len()];
+    color::rgb_to_lab(src, &mut lab, to_lab);
+    let step = |t: f32| {
+        let t = clip(t, 0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    };
+    lab.par_chunks_mut(3).for_each(|p| {
+        let l = p[0];
+        for (tint, mask) in [
+            (shadow, step(1.0 - l / 50.0)),
+            (highlight, step((l - 50.0) / 50.0)),
+        ] {
+            if let Some(c) = tint {
+                p[1] = (p[1] as f64 + c[0] * mask as f64) as f32;
+                p[2] = (p[2] as f64 + c[1] * mask as f64) as f32;
+            }
+        }
+    });
+    color::lab_to_rgb(&lab, dst, to_rgb);
+    dst.par_iter_mut().for_each(|v| *v = clip(*v, 0.0, 1.0));
+}

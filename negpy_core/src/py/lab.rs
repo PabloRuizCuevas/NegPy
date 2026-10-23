@@ -203,7 +203,45 @@ fn rl_sharpen<'py>(
     Ok(out)
 }
 
+/// `apply_split_toning` of an HxWx3 float32 image: each tint is (cos, sin) of its hue times 20
+/// times its strength, or None when off; then the working Lab constants.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn split_toning<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    shadow: Option<(f64, f64)>,
+    highlight: Option<(f64, f64)>,
+    to_xyz: PyReadonlyArray2<'py, f32>,
+    to_rgb: PyReadonlyArray2<'py, f32>,
+    white: PyReadonlyArray1<'py, f32>,
+    eps: f32,
+    kappa: f32,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    if img.shape().last() != Some(&3) {
+        return Err(PyValueError::new_err("needs an HxWx3 image"));
+    }
+    let spaces = (
+        space(&to_xyz, &white, eps, kappa)?,
+        space(&to_rgb, &white, eps, kappa)?,
+    );
+    let src = img
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous image"))?;
+    let tints = (shadow.map(|t| [t.0, t.1]), highlight.map(|t| [t.0, t.1]));
+    let out = PyArrayDyn::<f32>::zeros(py, img.shape(), false);
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        super::detach(py, || lab::split_toning(src, tints, spaces, dst));
+    }
+    Ok(out)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(split_toning, m)?)?;
     m.add_function(wrap_pyfunction!(rl_sharpen, m)?)?;
     m.add_function(wrap_pyfunction!(clahe, m)?)?;
     m.add_function(wrap_pyfunction!(glow_and_halation, m)?)?;

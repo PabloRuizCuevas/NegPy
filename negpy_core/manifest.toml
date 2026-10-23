@@ -2161,8 +2161,8 @@ depends = ["_apply_chemical_toning_jit"]
 
 ["features/toning/logic.py::apply_split_toning"]
 phase = 6
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.split_toning"]
 depends = []
 
 ["features/toning/processor.py::ToningProcessor.process"]
