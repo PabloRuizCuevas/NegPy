@@ -73,6 +73,12 @@ _CASES = {
     "warp_perspective": lambda: negpy_core.warp_perspective(
         _IMG1, np.array([[1.02, 0.03, -1.5], [-0.01, 0.97, 2.25], [1e-4, -2e-4, 1.0]]), (61, 83)
     ),
+    "warp_affine_cubic_constant": lambda: negpy_core.warp_affine(
+        _IMG3, np.array([[0.998, 0.061, -3.1], [-0.061, 0.998, 4.2]]), (140, 90), interpolation="cubic", border="constant"
+    ),
+    "remap_nearest": lambda: negpy_core.remap(
+        _IMG1, *np.meshgrid(np.arange(70, dtype=np.float32) * 0.9 - 2, np.arange(90, dtype=np.float32) * 0.95 - 1), "nearest", "constant"
+    ),
     "remap_radial": lambda: negpy_core.remap_radial(_IMG3, (65.0, 48.0), 0.93, -0.05, 1.0 / 6600.0),
 }
 
@@ -104,6 +110,8 @@ _HASHES = {
     "matrix_trc_u8": "acec1eadffb13dfef8473a02fb250b4ad8f57ac211a6265661b77d3cad49ab16",
     "warp_affine": "83562b3183484dcbf80fc65c4fb2f241d3b13ec9793cf43fd22bf11ea44d9e1d",
     "warp_perspective": "61e89302e793e24f1ad131b661e95186d7d9a82e8331a96164e338bec3ec1420",
+    "warp_affine_cubic_constant": "a3d3d1a3d6c5e0e77686cfd37850199aa880943936e83edf8ada48307501cd69",
+    "remap_nearest": "16ebb2a1c29640f25e4a490f6edd8817d8dc1f652b6aa001f72aa2ca34d33ac0",
     "remap_radial": "a23f3b21f15cb5d9db26cc532ec920dc8b194d73515a786d9febc93ae17370e0",
 }
 

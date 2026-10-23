@@ -1233,7 +1233,7 @@ depends = ["_edge_reads"]
 ["features/lens/logic.py::apply_lens"]
 phase = 4
 status = "todo"
-calls = ["cv2.remap"]
+calls = ["negpy_core.remap"]
 depends = ["fill_scale"]
 
 ["features/lens/logic.py::fill_scale"]
@@ -1532,8 +1532,8 @@ depends = ["_scratch_ridge"]
 
 ["features/retouch/logic.py::_shear_rows"]
 phase = 4
-status = "todo"
-calls = ["cv2.warpAffine"]
+status = "ported"
+calls = ["negpy_core.warp_affine"]
 depends = []
 
 ["features/retouch/logic.py::apply_ir_attenuation"]
@@ -1646,8 +1646,8 @@ depends = []
 
 ["features/hdr/logic.py::_align"]
 phase = 5
-status = "todo"
-calls = ["cv2.warpAffine"]
+status = "ported"
+calls = ["negpy_core.warp_affine"]
 depends = []
 
 ["features/hdr/logic.py::_count_clipped_rows"]
@@ -1737,7 +1737,7 @@ depends = ["pair_ratio"]
 ["features/rgbscan/logic.py::_align_to"]
 phase = 5
 status = "todo"
-calls = ["cv2.warpAffine"]
+calls = ["negpy_core.warp_affine"]
 depends = ["estimate_shift"]
 
 ["features/rgbscan/logic.py::assemble_rgb"]
@@ -1814,8 +1814,8 @@ depends = ["blend_ir", "feather_blend", "find_seams", "seam_blend", "warp_into_c
 
 ["features/stitch/logic.py::warp_into_canvas"]
 phase = 5
-status = "todo"
-calls = ["cv2.warpAffine"]
+status = "ported"
+calls = ["negpy_core.warp_affine"]
 depends = []
 
 ["features/cyanotype/logic.py::apply_cyanotype"]
@@ -2271,14 +2271,14 @@ depends = []
 
 ["desktop/view/canvas/overlay.py::CanvasOverlay._ir_layer_qimage"]
 phase = 7
-status = "todo"
-calls = ["cv2.remap"]
+status = "ported"
+calls = ["negpy_core.remap"]
 depends = []
 
 ["desktop/view/canvas/overlay.py::CanvasOverlay._mask_wash_qimage"]
 phase = 7
-status = "todo"
-calls = ["cv2.remap"]
+status = "ported"
+calls = ["negpy_core.remap"]
 depends = []
 
 ["desktop/view/canvas/overlay.py::CanvasOverlay._zone_outline"]

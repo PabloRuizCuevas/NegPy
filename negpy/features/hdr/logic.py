@@ -18,7 +18,6 @@ separate choice, nominated by the user rather than measured — see `output_scal
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Sequence, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -393,7 +392,7 @@ def _align(ref_gray: np.ndarray, mov: np.ndarray, max_shift: float) -> np.ndarra
         return mov
     h, w = mov.shape[:2]
     matrix = np.array([[1.0, 0.0, -dx], [0.0, 1.0, -dy]], dtype=np.float32)
-    return cv2.warpAffine(mov, matrix, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    return negpy_core.warp_affine(np.ascontiguousarray(mov, dtype=np.float32), matrix.astype(np.float64), (w, h), interpolation="cubic")
 
 
 def merge_frames(

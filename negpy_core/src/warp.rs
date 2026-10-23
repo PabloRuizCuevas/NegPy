@@ -1,6 +1,7 @@
-//! OpenCV's bilinear warps of a float32 image with replicated edges: `remap`, `warpAffine` and
-//! `warpPerspective`. Each source coordinate is fixed point at 1/32 px, rounded as OpenCV rounds
-//! it; the four weights are its table's float32 products, summed left to right.
+//! OpenCV's warps of a float32 image: `remap`, `warpAffine` and `warpPerspective`, bilinear or
+//! bicubic, with replicated edges or a zero border. Each source coordinate is fixed point at
+//! 1/32 px, rounded as OpenCV rounds it; the weights are its table's float32 products, summed
+//! in its order.
 
 use multiversion::multiversion;
 use rayon::prelude::*;
@@ -14,14 +15,62 @@ pub struct Image<'a> {
     pub cn: usize,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Interp {
+    /// `remap` only: the source pixel nearest the map point.
+    Nearest,
+    Linear,
+    Cubic,
+}
+
+/// What a sample outside the source reads: the nearest edge pixel, or zero.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Border {
+    Replicate,
+    Constant,
+}
+
 const BITS: i32 = 5;
 const MASK: i32 = (1 << BITS) - 1;
 const STEP: f32 = 1.0 / (1 << BITS) as f32;
 
-/// The pixel at fixed-point source coordinates (x, y) into `out`, edges replicated. `CN` is
-/// the channel count, or 0 for one known only at run time.
+/// OpenCV's bicubic weight table: for each pair of 1/32 px fractions (y major), the products
+/// of `interpolateCubic` (A = -0.75) of the y and the x fraction, row major.
+type CubicTable = [[f32; 16]; 1 << (2 * BITS)];
+
+fn cubic_table() -> &'static CubicTable {
+    static TAB: std::sync::OnceLock<Box<CubicTable>> = std::sync::OnceLock::new();
+    TAB.get_or_init(|| {
+        const A: f32 = -0.75;
+        let c: [[f32; 4]; 1 << BITS] = std::array::from_fn(|i| {
+            let x = i as f32 * STEP;
+            let c0 = ((A * (x + 1.0) - 5.0 * A) * (x + 1.0) + 8.0 * A) * (x + 1.0) - 4.0 * A;
+            let c1 = ((A + 2.0) * x - (A + 3.0)) * x * x + 1.0;
+            let c2 = ((A + 2.0) * (1.0 - x) - (A + 3.0)) * (1.0 - x) * (1.0 - x) + 1.0;
+            [c0, c1, c2, 1.0 - c0 - c1 - c2]
+        });
+        let mut tab = Box::new([[0f32; 16]; 1 << (2 * BITS)]);
+        for (f, w) in tab.iter_mut().enumerate() {
+            let (cy, cx) = (c[f >> BITS], c[f & MASK as usize]);
+            *w = std::array::from_fn(|i| cy[i / 4] * cx[i % 4]);
+        }
+        tab
+    })
+}
+
+/// The source index of `v` on an axis of `n` under `border`; None reads zero.
 #[inline(always)]
-fn sample<const CN: usize>(src: &Image, x: i32, y: i32, out: &mut [f32]) {
+fn edge(v: i32, n: usize, border: Border) -> Option<usize> {
+    match border {
+        Border::Replicate => Some(v.clamp(0, n as i32 - 1) as usize),
+        Border::Constant => (v >= 0 && (v as usize) < n).then_some(v as usize),
+    }
+}
+
+/// The bilinear pixel at fixed-point source coordinates (x, y) into `out`. `CN` is the channel
+/// count, or 0 for one known only at run time.
+#[inline(always)]
+fn linear<const CN: usize>(src: &Image, border: Border, x: i32, y: i32, out: &mut [f32]) {
     let (fx, fy) = ((x & MASK) as f32 * STEP, (y & MASK) as f32 * STEP);
     let (ix, iy) = (x >> BITS, y >> BITS);
     let w0 = (1.0 - fy) * (1.0 - fx);
@@ -31,8 +80,7 @@ fn sample<const CN: usize>(src: &Image, x: i32, y: i32, out: &mut [f32]) {
     let cn = if CN == 0 { src.cn } else { CN };
     let row = src.w * cn;
     let s = src.data;
-    let (wl, hl) = (src.w as i32 - 1, src.h as i32 - 1);
-    if (ix as u32) < wl as u32 && (iy as u32) < hl as u32 {
+    if (ix as u32) < src.w as u32 - 1 && (iy as u32) < src.h as u32 - 1 {
         let a = iy as usize * row + ix as usize * cn;
         let (p, q) = (&s[a..][..2 * cn], &s[a + row..][..2 * cn]);
         for (k, o) in out[..cn].iter_mut().enumerate() {
@@ -40,40 +88,140 @@ fn sample<const CN: usize>(src: &Image, x: i32, y: i32, out: &mut [f32]) {
         }
         return;
     }
-    let (x0, x1) = (ix.clamp(0, wl) as usize, (ix + 1).clamp(0, wl) as usize);
-    let (y0, y1) = (iy.clamp(0, hl) as usize, (iy + 1).clamp(0, hl) as usize);
-    let (a, b) = (y0 * row + x0 * cn, y0 * row + x1 * cn);
-    let (c, d) = (y1 * row + x0 * cn, y1 * row + x1 * cn);
+    let (wi, hi) = (src.w as i32, src.h as i32);
+    if border == Border::Constant && (ix >= wi || ix + 1 < 0 || iy >= hi || iy + 1 < 0) {
+        out[..cn].fill(0.0);
+        return;
+    }
+    let (x0, x1) = (edge(ix, src.w, border), edge(ix + 1, src.w, border));
+    let (y0, y1) = (edge(iy, src.h, border), edge(iy + 1, src.h, border));
+    let at = |yy: Option<usize>, xx: Option<usize>, k: usize| match (yy, xx) {
+        (Some(yy), Some(xx)) => s[yy * row + xx * cn + k],
+        _ => 0.0,
+    };
     for (k, o) in out[..cn].iter_mut().enumerate() {
-        *o = s[a + k] * w0 + s[b + k] * w1 + s[c + k] * w2 + s[d + k] * w3;
+        *o = at(y0, x0, k) * w0 + at(y0, x1, k) * w1 + at(y1, x0, k) * w2 + at(y1, x1, k) * w3;
     }
 }
 
-fn sample_row<const CN: usize>(src: &Image, xs: &[i32], ys: &[i32], row: &mut [f32]) {
+/// The bicubic pixel at fixed-point source coordinates (x, y): rows of four summed, then added
+/// row by row; at the border every term is added in turn, as OpenCV does.
+#[inline(always)]
+fn cubic<const CN: usize>(
+    src: &Image,
+    border: Border,
+    tab: &CubicTable,
+    x: i32,
+    y: i32,
+    out: &mut [f32],
+) {
+    let w = &tab[(((y & MASK) << BITS) | (x & MASK)) as usize];
+    let (sx, sy) = ((x >> BITS) - 1, (y >> BITS) - 1);
     let cn = if CN == 0 { src.cn } else { CN };
-    for ((o, &x), &y) in row.chunks_exact_mut(cn).zip(xs).zip(ys) {
-        sample::<CN>(src, x, y, o);
+    let row = src.w * cn;
+    let s = src.data;
+    if (sx as u32) < (src.w as u32).saturating_sub(3)
+        && (sy as u32) < (src.h as u32).saturating_sub(3)
+    {
+        let a = sy as usize * row + sx as usize * cn;
+        let p: [&[f32]; 4] = std::array::from_fn(|i| &s[a + i * row..][..4 * cn]);
+        for (k, o) in out[..cn].iter_mut().enumerate() {
+            let r = |i: usize| {
+                let (p, w) = (p[i], &w[i * 4..][..4]);
+                p[k] * w[0] + p[cn + k] * w[1] + p[2 * cn + k] * w[2] + p[3 * cn + k] * w[3]
+            };
+            let mut sum = r(0);
+            sum += r(1);
+            sum += r(2);
+            sum += r(3);
+            *o = sum;
+        }
+        return;
+    }
+    let (wi, hi) = (src.w as i32, src.h as i32);
+    if border == Border::Constant && (sx >= wi || sx + 4 <= 0 || sy >= hi || sy + 4 <= 0) {
+        out[..cn].fill(0.0);
+        return;
+    }
+    let xs: [Option<usize>; 4] = std::array::from_fn(|i| edge(sx + i as i32, src.w, border));
+    let ys: [Option<usize>; 4] = std::array::from_fn(|i| edge(sy + i as i32, src.h, border));
+    for (k, o) in out[..cn].iter_mut().enumerate() {
+        let mut sum = 0.0f32;
+        for (i, yy) in ys.iter().enumerate() {
+            let Some(yy) = yy else { continue };
+            for (j, xx) in xs.iter().enumerate() {
+                if let Some(xx) = xx {
+                    sum += s[yy * row + xx * cn + k] * w[i * 4 + j];
+                }
+            }
+        }
+        *o = sum;
     }
 }
+
+/// The source pixel at whole-pixel coordinates (x, y) in 1/32 px units.
+#[inline(always)]
+fn nearest<const CN: usize>(src: &Image, border: Border, x: i32, y: i32, out: &mut [f32]) {
+    let cn = if CN == 0 { src.cn } else { CN };
+    let (ix, iy) = (x >> BITS, y >> BITS);
+    if (ix as u32) < src.w as u32 && (iy as u32) < src.h as u32 {
+        out[..cn].copy_from_slice(&src.data[(iy as usize * src.w + ix as usize) * cn..][..cn]);
+        return;
+    }
+    match (
+        edge(x >> BITS, src.w, border),
+        edge(y >> BITS, src.h, border),
+    ) {
+        (Some(xx), Some(yy)) => {
+            out[..cn].copy_from_slice(&src.data[(yy * src.w + xx) * cn..][..cn]);
+        }
+        _ => out[..cn].fill(0.0),
+    }
+}
+
+fn sample_row<const CN: usize>(
+    src: &Image,
+    (interp, border): (Interp, Border),
+    tab: &CubicTable,
+    (xs, ys): (&[i32], &[i32]),
+    row: &mut [f32],
+) {
+    let cn = if CN == 0 { src.cn } else { CN };
+    let px = row.chunks_exact_mut(cn).zip(xs).zip(ys);
+    match interp {
+        Interp::Linear => px.for_each(|((o, &x), &y)| linear::<CN>(src, border, x, y, o)),
+        Interp::Cubic => px.for_each(|((o, &x), &y)| cubic::<CN>(src, border, tab, x, y, o)),
+        Interp::Nearest => px.for_each(|((o, &x), &y)| nearest::<CN>(src, border, x, y, o)),
+    }
+}
+
+static EMPTY: CubicTable = [[0.0; 16]; 1 << (2 * BITS)];
 
 /// Fills a `dw`-wide output, row by row in parallel, from `coords(y, xs, ys)`, which writes the
 /// fixed-point source coordinates of output row y.
 fn warp(
     src: &Image,
+    mode: (Interp, Border),
     dw: usize,
     out: &mut [f32],
     coords: impl Fn(usize, &mut [i32], &mut [i32]) + Sync,
 ) {
     let cn = src.cn;
+    let tab = if mode.0 == Interp::Cubic {
+        cubic_table()
+    } else {
+        &EMPTY
+    };
     out.par_chunks_mut(dw * cn).enumerate().for_each_init(
         || (vec![0i32; dw], vec![0i32; dw]),
         |(xs, ys), (y, row)| {
             coords(y, xs, ys);
+            let c = (&xs[..], &ys[..]);
             match cn {
-                1 => sample_row::<1>(src, xs, ys, row),
-                3 => sample_row::<3>(src, xs, ys, row),
-                4 => sample_row::<4>(src, xs, ys, row),
-                _ => sample_row::<0>(src, xs, ys, row),
+                1 => sample_row::<1>(src, mode, tab, c, row),
+                3 => sample_row::<3>(src, mode, tab, c, row),
+                4 => sample_row::<4>(src, mode, tab, c, row),
+                _ => sample_row::<0>(src, mode, tab, c, row),
             }
         },
     );
@@ -90,11 +238,30 @@ fn round_i32(v: f64) -> i32 {
 /// Coordinates far outside any image, held where `round_i32` stays exact.
 const FAR: f64 = (1u32 << 30) as f64;
 
-/// `cv2.remap(src, map_x, map_y, INTER_LINEAR, borderMode=BORDER_REPLICATE)`; the maps are
-/// float32, one entry per output pixel, `dw` wide.
-pub fn remap_linear(src: &Image, map_x: &[f32], map_y: &[f32], dw: usize, out: &mut [f32]) {
-    warp(src, dw, out, move |y, xs, ys| {
-        remap_coords(&map_x[y * dw..][..dw], &map_y[y * dw..][..dw], xs, ys)
+/// `cv2.remap(src, map_x, map_y, interpolation, borderMode)`; the maps are float32, one entry
+/// per output pixel, `dw` wide.
+pub fn remap(
+    src: &Image,
+    mode: (Interp, Border),
+    (map_x, map_y): (&[f32], &[f32]),
+    dw: usize,
+    out: &mut [f32],
+) {
+    // Nearest rounds the map point to a whole pixel.
+    let scale = if mode.0 == Interp::Nearest {
+        1.0
+    } else {
+        (1 << BITS) as f32
+    };
+    let shift = if mode.0 == Interp::Nearest { BITS } else { 0 };
+    warp(src, mode, dw, out, move |y, xs, ys| {
+        remap_coords(
+            &map_x[y * dw..][..dw],
+            &map_y[y * dw..][..dw],
+            (scale, shift),
+            xs,
+            ys,
+        )
     });
 }
 
@@ -103,11 +270,17 @@ pub fn remap_linear(src: &Image, map_x: &[f32], map_y: &[f32], dw: usize, out: &
     "x86_64+avx2+fma",
     "aarch64+neon"
 ))]
-fn remap_coords(mx: &[f32], my: &[f32], xs: &mut [i32], ys: &mut [i32]) {
-    let scale = (1 << BITS) as f32;
+fn remap_coords(
+    mx: &[f32],
+    my: &[f32],
+    (scale, shift): (f32, i32),
+    xs: &mut [i32],
+    ys: &mut [i32],
+) {
+    let far = FAR / (1 << shift) as f64;
     for (((x, y), &a), &b) in xs.iter_mut().zip(ys.iter_mut()).zip(mx).zip(my) {
-        *x = round_i32(((a * scale) as f64).clamp(-FAR, FAR));
-        *y = round_i32(((b * scale) as f64).clamp(-FAR, FAR));
+        *x = round_i32(((a * scale) as f64).clamp(-far, far)) << shift;
+        *y = round_i32(((b * scale) as f64).clamp(-far, far)) << shift;
     }
 }
 
@@ -123,9 +296,13 @@ pub fn remap_radial(
     out: &mut [f32],
 ) {
     let dw = src.w;
-    warp(src, dw, out, move |y, xs, ys| {
-        radial_coords(y as f32, (cx, cy), s, k1, inv_hd2, xs, ys)
-    });
+    warp(
+        src,
+        (Interp::Linear, Border::Replicate),
+        dw,
+        out,
+        move |y, xs, ys| radial_coords(y as f32, (cx, cy), s, k1, inv_hd2, xs, ys),
+    );
 }
 
 #[multiversion(targets(
@@ -152,9 +329,16 @@ fn radial_coords(
     }
 }
 
-/// `cv2.warpAffine(src, m, (dw, dh), INTER_LINEAR, BORDER_REPLICATE)`; `m` maps source to
-/// output unless `inverse_map` (OpenCV's WARP_INVERSE_MAP).
-pub fn warp_affine(src: &Image, m: [f64; 6], inverse_map: bool, dw: usize, out: &mut [f32]) {
+/// `cv2.warpAffine(src, m, (dw, dh), interpolation, borderMode)`, bilinear or bicubic; `m` maps
+/// source to output unless `inverse_map` (OpenCV's WARP_INVERSE_MAP).
+pub fn warp_affine(
+    src: &Image,
+    mode: (Interp, Border),
+    m: [f64; 6],
+    inverse_map: bool,
+    dw: usize,
+    out: &mut [f32],
+) {
     let mut m = m;
     if !inverse_map {
         let d = m[0] * m[4] - m[1] * m[3];
@@ -177,7 +361,7 @@ pub fn warp_affine(src: &Image, m: [f64; 6], inverse_map: bool, dw: usize, out: 
     let bdelta: Vec<i32> = (0..dw)
         .map(|x| round_i32((m[3] * x as f64 * AB_SCALE).clamp(-FAR, FAR)))
         .collect();
-    warp(src, dw, out, move |y, xs, ys| {
+    warp(src, mode, dw, out, move |y, xs, ys| {
         let x0 = round_i32(((m[1] * y as f64 + m[2]) * AB_SCALE).clamp(-FAR, FAR)) + ROUND;
         let y0 = round_i32(((m[4] * y as f64 + m[5]) * AB_SCALE).clamp(-FAR, FAR)) + ROUND;
         for (i, (x, yv)) in xs.iter_mut().zip(ys.iter_mut()).enumerate() {
@@ -210,10 +394,12 @@ fn invert3(s: [f64; 9]) -> Option<[f64; 9]> {
     ])
 }
 
-/// `cv2.warpPerspective(src, m, (dw, dh), INTER_LINEAR, BORDER_REPLICATE)`; `m` maps source to
-/// output unless `inverse_map`. A singular `m` inverts to zeros, as `cv::invert` leaves it.
+/// `cv2.warpPerspective(src, m, (dw, dh), interpolation, borderMode)`, bilinear or bicubic; `m`
+/// maps source to output unless `inverse_map`. A singular `m` inverts to zeros, as `cv::invert`
+/// leaves it.
 pub fn warp_perspective(
     src: &Image,
+    mode: (Interp, Border),
     m: [f64; 9],
     inverse_map: bool,
     (dw, dh): (usize, usize),
@@ -227,7 +413,7 @@ pub fn warp_perspective(
     // OpenCV starts the projective sums again at each block of bw0 columns.
     let bh0 = dh.min(16);
     let bw0 = (1024 / bh0).min(dw);
-    warp(src, dw, out, move |y, xs, ys| {
+    warp(src, mode, dw, out, move |y, xs, ys| {
         let yf = y as f64;
         for (b, (xs, ys)) in xs.chunks_mut(bw0).zip(ys.chunks_mut(bw0)).enumerate() {
             let xb = (b * bw0) as f64;
@@ -280,10 +466,19 @@ mod tests {
             cn: 3,
         };
         let mut out = vec![0.0; data.len()];
-        warp_affine(&src, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0], false, 13, &mut out);
+        let mode = (Interp::Linear, Border::Replicate);
+        warp_affine(
+            &src,
+            mode,
+            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            false,
+            13,
+            &mut out,
+        );
         assert_eq!(out, data);
         warp_perspective(
             &src,
+            mode,
             [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
             false,
             (13, 9),
@@ -302,8 +497,39 @@ mod tests {
             cn: 1,
         };
         let mut out = vec![0.0; 3];
-        remap_linear(&src, &[0.5, -3.0, 9.0], &[0.0; 3], 3, &mut out);
+        let (mx, my) = ([0.5, -3.0, 9.0], [0.0; 3]);
+        remap(
+            &src,
+            (Interp::Linear, Border::Replicate),
+            (&mx, &my),
+            3,
+            &mut out,
+        );
         assert_eq!(out, [0.5, 0.0, 3.0]);
+        remap(
+            &src,
+            (Interp::Linear, Border::Constant),
+            (&mx, &my),
+            3,
+            &mut out,
+        );
+        assert_eq!(out, [0.5, 0.0, 0.0]);
+        remap(
+            &src,
+            (Interp::Nearest, Border::Replicate),
+            (&[1.4, 2.5, 3.5], &my),
+            3,
+            &mut out,
+        );
+        assert_eq!(out, [1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn cubic_weights_sum_to_one() {
+        for w in cubic_table().iter() {
+            assert!((w.iter().sum::<f32>() - 1.0).abs() < 1e-5);
+        }
+        assert_eq!(cubic_table()[0][5], 1.0);
     }
 
     #[test]

@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
+import negpy_core
 import numpy as np
 import qtawesome as qta
 from PyQt6.QtCore import QEvent, QLineF, QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
@@ -2372,7 +2373,7 @@ class CanvasOverlay(QWidget):
         h_ir, w_ir = ir.shape[:2]
         map_x = (uv_grid[..., 0] * (w_ir - 1)).astype(np.float32)
         map_y = (uv_grid[..., 1] * (h_ir - 1)).astype(np.float32)
-        remapped = cv2.remap(np.ascontiguousarray(ir, dtype=np.float32), map_x, map_y, interpolation=cv2.INTER_LINEAR)
+        remapped = negpy_core.remap(np.ascontiguousarray(ir, dtype=np.float32), map_x, map_y, border="constant")
         gray = np.ascontiguousarray((np.clip(remapped, 0.0, 1.0) * 255.0).astype(np.uint8))
         gh, gw = gray.shape[:2]
         img = QImage(gray.data, gw, gh, gw, QImage.Format.Format_Grayscale8).copy()
@@ -2410,7 +2411,7 @@ class CanvasOverlay(QWidget):
         h_m, w_m = mask.shape[:2]
         map_x = (uv_grid[..., 0] * (w_m - 1)).astype(np.float32)
         map_y = (uv_grid[..., 1] * (h_m - 1)).astype(np.float32)
-        remapped = cv2.remap(np.ascontiguousarray(mask, dtype=np.float32), map_x, map_y, interpolation=cv2.INTER_NEAREST)
+        remapped = negpy_core.remap(np.ascontiguousarray(mask, dtype=np.float32), map_x, map_y, "nearest", "constant")
         img = _tint_qimage([(remapped > 0.5, color)], _IR_CORRECTED_ALPHA)
         if len(self._wash_cache) > 8:  # drop stale ids from prior frames
             self._wash_cache.clear()

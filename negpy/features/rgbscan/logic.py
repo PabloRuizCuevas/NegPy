@@ -3,6 +3,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import cv2
+import negpy_core
 import numpy as np
 
 from negpy.domain.tokens import composite_token
@@ -286,7 +287,7 @@ def _align_to(ref_gray: np.ndarray, mov: np.ndarray, mov_ch: int, max_shift: flo
         return mov
     h, w = mov.shape[:2]
     matrix = np.array([[1.0, 0.0, -dx], [0.0, 1.0, -dy]], dtype=np.float32)
-    return cv2.warpAffine(mov, matrix, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    return negpy_core.warp_affine(np.ascontiguousarray(mov, dtype=np.float32), matrix.astype(np.float64), (w, h), interpolation="cubic")
 
 
 def assemble_rgb(r: np.ndarray, g: np.ndarray, b: np.ndarray, align: bool = True) -> np.ndarray:

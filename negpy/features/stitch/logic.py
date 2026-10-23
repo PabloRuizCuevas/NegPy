@@ -8,6 +8,7 @@ buffers decoded the same way.
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import cv2
+import negpy_core
 import numpy as np
 
 from negpy.features.stitch.models import StitchConfig
@@ -142,13 +143,16 @@ def warp_into_canvas(
     img: np.ndarray,
     transform: np.ndarray,
     canvas_wh: Tuple[int, int],
-    interpolation: int = cv2.INTER_CUBIC,
+    interpolation: str = "cubic",
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Warp a part and its validity mask into the canvas. The mask is eroded by the
     >0.999 threshold so resampled border pixels never bleed into the blend."""
-    warped = cv2.warpAffine(img, transform.astype(np.float32), canvas_wh, flags=interpolation)
+    m = transform.astype(np.float32).astype(np.float64)
+    warped = negpy_core.warp_affine(
+        np.ascontiguousarray(img, dtype=np.float32), m, canvas_wh, interpolation=interpolation, border="constant"
+    )
     ones = np.ones(img.shape[:2], np.float32)
-    mask = cv2.warpAffine(ones, transform.astype(np.float32), canvas_wh, flags=cv2.INTER_LINEAR)
+    mask = negpy_core.warp_affine(ones, m, canvas_wh, border="constant")
     return warped, mask > 0.999
 
 
@@ -310,7 +314,7 @@ def blend_ir(
     w, h = canvas_wh
     acc = np.full((h, w), -1.0, np.float32)
     for i, (ir, transform) in enumerate(zip(irs, transforms)):
-        warped, mask = warp_into_canvas(ir, transform, canvas_wh, interpolation=cv2.INTER_LINEAR)
+        warped, mask = warp_into_canvas(ir, transform, canvas_wh, interpolation="linear")
         if seams is not None:
             owned = seams[i]
             acc[owned] = warped[owned]

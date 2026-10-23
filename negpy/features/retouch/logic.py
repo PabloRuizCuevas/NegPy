@@ -595,7 +595,7 @@ def _shear_rows(plane: np.ndarray, slope: float, about_x: float, width: int) -> 
     ``row``.
     """
     m = np.float32([[1.0, 0.0, 0.0], [-slope, 1.0, slope * about_x]])
-    return cv2.warpAffine(plane, m, (width, plane.shape[0]), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    return negpy_core.warp_affine(np.ascontiguousarray(plane, dtype=np.float32), m.astype(np.float64), (width, plane.shape[0]))
 
 
 def trace_scratch(img: ImageBuffer, nx: float, ny: float, threshold: float = 0.5) -> Optional[Tuple[float, float, float, float, float]]:

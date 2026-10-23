@@ -4,7 +4,7 @@ use numpy::{
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::warp::{self, Image};
+use crate::warp::{self, Border, Image, Interp};
 
 fn image<'a>(src: &'a PyReadonlyArrayDyn<'_, f32>) -> PyResult<Image<'a>> {
     let (h, w, cn) = match src.shape() {
@@ -49,15 +49,40 @@ fn matrix<const N: usize>(m: &PyReadonlyArray2<'_, f64>, rows: usize) -> PyResul
     Ok(std::array::from_fn(|i| a[[i / 3, i % 3]]))
 }
 
-/// `cv2.remap(src, map_x, map_y, INTER_LINEAR, borderMode=BORDER_REPLICATE)` of a float32 image.
+/// The interpolation ("nearest", "linear", "cubic") and border ("replicate", "constant").
+fn mode(interpolation: &str, border: &str, nearest: bool) -> PyResult<(Interp, Border)> {
+    let interp = match interpolation {
+        "nearest" if nearest => Interp::Nearest,
+        "linear" => Interp::Linear,
+        "cubic" => Interp::Cubic,
+        _ => {
+            return Err(PyValueError::new_err(format!(
+                "unknown interpolation {interpolation:?}"
+            )));
+        }
+    };
+    let border = match border {
+        "replicate" => Border::Replicate,
+        "constant" => Border::Constant,
+        _ => return Err(PyValueError::new_err(format!("unknown border {border:?}"))),
+    };
+    Ok((interp, border))
+}
+
+/// `cv2.remap(src, map_x, map_y, interpolation, borderMode)` of a float32 image; a constant
+/// border reads zero.
 #[pyfunction]
-fn remap_linear<'py>(
+#[pyo3(signature = (src, map_x, map_y, interpolation="linear", border="replicate"))]
+fn remap<'py>(
     py: Python<'py>,
     src: PyReadonlyArrayDyn<'py, f32>,
     map_x: PyReadonlyArray2<'py, f32>,
     map_y: PyReadonlyArray2<'py, f32>,
+    interpolation: &str,
+    border: &str,
 ) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
     let img = image(&src)?;
+    let mode = mode(interpolation, border, true)?;
     if map_x.shape() != map_y.shape() {
         return Err(PyValueError::new_err("the maps differ in size"));
     }
@@ -66,7 +91,7 @@ fn remap_linear<'py>(
     let mx = map_x.as_slice().map_err(not_contiguous)?;
     let my = map_y.as_slice().map_err(not_contiguous)?;
     output(py, &src, (dw, dh), |dst| {
-        warp::remap_linear(&img, mx, my, dw, dst)
+        warp::remap(&img, mode, (mx, my), dw, dst)
     })
 }
 
@@ -87,43 +112,50 @@ fn remap_radial<'py>(
     })
 }
 
-/// `cv2.warpAffine(src, m, dsize, INTER_LINEAR, borderMode=BORDER_REPLICATE)` of a float32 image.
+/// `cv2.warpAffine(src, m, dsize, interpolation, borderMode)` of a float32 image, bilinear or
+/// bicubic; a constant border reads zero.
 #[pyfunction]
-#[pyo3(signature = (src, m, dsize, inverse_map=false))]
+#[pyo3(signature = (src, m, dsize, inverse_map=false, interpolation="linear", border="replicate"))]
 fn warp_affine<'py>(
     py: Python<'py>,
     src: PyReadonlyArrayDyn<'py, f32>,
     m: PyReadonlyArray2<'py, f64>,
     dsize: (usize, usize),
     inverse_map: bool,
+    interpolation: &str,
+    border: &str,
 ) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
     let img = image(&src)?;
+    let mode = mode(interpolation, border, false)?;
     let m = matrix::<6>(&m, 2)?;
     output(py, &src, dsize, |dst| {
-        warp::warp_affine(&img, m, inverse_map, dsize.0, dst)
+        warp::warp_affine(&img, mode, m, inverse_map, dsize.0, dst)
     })
 }
 
-/// `cv2.warpPerspective(src, m, dsize, INTER_LINEAR, borderMode=BORDER_REPLICATE)` of a float32
-/// image.
+/// `cv2.warpPerspective(src, m, dsize, interpolation, borderMode)` of a float32 image, bilinear
+/// or bicubic; a constant border reads zero.
 #[pyfunction]
-#[pyo3(signature = (src, m, dsize, inverse_map=false))]
+#[pyo3(signature = (src, m, dsize, inverse_map=false, interpolation="linear", border="replicate"))]
 fn warp_perspective<'py>(
     py: Python<'py>,
     src: PyReadonlyArrayDyn<'py, f32>,
     m: PyReadonlyArray2<'py, f64>,
     dsize: (usize, usize),
     inverse_map: bool,
+    interpolation: &str,
+    border: &str,
 ) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
     let img = image(&src)?;
+    let mode = mode(interpolation, border, false)?;
     let m = matrix::<9>(&m, 3)?;
     output(py, &src, dsize, |dst| {
-        warp::warp_perspective(&img, m, inverse_map, dsize, dst)
+        warp::warp_perspective(&img, mode, m, inverse_map, dsize, dst)
     })
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(remap_linear, m)?)?;
+    m.add_function(wrap_pyfunction!(remap, m)?)?;
     m.add_function(wrap_pyfunction!(remap_radial, m)?)?;
     m.add_function(wrap_pyfunction!(warp_affine, m)?)?;
     m.add_function(wrap_pyfunction!(warp_perspective, m)?)
