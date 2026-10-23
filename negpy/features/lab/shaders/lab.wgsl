@@ -38,7 +38,7 @@ const RL_EPS = 1e-6;
 // logic.py and the y row in rgb_to_lab below.
 const WORKING_LUMA_COEFFS = vec3<f32>(0.2973769, 0.6273491, 0.0752741);
 
-// CIELAB L* from linear luminance Y (D65, Yn=1) — mirrors _lab_l_from_y in logic.py.
+// CIELAB L* from linear luminance Y (D65, Yn=1) — mirrors lab_l_from_y in negpy_core/src/lab.rs.
 // Mirrors sharpen_shadow_gain in logic.py: gain rolls off toward paper black.
 fn sharpen_shadow_gain(l: f32) -> f32 {
     return SHARPEN_SHADOW_FLOOR + (1.0 - SHARPEN_SHADOW_FLOOR) * smoothstep(0.0, SHARPEN_SHADOW_L_HI, l);

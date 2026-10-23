@@ -5,7 +5,7 @@ import pytest
 from core_oracle import cv2_oracle
 
 from negpy.features.lab.logic import _smoothstep, gaussian_kernel_1d, sharpen_shadow_gain
-from negpy.features.lab.logic import LUM_B, LUM_G, LUM_R, apply_clahe, apply_glow_and_halation
+from negpy.features.lab.logic import LUM_B, LUM_G, LUM_R, RL_EPS, apply_clahe, apply_glow_and_halation, apply_rl_sharpening, rl_iterations
 from negpy.kernel.image.logic import WORKING_LAB, lab_to_rgb_working, rgb_to_lab_working, working_oetf_encode
 
 pytestmark = cv2_oracle
@@ -144,3 +144,37 @@ def test_clahe_cdfs_are_monotone_and_end_at_one():
 def test_clahe_matches_numpy(shape, strength):
     img = _RNG.random((*shape, 3), dtype=np.float32)
     assert apply_clahe(img, strength).tobytes() == _clahe_reference(img, strength).tobytes()
+
+
+def _rl_reference(img, amount, radius, masking):
+    """The NumPy and OpenCV Richardson-Lucy sharpen that negpy_core.rl_sharpen replaces, with a
+    correctly rounded cube root where NumPy's own depends on the CPU."""
+    lum = (np.float32(LUM_R), np.float32(LUM_G), np.float32(LUM_B))
+    obs = (np.maximum(img[..., 0], 0.0) * lum[0] + np.maximum(img[..., 1], 0.0) * lum[1] + np.maximum(img[..., 2], 0.0) * lum[2]).astype(
+        np.float32
+    )
+    k = gaussian_kernel_1d(radius)
+    est = obs.copy()
+    for _ in range(rl_iterations(radius)):
+        blurred = cv2.sepFilter2D(est, -1, k, k, borderType=cv2.BORDER_REFLECT_101)
+        est = est * cv2.sepFilter2D(obs / np.maximum(blurred, np.float32(RL_EPS)), -1, k, k, borderType=cv2.BORDER_REFLECT_101)
+    ratio = est / np.maximum(obs, np.float32(RL_EPS))
+    y = np.maximum(obs, 0.0)
+    cbrt = np.cbrt(y.astype(np.float64)).astype(np.float32)
+    l_obs = np.float32(116.0) * np.where(y > 0.008856, cbrt, np.float32(7.787) * y + np.float32(16.0 / 116.0)) - np.float32(16.0)
+    gain = np.float32(amount) * sharpen_shadow_gain(l_obs)
+    if masking > 0.0:
+        lp = np.pad(l_obs, 1, mode="edge")
+        gx = (lp[1:-1, 2:] - lp[1:-1, :-2]) * np.float32(0.5)
+        gy = (lp[2:, 1:-1] - lp[:-2, 1:-1]) * np.float32(0.5)
+        grad = cv2.blur(np.hypot(gx, gy).astype(np.float32), (3, 3), borderType=cv2.BORDER_REPLICATE)
+        gain = gain * _smoothstep(5.0 * masking, 10.0 * masking, grad)
+    factor = np.maximum(np.float32(1.0) + (ratio - np.float32(1.0)) * gain, 0.0)
+    return np.clip(img * factor[..., None], 0.0, 1.0)
+
+
+@pytest.mark.parametrize("shape", [(97, 131), (6, 7), (200, 300)])
+@pytest.mark.parametrize("amount, radius, masking", [(0.25, 1.0, 0.0), (1.0, 0.6, 0.0), (0.6, 1.4, 0.5)])
+def test_rl_sharpen_matches_numpy_and_cv2(shape, amount, radius, masking):
+    img = cv2.GaussianBlur(_RNG.random((*shape, 3), dtype=np.float32), (0, 0), 1.0) - np.float32(0.05)
+    assert apply_rl_sharpening(img, amount, radius, masking).tobytes() == _rl_reference(img, amount, radius, masking).tobytes()

@@ -1,7 +1,6 @@
 import math
 from typing import Callable
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -30,9 +29,8 @@ def apply_clahe(img: ImageBuffer, strength: float) -> ImageBuffer:
     return negpy_core.clahe(np.ascontiguousarray(img, dtype=np.float32), strength, *WORKING_LAB)
 
 
-# Sharpen constants, mirrored as WGSL consts in shaders/lab.wgsl; the USM gate and overshoot
-# limits live in negpy_core/src/lab.rs.
-SHARPEN_MASK_T_HI = 10.0
+# Sharpen constants, mirrored as WGSL consts in shaders/lab.wgsl; the USM gate, overshoot and
+# edge-mask limits live in negpy_core/src/lab.rs.
 # Gain rolls off toward paper black, where the thin negative's grain lives: floor at
 # L* 0, full gain from SHARPEN_SHADOW_L_HI up (Gallagher & Gindele, US 7,228,004).
 SHARPEN_SHADOW_FLOOR = 1.0 / 3.0
@@ -60,24 +58,6 @@ LUM_R, LUM_G, LUM_B = 0.2973769, 0.6273491, 0.0752741
 def _smoothstep(e0: float, e1: float, x: np.ndarray) -> np.ndarray:
     t = np.clip((x - np.float32(e0)) / np.float32(e1 - e0), 0.0, 1.0)
     return t * t * (np.float32(3.0) - np.float32(2.0) * t)
-
-
-def _lab_l_from_y(y: np.ndarray) -> np.ndarray:
-    """CIELAB L* from linear luminance Y (D65, Yn=1) — mirrors lab_l_from_y in the shaders."""
-    y = np.maximum(y, 0.0)
-    f = np.where(y > 0.008856, np.cbrt(y), np.float32(7.787) * y + np.float32(16.0 / 116.0))
-    return (np.float32(116.0) * f - np.float32(16.0)).astype(np.float32)
-
-
-def _edge_mask(l_chan: np.ndarray, masking: float) -> np.ndarray:
-    """Boxed |∇L*| edge mask (smoothstep over 0.5t..t, t=10·masking); shared by
-    both sharpen methods. Mirrors the WGSL boxed-gradient loop."""
-    lp = np.pad(l_chan, 1, mode="edge")
-    gx = (lp[1:-1, 2:] - lp[1:-1, :-2]) * np.float32(0.5)
-    gy = (lp[2:, 1:-1] - lp[:-2, 1:-1]) * np.float32(0.5)
-    grad = cv2.blur(np.hypot(gx, gy).astype(np.float32), (3, 3), borderType=cv2.BORDER_REPLICATE)
-    t = SHARPEN_MASK_T_HI * masking
-    return _smoothstep(0.5 * t, t, grad)
 
 
 def sharpen_shadow_gain(l_chan: np.ndarray) -> np.ndarray:
@@ -162,30 +142,11 @@ def apply_rl_sharpening(
     rl_*.wgsl mirrors this."""
     if amount <= 0:
         return img
-
-    rgb = img.astype(np.float32)
-    obs = (
-        np.maximum(rgb[..., 0], 0.0) * np.float32(LUM_R)
-        + np.maximum(rgb[..., 1], 0.0) * np.float32(LUM_G)
-        + np.maximum(rgb[..., 2], 0.0) * np.float32(LUM_B)
-    ).astype(np.float32)
-
+    lum = (np.float32(LUM_R), np.float32(LUM_G), np.float32(LUM_B))
     k = gaussian_kernel_1d(radius)
-    est = obs.copy()
-    for _ in range(rl_iterations(radius)):
-        blurred = cv2.sepFilter2D(est, -1, k, k, borderType=cv2.BORDER_REFLECT_101)
-        corr = cv2.sepFilter2D(obs / np.maximum(blurred, np.float32(RL_EPS)), -1, k, k, borderType=cv2.BORDER_REFLECT_101)
-        est = est * corr
-
-    ratio = est / np.maximum(obs, np.float32(RL_EPS))
-    l_obs = _lab_l_from_y(obs)
-    gain = np.float32(amount) * sharpen_shadow_gain(l_obs)
-    if masking > 0.0:
-        gain = gain * _edge_mask(l_obs, masking)
-
-    factor = np.maximum(np.float32(1.0) + (ratio - np.float32(1.0)) * gain, 0.0)
-    out = rgb * factor[..., np.newaxis]
-    return ensure_image(np.clip(out, 0.0, 1.0))
+    return negpy_core.rl_sharpen(
+        np.ascontiguousarray(img, dtype=np.float32), np.float32(amount), masking, k, rl_iterations(radius), lum, np.float32(RL_EPS)
+    )
 
 
 def apply_saturation(img: ImageBuffer, saturation: float, skin_protection: float = 0.0) -> ImageBuffer:

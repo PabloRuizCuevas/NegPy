@@ -164,7 +164,47 @@ fn clahe<'py>(
     Ok(out)
 }
 
+/// `apply_rl_sharpening(img, amount, radius, masking)` of an HxWx3 float32 image for amount > 0:
+/// `amount` as float32, the blur taps `k`, the iteration count, the luminance row and RL_EPS.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn rl_sharpen<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    amount: f32,
+    masking: f64,
+    k: PyReadonlyArray1<'py, f32>,
+    iterations: usize,
+    lum: (f32, f32, f32),
+    eps: f32,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let [h, w, 3] = img.shape()[..] else {
+        return Err(PyValueError::new_err("needs an HxWx3 image"));
+    };
+    let not_contiguous = |_| PyValueError::new_err("needs contiguous arrays");
+    let src = img.as_slice().map_err(not_contiguous)?;
+    let k = k.as_slice().map_err(not_contiguous)?;
+    let params = lab::Rl {
+        amount,
+        masking,
+        iterations,
+        lum: lum.into(),
+        eps,
+    };
+    let out = PyArrayDyn::<f32>::zeros(py, img.shape(), false);
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        super::detach(py, || lab::rl_sharpen(src, (h, w), &params, k, dst))
+            .ok_or_else(|| PyValueError::new_err("the image is too small for the blur"))?;
+    }
+    Ok(out)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(rl_sharpen, m)?)?;
     m.add_function(wrap_pyfunction!(clahe, m)?)?;
     m.add_function(wrap_pyfunction!(glow_and_halation, m)?)?;
     m.add_function(wrap_pyfunction!(usm_sharpen, m)?)?;

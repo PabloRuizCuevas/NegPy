@@ -169,9 +169,42 @@ pub fn pow_f64(x: f64, y: f64) -> f64 {
     }
 }
 
+/// Cube root of a non-negative f32 (NaN and +inf pass through): an exponent-third estimate
+/// in f64, then three Halley steps, rounded once to f32. The test checks a sample against
+/// the correctly rounded value.
+#[inline(always)]
+pub fn cbrtf(x: f32) -> f32 {
+    let d = x as f64;
+    // fdlibm's estimate: a third of the bits plus a bias puts the exponent at e/3, within 7%.
+    let mut y = f64::from_bits(d.to_bits() / 3 + 0x2a9f_7893_0000_0000);
+    for _ in 0..3 {
+        let y3 = y * y * y;
+        y *= (y3 + 2.0 * d) / (2.0 * y3 + d);
+    }
+    if x == 0.0 || !x.is_finite() {
+        x
+    } else {
+        y as f32
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cbrtf_is_correctly_rounded_on_a_sample() {
+        let mut bits = 1u32;
+        while bits < f32::INFINITY.to_bits() {
+            let x = f32::from_bits(bits);
+            assert_eq!(cbrtf(x), libm::cbrt(x as f64) as f32, "{x:e}");
+            bits += 9973;
+        }
+        assert_eq!(cbrtf(0.0), 0.0);
+        assert_eq!(cbrtf(27.0), 3.0);
+        assert!(cbrtf(f32::NAN).is_nan());
+        assert_eq!(cbrtf(f32::INFINITY), f32::INFINITY);
+    }
 
     #[test]
     fn log10f_is_correctly_rounded_on_a_sample() {

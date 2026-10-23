@@ -2053,12 +2053,6 @@ status = "todo"
 calls = []
 depends = []
 
-["features/lab/logic.py::_edge_mask"]
-phase = 6
-status = "todo"
-calls = ["cv2.blur"]
-depends = []
-
 ["features/lab/logic.py::_saturation_block"]
 phase = 6
 status = "todo"
@@ -2103,9 +2097,10 @@ depends = ["_usm_sharpening_block"]
 
 ["features/lab/logic.py::apply_rl_sharpening"]
 phase = 6
-status = "todo"
-calls = ["cv2.sepFilter2D"]
-depends = ["_edge_mask"]
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.rl_sharpen"]
+depends = []
 
 ["features/lab/logic.py::apply_saturation"]
 phase = 6

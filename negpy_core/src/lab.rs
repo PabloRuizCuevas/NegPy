@@ -346,3 +346,84 @@ pub fn clahe(
     color::lab_to_rgb(&lab, dst, to_rgb);
     dst.par_iter_mut().for_each(|v| *v = clip(*v, 0.0, 1.0));
 }
+
+/// The scalars of `apply_rl_sharpening`: `amount` as float32, the edge `masking`, the
+/// iteration count, the luminance row and the noise floor `eps`.
+pub struct Rl {
+    pub amount: f32,
+    pub masking: f64,
+    pub iterations: usize,
+    pub lum: [f32; 3],
+    pub eps: f32,
+}
+
+/// `_lab_l_from_y`: CIELAB L* of linear luminance (D65, Yn = 1), the cube root correctly
+/// rounded where NumPy runs SVML's.
+#[inline(always)]
+fn lab_l_from_y(y: f32) -> f32 {
+    let y = if y.is_nan() || y > 0.0 { y } else { 0.0 };
+    let f = if y > 0.008856 {
+        crate::mathf::cbrtf(y)
+    } else {
+        7.787 * y + (16.0f64 / 116.0) as f32
+    };
+    116.0 * f - 16.0
+}
+
+/// `apply_rl_sharpening` for amount > 0: Richardson-Lucy deconvolution of linear Y with the
+/// Gaussian taps `k` (reflect-101 edges), applied to RGB as the ratio est / obs, gated by the
+/// shadow gain and the optional edge mask, then clipped.
+pub fn rl_sharpen(
+    src: &[f32],
+    (h, w): (usize, usize),
+    p: &Rl,
+    k: &[f32],
+    dst: &mut [f32],
+) -> Option<()> {
+    let n = h * w;
+    let lum = p.lum;
+    let pos = |v: f32| if v.is_nan() || v > 0.0 { v } else { 0.0 };
+    let obs: Vec<f32> = src
+        .par_chunks(3)
+        .map(|q| pos(q[0]) * lum[0] + pos(q[1]) * lum[1] + pos(q[2]) * lum[2])
+        .collect();
+    let floor = |v: f32| if v.is_nan() || v > p.eps { v } else { p.eps };
+    let mut est = obs.clone();
+    let (mut blurred, mut ratio, mut corr) = (vec![0f32; n], vec![0f32; n], vec![0f32; n]);
+    let blur = |s: &[f32], d: &mut [f32]| {
+        filter::sep_filter2d(s, d, (h, w, 1), (k, k), Border::Reflect101)
+    };
+    for _ in 0..p.iterations {
+        blur(&est, &mut blurred)?;
+        ratio
+            .par_iter_mut()
+            .zip(obs.par_iter().zip(blurred.par_iter()))
+            .for_each(|(r, (&o, &b))| *r = o / floor(b));
+        blur(&ratio, &mut corr)?;
+        est.par_iter_mut()
+            .zip(corr.par_iter())
+            .for_each(|(e, &c)| *e *= c);
+    }
+    let l_obs: Vec<f32> = obs.par_iter().map(|&y| lab_l_from_y(y)).collect();
+    let edge = if p.masking > 0.0 {
+        Some(edge_mask(&l_obs, (h, w), p.masking)?)
+    } else {
+        None
+    };
+    dst.par_chunks_mut(3)
+        .zip(src.par_chunks(3))
+        .enumerate()
+        .for_each(|(i, (d, q))| {
+            let r = est[i] / floor(obs[i]);
+            let mut g = p.amount * shadow_gain(l_obs[i]);
+            if let Some(e) = &edge {
+                g *= e[i];
+            }
+            let f = 1.0 + (r - 1.0) * g;
+            let f = if f.is_nan() || f > 0.0 { f } else { 0.0 };
+            for c in 0..3 {
+                d[c] = clip(q[c] * f, 0.0, 1.0);
+            }
+        });
+    Some(())
+}
