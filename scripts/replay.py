@@ -15,6 +15,7 @@ import copy
 import dataclasses
 import fcntl
 import importlib
+import json
 import os
 import pickle
 import statistics
@@ -127,7 +128,7 @@ class Recorder:
             setattr(owner, name, fn)
 
 
-def _run_frame(path: str, repo=None) -> tuple:
+def _run_frame(path: str, repo=None, overrides: dict | None = None) -> tuple:
     """The frame's saved edit (or the defaults), with Auto Crop armed so detection runs."""
     from negpy.domain.models import WorkspaceConfig
     from negpy.features.geometry.models import with_auto_crop
@@ -138,6 +139,8 @@ def _run_frame(path: str, repo=None) -> tuple:
     buffer, _, _ = PreviewManager().load_linear_preview(path)
     saved = repo.load_file_settings(file_hashes(path)[0]) if repo else None
     config = with_auto_crop(saved or WorkspaceConfig(), True)
+    for section, fields in (overrides or {}).items():
+        config = dataclasses.replace(config, **{section: dataclasses.replace(getattr(config, section), **fields)})
     # Stage caching on, as the preview runs: the base read (measure_base_log) happens only then.
     ImageProcessor(use_gpu=False).run_pipeline(buffer, config, source_hash=path, render_size_ref=1600.0, prefer_gpu=False)
     return buffer, config
@@ -175,7 +178,7 @@ def _edits_repo(edits_db: str | None):
     return StorageRepository(str(folder / "edits.db"), str(folder / "settings.db"))
 
 
-def record(files: list[str], phases: list[int] | None, edits_db: str | None) -> None:
+def record(files: list[str], phases: list[int] | None, edits_db: str | None, overrides: dict | None = None) -> None:
     keys = _targets(phases, ("todo",))
     repo = _edits_repo(edits_db)
     import negpy.services.rendering.image_processor  # noqa: F401  (load the pipeline before wrapping)
@@ -188,7 +191,7 @@ def record(files: list[str], phases: list[int] | None, edits_db: str | None) -> 
         evidence = []
         for path in files:
             recorder.frame, recorder.per_frame = Path(path).name, {}
-            buffer, config = _run_frame(path, repo)
+            buffer, config = _run_frame(path, repo, overrides)
             evidence.append(_crop_evidence(str(len(evidence)), buffer, config))
             print(f"recorded {path}")
         recorder.frame, recorder.per_frame = "roll", {}
@@ -285,11 +288,23 @@ def main() -> None:
     parser.add_argument("files", nargs="*")
     parser.add_argument("--phase", type=int, action="append", help="only functions of this phase (repeatable)")
     parser.add_argument("--edits", help="record each frame with its saved edit from this edits.db (read from a copy)")
+    parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="SECTION.FIELD=JSON",
+        help="override one config field for every frame, e.g. retouch.dust_remove=true",
+    )
     args = parser.parse_args()
     if args.mode == "record":
         if not args.files:
             parser.error("record needs at least one frame")
-        record(args.files, args.phase, args.edits)
+        overrides: dict = {}
+        for item in args.set:
+            key, value = item.split("=", 1)
+            section, name = key.split(".", 1)
+            overrides.setdefault(section, {})[name] = json.loads(value)
+        record(args.files, args.phase, args.edits, overrides)
     else:
         sys.exit((replay if args.mode == "replay" else bench)(args.phase))
 
