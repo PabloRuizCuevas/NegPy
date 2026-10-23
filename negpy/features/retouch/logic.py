@@ -244,7 +244,7 @@ def _is_hair(labels_sub: np.ndarray, area: int) -> bool:
     if area < _HAIR_MIN_AREA:
         return False
     # Pad, or a component touching the sub-image border reads as thin along that edge.
-    dist = cv2.distanceTransform(np.pad(labels_sub.astype(np.uint8), 1), cv2.DIST_L2, 5)
+    dist = negpy_core.distance_transform(np.pad(labels_sub.astype(np.uint8), 1), cv2.DIST_L2, 5)
     thickness = 2.0 * float(dist.max())
     return area / max(thickness * thickness, 1e-6) >= _HAIR_MIN_ELONG
 
@@ -266,16 +266,14 @@ def _mask_to_score(mask: np.ndarray, pad_px: float) -> np.ndarray:
     """Binary defect mask → the continuous score every repair consumes: at the floor on
     the defect, ramping to clean over ``pad_px``. The ramp is the skirt allowance a hard
     mask edge would leave behind as a halo."""
-    d = cv2.distanceTransform((np.asarray(mask) == 0).astype(np.uint8), cv2.DIST_L2, 3)
-    t = np.clip(d / max(pad_px, 1e-3), 0.0, 1.0)
-    return (_IR_SCORE_FLOOR + (1.0 - _IR_SCORE_FLOOR) * (t * t * (3.0 - 2.0 * t))).astype(np.float32)
+    return negpy_core.mask_to_score((np.asarray(mask) != 0).astype(np.uint8), float(pad_px), _IR_SCORE_FLOOR)
 
 
 def split_hairs(mask: np.ndarray) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """Defect mask → ``(compact, hairs)``. Compact defects go to the weighted fill; long
     twisted ones to structure-following inpaint, which keeps detail the fill would average
     across. ``hairs`` is None when nothing is thin enough."""
-    n_lbl, labels, stats, _ = cv2.connectedComponentsWithStats(np.ascontiguousarray(mask, dtype=np.uint8), connectivity=8)
+    n_lbl, labels, stats, _ = negpy_core.connected_components_with_stats(np.ascontiguousarray(mask, dtype=np.uint8), 8)
     compact = np.zeros(mask.shape[:2], dtype=np.uint8)
     hairs: Optional[np.ndarray] = None
     for i in range(1, n_lbl):
@@ -354,8 +352,9 @@ def detect_luma_score(
     scale = film_scale(proxy.shape)
     lo = max(_DETECT_Z_GROW, min(hi, hi_hair) * _DETECT_Z_GROW_FRAC)
     reach = int(round(_DETECT_GROW_REACH * max(1, dust_size) * scale))
-    near = cv2.dilate(seeds.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1,) * 2)) > 0
-    n_lbl, lab, stats_cc, _ = cv2.connectedComponentsWithStats((near & (z >= lo)).astype(np.uint8), connectivity=8)
+    disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1,) * 2)
+    near = negpy_core.morphology_ex(seeds.astype(np.uint8), cv2.MORPH_DILATE, disk) > 0
+    n_lbl, lab, stats_cc, _ = negpy_core.connected_components_with_stats((near & (z >= lo)).astype(np.uint8), 8)
     bar = hi * (1.0 + _DETECT_TEXTURE_GAIN * np.maximum(texture - _DETECT_TEXTURE_KNEE, 0.0))
     strong = np.zeros(n_lbl, dtype=bool)
     strong[np.unique(lab[seeds & (z >= bar)])] = True

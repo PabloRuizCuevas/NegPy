@@ -95,7 +95,21 @@ fn distance_transform_labels<'py>(
     ))
 }
 
+/// Retouch's `_mask_to_score(mask, pad_px)` with its score floor.
+#[pyfunction]
+fn mask_to_score<'py>(
+    py: Python<'py>,
+    mask: PyReadonlyArrayDyn<'py, u8>,
+    pad: f64,
+    floor: f64,
+) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
+    let (data, h, w) = mask_of(&mask)?;
+    let d = py.detach(|| crate::distance::mask_to_score(data, h, w, pad, floor));
+    numpy::PyArray1::from_vec(py, d).reshape(vec![h, w])
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(mask_to_score, m)?)?;
     m.add_function(wrap_pyfunction!(connected_components_with_stats, m)?)?;
     m.add_function(wrap_pyfunction!(distance_transform, m)?)?;
     m.add_function(wrap_pyfunction!(distance_transform_labels, m)?)

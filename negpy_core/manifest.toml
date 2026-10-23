@@ -1507,14 +1507,14 @@ depends = []
 
 ["features/retouch/logic.py::_is_hair"]
 phase = 4
-status = "todo"
-calls = ["cv2.distanceTransform"]
+status = "ported"
+calls = ["negpy_core.distance_transform"]
 depends = []
 
 ["features/retouch/logic.py::_mask_to_score"]
 phase = 4
-status = "todo"
-calls = ["cv2.distanceTransform"]
+status = "ported"
+calls = ["negpy_core.mask_to_score"]
 depends = []
 
 ["features/retouch/logic.py::_proxy_norm"]
@@ -1562,7 +1562,7 @@ depends = ["_box_mean_std", "_density", "_proxy_norm"]
 ["features/retouch/logic.py::detect_luma_score"]
 phase = 4
 status = "todo"
-calls = ["cv2.connectedComponentsWithStats", "cv2.dilate", "cv2.getStructuringElement", "np.median", "np.unique"]
+calls = ["cv2.getStructuringElement", "negpy_core.connected_components_with_stats", "negpy_core.morphology_ex", "np.median", "np.unique"]
 depends = ["_box_mean_std", "_is_hair", "_mask_to_score", "compute_dust_stats", "split_hairs"]
 
 ["features/retouch/logic.py::downsample_ir"]
@@ -1628,7 +1628,7 @@ depends = ["_fill_rung"]
 ["features/retouch/logic.py::split_hairs"]
 phase = 4
 status = "todo"
-calls = ["cv2.connectedComponentsWithStats"]
+calls = ["negpy_core.connected_components_with_stats"]
 depends = ["_is_hair"]
 
 ["features/retouch/logic.py::strokes_to_score"]

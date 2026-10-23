@@ -38,44 +38,93 @@ fn steps(metric: Metric) -> [f32; 3] {
     }
 }
 
-/// Distances in float32: a forward and a backward pass over a frame two pixels wide.
+/// The smaller of two finite distances: a plain compare, with no NaN handling in the chain.
+fn lo(x: f32, y: f32) -> f32 {
+    if y < x { y } else { x }
+}
+
+/// Distances in float32: a forward and a backward pass over a frame two pixels wide. Each row
+/// first takes the minimum over the rows above (below) in a vector loop, then carries the
+/// left (right) neighbour in a short sequential loop: the same sums and an exact minimum, so
+/// the same bits as one combined pass.
 pub fn distance_transform(src: &[u8], h: usize, w: usize, metric: Metric) -> Vec<f32> {
     const B: usize = 2;
-    let (pw, ph) = (w + 2 * B, h + 2 * B);
+    let pw = w + 2 * B;
     let far = f32::MAX;
-    let mut t = vec![far; pw * ph];
-    let step = steps(metric);
-    let fwd = forward(metric);
-    let at = |y: usize, x: usize, dy: isize, dx: isize| {
-        ((y as isize + dy) as usize) * pw + (x as isize + dx) as usize
-    };
+    let mut t = vec![far; pw * (h + 2 * B)];
+    let [a, b, c] = steps(metric);
+    let long = metric == Metric::L2Mask5;
+    let mut cand = vec![far; w];
     for y in B..h + B {
+        let (above, rest) = t.split_at_mut(y * pw);
+        let (up2, up1) = above[(y - 2) * pw..].split_at(pw);
+        let row = &mut rest[..pw];
+        let s = &src[(y - B) * w..(y - B + 1) * w];
+        vertical(&mut cand, up1, up2, (a, b, c), long);
         for x in B..w + B {
-            if src[(y - B) * w + x - B] == 0 {
-                t[y * pw + x] = 0.0;
-                continue;
-            }
-            let mut v = far;
-            for &(dy, dx, s) in fwd {
-                v = v.min(t[at(y, x, dy, dx)] + step[s]);
-            }
-            t[y * pw + x] = v;
+            row[x] = if s[x - B] == 0 {
+                0.0
+            } else {
+                lo(cand[x - B], row[x - 1] + a)
+            };
         }
     }
     let mut out = vec![0f32; h * w];
     for y in (B..h + B).rev() {
+        let (head, below) = t.split_at_mut((y + 1) * pw);
+        let row = &mut head[y * pw..];
+        let (dn1, dn2) = below.split_at(pw);
+        vertical_back(&mut cand, dn1, dn2, (a, b, c), long);
+        let o = &mut out[(y - B) * w..(y - B + 1) * w];
         for x in (B..w + B).rev() {
-            let mut v = t[y * pw + x];
-            if v > step[0] {
-                for &(dy, dx, s) in fwd {
-                    v = v.min(t[at(y, x, -dy, -dx)] + step[s]);
-                }
-                t[y * pw + x] = v;
+            let v0 = row[x];
+            if v0 > a {
+                row[x] = lo(lo(v0, cand[x - B]), row[x + 1] + a);
             }
-            out[(y - B) * w + x - B] = v;
+            o[x - B] = row[x];
         }
     }
     out
+}
+
+/// The forward candidates from the two rows above, for the row's `w` pixels.
+fn vertical(cand: &mut [f32], up1: &[f32], up2: &[f32], (a, b, c): (f32, f32, f32), long: bool) {
+    for (x, v) in cand.iter_mut().enumerate() {
+        let x = x + 2;
+        *v = lo(lo(up1[x - 1] + b, up1[x] + a), up1[x + 1] + b);
+    }
+    if long {
+        for (x, v) in cand.iter_mut().enumerate() {
+            let x = x + 2;
+            *v = lo(
+                lo(lo(lo(*v, up2[x - 1] + c), up2[x + 1] + c), up1[x - 2] + c),
+                up1[x + 2] + c,
+            );
+        }
+    }
+}
+
+/// The backward candidates from the two rows below.
+fn vertical_back(
+    cand: &mut [f32],
+    dn1: &[f32],
+    dn2: &[f32],
+    (a, b, c): (f32, f32, f32),
+    long: bool,
+) {
+    for (x, v) in cand.iter_mut().enumerate() {
+        let x = x + 2;
+        *v = lo(lo(dn1[x + 1] + b, dn1[x] + a), dn1[x - 1] + b);
+    }
+    if long {
+        for (x, v) in cand.iter_mut().enumerate() {
+            let x = x + 2;
+            *v = lo(
+                lo(lo(lo(*v, dn2[x + 1] + c), dn2[x - 1] + c), dn1[x + 2] + c),
+                dn1[x - 2] + c,
+            );
+        }
+    }
 }
 
 /// `cv2.distanceTransformWithLabels(src, DIST_L2, ..., labelType=DIST_LABEL_PIXEL)`: OpenCV's
@@ -146,4 +195,17 @@ pub fn distance_transform_labels(src: &[u8], h: usize, w: usize) -> (Vec<f32>, V
         }
     }
     (dist, labels)
+}
+
+/// `_mask_to_score(mask, pad_px)` of retouch: the floor on the defect (nonzero), rising to 1 over
+/// `pad` pixels of 3x3 chamfer distance along a smoothstep, in float32.
+pub fn mask_to_score(mask: &[u8], h: usize, w: usize, pad: f64, floor: f64) -> Vec<f32> {
+    let clean: Vec<u8> = mask.iter().map(|&m| (m == 0) as u8).collect();
+    let mut d = distance_transform(&clean, h, w, Metric::L2Mask3);
+    let (pad, floor, rise) = (pad.max(1e-3) as f32, floor as f32, (1.0 - floor) as f32);
+    for v in d.iter_mut() {
+        let t = (*v / pad).clamp(0.0, 1.0);
+        *v = floor + rise * (t * t * (3.0 - 2.0 * t));
+    }
+    d
 }
