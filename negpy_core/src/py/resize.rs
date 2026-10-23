@@ -243,7 +243,63 @@ fn resize_u8<'py>(
     Ok(out)
 }
 
+type RowResize<T> = fn(&[T], (usize, usize, usize), usize, &mut [T]) -> Option<()>;
+
+/// `cv2.resize(src, (w, dh), interpolation=cv2.INTER_LINEAR)` of a contiguous uint8 or uint16
+/// image whose width stays, as OpenCV computes it without IPP.
+#[pyfunction]
+fn resize_rows_linear<'py>(
+    py: Python<'py>,
+    src: &Bound<'py, PyAny>,
+    dh: usize,
+) -> PyResult<Bound<'py, PyAny>> {
+    fn run<'py, T: numpy::Element + Copy + Send + Sync + Default>(
+        py: Python<'py>,
+        src: &Bound<'py, PyAny>,
+        dh: usize,
+        f: RowResize<T>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let a: PyReadonlyArrayDyn<'py, T> = src.extract()?;
+        let shape = a.shape().to_vec();
+        let (h, w, cn) = match shape.as_slice() {
+            [h, w] => (*h, *w, 1),
+            [h, w, c] => (*h, *w, *c),
+            _ => {
+                return Err(PyValueError::new_err(
+                    "resize_rows_linear needs a 2-D or 3-D array",
+                ));
+            }
+        };
+        let data = a
+            .as_slice()
+            .map_err(|_| PyValueError::new_err("resize_rows_linear needs a contiguous array"))?;
+        let mut dims = shape.clone();
+        dims[0] = dh;
+        let out = PyArrayDyn::<T>::zeros(py, dims, false);
+        {
+            let mut rw = out.readwrite();
+            let dst = rw
+                .as_slice_mut()
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            super::detach(py, dst.len(), || f(data, (h, w, cn), dh, dst)).ok_or_else(|| {
+                PyValueError::new_err("resize_rows_linear needs a non-empty image and size")
+            })?;
+        }
+        Ok(out.into_any())
+    }
+    if src.extract::<PyReadonlyArrayDyn<u8>>().is_ok() {
+        run::<u8>(py, src, dh, resize::resize_rows_linear_u8)
+    } else if src.extract::<PyReadonlyArrayDyn<u16>>().is_ok() {
+        run::<u16>(py, src, dh, resize::resize_rows_linear_u16)
+    } else {
+        Err(pyo3::exceptions::PyTypeError::new_err(
+            "resize_rows_linear needs uint8 or uint16",
+        ))
+    }
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(resize_rows_linear, m)?)?;
     m.add_function(wrap_pyfunction!(resize_u8, m)?)?;
     m.add_function(wrap_pyfunction!(resize_kernel, m)?)?;
     m.add_function(wrap_pyfunction!(expand_plane, m)?)?;

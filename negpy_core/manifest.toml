@@ -1363,9 +1363,10 @@ depends = []
 
 ["features/process/capture_color.py::apply_camera_matrix"]
 phase = 4
-status = "todo"
+status = "ported"
 calls = ["negpy_core.matmul_3x3"]
 depends = []
+note = "negpy_core.matmul_3x3"
 
 ["features/process/capture_color.py::lightbox_level"]
 phase = 4
@@ -1640,19 +1641,19 @@ depends = []
 ["features/retouch/logic.py::compute_dust_stats"]
 phase = 4
 status = "ported"
-calls = ["cv2.getStructuringElement", "negpy_core.dust_stats"]
+calls = ["negpy_core.dust_stats", "negpy_core.ellipse_kernel"]
 depends = ["_density"]
 
 ["features/retouch/logic.py::detect_luma_score"]
 phase = 4
 status = "ported"
-calls = ["cv2.getStructuringElement", "negpy_core.detect_luma_score"]
+calls = ["negpy_core.detect_luma_score", "negpy_core.ellipse_kernel"]
 depends = ["compute_dust_stats"]
 
 ["features/retouch/logic.py::downsample_ir"]
 phase = 4
 status = "ported"
-calls = ["cv2.getStructuringElement", "negpy_core.morphology_ex", "negpy_core.resize_area"]
+calls = ["negpy_core.ellipse_kernel", "negpy_core.morphology_ex", "negpy_core.resize_area"]
 depends = ["_erode_resize_bounded"]
 
 ["features/retouch/logic.py::drop_exclusions"]
@@ -1702,7 +1703,7 @@ depends = []
 ["features/retouch/logic.py::route_wide_defects"]
 phase = 4
 status = "ported"
-calls = ["cv2.getStructuringElement", "negpy_core.route_wide_defects"]
+calls = ["negpy_core.ellipse_kernel", "negpy_core.route_wide_defects"]
 depends = []
 
 ["features/retouch/logic.py::score_weighted_fill"]
@@ -1726,7 +1727,7 @@ depends = ["_density"]
 ["features/retouch/logic.py::trace_scratch"]
 phase = 4
 status = "ported"
-calls = ["cv2.blur", "negpy_core.scratch_slope_search", "np.median"]
+calls = ["negpy_core.box_filter", "negpy_core.scratch_slope_search", "np.median"]
 depends = ["_scratch_ridge_rows", "_shear_rows"]
 
 ["features/hdr/logic.py::_accumulate"]
@@ -2429,15 +2430,17 @@ note = "negpy_core.resize_area"
 
 ["desktop/controller.py::AppController._paint_flatfield_peek"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["negpy_core.resize_linear"]
 depends = []
+note = "calls negpy_core"
 
 ["desktop/controller.py::_interactive_proxy"]
 phase = 7
-status = "todo"
-calls = ["cv2.resize"]
+status = "ported"
+calls = ["negpy_core.resize_area"]
 depends = []
+note = "negpy_core.resize_area"
 
 ["desktop/view/canvas/overlay.py::CanvasOverlay._ir_layer_qimage"]
 phase = 7
@@ -2453,9 +2456,10 @@ depends = []
 
 ["desktop/view/canvas/overlay.py::CanvasOverlay._zone_outline"]
 phase = 7
-status = "todo"
-calls = ["cv2.approxPolyDP", "cv2.contourArea", "cv2.findContours"]
+status = "ported"
+calls = ["negpy_core.contour_outlines"]
 depends = []
+note = "negpy_core.contour_outlines"
 
 ["desktop/view/sidebar/files.py::FileBrowser._measure_rebate"]
 phase = 7
@@ -2477,9 +2481,10 @@ depends = []
 
 ["desktop/view/sidebar/scanlight.py::_RawClip.at"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["negpy_core.resize_nearest"]
 depends = []
+note = "calls negpy_core"
 
 ["desktop/view/widgets/charts.py::VectorscopeWidget._trace_image"]
 phase = 7
@@ -2513,9 +2518,10 @@ depends = []
 
 ["desktop/workers/chart_fit.py::ChartFitWorker.__init__"]
 phase = 7
-status = "todo"
-calls = ["cv2.resize"]
+status = "ported"
+calls = ["negpy_core.resize_area"]
 depends = []
+note = "negpy_core.resize_area"
 
 ["desktop/workers/export.py::_looks_border_crushed"]
 phase = 7
@@ -2543,21 +2549,24 @@ depends = []
 
 ["infrastructure/display/icc_lut.py::apply_lut_f32"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["negpy_core.apply_lut_f32"]
 depends = []
+note = "calls negpy_core"
 
 ["infrastructure/display/icc_lut.py::apply_lut_u16"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["negpy_core.apply_lut_u16"]
 depends = []
+note = "calls negpy_core"
 
 ["infrastructure/display/icc_lut.py::apply_matrix_trc_u8"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["negpy_core.matrix_trc_u8"]
 depends = []
+note = "calls negpy_core"
 
 ["services/assets/half_frame.py::_edge_band"]
 phase = 7
@@ -2635,9 +2644,10 @@ note = "negpy_core.resize_u8"
 
 ["services/export/linear_output.py::_apply_ice"]
 phase = 7
-status = "todo"
-calls = ["cv2.resize"]
+status = "ported"
+calls = ["negpy_core.resize_area"]
 depends = []
+note = "negpy_core.resize_area"
 
 ["services/export/print.py::PrintService.apply_layout"]
 phase = 7
@@ -2655,15 +2665,17 @@ depends = []
 
 ["services/view/coordinate_mapping.py::CoordinateMapping._grid_homography"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["negpy_core.perspective_transform"]
 depends = []
+note = "calls negpy_core"
 
 ["services/view/coordinate_mapping.py::CoordinateMapping.create_uv_grid"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["negpy_core.rotation_matrix"]
 depends = []
+note = "calls negpy_core"
 
 ["features/geometry/skew.py::_coarse_angles"]
 phase = 9
@@ -2676,7 +2688,7 @@ depends = []
 phase = 9
 status = "ported"
 compare = "quality"
-calls = ["cv2.getStructuringElement", "negpy_core.add_clean_grain", "negpy_core.hair_fill", "negpy_core.morphology_ex", "negpy_core.resize_linear"]
+calls = ["negpy_core.add_clean_grain", "negpy_core.ellipse_kernel", "negpy_core.hair_fill", "negpy_core.morphology_ex", "negpy_core.resize_linear"]
 depends = []
 
 ["features/rgbscan/logic.py::estimate_shift"]
@@ -2724,12 +2736,8 @@ note = "negpy_core phase_correlate, mean_channels"
 
 ["infrastructure/scanners/sane_backend.py::_resample_rows_to_dpi"]
 phase = 9
-status = "todo"
-calls = ["cv2.resize"]
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.resize_linear", "negpy_core.resize_rows_linear"]
 depends = []
-
-["infrastructure/simulated/gphoto.py::SimGphoto.preview_jpeg"]
-phase = 9
-status = "stays"
-calls = ["cv2.cvtColor", "cv2.imencode"]
-depends = []
+note = "negpy_core.resize_rows_linear"

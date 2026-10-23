@@ -56,3 +56,11 @@ def test_uint8_cubic_matches_opencv_without_ipp(shape, dsize, no_ipp):
 def test_uint8_area_matches_cv2(shape, dsize):
     src = np.random.default_rng(sum(shape)).integers(0, 256, shape).astype(np.uint8)
     np.testing.assert_array_equal(negpy_core.resize_u8(src, dsize), cv2.resize(src, dsize, interpolation=cv2.INTER_AREA))
+
+
+@pytest.mark.parametrize("dtype,top", [(np.uint8, 256), (np.uint16, 65536)])
+@pytest.mark.parametrize("shape,dh", [((100, 37, 3), 173), ((50, 64), 101), ((40, 40, 4), 77)])
+def test_row_linear_matches_opencv_without_ipp(dtype, top, shape, dh, no_ipp):
+    src = np.random.default_rng(dh).integers(0, top, shape).astype(dtype)
+    want = cv2.resize(src, (shape[1], dh), interpolation=cv2.INTER_LINEAR)
+    np.testing.assert_array_equal(negpy_core.resize_rows_linear(src, dh), want)

@@ -2,7 +2,6 @@ import hashlib
 import math
 from typing import List, Optional, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -22,7 +21,7 @@ _PROXY_MIN_SPREAD = 0.8
 _DETECT_PAD_PX = 2.5
 # Optical detection: density excess over a robust background, averaged over 3x3, in units of
 # its local MAD σ. Under the average a speck keeps its full excess while grain drops by 3.
-# The robust filters run on 8-bit planes (cv2.medianBlur is O(1) there); the excess is
+# The robust filters run on 8-bit planes (the uint8 median blur is O(1) there); the excess is
 # scaled by _DETECT_MAD_GAIN first so grain σ spans enough levels.
 _DETECT_AVG_PX = 3
 _DETECT_MAD_GAIN = 4.0
@@ -263,7 +262,7 @@ def compute_dust_stats(img: ImageBuffer, dust_size: int) -> Tuple[np.ndarray, ..
     # Median: the level of the film around a defect narrower than half the window. Opening:
     # identity on the soft ramp of a tonal edge and on anything wider than a speck, both of
     # which the median alone calls dense. Whichever is higher is the background.
-    disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * int(round(base_size)) + 1,) * 2)
+    disk = negpy_core.ellipse_kernel((2 * int(round(base_size)) + 1,) * 2)
     constants = (_PROXY_MIN_SPREAD, _DETECT_AVG_PX, _DETECT_MAD_GAIN, _DETECT_SIGMA_MIN)
     return negpy_core.dust_stats(_density(img), v_win, _texture_win(shape, dust_size), disk, constants)
 
@@ -297,7 +296,7 @@ def detect_luma_score(
     scale = film_scale(proxy.shape)
     lo = max(_DETECT_Z_GROW, min(hi, hi_hair) * _DETECT_Z_GROW_FRAC)
     reach = int(round(_DETECT_GROW_REACH * max(1, dust_size) * scale))
-    disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1,) * 2)
+    disk = negpy_core.ellipse_kernel((2 * reach + 1,) * 2)
     planes = tuple(np.ascontiguousarray(a, dtype=np.float32) for a in (proxy, background, z, texture))
     return negpy_core.detect_luma_score(
         planes,
@@ -524,7 +523,7 @@ def trace_scratch(img: ImageBuffer, nx: float, ny: float, threshold: float = 0.5
     # A transport scratch fades in and out, so measure its extent instead of assuming it
     # spans the frame.
     on = (along * np.sign(along.mean()) > bar).astype(np.float32)
-    run = cv2.blur(on.reshape(1, -1), (_SCRATCH_RUN_WIN, 1)).ravel() >= _SCRATCH_RUN_FRAC
+    run = negpy_core.box_filter(on.reshape(1, -1), (_SCRATCH_RUN_WIN, 1)).ravel() >= _SCRATCH_RUN_FRAC
     if not run.any():
         return None
     cols = np.flatnonzero(run)
@@ -672,7 +671,7 @@ def _erode_resize_bounded(plane: np.ndarray, dims: Tuple[int, int], kernel: np.n
         read_top = max(0, source_top - radius)
         read_bottom = min(h, source_bottom + radius)
         source = np.ascontiguousarray(plane[read_top:read_bottom], dtype=np.float32)
-        eroded = negpy_core.morphology_ex(source, cv2.MORPH_ERODE, kernel)
+        eroded = negpy_core.morphology_ex(source, negpy_core.MORPH_ERODE, kernel)
         core = np.ascontiguousarray(eroded[source_top - read_top : source_bottom - read_top])
         horizontal = negpy_core.resize_area(core, (dw, len(core)))
         # Keep the full-image sampling grid across fractional block boundaries.
@@ -711,16 +710,16 @@ def downsample_ir(plane: np.ndarray, target_long_edge: int, dims: Optional[Tuple
         dims = (max(1, int(round(w * s))), max(1, int(round(h * s))))
     if dims == (w, h):
         return np.ascontiguousarray(plane)
-    # cv2 read an HxWx1 plane as single-channel and returned HxW; keep that shape.
+    # An HxWx1 plane comes back as HxW.
     if plane.ndim == 3 and plane.shape[2] == 1:
         plane = plane[:, :, 0]
     # Erode by the resample footprint: a 1.25x downsample must not fatten by a 4.5x kernel.
     k = max(1, int(round(long_edge / max(dims))) | 1)
     if k > 1:
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+        kernel = negpy_core.ellipse_kernel((k, k))
         if plane.nbytes > _IR_DOWNSAMPLE_WORK_BYTES:
             return _erode_resize_bounded(plane, dims, kernel)
-        plane = negpy_core.morphology_ex(np.ascontiguousarray(plane), cv2.MORPH_ERODE, kernel)
+        plane = negpy_core.morphology_ex(np.ascontiguousarray(plane), negpy_core.MORPH_ERODE, kernel)
     return negpy_core.resize_area(np.ascontiguousarray(plane), dims)
 
 
@@ -859,7 +858,7 @@ def route_wide_defects(score: np.ndarray, *, budget: Optional[float] = _IR_ROUTE
     line clears it on its own, so it would refuse exactly the case that needs the inpaint.
     """
     scale = _ir_detect_scale(score)
-    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * int(round(_IR_ROUTE_DILATE * scale)) + 1,) * 2)
+    k = negpy_core.ellipse_kernel((2 * int(round(_IR_ROUTE_DILATE * scale)) + 1,) * 2)
     bar = np.float32(_IR_SCORE_FLOOR + 1e-6)
     routed = negpy_core.route_wide_defects(np.ascontiguousarray(score, dtype=np.float32), bar, int(round(_IR_ROUTE_RADIUS * scale)), k)
     if routed is None:
@@ -1026,8 +1025,8 @@ def apply_hair_inpaint(
     if not m.any():
         return img
     if dilate_px > 0:
-        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate_px + 1, 2 * dilate_px + 1))
-        m = negpy_core.morphology_ex(m, cv2.MORPH_DILATE, k)
+        k = negpy_core.ellipse_kernel((2 * dilate_px + 1, 2 * dilate_px + 1))
+        m = negpy_core.morphology_ex(m, negpy_core.MORPH_DILATE, k)
     src = np.ascontiguousarray(img, dtype=np.float32)
     # Each component fills in its padded box, tiled with a halo; a neighbour reaching into the
     # box stays unknown, or it becomes clone source and its dust is filled back in.

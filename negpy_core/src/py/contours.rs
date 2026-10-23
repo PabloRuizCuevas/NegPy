@@ -245,7 +245,30 @@ fn alphas_overlap(
     Ok(crate::shapes::alphas_overlap(a, b, threshold))
 }
 
+/// The overlay's zone outline: `cv2.findContours(img, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)`,
+/// the contours of at least `min_area` (`cv2.contourArea`), each `cv2.approxPolyDP(c, epsilon, True)`.
+#[pyfunction]
+fn contour_outlines(
+    py: Python<'_>,
+    src: PyReadonlyArray2<'_, u8>,
+    min_area: f64,
+    epsilon: f64,
+) -> PyResult<Vec<Vec<(i32, i32)>>> {
+    let (h, w) = src.as_array().dim();
+    let data = src
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous array"))?;
+    Ok(super::detach(py, data.len(), || {
+        contours::find_list_contours(data, h, w)
+            .into_iter()
+            .filter(|c| contours::contour_area(c) >= min_area)
+            .map(|c| contours::approx_poly_dp(&c, epsilon, true))
+            .collect()
+    }))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(contour_outlines, m)?)?;
     m.add_function(wrap_pyfunction!(alphas_overlap, m)?)?;
     m.add_function(wrap_pyfunction!(stroke_cover, m)?)?;
     m.add_function(wrap_pyfunction!(local_maps, m)?)?;

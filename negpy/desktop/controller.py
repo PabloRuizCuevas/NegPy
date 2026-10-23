@@ -7,7 +7,6 @@ from collections import Counter
 from dataclasses import dataclass, fields, replace
 from typing import Any, Callable, Collection, Dict, List, Optional, Set, Tuple, Union
 
-import cv2
 import negpy_core
 import numpy as np
 from PyQt6.QtCore import Q_ARG, QMetaObject, QObject, Qt, QThread, QTimer, pyqtSignal
@@ -294,7 +293,7 @@ def _interactive_proxy(raw: Optional[Any]) -> Optional[Any]:
         return None
     scale = APP_CONFIG.preview_render_size / float(long_edge)
     w, h = max(1, round(raw.shape[1] * scale)), max(1, round(raw.shape[0] * scale))
-    return cv2.resize(raw, (w, h), interpolation=cv2.INTER_AREA)
+    return negpy_core.resize_area(np.ascontiguousarray(raw, dtype=np.float32), (w, h))
 
 
 def _interactive_ir_proxy(ir: Optional[Any], proxy: Optional[Any]) -> Optional[Any]:

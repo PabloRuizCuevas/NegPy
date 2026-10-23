@@ -7,7 +7,6 @@ import time
 from dataclasses import replace
 from typing import Any, Dict, List, Optional, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 import qtawesome as qta
@@ -1714,11 +1713,10 @@ class CanvasOverlay(QWidget):
 
     def _zone_outline(self, zones: np.ndarray, zone: int) -> List[QPolygonF]:
         if zone not in self._zone_outlines:
-            contours, _ = cv2.findContours((zones == zone).astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+            mask = np.ascontiguousarray(zones == zone, dtype=np.uint8)
             self._zone_outlines[zone] = [
-                QPolygonF([QPointF(float(x) + 0.5, float(y) + 0.5) for [[x, y]] in cv2.approxPolyDP(c, 1.0, True)])
-                for c in contours
-                if cv2.contourArea(c) >= _ZONE_OUTLINE_MIN_AREA
+                QPolygonF([QPointF(float(x) + 0.5, float(y) + 0.5) for x, y in c])
+                for c in negpy_core.contour_outlines(mask, float(_ZONE_OUTLINE_MIN_AREA), 1.0)
             ]
         return self._zone_outlines[zone]
 

@@ -34,3 +34,17 @@ def test_find_external_contours_matches_cv2(kind, shape):
     for g, w in zip(got, want):
         assert g.dtype == w.dtype and g.shape == w.shape and np.array_equal(g, w)
     assert (want_h is None and got_h is None) or np.array_equal(got_h, want_h)
+
+
+@cv2_oracle
+def test_contour_outlines_match_cv2_list_contours_and_approx():
+    rng = np.random.default_rng(11)
+    for _ in range(120):
+        h, w = (int(v) for v in rng.integers(5, 90, 2))
+        base = cv2.GaussianBlur(rng.uniform(0, 1, (h, w)).astype(np.float32), (0, 0), float(rng.uniform(0.5, 4)))
+        zones = np.digitize(base, np.quantile(base, [0.25, 0.5, 0.75])).astype(np.uint8)
+        for z in range(4):
+            m = (zones == z).astype(np.uint8)
+            cs, _ = cv2.findContours(m, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+            want = [[tuple(p) for [p] in cv2.approxPolyDP(c, 1.0, True)] for c in cs if cv2.contourArea(c) >= 4]
+            assert [[tuple(p) for p in c] for c in negpy_core.contour_outlines(m, 4.0, 1.0)] == want

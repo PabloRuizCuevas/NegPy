@@ -917,6 +917,73 @@ unsafe fn cubic_column_u8_avx2(out: &mut [u8], r: [&[i32]; 4], bf: [f32; 4]) -> 
     n
 }
 
+/// Per output row of OpenCV's linear axis: the two clipped source rows and the fraction toward the second.
+fn linear_rows(h: usize, dh: usize) -> Vec<(usize, usize, f32)> {
+    let scale = 1.0 / (dh as f64 / h as f64);
+    (0..dh)
+        .map(|dy| {
+            let f = ((dy as f64 + 0.5) * scale - 0.5) as f32;
+            let s = f.floor();
+            let clip = |y: i64| y.clamp(0, h as i64 - 1) as usize;
+            (clip(s as i64), clip(s as i64 + 1), f - s)
+        })
+        .collect()
+}
+
+/// `cv2.resize(src, (w, dh), interpolation=cv2.INTER_LINEAR)` of a uint8 image whose width stays,
+/// as OpenCV computes it without IPP: 11-bit weights and `VResizeLinear`'s integer arithmetic.
+pub fn resize_rows_linear_u8(
+    src: &[u8],
+    (h, w, cn): (usize, usize, usize),
+    dh: usize,
+    dst: &mut [u8],
+) -> Option<()> {
+    let row = w * cn;
+    if h == 0 || row == 0 || dh == 0 || src.len() != h * row || dst.len() != dh * row {
+        return None;
+    }
+    let rows = linear_rows(h, dh);
+    dst.par_chunks_mut(row)
+        .zip(&rows)
+        .for_each(|(out, &(r0, r1, f))| {
+            // saturate_cast<short>: round half to even.
+            let b0 = ((1.0 - f) * 2048.0).round_ties_even() as i32;
+            let b1 = (f * 2048.0).round_ties_even() as i32;
+            let (s0, s1) = (&src[r0 * row..][..row], &src[r1 * row..][..row]);
+            for ((d, &p0), &p1) in out.iter_mut().zip(s0).zip(s1) {
+                // A row holds pixel * 2048; the vertical pass takes it >> 4.
+                let v = ((b0 * (p0 as i32 * 128)) >> 16) + ((b1 * (p1 as i32 * 128)) >> 16);
+                *d = ((v + 2) >> 2).clamp(0, 255) as u8;
+            }
+        });
+    Some(())
+}
+
+/// The uint16 counterpart: float32 weights, `S0 * b0 + S1 * b1` rounded half to even, saturated.
+pub fn resize_rows_linear_u16(
+    src: &[u16],
+    (h, w, cn): (usize, usize, usize),
+    dh: usize,
+    dst: &mut [u16],
+) -> Option<()> {
+    let row = w * cn;
+    if h == 0 || row == 0 || dh == 0 || src.len() != h * row || dst.len() != dh * row {
+        return None;
+    }
+    let rows = linear_rows(h, dh);
+    dst.par_chunks_mut(row)
+        .zip(&rows)
+        .for_each(|(out, &(r0, r1, f))| {
+            let (b0, b1) = (1.0 - f, f);
+            let (s0, s1) = (&src[r0 * row..][..row], &src[r1 * row..][..row]);
+            for ((d, &p0), &p1) in out.iter_mut().zip(s0).zip(s1) {
+                let v = p0 as f32 * b0 + p1 as f32 * b1;
+                *d = v.round_ties_even().clamp(0.0, 65535.0) as u16;
+            }
+        });
+    Some(())
+}
+
 /// `expand_mask_plane` times `scale`: a ph x pw plane resized bilinearly onto rows y1..y2 and
 /// columns x1..x2 of an oh x ow plane, the edges replicated outside, each value times `scale`
 /// in float32.

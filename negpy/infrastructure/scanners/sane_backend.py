@@ -4,7 +4,6 @@ import sys
 import threading
 from typing import Callable
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -722,14 +721,16 @@ def _resample_rows_to_dpi(array: np.ndarray, *, native_dpi: int, target_dpi: int
     caller): interpolating in more rows than the stepper actually moved is an honest resample
     of real data, never inventing detail a downsample would have thrown away.
 
-    Bilinear (cv2's default): plenty for reconciling a mechanically-limited stepper axis
+    Bilinear: plenty for reconciling a mechanically-limited stepper axis
     against a genuinely finer sensor axis. Not used anywhere IR is involved — see the
     capture_ir guard at the call site — since _align_ir_to_rgb documents that even
     interpolating IR data risks softening a thin dust defect's minimum.
     """
     target_rows = max(1, round(array.shape[0] * target_dpi / native_dpi))
     width = array.shape[1]
-    return cv2.resize(array, (width, target_rows), interpolation=cv2.INTER_LINEAR)
+    if array.dtype == np.float32:
+        return negpy_core.resize_linear(np.ascontiguousarray(array), (width, target_rows))
+    return negpy_core.resize_rows_linear(np.ascontiguousarray(array), target_rows)
 
 
 def _validate_inline_rgbi_parameters(
