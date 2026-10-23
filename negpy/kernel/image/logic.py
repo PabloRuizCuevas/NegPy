@@ -11,112 +11,48 @@ from negpy.kernel.system.logging import get_logger
 logger = get_logger(__name__)
 
 
-@njit(cache=True, nogil=True, fastmath=True)
 def _to_uint16_jit(img: np.ndarray) -> np.ndarray:
     """
-    Scale to uint16 (rounds to nearest, clips & handles NaNs).
+    Scale a float32 buffer to uint16: rounds to nearest, clips, NaN to 0.
 
     The +0.5 rounds. A bare cast truncates toward zero, which biases every sample down by
     half a level and doubles the quantisation error: the error distribution runs [-1, 0]
-    instead of [-0.5, +0.5]. The luma kernels below have always rounded; these did not.
+    instead of [-0.5, +0.5].
     """
-    res = np.empty_like(img, dtype=np.uint16)
-    img_flat = img.reshape(-1)
-    res_flat = res.reshape(-1)
-
-    for i in range(len(img_flat)):
-        val = img_flat[i]
-        if np.isnan(val):
-            v = 0.0
-        else:
-            v = val * 65535.0 + 0.5
-
-        if v < 0.0:
-            v = 0.0
-        elif v > 65535.0:
-            v = 65535.0
-
-        res_flat[i] = np.uint16(v)
-    return res
+    return negpy_core.to_uint16(np.ascontiguousarray(img, dtype=np.float32))
 
 
-@njit(cache=True, nogil=True, fastmath=True)
 def _to_uint8_jit(img: np.ndarray) -> np.ndarray:
     """
-    Scale to uint8 (rounds to nearest, clips & handles NaNs). See _to_uint16_jit.
+    Scale a float32 buffer to uint8: rounds to nearest, clips, NaN to 0. See _to_uint16_jit.
     """
-    res = np.empty_like(img, dtype=np.uint8)
-    img_flat = img.reshape(-1)
-    res_flat = res.reshape(-1)
-
-    for i in range(len(img_flat)):
-        val = img_flat[i]
-        if np.isnan(val):
-            v = 0.0
-        else:
-            v = val * 255.0 + 0.5
-
-        if v < 0.0:
-            v = 0.0
-        elif v > 255.0:
-            v = 255.0
-
-        res_flat[i] = np.uint8(v)
-    return res
+    return negpy_core.to_uint8(np.ascontiguousarray(img, dtype=np.float32))
 
 
-@njit(cache=True, nogil=True, fastmath=True)
 def uint8_to_float32(img: np.ndarray) -> np.ndarray:
     """
-    Fast JIT conversion from uint8 to float32 [0.0, 1.0].
+    uint8 to float32 [0.0, 1.0].
     """
-    h, w, c = img.shape
-    res = np.empty((h, w, c), dtype=np.float32)
-    inv_255 = 1.0 / 255.0
-    for y in range(h):
-        for x in range(w):
-            for ch in range(c):
-                res[y, x, ch] = np.float32(img[y, x, ch]) * inv_255
-    return res
+    return negpy_core.uint8_to_float32(np.ascontiguousarray(img, dtype=np.uint8))
 
 
-@njit(cache=True, nogil=True)
 def rgb_to_rgba_into(src: np.ndarray, dst: np.ndarray) -> None:
-    """Copies the three colour planes of ``src`` into the RGBA ``dst``; alpha is left as is.
-    numpy cannot vectorise a 3-of-4 strided copy, so a texture upload spent longer here than
-    on the GPU."""
-    h, w = src.shape[0], src.shape[1]
-    for y in range(h):
-        for x in range(w):
-            dst[y, x, 0] = src[y, x, 0]
-            dst[y, x, 1] = src[y, x, 1]
-            dst[y, x, 2] = src[y, x, 2]
+    """Copies the three colour planes of float32 ``src`` into the RGBA ``dst``; alpha is left
+    as is. numpy cannot vectorise a 3-of-4 strided copy, so a texture upload spent longer here
+    than on the GPU."""
+    negpy_core.rgb_to_rgba_into(np.asarray(src, dtype=np.float32), dst)
 
 
-@njit(cache=True, nogil=True)
 def rgba_to_rgb_into(src: np.ndarray, dst: np.ndarray, oy: int, ox: int) -> None:
-    """Writes the RGB of ``src[oy:oy+h, ox:ox+w]`` into the (h, w, 3) ``dst``."""
-    h, w = dst.shape[0], dst.shape[1]
-    for y in range(h):
-        for x in range(w):
-            dst[y, x, 0] = src[oy + y, ox + x, 0]
-            dst[y, x, 1] = src[oy + y, ox + x, 1]
-            dst[y, x, 2] = src[oy + y, ox + x, 2]
+    """Writes the RGB of float32 ``src[oy:oy+h, ox:ox+w]`` into the (h, w, 3) ``dst``."""
+    negpy_core.rgba_to_rgb_into(np.asarray(src, dtype=np.float32), dst, int(oy), int(ox))
 
 
-@njit(cache=True, nogil=True, fastmath=True)
 def uint16_to_float32(img: np.ndarray) -> np.ndarray:
     """
-    Fast JIT conversion from uint16 to float32 [0.0, 1.0].
+    uint16 to float32 [0.0, 1.0].
     """
-    h, w, c = img.shape
-    res = np.empty((h, w, c), dtype=np.float32)
-    inv_65535 = 1.0 / 65535.0
-    for y in range(h):
-        for x in range(w):
-            for ch in range(c):
-                res[y, x, ch] = np.float32(img[y, x, ch]) * inv_65535
-    return res
+    return negpy_core.uint16_to_float32(np.ascontiguousarray(img, dtype=np.uint16))
 
 
 def srgb_to_linear(img: np.ndarray) -> np.ndarray:
@@ -485,86 +421,12 @@ def lab_to_rgb_working(lab: np.ndarray) -> np.ndarray:
     return out.reshape(arr.shape)
 
 
-@njit(cache=True, nogil=True, fastmath=True)
-def _float_to_uint8_luma_jit(img: np.ndarray) -> np.ndarray:
-    """
-    Luminance -> uint8.
-    """
-    scale = 255.0
-    dtype = np.uint8
-
-    if img.ndim == 2:
-        h, w = img.shape
-        res = np.empty((h, w), dtype=dtype)
-        for y in range(h):
-            for x in range(w):
-                v = img[y, x] * scale + 0.5
-                if v < 0:
-                    v = 0
-                elif v > scale:
-                    v = scale
-                res[y, x] = dtype(v)
-        return res
-    else:
-        h, w, c = img.shape
-        res = np.empty((h, w), dtype=dtype)
-        for y in range(h):
-            for x in range(w):
-                lum = LUMA_R * img[y, x, 0] + LUMA_G * img[y, x, 1] + LUMA_B * img[y, x, 2]
-                v = lum * scale + 0.5
-                if v < 0:
-                    v = 0
-                elif v > scale:
-                    v = scale
-                res[y, x] = dtype(v)
-        return res
-
-
-@njit(cache=True, nogil=True, fastmath=True)
-def _float_to_uint16_luma_jit(img: np.ndarray) -> np.ndarray:
-    """
-    Luminance -> uint16.
-    """
-    scale = 65535.0
-    dtype = np.uint16
-
-    if img.ndim == 2:
-        h, w = img.shape
-        res = np.empty((h, w), dtype=dtype)
-        for y in range(h):
-            for x in range(w):
-                v = img[y, x] * scale + 0.5
-                if v < 0:
-                    v = 0
-                elif v > scale:
-                    v = scale
-                res[y, x] = dtype(v)
-        return res
-    else:
-        h, w, c = img.shape
-        res = np.empty((h, w), dtype=dtype)
-        for y in range(h):
-            for x in range(w):
-                lum = LUMA_R * img[y, x, 0] + LUMA_G * img[y, x, 1] + LUMA_B * img[y, x, 2]
-                v = lum * scale + 0.5
-                if v < 0:
-                    v = 0
-                elif v > scale:
-                    v = scale
-                res[y, x] = dtype(v)
-        return res
-
-
 def float_to_uint_luma(img: np.ndarray, bit_depth: int = 8) -> np.ndarray:
     """
-    Fuses luminance calculation and bit-depth conversion.
-    Dispatches to specialized JIT kernels based on bit_depth.
+    Fuses luminance calculation and bit-depth conversion: an HxWx3 float32 buffer (or an
+    HxW one, taken as luminance) to HxW uint8, or uint16 for ``bit_depth`` 16.
     """
-    if bit_depth == 16:
-        res_16: np.ndarray = _float_to_uint16_luma_jit(img)
-        return res_16
-    res_8: np.ndarray = _float_to_uint8_luma_jit(img)
-    return res_8
+    return negpy_core.luma_to_uint(np.ascontiguousarray(img, dtype=np.float32), 16 if bit_depth == 16 else 8)
 
 
 def float_to_uint16(img: np.ndarray) -> np.ndarray:

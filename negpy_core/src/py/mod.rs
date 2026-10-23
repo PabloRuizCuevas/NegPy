@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod bounds;
 pub mod contours;
+pub mod convert;
 pub mod filter;
 pub mod gray;
 pub mod histogram;

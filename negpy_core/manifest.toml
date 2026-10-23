@@ -972,13 +972,13 @@ depends = []
 
 ["kernel/image/logic.py::_float_to_uint16_luma_jit"]
 phase = 3
-status = "todo"
+status = "ported"
 calls = ["numba"]
 depends = []
 
 ["kernel/image/logic.py::_float_to_uint8_luma_jit"]
 phase = 3
-status = "todo"
+status = "ported"
 calls = ["numba"]
 depends = []
 
@@ -1044,14 +1044,14 @@ depends = []
 
 ["kernel/image/logic.py::_to_uint16_jit"]
 phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.to_uint16"]
 depends = []
 
 ["kernel/image/logic.py::_to_uint8_jit"]
 phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.to_uint8"]
 depends = []
 
 ["kernel/image/logic.py::apply_primaries_transform"]
@@ -1062,21 +1062,21 @@ depends = ["_matmul_3x3_kernel", "working_oetf_decode", "working_oetf_encode"]
 
 ["kernel/image/logic.py::float_to_uint16"]
 phase = 3
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_to_uint16_jit"]
 
 ["kernel/image/logic.py::float_to_uint8"]
 phase = 3
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_to_uint8_jit"]
 
 ["kernel/image/logic.py::float_to_uint_luma"]
 phase = 3
-status = "todo"
-calls = []
-depends = ["_float_to_uint16_luma_jit", "_float_to_uint8_luma_jit"]
+status = "ported"
+calls = ["negpy_core.luma_to_uint"]
+depends = []
 
 ["kernel/image/logic.py::gamut_aware_chroma_scale"]
 phase = 3
@@ -1105,14 +1105,14 @@ depends = ["_rgb_to_lab_kernel"]
 
 ["kernel/image/logic.py::rgb_to_rgba_into"]
 phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.rgb_to_rgba_into"]
 depends = []
 
 ["kernel/image/logic.py::rgba_to_rgb_into"]
 phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.rgba_to_rgb_into"]
 depends = []
 
 ["kernel/image/logic.py::skin_chroma_rein"]
@@ -1123,14 +1123,14 @@ depends = ["_skin_chroma_rein_kernel"]
 
 ["kernel/image/logic.py::uint16_to_float32"]
 phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.uint16_to_float32"]
 depends = []
 
 ["kernel/image/logic.py::uint8_to_float32"]
 phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.uint8_to_float32"]
 depends = []
 
 ["kernel/image/logic.py::working_oetf_decode"]
