@@ -96,3 +96,65 @@ def test_every_binding_enters_a_pool_through_detach():
     src = Path(__file__).parents[1] / "negpy_core" / "src" / "py"
     offenders = [p.name for p in src.glob("*.rs") if p.name != "mod.rs" and ".detach(" in p.read_text()]
     assert offenders == []
+
+
+def _route_cv2(score):
+    at_floor = (score <= L._IR_SCORE_FLOOR + 1e-6).astype(np.uint8)
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(at_floor, connectivity=8)
+    scale = L._ir_detect_scale(score)
+    radius = int(round(L._IR_ROUTE_RADIUS * scale))
+    routed = np.zeros_like(at_floor)
+    for i in range(1, n):
+        bw, bh = int(stats[i, cv2.CC_STAT_WIDTH]), int(stats[i, cv2.CC_STAT_HEIGHT])
+        if min(bw, bh) < 2 * radius - 1:
+            continue
+        x0, y0 = int(stats[i, cv2.CC_STAT_LEFT]), int(stats[i, cv2.CC_STAT_TOP])
+        own = labels[y0 : y0 + bh, x0 : x0 + bw] == i
+        if float(cv2.distanceTransform(np.pad(own.astype(np.uint8), 1), cv2.DIST_C, 3).max()) >= radius:
+            routed[y0 : y0 + bh, x0 : x0 + bw][own] = 1
+    if not routed.any():
+        return None
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * int(round(L._IR_ROUTE_DILATE * scale)) + 1,) * 2)
+    return cv2.dilate(routed, k)
+
+
+def test_route_wide_defects_matches_cv2():
+    score = np.ones((200, 160), dtype=np.float32)
+    score[20:40, 30:60] = L._IR_SCORE_FLOOR  # wide: routed
+    score[100:103, 10:150] = L._IR_SCORE_FLOOR  # a thin line: too narrow
+    score[150:170, 100:104] = L._IR_SCORE_FLOOR
+    want = _route_cv2(score)
+    assert want is not None
+    np.testing.assert_array_equal(L.route_wide_defects(score, budget=None), want)
+    assert L.route_wide_defects(np.ones((50, 50), dtype=np.float32)) is None
+
+
+def test_ir_defect_score_matches_cv2():
+    plane, _ = _scene(6)
+    ratio = L.normalize_ir(plane)
+    cutoff = 0.6
+    span = max(L._IR_GAIN_IDENTITY - cutoff, 1e-4)
+    t = (ratio - cutoff) / span
+    score = np.clip(t * (1.0 - L._IR_SCORE_FLOOR) + L._IR_SCORE_FLOOR, L._IR_SCORE_FLOOR, 1.0)
+    want = cv2.erode(score, np.ones((3, 3), np.uint8))
+    assert L.ir_defect_score(ratio, cutoff).tobytes() == want.tobytes()
+
+
+def test_fit_refraction_gammas_matches_numpy():
+    rng = np.random.default_rng(7)
+    ratio = rng.uniform(0.6, 1.0, (160, 120)).astype(np.float32)
+    img = rng.random((160, 120, 3), dtype=np.float32)
+    vis_log = (np.log(ratio)[..., None] * np.float32([1.1, 1.3, 1.6])).astype(np.float32)
+    vis_log += 0.01 * rng.standard_normal(vis_log.shape).astype(np.float32)
+    band = (ratio > 0.70) & (ratio < 0.92)
+    cv2.ipp.setUseIPP(False)
+    try:
+        edge = np.abs(cv2.Laplacian(img[:, :, 1], cv2.CV_32F, ksize=5))
+    finally:
+        cv2.ipp.setUseIPP(True)
+    flat = band & (edge < np.percentile(edge[band], L._IR_FIT_FLAT_PCT))
+    fit = L._fit_sample(flat if int(flat.sum()) >= L._IR_FIT_MIN_PX else band)
+    xb = np.log(ratio.ravel()[fit])
+    vl = vis_log.reshape(-1, 3)[fit]
+    want = tuple(float(np.clip(np.median(vl[:, c] / xb), L._IR_GAMMA_LO, L._IR_GAMMA_HI)) for c in range(3))
+    assert L._fit_refraction_gammas(ratio, vis_log, img) == want

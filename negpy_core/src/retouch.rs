@@ -282,16 +282,45 @@ pub fn ir_live(plane: &[f32], (h, w): (usize, usize), floor: f32, min_area: f64)
     cc.labels.par_iter().map(|&l| !holder[l as usize]).collect()
 }
 
+/// Strided flat indices of `mask`, at most `cap` of them, as `_fit_sample` takes them: every
+/// `step`-th set pixel in raster order, counted per block and then picked in parallel.
+fn fit_indices(mask: &[bool], cap: usize) -> Vec<usize> {
+    const CHUNK: usize = 1 << 16;
+    let counts: Vec<usize> = mask
+        .par_chunks(CHUNK)
+        .map(|c| c.iter().filter(|&&m| m).count())
+        .collect();
+    let step = counts.iter().sum::<usize>().div_ceil(cap).max(1);
+    let starts: Vec<usize> = counts
+        .iter()
+        .scan(0, |acc, &c| {
+            let s = *acc;
+            *acc += c;
+            Some(s)
+        })
+        .collect();
+    mask.par_chunks(CHUNK)
+        .zip(starts)
+        .enumerate()
+        .flat_map_iter(|(b, (c, start))| {
+            let mut rank = start;
+            c.iter().enumerate().filter_map(move |(i, &m)| {
+                if !m {
+                    return None;
+                }
+                let take = rank % step == 0;
+                rank += 1;
+                take.then_some(b * CHUNK + i)
+            })
+        })
+        .collect()
+}
+
 /// `_fit_sample(mask)`: the values under `mask`, every `step`-th one so at most `cap` remain.
 fn fit_sample(values: &[f32], mask: &[bool], cap: usize) -> Vec<f32> {
-    let n = mask.par_iter().filter(|&&m| m).count();
-    let step = n.div_ceil(cap).max(1);
-    values
-        .iter()
-        .zip(mask)
-        .filter(|&(_, &m)| m)
-        .step_by(step)
-        .map(|(&v, _)| v)
+    fit_indices(mask, cap)
+        .into_iter()
+        .map(|i| values[i])
         .collect()
 }
 
@@ -673,4 +702,181 @@ pub fn repair_components(
         }
     }
     Some(true)
+}
+
+/// `route_wide_defects` up to its budget check: 1 on the at-floor (score <= `bar`) components
+/// that hold a chessboard distance of `radius` from their own edge, dilated by `kernel`;
+/// `None` when no component qualifies.
+pub fn route_wide_defects(
+    score: &[f32],
+    (h, w): (usize, usize),
+    bar: f32,
+    radius: usize,
+    kernel: crate::morph::Kernel,
+) -> Option<Vec<u8>> {
+    use crate::distance::{Metric, distance_transform};
+    let at_floor: Vec<u8> = score.par_iter().map(move |&s| (s <= bar) as u8).collect();
+    if !at_floor.par_iter().any(|&v| v != 0) {
+        return None;
+    }
+    let cc = crate::components::connected_components(&at_floor, h, w, 8);
+    let side = (2 * radius).saturating_sub(1);
+    let labels = &cc.labels;
+    let wide: Vec<usize> = (1..cc.count)
+        .into_par_iter()
+        .filter(|&i| {
+            let [bx, by, bw, bh, _] = cc.stats[i].map(|v| v as usize);
+            if bw.min(bh) < side {
+                return false;
+            }
+            // The component alone in its box, with a zero border.
+            let (pw, ph) = (bw + 2, bh + 2);
+            let mut own = vec![0u8; pw * ph];
+            for y in 0..bh {
+                for x in 0..bw {
+                    own[(y + 1) * pw + x + 1] = (labels[(by + y) * w + bx + x] == i as i32) as u8;
+                }
+            }
+            let d = distance_transform(&own, ph, pw, Metric::Chessboard);
+            d.iter().fold(0f32, |m, &v| m.max(v)) >= radius as f32
+        })
+        .collect();
+    if wide.is_empty() {
+        return None;
+    }
+    let mut routed = vec![0u8; h * w];
+    for &i in &wide {
+        let [bx, by, bw, bh, _] = cc.stats[i].map(|v| v as usize);
+        for y in by..by + bh {
+            for x in bx..bx + bw {
+                if labels[y * w + x] == i as i32 {
+                    routed[y * w + x] = 1;
+                }
+            }
+        }
+    }
+    let mut out = vec![0u8; h * w];
+    crate::morph::morphology_mask(
+        &routed,
+        &mut out,
+        (h, w, 1),
+        crate::morph::Op::Dilate,
+        kernel,
+        1,
+        crate::filter::Border::Constant,
+    )?;
+    Some(out)
+}
+
+/// The scalars of `_fit_refraction_gammas`.
+pub struct GammaFit {
+    pub band: (f32, f32),
+    pub flat_pct: f64,
+    pub min_flat: usize,
+    pub cap: usize,
+    pub fallback: f64,
+    pub range: (f32, f32),
+}
+
+/// `_fit_refraction_gammas(ratio, vis_log, img_det)`: per channel, the median slope of the
+/// visible log over the IR log across the shallow-dust band, on its locally flat part. The
+/// flatness is cv2's 5x5 Laplacian of the green channel without IPP.
+pub fn fit_refraction_gammas(
+    ratio: &[f32],
+    vis_log: &[f32],
+    img: &[f32],
+    (h, w): (usize, usize),
+    c: &GammaFit,
+) -> Option<[f64; 3]> {
+    use crate::filter::{Border, sep_filter2d};
+    let (lo, hi) = c.band;
+    let band: Vec<bool> = ratio.par_iter().map(move |&r| r > lo && r < hi).collect();
+    if band.par_iter().filter(|&&b| b).count() < 500 {
+        return Some([c.fallback; 3]);
+    }
+    let mut green = vec![0f32; h * w];
+    green
+        .par_chunks_mut(BLOCK)
+        .zip(img.par_chunks(3 * BLOCK))
+        .for_each(|(g, px)| {
+            for (g, p) in g.iter_mut().zip(px.as_chunks::<3>().0) {
+                *g = p[1];
+            }
+        });
+    let d2 = [1.0f32, 0.0, -2.0, 0.0, 1.0];
+    let sm = [1.0f32, 4.0, 6.0, 4.0, 1.0];
+    let (mut dx, mut dy) = (vec![0f32; h * w], vec![0f32; h * w]);
+    sep_filter2d(&green, &mut dx, (h, w, 1), (&d2, &sm), Border::Reflect101)?;
+    sep_filter2d(&green, &mut dy, (h, w, 1), (&sm, &d2), Border::Reflect101)?;
+    crate::par_zip(&mut dx, &dy, |a, &b| *a = (*a + b).abs());
+    let in_band: Vec<f32> = dx
+        .par_chunks(BLOCK)
+        .zip(band.par_chunks(BLOCK))
+        .flat_map_iter(|(e, b)| {
+            e.iter()
+                .zip(b)
+                .filter(|&(_, &b)| b)
+                .map(|(&e, _)| e)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let bar = crate::stats::np_percentiles(&in_band, &[c.flat_pct])?[0];
+    let flat: Vec<bool> = band
+        .par_iter()
+        .zip(&dx)
+        .map(move |(&b, &e)| b && e < bar)
+        .collect();
+    let enough = flat.par_iter().filter(|&&f| f).count() >= c.min_flat;
+    let fit = fit_indices(if enough { &flat } else { &band }, c.cap);
+    let xb: Vec<f32> = fit
+        .iter()
+        .map(|&i| crate::mathf::np_logf(ratio[i]))
+        .collect();
+    let (glo, ghi) = c.range;
+    Some(std::array::from_fn(|ch| {
+        let slopes: Vec<f32> = fit
+            .iter()
+            .zip(&xb)
+            .map(|(&i, &x)| vis_log[3 * i + ch] / x)
+            .collect();
+        let m = crate::stats::median(&slopes);
+        let m = if m.is_nan() || m > glo { m } else { glo };
+        (if m.is_nan() || m < ghi { m } else { ghi }) as f64
+    }))
+}
+
+/// `ir_defect_score`: the ratio mapped from `cutoff` (score `floor`) to `cutoff + span`
+/// (score 1), clipped, then a 3x3 erode, in float32.
+pub fn ir_defect_score(
+    ratio: &[f32],
+    (h, w): (usize, usize),
+    (cutoff, span, keep, floor): (f32, f32, f32, f32),
+    dst: &mut [f32],
+) -> Option<()> {
+    let mut score = vec![0f32; h * w];
+    crate::par_zip(&mut score, ratio, move |s, &r| {
+        let v = ((r - cutoff) / span) * keep + floor;
+        let v = if v.is_nan() || v > floor { v } else { floor };
+        *s = if v.is_nan() || v < 1.0 { v } else { 1.0 };
+    });
+    crate::morph::morphology(
+        &score,
+        dst,
+        (h, w, 1),
+        crate::morph::Op::Erode,
+        (3, 3),
+        1,
+        crate::filter::Border::Constant,
+    )
+}
+
+/// `apply_ir_attenuation`'s product of the image and a gain map of its size.
+pub fn ir_attenuate(img: &[f32], gain: &[f32], dst: &mut [f32]) {
+    dst.par_chunks_mut(3 * BLOCK)
+        .zip(img.par_chunks(3 * BLOCK).zip(gain.par_chunks(3 * BLOCK)))
+        .for_each(|(o, (a, b))| {
+            for ((o, &a), &b) in o.iter_mut().zip(a).zip(b) {
+                *o = a * b;
+            }
+        });
 }

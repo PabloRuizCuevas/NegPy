@@ -231,7 +231,12 @@ fn new_image<'py>(
     fill: impl FnOnce(&mut [f32]) -> Option<()> + Send,
 ) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
     use numpy::{PyArrayDyn, PyArrayMethods};
-    let out = PyArrayDyn::<f32>::zeros(py, shape, false);
+    // numpy.empty, not zeros: NumPy's allocator asks for huge pages, and every pixel is written.
+    let out = py
+        .import("numpy")?
+        .getattr("empty")?
+        .call1((shape.to_vec(), "float32"))?
+        .cast_into::<PyArrayDyn<f32>>()?;
     {
         let mut rw = out.readwrite();
         let dst = rw
@@ -347,7 +352,107 @@ fn repair_components(
     .ok_or_else(|| PyValueError::new_err("invalid repair input"))
 }
 
+/// `route_wide_defects` before its budget check, with the at-floor bar, the radius and the
+/// dilate kernel: a uint8 HxW mask, or None.
+#[pyfunction]
+fn route_wide_defects<'py>(
+    py: Python<'py>,
+    score: PyReadonlyArrayDyn<'py, f32>,
+    bar: f32,
+    radius: usize,
+    kernel: numpy::PyReadonlyArray2<'py, u8>,
+) -> PyResult<Option<Bound<'py, numpy::PyArray2<u8>>>> {
+    use numpy::{IntoPyArray, PyArrayMethods};
+    let (sc, (h, w)) = plane2(&score)?;
+    let k = kernel.as_array();
+    let cells: Vec<u8> = k.iter().copied().collect();
+    let kernel = crate::morph::Kernel {
+        mask: &cells,
+        w: k.ncols(),
+        h: k.nrows(),
+    };
+    super::detach(py, sc.len(), || {
+        retouch::route_wide_defects(sc, (h, w), bar, radius, kernel)
+    })
+    .map(|r| r.into_pyarray(py).reshape([h, w]))
+    .transpose()
+}
+
+/// `_fit_refraction_gammas(ratio, vis_log, img_det)` with (band low, band high), the flat
+/// percentile, the minimum flat count, the sample cap, the fallback and (gamma low, high).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn fit_refraction_gammas(
+    py: Python<'_>,
+    ratio: PyReadonlyArrayDyn<'_, f32>,
+    vis_log: PyReadonlyArrayDyn<'_, f32>,
+    img: PyReadonlyArrayDyn<'_, f32>,
+    band: (f32, f32),
+    flat_pct: f64,
+    min_flat: usize,
+    cap: usize,
+    fallback: f64,
+    range: (f32, f32),
+) -> PyResult<(f64, f64, f64)> {
+    let (r, dims) = plane2(&ratio)?;
+    let (v, (h, w)) = image3(&vis_log)?;
+    let (src, idims) = image3(&img)?;
+    if dims != (h, w) || idims != dims {
+        return Err(PyValueError::new_err("array shapes disagree"));
+    }
+    let c = retouch::GammaFit {
+        band,
+        flat_pct,
+        min_flat,
+        cap,
+        fallback,
+        range,
+    };
+    let g = super::detach(py, r.len(), || {
+        retouch::fit_refraction_gammas(r, v, src, dims, &c)
+    })
+    .ok_or_else(|| PyValueError::new_err("invalid gamma fit input"))?;
+    Ok((g[0], g[1], g[2]))
+}
+
+/// `ir_defect_score(ratio, cutoff)` with (cutoff, span, 1 - floor, floor) as float32.
+#[pyfunction]
+fn ir_defect_score<'py>(
+    py: Python<'py>,
+    ratio: PyReadonlyArrayDyn<'py, f32>,
+    constants: (f32, f32, f32, f32),
+) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
+    let (r, dims) = plane2(&ratio)?;
+    new_image(py, ratio.shape(), |dst| {
+        retouch::ir_defect_score(r, dims, constants, dst)
+    })
+}
+
+/// `apply_ir_attenuation`'s product of an HxWx3 image and a gain map of its shape.
+#[pyfunction]
+fn ir_attenuate<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    gain: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
+    let (src, (h, w)) = image3(&img)?;
+    if gain.shape() != img.shape() {
+        return Err(PyValueError::new_err(
+            "needs a gain map of the image's shape",
+        ));
+    }
+    let g = plane(&gain, 3 * h * w)?;
+    new_image(py, img.shape(), |dst| {
+        retouch::ir_attenuate(src, g, dst);
+        Some(())
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(ir_defect_score, m)?)?;
+    m.add_function(wrap_pyfunction!(ir_attenuate, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_refraction_gammas, m)?)?;
+    m.add_function(wrap_pyfunction!(route_wide_defects, m)?)?;
     m.add_function(wrap_pyfunction!(repair_components, m)?)?;
     m.add_function(wrap_pyfunction!(add_clean_grain, m)?)?;
     m.add_function(wrap_pyfunction!(apply_score_repair, m)?)?;

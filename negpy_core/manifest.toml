@@ -1448,8 +1448,8 @@ depends = []
 
 ["features/retouch/logic.py::_fit_refraction_gammas"]
 phase = 4
-status = "todo"
-calls = ["cv2.Laplacian", "np.median", "np.percentile"]
+status = "ported"
+calls = ["negpy_core.fit_refraction_gammas"]
 depends = []
 
 ["features/retouch/logic.py::_hair_encode"]
@@ -1526,8 +1526,8 @@ depends = []
 
 ["features/retouch/logic.py::apply_ir_attenuation"]
 phase = 4
-status = "todo"
-calls = ["cv2.multiply", "negpy_core.resize_linear"]
+status = "ported"
+calls = ["negpy_core.ir_attenuate", "negpy_core.resize_linear"]
 depends = []
 
 ["features/retouch/logic.py::apply_score_repair"]
@@ -1568,8 +1568,8 @@ depends = []
 
 ["features/retouch/logic.py::ir_defect_score"]
 phase = 4
-status = "todo"
-calls = ["cv2.erode"]
+status = "ported"
+calls = ["negpy_core.ir_defect_score"]
 depends = []
 
 ["features/retouch/logic.py::ir_ratio_and_gain"]
@@ -1598,8 +1598,8 @@ depends = []
 
 ["features/retouch/logic.py::route_wide_defects"]
 phase = 4
-status = "todo"
-calls = ["cv2.connectedComponentsWithStats", "cv2.dilate", "cv2.distanceTransform", "cv2.getStructuringElement"]
+status = "ported"
+calls = ["cv2.getStructuringElement", "negpy_core.route_wide_defects"]
 depends = []
 
 ["features/retouch/logic.py::score_weighted_fill"]

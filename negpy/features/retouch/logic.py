@@ -860,9 +860,8 @@ def ir_defect_score(ratio: np.ndarray, cutoff: float) -> np.ndarray:
     scale: a sampling allowance, not a film footprint — widening it with the plane re-fattens
     the mask the finer detection just tightened."""
     span = max(_IR_GAIN_IDENTITY - cutoff, 1e-4)
-    t = (np.ascontiguousarray(ratio, dtype=np.float32) - cutoff) / span
-    score = np.clip(t * (1.0 - _IR_SCORE_FLOOR) + _IR_SCORE_FLOOR, _IR_SCORE_FLOOR, 1.0)
-    return cv2.erode(score, np.ones((3, 3), np.uint8))
+    constants = (cutoff, span, 1.0 - _IR_SCORE_FLOOR, _IR_SCORE_FLOOR)
+    return negpy_core.ir_defect_score(np.ascontiguousarray(ratio, dtype=np.float32), constants)
 
 
 def _fill_supports(buffer_long_edge: int, factor: float) -> Tuple[int, ...]:
@@ -971,29 +970,12 @@ def route_wide_defects(score: np.ndarray, *, budget: Optional[float] = _IR_ROUTE
     detector, where a misregistered IR plane can call half the frame a defect; a full-width
     line clears it on its own, so it would refuse exactly the case that needs the inpaint.
     """
-    at_floor = (score <= _IR_SCORE_FLOOR + 1e-6).astype(np.uint8)
-    if not at_floor.any():
-        return None
-    n_lbl, labels, stats, _ = cv2.connectedComponentsWithStats(at_floor, connectivity=8)
     scale = _ir_detect_scale(score)
-    radius = int(round(_IR_ROUTE_RADIUS * scale))
-    side = 2 * radius - 1
-    routed = np.zeros_like(at_floor)
-    hit = False
-    for i in range(1, n_lbl):
-        bw, bh = int(stats[i, cv2.CC_STAT_WIDTH]), int(stats[i, cv2.CC_STAT_HEIGHT])
-        if min(bw, bh) < side:  # can't contain a side² solid → radius under the bar
-            continue
-        x0, y0 = int(stats[i, cv2.CC_STAT_LEFT]), int(stats[i, cv2.CC_STAT_TOP])
-        own = labels[y0 : y0 + bh, x0 : x0 + bw] == i
-        if float(cv2.distanceTransform(np.pad(own.astype(np.uint8), 1), cv2.DIST_C, 3).max()) >= radius:
-            # Written inside the bounding box: a hand-placed score arrives at full resolution.
-            routed[y0 : y0 + bh, x0 : x0 + bw][own] = 1
-            hit = True
-    if not hit:
-        return None
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * int(round(_IR_ROUTE_DILATE * scale)) + 1,) * 2)
-    routed = cv2.dilate(routed, k)
+    bar = np.float32(_IR_SCORE_FLOOR + 1e-6)
+    routed = negpy_core.route_wide_defects(np.ascontiguousarray(score, dtype=np.float32), bar, int(round(_IR_ROUTE_RADIUS * scale)), k)
+    if routed is None:
+        return None
     frac = float(routed.mean())
     if budget is not None and frac > budget:
         logger.warning("Retouch: routed defects cover %.1f%% of the frame — inpaint skipped, fill only", frac * 100.0)
@@ -1039,17 +1021,9 @@ def _fit_refraction_gammas(ratio: np.ndarray, vis_log: np.ndarray, img_det: np.n
     dominated it, reading γ 1.9/2.2/2.2 for dust measuring ~1.0/1.1/1.2 and over-correcting
     every speck into a dark cyan blob. Median alone reads 1.3/1.8/1.8, flat-only least
     squares 1.4/2.1/2.0, and γ 1.5 already tints."""
-    band = (ratio > 0.70) & (ratio < 0.92)
-    if int(band.sum()) < 500:
-        return (_IR_GAMMA_FALLBACK,) * 3
-    # ksize=5 carries its own smoothing, so no separate blur.
-    edge = np.abs(cv2.Laplacian(img_det[:, :, 1], cv2.CV_32F, ksize=5))
-    flat = band & (edge < np.percentile(edge[band], _IR_FIT_FLAT_PCT))
-    fit = _fit_sample(flat if int(flat.sum()) >= _IR_FIT_MIN_PX else band)
-    # The band bounds the ratio away from 1, so the per-pixel slope needs no guard.
-    xb = np.log(ratio.ravel()[fit])
-    vl = vis_log.reshape(-1, 3)[fit]
-    return tuple(float(np.clip(np.median(vl[:, c] / xb), _IR_GAMMA_LO, _IR_GAMMA_HI)) for c in range(3))
+    f32 = (np.ascontiguousarray(a, dtype=np.float32) for a in (ratio, vis_log, img_det))
+    gamma = (_IR_GAMMA_LO, _IR_GAMMA_HI)
+    return negpy_core.fit_refraction_gammas(*f32, (0.70, 0.92), _IR_FIT_FLAT_PCT, _IR_FIT_MIN_PX, _IR_FIT_MAX_PX, _IR_GAMMA_FALLBACK, gamma)
 
 
 def _ir_clean_base(img_det: np.ndarray, ratio: np.ndarray) -> np.ndarray:
@@ -1115,9 +1089,7 @@ def apply_ir_attenuation(img: ImageBuffer, gain_det: np.ndarray) -> ImageBuffer:
     """Visible buffer × upsampled per-channel IR gain map (new array — buffers are read-only)."""
     h, w = img.shape[:2]
     gain = gain_det if gain_det.shape[:2] == (h, w) else negpy_core.resize_linear(np.ascontiguousarray(gain_det, dtype=np.float32), (w, h))
-    # cv2.multiply, not `a * b`: the product of two float32 buffers is already float32, so
-    # the astype numpy needs here would copy the whole frame a second time.
-    return ensure_image(cv2.multiply(np.ascontiguousarray(img, dtype=np.float32), gain))
+    return ensure_image(negpy_core.ir_attenuate(np.ascontiguousarray(img, dtype=np.float32), np.ascontiguousarray(gain, dtype=np.float32)))
 
 
 def luma_bake_token(retouch) -> str:

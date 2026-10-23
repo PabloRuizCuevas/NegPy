@@ -227,6 +227,54 @@ pub fn np_expf(x: f32) -> f32 {
     }
 }
 
+/// NumPy's float32 `log` on x86 with AVX2 or AVX-512, its own SIMD code: the mantissa folded
+/// into [sqrt(1/2), sqrt(2)), a rational polynomial for log(1 + x), every step fused. Negative
+/// input gives -NaN, as NumPy's does.
+#[allow(clippy::excessive_precision)]
+#[inline(always)]
+pub fn np_logf(x: f32) -> f32 {
+    use std::f32::consts::{FRAC_1_SQRT_2, LN_2};
+    let (neg, zero, inf, nan) = (x < 0.0, x == 0.0, x == f32::INFINITY, x.is_nan());
+    // Subnormals scale by 2^100 first, exactly.
+    let sub = x < f32::MIN_POSITIVE;
+    let v = if sub {
+        x * f32::from_bits(0x7180_0000)
+    } else {
+        x
+    };
+    let bits = v.to_bits();
+    let e = ((bits >> 23) & 0xff) as i32 - 126 - if sub { 100 } else { 0 };
+    let m = f32::from_bits((bits & 0x7f_ffff) | (126 << 23));
+    let fold = m <= FRAC_1_SQRT_2;
+    let m = if fold { m + m } else { m };
+    let e = (if fold { e - 1 } else { e }) as f32;
+    let r = m - 1.0;
+    let num = 2.589_979_117_907_922_693_523e-2f32
+        .mul_add(r, 3.808_837_741_388_407_920_751e-1)
+        .mul_add(r, 1.480_000_633_576_506_585_156)
+        .mul_add(r, 2.112_677_543_073_053_063_722)
+        .mul_add(r, 9.999_999_999_999_998_702_752e-1)
+        .mul_add(r, 0.0);
+    let den = 5.875_095_403_124_574_342_950e-3f32
+        .mul_add(r, 1.546_476_374_983_906_719_538e-1)
+        .mul_add(r, 9.864_942_958_519_418_960_339e-1)
+        .mul_add(r, 2.453_006_071_784_736_363_091)
+        .mul_add(r, 2.612_677_543_073_109_236_779)
+        .mul_add(r, 1.0);
+    let y = e.mul_add(LN_2, num / den);
+    if nan {
+        f32::NAN
+    } else if neg {
+        -f32::NAN
+    } else if zero {
+        f32::NEG_INFINITY
+    } else if inf {
+        f32::INFINITY
+    } else {
+        y
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,6 +297,28 @@ mod tests {
         assert_eq!(np_expf(89.0), f32::INFINITY);
         assert_eq!(np_expf(-104.0), 0.0);
         assert!(np_expf(f32::NAN).is_nan());
+    }
+
+    #[test]
+    fn np_logf_matches_numpy() {
+        // np.log of a float32 array on an AVX-512 x86 CPU, as bits.
+        for (x, want) in [
+            (1.0f32, 0x0000_0000u32),
+            (2.0, 0x3f31_7218),
+            (0.5, 0xbf31_7218),
+            (0.1, 0xc013_5d8e),
+            (0.75, 0xbe93_4b11),
+            (3.0e-5, 0xc126_a107),
+            (1e30, 0x428a_27b5),
+            (0.707_106_77, 0xbeb1_7218),
+            (1e-40, 0xc2b8_34f2),
+            (123.456, 0x409a_1bbb),
+            (-1.0, 0xffc0_0000),
+        ] {
+            assert_eq!(np_logf(x).to_bits(), want, "{x}");
+        }
+        assert_eq!(np_logf(0.0), f32::NEG_INFINITY);
+        assert_eq!(np_logf(f32::INFINITY), f32::INFINITY);
     }
 
     #[test]
