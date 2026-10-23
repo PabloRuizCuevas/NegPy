@@ -158,7 +158,53 @@ fn expand_plane<'py>(
     Ok(out)
 }
 
+/// `cv2.resize(src, dsize, interpolation=cv2.INTER_CUBIC)` (`lanczos=False`) or
+/// `cv2.INTER_LANCZOS4` of a contiguous float32 image.
+#[pyfunction]
+#[pyo3(signature = (src, dsize, lanczos=false))]
+fn resize_kernel<'py>(
+    py: Python<'py>,
+    src: PyReadonlyArrayDyn<'py, f32>,
+    dsize: (usize, usize),
+    lanczos: bool,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let shape = src.shape().to_vec();
+    let (h, w, cn) = match shape.as_slice() {
+        [h, w] => (*h, *w, 1),
+        [h, w, c] => (*h, *w, *c),
+        _ => {
+            return Err(PyValueError::new_err(
+                "resize_kernel needs a 2-D or 3-D array",
+            ));
+        }
+    };
+    let data = src
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("resize_kernel needs a contiguous array"))?;
+    let (dw, dh) = dsize;
+    let mut dims = vec![dh, dw];
+    dims.extend_from_slice(&shape[2..]);
+    let kernel = if lanczos {
+        resize::Kernel::Lanczos4
+    } else {
+        resize::Kernel::Cubic
+    };
+    let out = PyArrayDyn::<f32>::zeros(py, dims, false);
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        super::detach(py, dst.len(), || {
+            resize::resize_kernel(data, (h, w, cn), (dh, dw), kernel, dst)
+        })
+        .ok_or_else(|| PyValueError::new_err("resize_kernel needs a non-empty image and size"))?;
+    }
+    Ok(out)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(resize_kernel, m)?)?;
     m.add_function(wrap_pyfunction!(expand_plane, m)?)?;
     m.add_function(wrap_pyfunction!(resize_nearest, m)?)?;
     m.add_function(wrap_pyfunction!(resize_area, m)?)?;

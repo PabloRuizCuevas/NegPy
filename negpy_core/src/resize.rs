@@ -430,6 +430,231 @@ fn accumulate_any(
     }
 }
 
+/// The kernels of `cv2.INTER_CUBIC` and `cv2.INTER_LANCZOS4`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Kernel {
+    Cubic,
+    Lanczos4,
+}
+
+impl Kernel {
+    fn taps(self) -> usize {
+        match self {
+            Kernel::Cubic => 4,
+            Kernel::Lanczos4 => 8,
+        }
+    }
+
+    /// OpenCV's `interpolateCubic` and `interpolateLanczos4` in their float arithmetic.
+    fn weights(self, x: f32) -> [f32; 8] {
+        let mut c = [0f32; 8];
+        match self {
+            Kernel::Cubic => {
+                let a = -0.75f32;
+                c[0] = ((a * (x + 1.0) - 5.0 * a) * (x + 1.0) + 8.0 * a) * (x + 1.0) - 4.0 * a;
+                c[1] = ((a + 2.0) * x - (a + 3.0)) * x * x + 1.0;
+                c[2] = ((a + 2.0) * (1.0 - x) - (a + 3.0)) * (1.0 - x) * (1.0 - x) + 1.0;
+                c[3] = 1.0 - c[0] - c[1] - c[2];
+            }
+            Kernel::Lanczos4 => {
+                let s45 = std::f64::consts::FRAC_1_SQRT_2;
+                let cs = [
+                    (1.0, 0.0),
+                    (-s45, -s45),
+                    (0.0, 1.0),
+                    (s45, -s45),
+                    (-1.0, 0.0),
+                    (s45, s45),
+                    (0.0, -1.0),
+                    (-s45, s45),
+                ];
+                let y0 = -(x as f64 + 3.0) * std::f64::consts::PI * 0.25;
+                let (s0, c0) = (libm::sin(y0), libm::cos(y0));
+                let mut sum = 0f32;
+                for (i, (k, &(a, b))) in c.iter_mut().zip(&cs).enumerate() {
+                    let t = x + 3.0 - i as f32;
+                    *k = if t.abs() >= 1e-6 {
+                        let y = -t as f64 * std::f64::consts::PI * 0.25;
+                        ((a * s0 + b * c0) / (y * y)) as f32
+                    } else {
+                        1e30
+                    };
+                    sum += *k;
+                }
+                let inv = 1.0 / sum;
+                for k in &mut c {
+                    *k *= inv;
+                }
+            }
+        }
+        c
+    }
+}
+
+/// Per output position along one axis: the first source tap (before clamping) and its weights.
+fn kernel_axis(src: usize, dst: usize, kernel: Kernel) -> Vec<(i64, [f32; 8])> {
+    let scale = 1.0 / (dst as f64 / src as f64);
+    let back = (kernel.taps() / 2 - 1) as i64;
+    (0..dst)
+        .map(|d| {
+            let f = ((d as f64 + 0.5) * scale - 0.5) as f32;
+            let s = f.floor();
+            (s as i64 - back, kernel.weights(f - s))
+        })
+        .collect()
+}
+
+/// One output row of the vertical pass: per element the float32 sum of its taps in order.
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2",
+    "aarch64+neon"
+))]
+fn column_pass<const N: usize>(out: &mut [f32], rows: [&[f32]; N], wt: [f32; N]) {
+    for (i, d) in out.iter_mut().enumerate() {
+        let mut v = rows[0][i] * wt[0];
+        for k in 1..N {
+            v += rows[k][i] * wt[k];
+        }
+        *d = v;
+    }
+}
+
+/// One row of the horizontal pass for `C` channels and `N` taps: each output the float32 sum of
+/// its taps in order.
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2",
+    "aarch64+neon"
+))]
+fn row_pass<const C: usize, const N: usize>(
+    s: &[f32],
+    taps: &[usize],
+    wts: &[f32],
+    out: &mut [f32],
+) {
+    let px = s.as_chunks::<C>().0;
+    let (taps, wts) = (taps.as_chunks::<N>().0, wts.as_chunks::<N>().0);
+    for ((o, t), wt) in out.as_chunks_mut::<C>().0.iter_mut().zip(taps).zip(wts) {
+        let p = px[t[0]];
+        let mut acc: [f32; C] = std::array::from_fn(|c| p[c] * wt[0]);
+        for k in 1..N {
+            let p = px[t[k]];
+            for c in 0..C {
+                acc[c] += p[c] * wt[k];
+            }
+        }
+        *o = acc;
+    }
+}
+
+fn row_pass_any(s: &[f32], taps: &[usize], wts: &[f32], n: usize, cn: usize, out: &mut [f32]) {
+    for ((o, t), wt) in out
+        .chunks_exact_mut(cn)
+        .zip(taps.chunks_exact(n))
+        .zip(wts.chunks_exact(n))
+    {
+        o.fill(0.0);
+        for (&sx, &wk) in t.iter().zip(wt) {
+            for (d, &v) in o.iter_mut().zip(&s[sx * cn..][..cn]) {
+                *d += v * wk;
+            }
+        }
+    }
+}
+
+/// `cv2.resize(src, (dw, dh), interpolation=cv2.INTER_CUBIC or cv2.INTER_LANCZOS4)` of a float32
+/// image: OpenCV's taps and weights, edges replicated, each pass summed in float32 tap by tap.
+pub fn resize_kernel(
+    src: &[f32],
+    dims: (usize, usize, usize),
+    dsize: (usize, usize),
+    kernel: Kernel,
+    dst: &mut [f32],
+) -> Option<()> {
+    resize_kernel_as(src, dims, dsize, kernel, dst, |v| v, |v| v)
+}
+
+/// The kernel resize, reading `S` and writing `D` through float32 inside one parallel pass.
+fn resize_kernel_as<S: Copy + Sync, D: Copy + Send>(
+    src: &[S],
+    (h, w, cn): (usize, usize, usize),
+    (dh, dw): (usize, usize),
+    kernel: Kernel,
+    dst: &mut [D],
+    load: impl Fn(S) -> f32 + Sync,
+    store: impl Fn(f32) -> D + Sync,
+) -> Option<()> {
+    if h == 0
+        || w == 0
+        || dh == 0
+        || dw == 0
+        || cn == 0
+        || src.len() != h * w * cn
+        || dst.len() != dh * dw * cn
+    {
+        return None;
+    }
+    let n = kernel.taps();
+    let (xs, ys) = (kernel_axis(w, dw, kernel), kernel_axis(h, dh, kernel));
+    let clamp = |i: i64, len: usize| i.clamp(0, len as i64 - 1) as usize;
+    // Source column of every tap, clamped once: replicated edges.
+    let taps: Vec<usize> = xs
+        .iter()
+        .flat_map(|&(x0, _)| (0..n).map(move |k| clamp(x0 + k as i64, w)))
+        .collect();
+    let wts: Vec<f32> = xs
+        .iter()
+        .flat_map(|(_, wt)| wt[..n].iter().copied())
+        .collect();
+    let hrow = |y: usize, line: &mut Vec<f32>, out: &mut [f32]| {
+        line.clear();
+        line.extend(src[y * w * cn..][..w * cn].iter().map(|&v| load(v)));
+        let s = line.as_slice();
+        match (cn, n) {
+            (1, 4) => row_pass::<1, 4>(s, &taps, &wts, out),
+            (3, 4) => row_pass::<3, 4>(s, &taps, &wts, out),
+            (4, 4) => row_pass::<4, 4>(s, &taps, &wts, out),
+            (1, 8) => row_pass::<1, 8>(s, &taps, &wts, out),
+            (3, 8) => row_pass::<3, 8>(s, &taps, &wts, out),
+            (4, 8) => row_pass::<4, 8>(s, &taps, &wts, out),
+            _ => row_pass_any(s, &taps, &wts, n, cn, out),
+        }
+    };
+    // Bands of output rows; each filters the source rows it reads into its own buffer, so a
+    // band's halo is filtered twice: bands as wide as the thread count allows.
+    let band = (dh / (4 * rayon::current_num_threads())).clamp(16, 128);
+    let row_len = dw * cn;
+    dst.par_chunks_mut(band * row_len)
+        .zip(ys.par_chunks(band))
+        .for_each(|(band, ys)| {
+            let lo = clamp(ys[0].0, h);
+            let hi = clamp(ys[ys.len() - 1].0 + n as i64 - 1, h);
+            let mut rows = vec![0f32; (hi - lo + 1) * row_len];
+            let mut line = Vec::with_capacity(w * cn);
+            for (i, r) in rows.chunks_mut(row_len).enumerate() {
+                hrow(lo + i, &mut line, r);
+            }
+            let mut out = vec![0f32; row_len];
+            for (o, (y0, wt)) in band.chunks_mut(row_len).zip(ys) {
+                let r = |k: usize| &rows[(clamp(y0 + k as i64, h) - lo) * row_len..][..row_len];
+                if n == 4 {
+                    column_pass(
+                        &mut out,
+                        [r(0), r(1), r(2), r(3)],
+                        [wt[0], wt[1], wt[2], wt[3]],
+                    );
+                } else {
+                    column_pass(&mut out, std::array::from_fn::<_, 8, _>(r), *wt);
+                }
+                for (d, &v) in o.iter_mut().zip(&out) {
+                    *d = store(v);
+                }
+            }
+        });
+    Some(())
+}
+
 /// `expand_mask_plane` times `scale`: a ph x pw plane resized bilinearly onto rows y1..y2 and
 /// columns x1..x2 of an oh x ow plane, the edges replicated outside, each value times `scale`
 /// in float32.

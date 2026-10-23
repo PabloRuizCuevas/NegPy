@@ -5,7 +5,6 @@ import struct
 import time
 from typing import Any, Dict, Optional, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 import wgpu  # type: ignore
@@ -3105,15 +3104,11 @@ class GPUEngine:
 
         # Mirrors PrintService.apply_layout: only INTER_AREA is area-correct on a shrink.
         shrinking = content_w < crop_w or content_h < crop_h
-        scaled_content = (
-            cv2.resize(
-                full_source_res,
-                (content_w, content_h),
-                interpolation=cv2.INTER_AREA if shrinking else cv2.INTER_LANCZOS4,
-            )
-            if (content_w != crop_w or content_h != crop_h)
-            else full_source_res
-        )
+        scaled_content = full_source_res
+        if content_w != crop_w or content_h != crop_h:
+            src = np.ascontiguousarray(full_source_res, dtype=np.float32)
+            size = (content_w, content_h)
+            scaled_content = negpy_core.resize_area(src, size) if shrinking else negpy_core.resize_kernel(src, size, lanczos=True)
         # No border means the paper buffer is a full-res allocation, fill and copy that
         # reproduces the content exactly.
         if (paper_w, paper_h, off_x, off_y) == (content_w, content_h, 0, 0):

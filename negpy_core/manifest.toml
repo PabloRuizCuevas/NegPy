@@ -2351,9 +2351,11 @@ note = "negpy_core nan_to_num, matmul_3x3, log_density_open"
 
 ["services/rendering/gpu_engine.py::GPUEngine._process_tiled"]
 phase = 6
-status = "todo"
-calls = ["cv2.resize", "negpy_core.resize_linear"]
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.resize_area", "negpy_core.resize_kernel", "negpy_core.resize_linear"]
 depends = ["_downsample_for_analysis"]
+note = "negpy_core resize_area, resize_kernel"
 
 ["services/rendering/gpu_engine.py::_downsample_for_analysis"]
 phase = 6
@@ -2637,9 +2639,11 @@ depends = []
 
 ["services/export/print.py::PrintService.apply_layout"]
 phase = 7
-status = "todo"
-calls = ["cv2.resize"]
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.resize_area", "negpy_core.resize_kernel"]
 depends = []
+note = "negpy_core resize_area, resize_kernel"
 
 ["services/scanning/writer.py::_to_grey"]
 phase = 7
