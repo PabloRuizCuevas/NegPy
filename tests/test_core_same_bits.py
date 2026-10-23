@@ -18,7 +18,9 @@ _M = np.array([[0.58, 0.19, 0.19], [0.30, 0.63, 0.08], [0.03, 0.07, 0.99]], np.f
 
 
 _LUT = np.ascontiguousarray(np.clip(np.cumsum(_RNG.random((9, 9, 9, 3), dtype=np.float32), axis=0) / 6, 0, 1))
-_RAMP = np.ascontiguousarray(np.tile(np.linspace(0.0, 1.0, 65536, dtype=np.float32) ** 0.45, (3, 1)))
+# Plain arithmetic only: NumPy's own float32 power differs between CPUs.
+_LIN = np.linspace(0.0, 1.0, 65536, dtype=np.float32)
+_RAMP = np.ascontiguousarray(np.tile(_LIN * (np.float32(2.0) - _LIN), (3, 1)))
 
 
 def _filled(fill):
@@ -94,7 +96,7 @@ _HASHES = {
     "chemical_toning": "7ddd3949c04bd5af38177bfcd6576888092bf73ad173206c34b153d6cce5d648",
     "sensor_log_unmix": "f7eb8efe1bbcfe884fd2e849e99d0546fac2f4829d3fb558d54a0128e681e53b",
     "lut_f32": "467bb9fd495d4797d912f6aeabd34f9a61b56491105464a0c852ed524488b1c1",
-    "matrix_trc_u8": "cf09517a502fcd513e1ee8deddd9f1983108d52c2d882dc7bca374096ecee708",
+    "matrix_trc_u8": "acec1eadffb13dfef8473a02fb250b4ad8f57ac211a6265661b77d3cad49ab16",
 }
 
 
