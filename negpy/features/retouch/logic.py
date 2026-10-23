@@ -1057,7 +1057,7 @@ def repair_components(
         factor = max(h / score_det.shape[0], w / score_det.shape[1])
         score = negpy_core.resize_linear(np.ascontiguousarray(score_det, dtype=np.float32), (w, h))
         if dirty is not None and dirty.shape[:2] != (h, w):
-            dirty = cv2.resize(dirty.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
+            dirty = negpy_core.resize_nearest(dirty.astype(np.uint8), (w, h)) > 0
     m = (score < 1.0).astype(np.uint8)
     if not m.any():
         return img

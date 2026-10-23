@@ -82,7 +82,49 @@ fn resize_linear<'py>(
     Ok(out)
 }
 
+/// `cv2.resize(src, dsize, interpolation=cv2.INTER_NEAREST)` of a contiguous uint8 image.
+#[pyfunction]
+fn resize_nearest<'py>(
+    py: Python<'py>,
+    src: PyReadonlyArrayDyn<'py, u8>,
+    dsize: (usize, usize),
+) -> PyResult<Bound<'py, PyArrayDyn<u8>>> {
+    let shape = src.shape().to_vec();
+    let (h, w, cn) = match shape.as_slice() {
+        [h, w] => (*h, *w, 1),
+        [h, w, c] => (*h, *w, *c),
+        _ => {
+            return Err(PyValueError::new_err(
+                "resize_nearest needs a 2-D or 3-D array",
+            ));
+        }
+    };
+    let (dw, dh) = dsize;
+    if h == 0 || w == 0 || cn == 0 || dh == 0 || dw == 0 {
+        return Err(PyValueError::new_err(
+            "resize_nearest needs a non-empty size",
+        ));
+    }
+    let data = src
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("resize_nearest needs a contiguous array"))?;
+    let mut dims = vec![dh, dw];
+    dims.extend_from_slice(&shape[2..]);
+    let out = PyArrayDyn::<u8>::zeros(py, dims, false);
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        super::detach(py, || {
+            resize::resize_nearest(data, (h, w, cn), (dh, dw), dst)
+        });
+    }
+    Ok(out)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(resize_nearest, m)?)?;
     m.add_function(wrap_pyfunction!(resize_area, m)?)?;
     m.add_function(wrap_pyfunction!(resize_linear, m)?)
 }

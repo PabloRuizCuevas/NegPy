@@ -85,3 +85,12 @@ def test_resize_area_rejects_strided_input():
     img = _image(20, 20, 3)
     with pytest.raises(ValueError):
         negpy_core.resize_area(img[:, ::2], (5, 10))
+
+
+@pytest.mark.parametrize("cn", [1, 3, 4])
+@pytest.mark.parametrize("shape, dshape", _SIZES)
+def test_resize_nearest_matches_cv2(shape, dshape, cn):
+    img = (_image(*shape, cn) * 255).astype(np.uint8)
+    dsize = (dshape[1], dshape[0])
+    want = cv2.resize(img, dsize, interpolation=cv2.INTER_NEAREST)
+    assert negpy_core.resize_nearest(img, dsize).tobytes() == want.tobytes()

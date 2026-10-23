@@ -110,6 +110,58 @@ pub fn resize_area(
     Some(dst)
 }
 
+/// `cv2.resize(src, (dw, dh), interpolation=cv2.INTER_NEAREST)`: each output pixel copies the
+/// source pixel at floor(d * ssize / dsize), as OpenCV's `resizeNN` rounds it.
+pub fn resize_nearest<T: Copy + Send + Sync>(
+    src: &[T],
+    (h, w, cn): (usize, usize, usize),
+    (dh, dw): (usize, usize),
+    dst: &mut [T],
+) {
+    let ofs = |s: usize, d: usize, i: usize| {
+        ((i as f64 * (1.0 / (d as f64 / s as f64))).floor() as usize).min(s - 1)
+    };
+    // u32 offsets keep a wide row's table in L1.
+    let xs: Vec<u32> = (0..dw).map(|x| (ofs(w, dw, x) * cn) as u32).collect();
+    let dwidth = dw * cn;
+    const ROWS: usize = 16;
+    dst.par_chunks_mut(ROWS * dwidth)
+        .enumerate()
+        .for_each(|(block, out)| {
+            let mut prev = usize::MAX;
+            for i in 0..out.len() / dwidth {
+                let sy = ofs(h, dh, block * ROWS + i);
+                let (done, rest) = out.split_at_mut(i * dwidth);
+                let o = &mut rest[..dwidth];
+                // An upscale repeats a source row: copy the output row it gave.
+                if sy == prev {
+                    o.copy_from_slice(&done[(i - 1) * dwidth..]);
+                    continue;
+                }
+                prev = sy;
+                let row = &src[sy * w * cn..][..w * cn];
+                match cn {
+                    1 => nearest_row::<T, 1>(row, &xs, o),
+                    3 => nearest_row::<T, 3>(row, &xs, o),
+                    4 => nearest_row::<T, 4>(row, &xs, o),
+                    _ => {
+                        for (o, &x) in o.chunks_exact_mut(cn).zip(&xs) {
+                            o.copy_from_slice(&row[x as usize..][..cn]);
+                        }
+                    }
+                }
+            }
+        });
+}
+
+fn nearest_row<T: Copy, const CN: usize>(row: &[T], xs: &[u32], out: &mut [T]) {
+    let (pixels, _) = row.as_chunks::<CN>();
+    let last = pixels.len() - 1;
+    for (o, &x) in out.as_chunks_mut::<CN>().0.iter_mut().zip(xs) {
+        *o = pixels[(x as usize / CN).min(last)];
+    }
+}
+
 /// One axis of OpenCV's bilinear resize (`hal::resize`): per destination index, the first
 /// source index and the float32 weight of the next one. `area` takes INTER_AREA's upscale
 /// fractions. Without `clamp` (the y axis) a fraction outside the source stays and both rows
@@ -395,7 +447,14 @@ mod tests {
         let out = resize_area(&src, 40, 40, 1, 80, 30).unwrap();
         assert!(out.iter().all(|&v| v == 0.5));
         let mut lin = vec![0f32; 90 * 70 * 3];
-        resize_linear(&vec![0.5f32; 40 * 40 * 3], (40, 40, 3), (90, 70), false, &mut lin).unwrap();
+        resize_linear(
+            &vec![0.5f32; 40 * 40 * 3],
+            (40, 40, 3),
+            (90, 70),
+            false,
+            &mut lin,
+        )
+        .unwrap();
         assert!(lin.iter().all(|&v| v == 0.5));
     }
 

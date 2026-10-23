@@ -14,7 +14,7 @@ import re
 from dataclasses import asdict, dataclass, fields, replace
 from typing import Optional
 
-import cv2
+import negpy_core
 import numpy as np
 import qtawesome as qta
 from PyQt6.QtCore import QTimer, pyqtSignal, pyqtSlot
@@ -164,7 +164,7 @@ class _RawClip:
     def at(self, shape: tuple) -> np.ndarray:
         if self.resized is None or self.resized[0] != shape:
             h, w = shape
-            self.resized = (shape, cv2.resize(self.mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool))
+            self.resized = (shape, negpy_core.resize_nearest(self.mask.astype(np.uint8), (w, h)).astype(bool))
         return self.resized[1]
 
 

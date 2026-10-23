@@ -5,6 +5,7 @@ import threading
 import cv2
 import rawpy
 import imagecodecs
+import negpy_core
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace as dc_replace
@@ -317,7 +318,7 @@ def _without_ir(score: Optional[np.ndarray], hairs: List[np.ndarray], ir_mask: n
 def _resize_mask(mask: np.ndarray, shape: Tuple[int, int]) -> np.ndarray:
     if mask.shape[:2] == tuple(shape):
         return mask > 0
-    return cv2.resize(mask.astype(np.uint8), (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST) > 0
+    return negpy_core.resize_nearest(mask.astype(np.uint8), (shape[1], shape[0])) > 0
 
 
 def preview_takes_unmix(params: WorkspaceConfig) -> bool:

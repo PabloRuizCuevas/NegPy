@@ -1605,7 +1605,7 @@ depends = []
 ["features/retouch/logic.py::repair_components"]
 phase = 4
 status = "todo"
-calls = ["cv2.connectedComponentsWithStats", "cv2.resize", "negpy_core.resize_linear"]
+calls = ["cv2.connectedComponentsWithStats", "negpy_core.resize_linear", "negpy_core.resize_nearest"]
 depends = ["apply_score_repair"]
 
 ["features/retouch/logic.py::route_wide_defects"]
@@ -2218,7 +2218,7 @@ depends = []
 ["services/rendering/image_processor.py::_resize_mask"]
 phase = 6
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_nearest"]
 depends = []
 
 ["services/rendering/preview_manager.py::PreviewManager._load_from_open_raw"]
@@ -2308,7 +2308,7 @@ depends = []
 ["desktop/view/sidebar/scanlight.py::_RawClip.at"]
 phase = 7
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_nearest"]
 depends = []
 
 ["desktop/view/widgets/charts.py::VectorscopeWidget._trace_image"]
@@ -2512,7 +2512,7 @@ depends = []
 ["features/stitch/logic.py::find_seams"]
 phase = 9
 status = "todo"
-calls = ["cv2.UMat", "cv2.detail_DpSeamFinder", "cv2.resize", "negpy_core.resize_area"]
+calls = ["cv2.UMat", "cv2.detail_DpSeamFinder", "negpy_core.resize_area", "negpy_core.resize_nearest"]
 depends = []
 
 ["features/stitch/logic.py::register_pair"]
