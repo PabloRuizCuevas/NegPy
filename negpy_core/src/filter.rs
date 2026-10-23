@@ -2,6 +2,7 @@
 //! opencv-python's AVX2 build: an 8-lane vector region with fused multiply-adds, then the scalar
 //! loops in the arithmetic GCC compiled them to.
 
+use multiversion::multiversion;
 use rayon::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -603,6 +604,65 @@ pub fn gaussian_blur(
     sep_filter2d(src, dst, (h, w, cn), (&kx, &ky), border)
 }
 
+/// Fresh row sums of a narrow box (up to five taps) over a row slice whose taps all lie inside
+/// it: each output sums its taps left to right from zero, in float64.
+#[multiversion(targets("x86_64+avx2+fma", "aarch64+neon"))]
+fn narrow_rows(out: &mut [f64], row: &[f32], cn: usize, kw: usize) {
+    let tap = |k: usize| &row[k * cn..];
+    let f = |v: f32| v as f64;
+    match kw {
+        1 => out
+            .iter_mut()
+            .zip(tap(0))
+            .for_each(|(o, &a)| *o = 0.0 + f(a)),
+        2 => out
+            .iter_mut()
+            .zip(tap(0).iter().zip(tap(1)))
+            .for_each(|(o, (&a, &b))| *o = (0.0 + f(a)) + f(b)),
+        3 => out
+            .iter_mut()
+            .zip(tap(0).iter().zip(tap(1)).zip(tap(2)))
+            .for_each(|(o, ((&a, &b), &c))| *o = ((0.0 + f(a)) + f(b)) + f(c)),
+        4 => out
+            .iter_mut()
+            .zip(tap(0).iter().zip(tap(1)).zip(tap(2)).zip(tap(3)))
+            .for_each(|(o, (((&a, &b), &c), &d))| *o = (((0.0 + f(a)) + f(b)) + f(c)) + f(d)),
+        _ => out
+            .iter_mut()
+            .zip(
+                tap(0)
+                    .iter()
+                    .zip(tap(1))
+                    .zip(tap(2))
+                    .zip(tap(3))
+                    .zip(tap(4)),
+            )
+            .for_each(|(o, ((((&a, &b), &c), &d), &e))| {
+                *o = ((((0.0 + f(a)) + f(b)) + f(c)) + f(d)) + f(e)
+            }),
+    }
+}
+
+/// One row of the column recurrence: add the new row sum, write the scaled total when the window
+/// is full, subtract the row sum leaving it.
+#[multiversion(targets("x86_64+avx2+fma", "aarch64+neon"))]
+fn column_step(sum: &mut [f64], sp: &[f64], old: &[f64], out: Option<&mut [f32]>, scale: f64) {
+    match out {
+        Some(o) => {
+            for (((s, &p), &q), o) in sum.iter_mut().zip(sp).zip(old).zip(o.iter_mut()) {
+                let s0 = *s + p;
+                *o = (s0 * scale) as f32;
+                *s = s0 - q;
+            }
+        }
+        None => {
+            for ((s, &p), &q) in sum.iter_mut().zip(sp).zip(old) {
+                *s = (*s + p) - q;
+            }
+        }
+    }
+}
+
 /// `cv2.boxFilter(src, -1, (kw, kh), normalize=..., borderType=border)` (and `cv2.blur`) for
 /// float32, anchor at the center. Row sums in float64: a fresh sum per output up to five wide,
 /// a running sum (`s += a - b`) past that. Column sums keep a running total: add the new row
@@ -660,48 +720,7 @@ pub fn box_filter(
             if hi == lo {
                 return;
             }
-            let inner = &mut out[lo * cn..hi * cn];
-            let tap_row = |k: usize| &row[(lo + k - ax) * cn..];
-            let f = |v: f32| v as f64;
-            match kw {
-                1 => inner
-                    .iter_mut()
-                    .zip(tap_row(0))
-                    .for_each(|(o, &a)| *o = 0.0 + f(a)),
-                2 => inner
-                    .iter_mut()
-                    .zip(tap_row(0).iter().zip(tap_row(1)))
-                    .for_each(|(o, (&a, &b))| *o = (0.0 + f(a)) + f(b)),
-                3 => inner
-                    .iter_mut()
-                    .zip(tap_row(0).iter().zip(tap_row(1)).zip(tap_row(2)))
-                    .for_each(|(o, ((&a, &b), &c))| *o = ((0.0 + f(a)) + f(b)) + f(c)),
-                4 => inner
-                    .iter_mut()
-                    .zip(
-                        tap_row(0)
-                            .iter()
-                            .zip(tap_row(1))
-                            .zip(tap_row(2))
-                            .zip(tap_row(3)),
-                    )
-                    .for_each(|(o, (((&a, &b), &c), &d))| {
-                        *o = (((0.0 + f(a)) + f(b)) + f(c)) + f(d)
-                    }),
-                _ => inner
-                    .iter_mut()
-                    .zip(
-                        tap_row(0)
-                            .iter()
-                            .zip(tap_row(1))
-                            .zip(tap_row(2))
-                            .zip(tap_row(3))
-                            .zip(tap_row(4)),
-                    )
-                    .for_each(|(o, ((((&a, &b), &c), &d), &e))| {
-                        *o = ((((0.0 + f(a)) + f(b)) + f(c)) + f(d)) + f(e)
-                    }),
-            }
+            narrow_rows(&mut out[lo * cn..hi * cn], &row[(lo - ax) * cn..], cn, kw);
             return;
         }
         pad.clear();
@@ -768,16 +787,9 @@ pub fn box_filter(
                 };
                 if let Some(y) = rc.checked_sub(kh - 1) {
                     let at = (y - y0) * tile_w + tile_x0;
-                    let o = &mut tile[at..at + sw];
-                    for i in 0..sw {
-                        let s0 = s[i] + sp[i];
-                        o[i] = (s0 * scale) as f32;
-                        s[i] = s0 - old[i];
-                    }
+                    column_step(s, sp, old, Some(&mut tile[at..at + sw]), scale);
                 } else {
-                    for i in 0..sw {
-                        s[i] = (s[i] + sp[i]) - old[i];
-                    }
+                    column_step(s, sp, old, None, scale);
                 }
             }
         };
