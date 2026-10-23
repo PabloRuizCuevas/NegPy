@@ -275,10 +275,12 @@ def replay(phases: list[int] | None) -> int:
         bad = []
         for f in files:
             rec = pickle.loads(f.read_bytes())
-            if not same(fn(*rec["args"], **rec["kwargs"]), rec["result"], compare):
+            result = fn(*rec["args"], **rec["kwargs"])
+            # A "quality" port has its own gate against the replaced cv2/NumPy call in pytest.
+            if compare != "quality" and not same(result, rec["result"], compare):
                 bad.append(f"{f.name} ({rec['frame']})")
         failed += bool(bad)
-        print(f"{'DIFF' if bad else 'same'}  {len(files) - len(bad):3d}/{len(files):<3d} {key}  {' '.join(bad[:5])}")
+        print(f"{'DIFF' if bad else 'qual' if compare == 'quality' else 'same'}{len(files) - len(bad):3d}/{len(files):<3d} {key}  {' '.join(bad[:5])}")
     return 1 if failed else 0
 
 

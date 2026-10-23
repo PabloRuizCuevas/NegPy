@@ -144,7 +144,7 @@ def dump(manifest: dict[str, dict]) -> str:
     lines = [
         "# One entry per Python function that negpy_core replaces. scripts/core_manifest.py writes",
         "# calls and depends; phase, status (todo, ported, stays), owner, compare (replay: exact, rows,",
-        "# ulp=N; see negpy_core/LEDGER.md) and note are kept by hand.",
+        "# ulp=N, abs=X, quality: a pytest gate; see negpy_core/LEDGER.md) and note are kept by hand.",
     ]
     for key in sorted(manifest, key=lambda k: (manifest[k]["phase"], k)):
         lines.append("")
