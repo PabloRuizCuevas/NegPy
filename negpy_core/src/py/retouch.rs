@@ -738,7 +738,42 @@ fn heal_region<'py>(
     .transpose()
 }
 
+/// `ir_ratio_and_gain`'s visible logs of an HxWx3 image, with the base window in pixels.
+#[pyfunction]
+fn ir_vis_log<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    win: usize,
+) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
+    let (src, dims) = image3(&img)?;
+    new_image(py, img.shape(), |dst| {
+        retouch::ir_vis_log(src, dims, win, dst)
+    })
+}
+
+/// `ir_ratio_and_gain`'s gain from the ratio, the image, its clean base and the gammas, with
+/// (identity, clamp).
+#[pyfunction]
+fn ir_gain<'py>(
+    py: Python<'py>,
+    ratio: PyReadonlyArrayDyn<'py, f32>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    clean: PyReadonlyArrayDyn<'py, f32>,
+    gammas: [f64; 3],
+    constants: (f32, f32),
+) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
+    let (src, (h, w)) = image3(&img)?;
+    let r = plane(&ratio, h * w)?;
+    let c = plane(&clean, 3 * h * w)?;
+    new_image(py, img.shape(), |dst| {
+        retouch::ir_gain(r, src, c, gammas, constants, dst);
+        Some(())
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(ir_vis_log, m)?)?;
+    m.add_function(wrap_pyfunction!(ir_gain, m)?)?;
     m.add_function(wrap_pyfunction!(release_score, m)?)?;
     m.add_function(wrap_pyfunction!(heal_region, m)?)?;
     m.add_function(wrap_pyfunction!(clone_stroke, m)?)?;

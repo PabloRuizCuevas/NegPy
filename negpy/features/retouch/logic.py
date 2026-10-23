@@ -952,7 +952,7 @@ def ir_ratio_and_gain(ir_det: np.ndarray, img_det: np.ndarray) -> Tuple[np.ndarr
     if img_det.shape[:2] != ratio.shape[:2]:
         img_det = negpy_core.resize_area(np.ascontiguousarray(img_det, dtype=np.float32), (ratio.shape[1], ratio.shape[0]))
 
-    vis_log = np.stack([np.log(np.clip(normalize_ir(img_det[:, :, c]), 1e-4, 1.0)) for c in range(3)], axis=-1)
+    vis_log = negpy_core.ir_vis_log(img_det, _ir_win(_IR_BASE_WIN, _ir_detect_scale(img_det)))
     ratio, ghost = _ir_decontaminate(ratio, vis_log)
     # On the fitted exponent, not on how far the ratio dips. A few percent of IR noise,
     # deepened by the min-preserving downsample, reads as silver on clean C41 rolls.
@@ -962,14 +962,10 @@ def ir_ratio_and_gain(ir_det: np.ndarray, img_det: np.ndarray) -> Tuple[np.ndarr
     ratio = _ir_normalize_ratio(ratio, live)
 
     gammas = _fit_refraction_gammas(ratio, vis_log, img_det)
-    base = np.clip(ratio / _IR_GAIN_IDENTITY, 1e-4, 1.0)
-    gain = np.empty(ratio.shape + (3,), dtype=np.float32)
-    for c in range(3):
-        gain[:, :, c] = np.minimum(_IR_GAIN_CLAMP, base ** (-gammas[c]))
     # Never lift a pixel past its own local clean base (see _IR_CAP_WIN). Floored at 1, so
     # the cap only holds the bake back and never darkens a pixel.
     clean = _ir_clean_base(img_det, ratio)
-    np.minimum(gain, np.maximum(clean / np.maximum(img_det, 1e-5), 1.0), out=gain)
+    gain = negpy_core.ir_gain(ratio, img_det, np.ascontiguousarray(clean, dtype=np.float32), list(gammas), (_IR_GAIN_IDENTITY, _IR_GAIN_CLAMP))
     return ratio, gain, degenerate, gammas
 
 

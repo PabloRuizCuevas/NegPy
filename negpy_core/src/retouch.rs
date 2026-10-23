@@ -1634,3 +1634,74 @@ pub fn heal_region(
             .collect(),
     )
 }
+
+/// `np.log(np.clip(normalize_ir(img[:, :, c]), 1e-4, 1.0))` stacked over the three channels,
+/// NumPy's float32 log included.
+pub fn ir_vis_log(img: &[f32], (h, w): (usize, usize), win: usize, dst: &mut [f32]) -> Option<()> {
+    let n = h * w;
+    let mut plane = vec![0f32; n];
+    let mut norm = vec![0f32; n];
+    for c in 0..3 {
+        plane
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(p, v)| *v = img[3 * p + c]);
+        normalize_ir(&plane, None, (h, w), win, &mut norm)?;
+        dst.par_chunks_mut(3 * BLOCK)
+            .zip(norm.par_chunks(BLOCK))
+            .for_each(|(o, r)| {
+                for (o, &v) in o.as_chunks_mut::<3>().0.iter_mut().zip(r) {
+                    let v = if v.is_nan() || v > 1e-4 { v } else { 1e-4 };
+                    let v = if v.is_nan() || v < 1.0 { v } else { 1.0 };
+                    o[c] = crate::mathf::np_logf(v);
+                }
+            });
+    }
+    Some(())
+}
+
+/// `ir_ratio_and_gain`'s gain: `min(clamp, (clip(ratio / identity, 1e-4, 1)) ** -gamma)` per
+/// channel, then held at the local clean base over the pixel, floored at 1. The power is
+/// `mathf`'s; NumPy's float32 power runs SVML on an AVX-512 CPU.
+pub fn ir_gain(
+    ratio: &[f32],
+    img: &[f32],
+    clean: &[f32],
+    gammas: [f64; 3],
+    (identity, clamp): (f32, f32),
+    dst: &mut [f32],
+) {
+    let neg = gammas.map(|g| -g as f32);
+    dst.par_chunks_mut(3 * BLOCK)
+        .zip(ratio.par_chunks(BLOCK))
+        .zip(img.par_chunks(3 * BLOCK).zip(clean.par_chunks(3 * BLOCK)))
+        .for_each(|((o, r), (px, cl))| {
+            for (i, &r) in r.iter().enumerate() {
+                let b = r / identity;
+                let b = if b.is_nan() || b > 1e-4 { b } else { 1e-4 };
+                let b = if b.is_nan() || b < 1.0 { b } else { 1.0 };
+                for (c, &e) in neg.iter().enumerate() {
+                    let j = 3 * i + c;
+                    let p = crate::mathf::pow_f64(b as f64, e as f64) as f32;
+                    let g = if clamp.is_nan() || p.is_nan() {
+                        f32::NAN
+                    } else if p < clamp {
+                        p
+                    } else {
+                        clamp
+                    };
+                    let d = px[j];
+                    let d = if d.is_nan() || d > 1e-5 { d } else { 1e-5 };
+                    let cap = cl[j] / d;
+                    let cap = if cap.is_nan() || cap > 1.0 { cap } else { 1.0 };
+                    o[j] = if g.is_nan() || cap.is_nan() {
+                        f32::NAN
+                    } else if cap < g {
+                        cap
+                    } else {
+                        g
+                    };
+                }
+            }
+        });
+}

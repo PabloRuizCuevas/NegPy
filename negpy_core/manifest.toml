@@ -1422,9 +1422,10 @@ depends = []
 
 ["features/retouch/logic.py::_density"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "NumPy float32 log10 (SVML on AVX-512); the detection ports take its output as input"
 
 ["features/retouch/logic.py::_erode_resize_bounded"]
 phase = 4
@@ -1560,8 +1561,9 @@ depends = []
 
 ["features/retouch/logic.py::ir_ratio_and_gain"]
 phase = 4
-status = "todo"
-calls = ["negpy_core.resize_area"]
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.ir_gain", "negpy_core.ir_vis_log", "negpy_core.resize_area"]
 depends = ["_fit_refraction_gammas", "_ir_clean_base", "_ir_decontaminate", "_ir_glare", "_ir_live", "_ir_normalize_ratio", "normalize_ir"]
 
 ["features/retouch/logic.py::lines_to_score"]
