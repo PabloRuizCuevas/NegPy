@@ -1472,8 +1472,8 @@ depends = []
 
 ["features/retouch/logic.py::_hair_encode"]
 phase = 4
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.hair_encode"]
 depends = []
 
 ["features/retouch/logic.py::_ir_clean_base"]
@@ -1646,8 +1646,8 @@ depends = ["_scratch_ridge_rows", "_shear_rows"]
 
 ["features/hdr/logic.py::_accumulate"]
 phase = 5
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.hdr_accumulate"]
 depends = []
 
 ["features/hdr/logic.py::_align"]
@@ -1658,8 +1658,8 @@ depends = []
 
 ["features/hdr/logic.py::_count_clipped_rows"]
 phase = 5
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.count_clipped_rows"]
 depends = []
 
 ["features/hdr/logic.py::apply_render_exposure"]

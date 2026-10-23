@@ -132,3 +132,47 @@ pub fn add_floor_deficit(out: &mut [f32], a: &[f32], blur_src: &[f32], blur_out:
         )
         .for_each(|((o, av), (bs, bo))| deficit_block(o, av, bs, bo));
 }
+
+/// `_hair_encode`: `clip((crop - lo) * inv_span, 0, 1) ** inv_gamma` to 8-bit for the first
+/// three channels, in float32 (no fastmath), truncated as `np.uint8` truncates.
+pub fn hair_encode(
+    crop: &[f32],
+    cn: usize,
+    lo: f32,
+    inv_span: f32,
+    inv_gamma: f32,
+    out: &mut [u8],
+) {
+    out.par_chunks_mut(cn * 1024)
+        .zip(crop.par_chunks(cn * 1024))
+        .for_each(|(o, c)| hair_encode_block(c, o, cn, (lo, inv_span, inv_gamma)));
+}
+
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2+fma",
+    "aarch64+neon"
+))]
+fn hair_encode_block(
+    crop: &[f32],
+    out: &mut [u8],
+    cn: usize,
+    (lo, inv_span, inv_gamma): (f32, f32, f32),
+) {
+    let encode = |v: f32| {
+        let v = ((v - lo) * inv_span).clamp(0.0, 1.0);
+        let p = crate::mathf::pow_f64(v as f64, inv_gamma as f64) as f32;
+        (p * 255.0 + 0.5) as u8
+    };
+    if cn == 3 {
+        for (o, &v) in out.iter_mut().zip(crop) {
+            *o = encode(v);
+        }
+        return;
+    }
+    for (o, c) in out.chunks_mut(cn).zip(crop.chunks(cn)) {
+        for k in 0..3 {
+            o[k] = encode(c[k]);
+        }
+    }
+}

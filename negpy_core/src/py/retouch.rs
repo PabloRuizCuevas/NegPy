@@ -88,7 +88,39 @@ fn add_floor_deficit(
     Ok(())
 }
 
+/// `_hair_encode(crop, lo, inv_span, out_u8)` of an HxWxC float32 tile.
+#[pyfunction]
+fn hair_encode(
+    py: Python<'_>,
+    crop: numpy::PyReadonlyArrayDyn<'_, f32>,
+    lo: f32,
+    inv_span: f32,
+    inv_gamma: f32,
+    mut out: numpy::PyReadwriteArrayDyn<'_, u8>,
+) -> PyResult<()> {
+    use numpy::PyUntypedArrayMethods;
+    let [_, _, cn] = crop.shape()[..] else {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "needs an HxWxC tile",
+        ));
+    };
+    if cn < 3 || out.shape() != crop.shape() {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "needs 3 channels and a matching out",
+        ));
+    }
+    let src = crop
+        .as_slice()
+        .map_err(|_| pyo3::exceptions::PyValueError::new_err("needs a contiguous tile"))?;
+    let dst = out
+        .as_slice_mut()
+        .map_err(|_| pyo3::exceptions::PyValueError::new_err("needs a contiguous out"))?;
+    py.detach(|| crate::retouch::hair_encode(src, cn, lo, inv_span, inv_gamma, dst));
+    Ok(())
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(hair_encode, m)?)?;
     m.add_function(wrap_pyfunction!(fill_rung, m)?)?;
     m.add_function(wrap_pyfunction!(blend_fill, m)?)?;
     m.add_function(wrap_pyfunction!(add_floor_deficit, m)?)

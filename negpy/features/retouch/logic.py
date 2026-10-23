@@ -5,12 +5,10 @@ from typing import List, Optional, Tuple
 import cv2
 import negpy_core
 import numpy as np
-from numba import prange  # type: ignore
 
 from negpy.domain.types import ImageBuffer
 from negpy.features.geometry.logic import smooth_polyline
 from negpy.features.retouch.models import HEAL_SIZE_REF
-from negpy.kernel.system.parallel import parallel_njit
 from negpy.kernel.image.logic import get_luminance
 from negpy.kernel.image.validation import ensure_image
 from negpy.kernel.system.logging import get_logger
@@ -1282,17 +1280,9 @@ def ir_bake_token(retouch, has_ir: bool) -> str:
     return f"|ir{int(retouch.ir_attenuation)}r{round(float(retouch.ir_threshold), 3)}"
 
 
-@parallel_njit(cache=True)
 def _hair_encode(crop, lo, inv_span, out_u8):
     """``clip((crop - lo) / span, 0, 1) ** (1/γ)`` to 8-bit, for cv2.inpaint."""
-    f32 = np.float32
-    inv_gamma = f32(1.0 / _HAIR_INPAINT_GAMMA)
-    h, w = crop.shape[0], crop.shape[1]
-    for y in prange(h):
-        for x in range(w):
-            for c in range(3):
-                v = min(max((crop[y, x, c] - lo) * inv_span, f32(0.0)), f32(1.0))
-                out_u8[y, x, c] = np.uint8(v**inv_gamma * f32(255.0) + f32(0.5))
+    negpy_core.hair_encode(crop, lo, inv_span, np.float32(1.0 / _HAIR_INPAINT_GAMMA), out_u8)
 
 
 def apply_hair_inpaint(

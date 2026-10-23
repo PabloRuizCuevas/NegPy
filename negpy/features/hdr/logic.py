@@ -19,12 +19,11 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import cv2
+import negpy_core
 import numpy as np
-from numba import prange  # type: ignore
 
 from negpy.features.hdr.models import ANCHOR_EV_UNSET, HdrConfig
 from negpy.features.rgbscan.logic import estimate_shift
-from negpy.kernel.system.parallel import parallel_njit
 
 #: A sample at or above this is saturated and carries no information.
 SATURATION = 0.995
@@ -70,20 +69,9 @@ def subsample(frame: np.ndarray) -> np.ndarray:
     return frame[::step, ::step] if step > 1 else frame
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _count_clipped_rows(values: np.ndarray, out: np.ndarray) -> None:
-    """Saturated-pixel count per row. Per row rather than one total: numba's parfor pass
-    cannot analyse a reduction whose addend is itself computed by a loop."""
-    height, width, channels = values.shape
-    for y in prange(height):
-        n = 0
-        for x in range(width):
-            hit = 0
-            for c in range(channels):
-                if values[y, x, c] >= SATURATION:
-                    hit = 1
-            n += hit
-        out[y] = n
+    """Saturated-pixel count per row."""
+    negpy_core.count_clipped_rows(np.ascontiguousarray(values, dtype=np.float32), SATURATION, out)
 
 
 def clipped_fraction(values: np.ndarray) -> float:
@@ -314,7 +302,6 @@ def seed_shadow_density(ratios: Sequence[float], anchor: Optional[float] = None)
     return -min(SEED_SHADOW_PER_STOP * stops, SEED_SHADOW_LIMIT)
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _accumulate(num: np.ndarray, den: np.ndarray, values: np.ndarray, ratio: float) -> None:
     """Add one frame to the weighted sums, in reference units. One fused pass: the numpy
     form cost more than the RAW decode it follows, mostly in full-size temporaries.
@@ -330,22 +317,7 @@ def _accumulate(num: np.ndarray, den: np.ndarray, values: np.ndarray, ratio: flo
     still carry signal — and is gradual so the frame a pixel is drawn from changes
     smoothly. A hard switch prints as banding across a gradient.
     """
-    inv_span = np.float32(1.0) / np.float32(SATURATION - ROLLOFF_START)
-    weight = np.float32(ratio) ** 2
-    scale = np.float32(max(ratio, 1e-9))
-    height, width, channels = values.shape
-    for y in prange(height):
-        for x in range(width):
-            for c in range(channels):
-                v = values[y, x, c]
-                rolloff = (np.float32(SATURATION) - v) * inv_span
-                if rolloff < np.float32(0.0):
-                    rolloff = np.float32(0.0)
-                elif rolloff > np.float32(1.0):
-                    rolloff = np.float32(1.0)
-                w = weight * rolloff
-                num[y, x, c] += w * (v / scale)
-                den[y, x, c] += w
+    negpy_core.hdr_accumulate(num, den, np.ascontiguousarray(values, dtype=np.float32), ratio, SATURATION, ROLLOFF_START)
 
 
 def merge_providers(

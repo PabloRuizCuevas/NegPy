@@ -8,6 +8,7 @@ pub mod detect;
 pub mod distance;
 pub mod filter;
 pub mod gray;
+pub mod hdr;
 pub mod histogram;
 pub mod mathf;
 pub mod median;
@@ -54,5 +55,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::color::register(m)?;
     py::toning::register(m)?;
     py::sensor::register(m)?;
+    py::hdr::register(m)?;
     py::analysis::register(m)
 }

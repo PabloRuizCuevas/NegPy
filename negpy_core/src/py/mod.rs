@@ -6,6 +6,7 @@ pub mod contours;
 pub mod convert;
 pub mod filter;
 pub mod gray;
+pub mod hdr;
 pub mod histogram;
 pub mod meter;
 pub mod morph;
