@@ -56,8 +56,8 @@ pub trait Level: Copy + Send {
 
 /// The integer part of `v` in 0..2^31: added to 2^52, it fills the low mantissa bits. The
 /// saturating `as` cast keeps LLVM from vectorizing the loops; this rounds and adds instead.
-fn trunc_bits(v: f64) -> u64 {
-    (v.trunc() + 4503599627370496.0).to_bits()
+pub(crate) fn trunc_bits(v: f64) -> u64 {
+    (v.trunc() + 4503599627370496.0).to_bits() & ((1 << 52) - 1)
 }
 
 impl Level for u8 {
