@@ -3,7 +3,6 @@ from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -110,31 +109,6 @@ def _refine_frame_bounds(image: np.ndarray) -> tuple[np.ndarray, tuple[int, int,
     (left, top, right, bottom); negpy_core holds the rules."""
     left, top, right, bottom = negpy_core.refine_frame_bounds(np.ascontiguousarray(image, dtype=np.float32))
     return image[top:bottom, left:right], (left, top, right, bottom)
-
-
-def _score_contour(contour: np.ndarray, image_area: float) -> tuple[float, np.ndarray] | None:
-    rect = cv2.minAreaRect(contour)
-    width, height = rect[1]
-    rect_area = float(width * height)
-    if rect_area <= 0:
-        return None
-
-    contour_area = float(cv2.contourArea(contour))
-    area_ratio = rect_area / image_area
-    fill_ratio = contour_area / rect_area if rect_area else 0.0
-    short_side = min(width, height)
-    long_side = max(width, height)
-    aspect_ratio = long_side / max(short_side, 1.0)
-
-    if area_ratio < 0.08:
-        return None
-    if short_side < 40:
-        return None
-    if aspect_ratio > 8.0:
-        return None
-
-    score = area_ratio * 1.5 + min(fill_ratio, 1.0)
-    return score, cv2.boxPoints(rect)
 
 
 def _empty_autocrop_detection(

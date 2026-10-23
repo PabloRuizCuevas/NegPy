@@ -217,75 +217,89 @@ depends = []
 
 ["features/exposure/normalization.py::_smooth_along_scan_order"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = ["np.median"]
 depends = []
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::_weighted_median"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = ["np.argsort", "np.cumsum"]
 depends = []
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::analysis_grid"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = ["negpy_core.resize_area"]
 depends = []
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::analyze_log_exposure_bounds"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["analyze_log_exposure_bounds_from_log", "to_log_density"]
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::analyze_log_exposure_bounds_from_log"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_block_median_grid", "_same_pixel_color_floor_refs", "_sample_log_bounds"]
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::contrast_mask_plane"]
 phase = 2
-status = "todo"
-calls = ["negpy_core.gaussian_blur"]
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.contrast_mask_tail"]
 depends = ["analysis_grid", "normalize_log_image", "prefilter_log_grid"]
+note = "negpy_core::analysis::contrast_mask_tail"
 
 ["features/exposure/normalization.py::density_above_base"]
 phase = 2
-status = "todo"
-calls = ["np.median"]
+status = "ported"
+calls = ["negpy_core.luma_median"]
 depends = []
+note = "negpy_core::analysis"
 
 ["features/exposure/normalization.py::detect_light_groups"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = ["np.median"]
 depends = ["_smooth_along_scan_order", "pool_neutral_axis"]
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::diffusion_grid"]
 phase = 2
-status = "todo"
-calls = ["negpy_core.gaussian_blur"]
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.diffusion_tail"]
 depends = ["analysis_grid", "prefilter_log_grid"]
+note = "negpy_core::analysis::diffusion_tail"
 
 ["features/exposure/normalization.py::diffusion_plane"]
 phase = 2
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.luma_planes"]
 depends = ["normalize_log_image"]
+note = "negpy_core::analysis"
 
 ["features/exposure/normalization.py::effective_crosstalk_matrix"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["resolve_crosstalk_matrix"]
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::measure_anchor"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["measure_anchor_from_log", "to_log_density"]
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::measure_anchor_from_log"]
 phase = 2
@@ -301,9 +315,10 @@ depends = []
 
 ["features/exposure/normalization.py::measure_clip_fractions"]
 phase = 2
-status = "todo"
-calls = ["np.mean"]
+status = "ported"
+calls = ["negpy_core.clip_fractions"]
 depends = []
+note = "negpy_core::analysis"
 
 ["features/exposure/normalization.py::measure_highlight_point_from_log"]
 phase = 2
@@ -313,9 +328,10 @@ depends = ["_block_median_grid"]
 
 ["features/exposure/normalization.py::measure_neutral_axis"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["measure_neutral_axis_from_log", "to_log_density"]
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::measure_neutral_axis_from_log"]
 phase = 2
@@ -337,9 +353,10 @@ depends = ["_block_median_grid"]
 
 ["features/exposure/normalization.py::measure_textural_range"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["measure_textural_range_from_log", "to_log_density"]
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::measure_textural_range_from_log"]
 phase = 2
@@ -355,21 +372,24 @@ depends = []
 
 ["features/exposure/normalization.py::pool_frame_bounds"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = ["np.median"]
 depends = []
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::pool_neutral_axis"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = ["np.median"]
 depends = ["_weighted_median", "band"]
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::pool_neutral_axis.band"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_weighted_median"]
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::prefilter_log_grid"]
 phase = 2
@@ -380,21 +400,25 @@ depends = ["_block_median_grid", "to_log_density"]
 
 ["features/exposure/normalization.py::resolve_crosstalk_matrix"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = ["np.sum"]
 depends = []
+note = "orchestration or roll-size math"
 
 ["features/exposure/normalization.py::sorted_channel_grid"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = ["np.sort"]
 depends = []
+note = "np.sort (SIMD sort) is faster than a radix port"
 
 ["features/exposure/normalization.py::to_log_density"]
 phase = 2
-status = "todo"
+status = "ported"
+compare = "ulp=3"
 calls = ["negpy_core.to_log_density"]
 depends = []
+note = "negpy_core::analysis::to_log_density"
 
 ["features/geometry/batch_autocrop.py::_border_without_a_film_box"]
 phase = 2
@@ -698,12 +722,6 @@ status = "ported"
 calls = ["negpy_core.roi_from_measured_border"]
 depends = []
 note = "negpy_core::analysis::roi_from_measured_border"
-
-["features/geometry/logic.py::_score_contour"]
-phase = 2
-status = "todo"
-calls = ["cv2.boxPoints", "cv2.contourArea", "cv2.minAreaRect"]
-depends = []
 
 ["features/geometry/logic.py::_select_consensus_cluster"]
 phase = 2

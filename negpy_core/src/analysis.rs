@@ -1549,6 +1549,120 @@ pub fn refine_roi_to_image(
     Some((out, None))
 }
 
+/// `measure_clip_fractions`: per channel, the share of every 4th pixel of rows y1..y2 and
+/// columns x1..x2 of an HxWx3 image at or above `level`. NaN for an empty window.
+pub fn clip_fractions(
+    img: &[f32],
+    w: usize,
+    (y1, y2, x1, x2): (usize, usize, usize, usize),
+    level: f32,
+) -> [f64; 3] {
+    let rows: Vec<usize> = (y1..y2).step_by(4).collect();
+    let cols = (x1..x2).step_by(4).len();
+    let counts = rows
+        .par_iter()
+        .map(|&y| {
+            let mut c = [0u64; 3];
+            let row = &img[(y * w + x1) * 3..(y * w + x2) * 3];
+            for p in row.as_chunks::<3>().0.iter().step_by(4) {
+                for ch in 0..3 {
+                    c[ch] += (p[ch] >= level) as u64;
+                }
+            }
+            c
+        })
+        .reduce(|| [0; 3], |a, b| [a[0] + b[0], a[1] + b[1], a[2] + b[2]]);
+    let n = (rows.len() * cols) as f64;
+    counts.map(|c| c as f64 / n)
+}
+
+/// `grid @ w` in float64 for Rec. 709 luma, in the order OpenBLAS's dgemv sums the three terms.
+#[multiversion(targets("x86_64+avx2+fma", "aarch64+neon"))]
+fn luma_f64_chunk(grid: &[f32], dst: &mut [f64]) {
+    for (d, p) in dst.iter_mut().zip(grid.as_chunks::<3>().0) {
+        let t = LUMA_R.mul_add(p[0] as f64, LUMA_G * p[1] as f64);
+        *d = LUMA_B.mul_add(p[2] as f64, t);
+    }
+}
+
+/// `density_above_base`'s metered median: `np.median` of an Nx3 grid's float64 Rec. 709 luma.
+pub fn luma_median(grid: &[f32]) -> f64 {
+    let mut lum = vec![0f64; grid.len() / 3];
+    lum.par_chunks_mut(4096)
+        .zip(grid.par_chunks(4096 * 3))
+        .for_each(|(d, p)| luma_f64_chunk(p, d));
+    crate::stats::median_f64(&mut lum)
+}
+
+/// Rec. 709 luma in float32, NumPy's order for `LUMA_R * r + LUMA_G * g + LUMA_B * b` (NEP 50).
+#[inline(always)]
+fn luma_f32(p: &[f32; 3]) -> f32 {
+    LUMA_R as f32 * p[0] + LUMA_G as f32 * p[1] + LUMA_B as f32 * p[2]
+}
+
+/// `diffusion_plane`'s panchromatic collapse: each pixel of an HxWx3 plane set to its float32 luma.
+pub fn luma_planes(val: &[f32], dst: &mut [f32]) {
+    crate::par_zip(
+        dst.as_chunks_mut::<3>().0,
+        val.as_chunks::<3>().0,
+        move |d, p| *d = [luma_f32(p); 3],
+    );
+}
+
+/// `contrast_mask_plane` after normalization: the float32 luma of an HxWx3 plane, blurred by
+/// `sigma` with a replicated border, minus its float32 mean. Returns the plane and the mean.
+pub fn contrast_mask_tail(val: &[f32], h: usize, w: usize, sigma: f64) -> Option<(Vec<f32>, f32)> {
+    let mut lum = vec![0f32; h * w];
+    crate::par_zip(&mut lum, val.as_chunks::<3>().0, move |d, p| {
+        *d = luma_f32(p)
+    });
+    let mut blurred = vec![0f32; h * w];
+    crate::filter::gaussian_blur(
+        &lum,
+        &mut blurred,
+        (h, w, 1),
+        (0, 0),
+        (sigma, 0.0),
+        Border::Replicate,
+    )?;
+    let centre = pairwise_sum_f32(&blurred) / blurred.len() as f32;
+    blurred.par_chunks_mut(1 << 14).for_each(|d| {
+        for v in d {
+            *v -= centre;
+        }
+    });
+    Some((blurred, centre))
+}
+
+/// `diffusion_grid` after the unmix: 10^x of an HxWx3 log plane, blurred by `sigma` with a
+/// replicated border, back to log10.
+pub fn diffusion_tail(
+    unmixed: &[f32],
+    h: usize,
+    w: usize,
+    sigma: f64,
+    dst: &mut [f32],
+) -> Option<()> {
+    let mut light = vec![0f32; unmixed.len()];
+    crate::par_zip(&mut light, unmixed, move |d, &v| {
+        *d = crate::mathf::exp10_f64(v as f64) as f32;
+    });
+    crate::filter::gaussian_blur(
+        &light,
+        dst,
+        (h, w, 3),
+        (0, 0),
+        (sigma, 0.0),
+        Border::Replicate,
+    )?;
+    dst.par_chunks_mut(1 << 14).for_each(|d| {
+        for v in d {
+            *v = crate::mathf::log10f(*v);
+        }
+    });
+    Some(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1568,5 +1682,16 @@ mod tests {
         let mut out = vec![7u8; 10];
         normalize_to_uint8(&img, &mut out);
         assert!(out.iter().all(|&v| v == 0));
+    }
+
+    #[test]
+    fn clip_fractions_count_every_fourth_pixel() {
+        let (h, w) = (8, 8);
+        let mut img = vec![0f32; h * w * 3];
+        img[0] = 1.0;
+        img[(4 * w + 5) * 3 + 1] = 1.0;
+        img[(4 * w + 4) * 3 + 2] = 0.99;
+        let f = clip_fractions(&img, w, (0, h, 0, w), 0.99);
+        assert_eq!(f, [0.25, 0.0, 0.25]);
     }
 }

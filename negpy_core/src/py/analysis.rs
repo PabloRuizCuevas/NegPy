@@ -646,6 +646,112 @@ fn film_surround_is_plausible(
     Ok(crate::detect::film_surround_is_plausible(data, h, w, &roi))
 }
 
+fn rgb_dims(a: &PyReadonlyArrayDyn<'_, f32>, name: &str) -> PyResult<(usize, usize)> {
+    match a.shape()[..] {
+        [h, w, 3] => Ok((h, w)),
+        _ => Err(PyValueError::new_err(format!(
+            "{name} needs an HxWx3 array"
+        ))),
+    }
+}
+
+fn filled_f32<'py>(
+    py: Python<'py>,
+    shape: &[usize],
+    n: usize,
+    f: impl FnOnce(&mut [f32]) -> Option<()> + Send,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let out = empty::<f32>(py, shape, "float32")?;
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        super::detach(py, n, || f(dst))
+            .ok_or_else(|| PyValueError::new_err("blur sigma must be positive"))?;
+    }
+    Ok(out)
+}
+
+/// `measure_clip_fractions` of an HxWx3 float32 image over the window (y1, y2, x1, x2).
+#[pyfunction]
+fn clip_fractions(
+    py: Python<'_>,
+    img: PyReadonlyArrayDyn<'_, f32>,
+    window: (usize, usize, usize, usize),
+    level: f32,
+) -> PyResult<(f64, f64, f64)> {
+    let (h, w) = rgb_dims(&img, "clip_fractions")?;
+    let (y1, y2, x1, x2) = window;
+    if y1 > y2 || x1 > x2 || y2 > h || x2 > w {
+        return Err(PyValueError::new_err("window outside the image"));
+    }
+    let data = slice(&img)?;
+    let f = super::detach(py, (y2 - y1) * (x2 - x1) * 3 / 16, || {
+        analysis::clip_fractions(data, w, window, level)
+    });
+    Ok((f[0], f[1], f[2]))
+}
+
+/// The median of a float32 grid's float64 Rec. 709 luma, any shape that ends in 3.
+#[pyfunction]
+fn luma_median(py: Python<'_>, grid: PyReadonlyArrayDyn<'_, f32>) -> PyResult<f64> {
+    if grid.shape().last() != Some(&3) {
+        return Err(PyValueError::new_err("luma_median needs an ...x3 array"));
+    }
+    let data = slice(&grid)?;
+    Ok(super::detach(py, data.len(), || {
+        analysis::luma_median(data)
+    }))
+}
+
+/// Each pixel of an HxWx3 float32 plane set to its float32 Rec. 709 luma.
+#[pyfunction]
+fn luma_planes<'py>(
+    py: Python<'py>,
+    val: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let (h, w) = rgb_dims(&val, "luma_planes")?;
+    let data = slice(&val)?;
+    filled_f32(py, &[h, w, 3], data.len(), |dst| {
+        analysis::luma_planes(data, dst);
+        Some(())
+    })
+}
+
+/// `contrast_mask_plane`'s blurred zero-mean luma of a normalized HxWx3 plane, and its mean.
+#[pyfunction]
+fn contrast_mask_tail<'py>(
+    py: Python<'py>,
+    val: PyReadonlyArrayDyn<'py, f32>,
+    sigma: f64,
+) -> PyResult<(Bound<'py, PyArrayDyn<f32>>, f32)> {
+    let (h, w) = rgb_dims(&val, "contrast_mask_tail")?;
+    let data = slice(&val)?;
+    let (plane, centre) = super::detach(py, data.len(), || {
+        analysis::contrast_mask_tail(data, h, w, sigma)
+    })
+    .ok_or_else(|| PyValueError::new_err("blur sigma must be positive"))?;
+    Ok((
+        numpy::PyArray1::from_vec(py, plane).reshape(vec![h, w])?,
+        centre,
+    ))
+}
+
+/// `diffusion_grid`'s blurred light of an unmixed HxWx3 log plane, as log10.
+#[pyfunction]
+fn diffusion_tail<'py>(
+    py: Python<'py>,
+    unmixed: PyReadonlyArrayDyn<'py, f32>,
+    sigma: f64,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let (h, w) = rgb_dims(&unmixed, "diffusion_tail")?;
+    let data = slice(&unmixed)?;
+    filled_f32(py, &[h, w, 3], data.len(), |dst| {
+        analysis::diffusion_tail(data, h, w, sigma, dst)
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(luminance, m)?)?;
     m.add_function(wrap_pyfunction!(to_log_density, m)?)?;
@@ -672,5 +778,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(film_and_picture, m)?)?;
     m.add_function(wrap_pyfunction!(measure_base_log, m)?)?;
     m.add_function(wrap_pyfunction!(film_box_covers_enough, m)?)?;
-    m.add_function(wrap_pyfunction!(film_surround_is_plausible, m)?)
+    m.add_function(wrap_pyfunction!(film_surround_is_plausible, m)?)?;
+    m.add_function(wrap_pyfunction!(clip_fractions, m)?)?;
+    m.add_function(wrap_pyfunction!(luma_median, m)?)?;
+    m.add_function(wrap_pyfunction!(luma_planes, m)?)?;
+    m.add_function(wrap_pyfunction!(contrast_mask_tail, m)?)?;
+    m.add_function(wrap_pyfunction!(diffusion_tail, m)?)
 }

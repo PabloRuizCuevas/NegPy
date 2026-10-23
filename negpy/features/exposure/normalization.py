@@ -1,6 +1,5 @@
 from typing import Any, Dict, Optional, TYPE_CHECKING, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -135,17 +134,16 @@ def measure_clip_fractions(
     """
     from negpy.features.exposure.models import EXPOSURE_CONSTANTS
 
-    img = image
-    if roi:
-        y1, y2, x1, x2 = roi
-        img = img[y1:y2, x1:x2]
+    h, w = image.shape[:2]
+    y1, y2, x1, x2 = roi if roi else (0, h, 0, w)
+    y2, x2 = min(y2, h), min(x2, w)
+    y1, x1 = min(y1, y2), min(x1, x2)
     if analysis_buffer > 0:
-        img = get_analysis_crop(img, analysis_buffer)
-    # Stride-subsampled: a warning metric doesn't need every pixel.
-    img = img[::4, ::4]
+        b = min(max(analysis_buffer, 0.0), 0.3)
+        cut_h, cut_w = int((y2 - y1) * b), int((x2 - x1) * b)
+        y1, y2, x1, x2 = y1 + cut_h, y2 - cut_h, x1 + cut_w, x2 - cut_w
     level = float(EXPOSURE_CONSTANTS["scan_clip_level"])
-    clipped = np.mean(img >= level, axis=(0, 1))
-    return (float(clipped[0]), float(clipped[1]), float(clipped[2]))
+    return negpy_core.clip_fractions(np.ascontiguousarray(image, dtype=np.float32), (y1, y2, x1, x2), level)
 
 
 def effective_crosstalk_matrix(process: "ProcessConfig", process_mode: Optional[str]) -> Optional[np.ndarray]:
@@ -297,7 +295,7 @@ def density_above_base(
     base = float(np.dot(w, np.asarray(base_rgb, dtype=np.float64)))
     thin = float(np.dot(w, np.asarray(bounds.ceils, dtype=np.float64)))
     dense = float(np.dot(w, np.asarray(bounds.floors, dtype=np.float64)))
-    median = float(np.median(np.asarray(prefiltered, dtype=np.float64).reshape(-1, 3) @ w))
+    median = negpy_core.luma_median(np.ascontiguousarray(prefiltered, dtype=np.float32))
     return (base - thin, base - median, base - dense)
 
 
@@ -581,11 +579,9 @@ def contrast_mask_plane(
         return np.zeros(image.shape[:2], dtype=np.float32), 0.5
 
     val = normalize_log_image(unmix_log_image(prefilter_log_grid(image, None, 0.0), unmix), bounds)
-    lum = LUMA_R * val[:, :, 0] + LUMA_G * val[:, :, 1] + LUMA_B * val[:, :, 2]
-    sigma = min(max(spacer, MASK_SPACER_MIN), MASK_SPACER_MAX) * 0.01 * min(lum.shape[:2])
-    blurred = negpy_core.gaussian_blur(np.ascontiguousarray(lum, dtype=np.float32), (0, 0), sigma, 0, cv2.BORDER_REPLICATE)
-    centre = float(blurred.mean())
-    return blurred - centre, centre
+    sigma = min(max(spacer, MASK_SPACER_MIN), MASK_SPACER_MAX) * 0.01 * min(val.shape[:2])
+    plane, centre = negpy_core.contrast_mask_tail(np.ascontiguousarray(val, dtype=np.float32), sigma)
+    return plane, float(centre)
 
 
 def diffusion_grid(
@@ -603,9 +599,9 @@ def diffusion_grid(
     """The unmixed light blurred by `DIFFUSION_SPREAD`, as log density on `analysis_grid`. It takes no bounds:
     the print's normalization is a per-channel gain on that light."""
     image = analysis_grid(image, rotation, fine_rotation, flip_horizontal, flip_vertical, distortion_k1, converge_v, converge_h, roi_norm)
-    light = np.ascontiguousarray(10.0 ** unmix_log_image(prefilter_log_grid(image, None, 0.0), unmix), dtype=np.float32)
-    sigma = DIFFUSION_SPREAD * 0.01 * min(light.shape[:2])
-    return np.log10(negpy_core.gaussian_blur(light, (0, 0), sigma, 0, cv2.BORDER_REPLICATE))
+    unmixed = np.ascontiguousarray(unmix_log_image(prefilter_log_grid(image, None, 0.0), unmix), dtype=np.float32)
+    sigma = DIFFUSION_SPREAD * 0.01 * min(unmixed.shape[:2])
+    return negpy_core.diffusion_tail(unmixed, sigma)
 
 
 def diffusion_plane(grid: np.ndarray, bounds: LogNegativeBounds, panchromatic: bool = False) -> Optional[np.ndarray]:
@@ -615,8 +611,7 @@ def diffusion_plane(grid: np.ndarray, bounds: LogNegativeBounds, panchromatic: b
         return None
     val = normalize_log_image(grid, bounds)
     if panchromatic:
-        lum = LUMA_R * val[:, :, 0] + LUMA_G * val[:, :, 1] + LUMA_B * val[:, :, 2]
-        val = np.dstack([lum, lum, lum])
+        val = negpy_core.luma_planes(np.ascontiguousarray(val, dtype=np.float32))
     return np.ascontiguousarray(val, dtype=np.float32)
 
 
