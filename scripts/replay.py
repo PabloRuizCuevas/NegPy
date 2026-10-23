@@ -143,13 +143,15 @@ def _run_frame(path: str, repo=None, overrides: dict | None = None) -> tuple:
     from negpy.services.rendering.image_processor import ImageProcessor
     from negpy.services.rendering.preview_manager import PreviewManager
 
-    buffer, _, _ = PreviewManager().load_linear_preview(path)
+    buffer, _, meta = PreviewManager().load_linear_preview(path)
     saved = repo.load_file_settings(file_hashes(path)[0]) if repo else None
     config = with_auto_crop(saved or WorkspaceConfig(), True)
     for section, fields in (overrides or {}).items():
         config = dataclasses.replace(config, **{section: dataclasses.replace(getattr(config, section), **fields)})
     # Stage caching on, as the preview runs: the base read (measure_base_log) happens only then.
-    ImageProcessor(use_gpu=False).run_pipeline(buffer, config, source_hash=path, render_size_ref=1600.0, prefer_gpu=False)
+    ImageProcessor(use_gpu=False).run_pipeline(
+        buffer, config, source_hash=path, render_size_ref=1600.0, prefer_gpu=False, ir_buffer=meta.get("ir_preview")
+    )
     return buffer, config
 
 
