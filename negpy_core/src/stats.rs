@@ -295,6 +295,57 @@ pub fn np_percentiles(values: &[f32], qs: &[f64]) -> Option<Vec<f32>> {
     Some(out)
 }
 
+/// NumPy's linear interpolation between two float64 samples for a float64 weight: the far
+/// half counts back from the upper sample.
+fn lerp_f64(a: f64, b: f64, t: f64) -> f64 {
+    let diff = b - a;
+    if t >= 0.5 {
+        b - diff * (1.0 - t)
+    } else {
+        a + diff * t
+    }
+}
+
+/// `np.quantile(values, q)` of float64 values for q in 0..1 (`np.percentile` passes q / 100).
+/// Reorders `values`; `None` when empty.
+pub fn quantile_f64(values: &mut [f64], q: f64) -> Option<f64> {
+    let n = values.len();
+    if n == 0 {
+        return None;
+    }
+    let virtual_index = (n - 1) as f64 * q;
+    let lo = (virtual_index.floor().max(0.0) as usize).min(n - 1);
+    let hi = (lo + 1).min(n - 1);
+    let a = *values.select_nth_unstable_by(lo, f64::total_cmp).1;
+    let b = if hi == lo {
+        a
+    } else {
+        values[lo + 1..]
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min)
+    };
+    Some(lerp_f64(a, b, virtual_index - lo as f64))
+}
+
+/// `np.median` of float64 values: the middle one, or the mean of the two middle ones.
+/// Reorders `values`; NaN when empty.
+pub fn median_f64(values: &mut [f64]) -> f64 {
+    let n = values.len();
+    if n == 0 {
+        return f64::NAN;
+    }
+    let hi = *values.select_nth_unstable_by(n / 2, f64::total_cmp).1;
+    if n % 2 == 1 {
+        return hi;
+    }
+    let lo = values[..n / 2]
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    (lo + hi) / 2.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

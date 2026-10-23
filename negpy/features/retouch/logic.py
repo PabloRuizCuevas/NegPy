@@ -965,7 +965,9 @@ def ir_ratio_and_gain(ir_det: np.ndarray, img_det: np.ndarray) -> Tuple[np.ndarr
     # Never lift a pixel past its own local clean base (see _IR_CAP_WIN). Floored at 1, so
     # the cap only holds the bake back and never darkens a pixel.
     clean = _ir_clean_base(img_det, ratio)
-    gain = negpy_core.ir_gain(ratio, img_det, np.ascontiguousarray(clean, dtype=np.float32), list(gammas), (_IR_GAIN_IDENTITY, _IR_GAIN_CLAMP))
+    gain = negpy_core.ir_gain(
+        ratio, img_det, np.ascontiguousarray(clean, dtype=np.float32), list(gammas), (_IR_GAIN_IDENTITY, _IR_GAIN_CLAMP)
+    )
     return ratio, gain, degenerate, gammas
 
 

@@ -209,3 +209,75 @@ fn two_scale_block(
         });
     }
 }
+
+/// The scalars of `film_base`, as Python floats.
+pub struct FilmBase {
+    pub percentile: f64,
+    pub clip_plateau: f64,
+    pub grid_edge: f64,
+    pub log_floor: f32,
+    pub share: f64,
+}
+
+/// `film_base` of its analysis crop (h x w x 3): the median log of the cells thinnest in all
+/// three channels together, back through `exp`. `None` when the thin end is clipped. The
+/// final `exp` of the three medians is libm's; NumPy's float64 exp runs SVML on AVX-512.
+pub fn film_base(sample: &[f32], (h, w): (usize, usize), c: &FilmBase) -> Option<[f64; 3]> {
+    if h * w == 0 {
+        return None;
+    }
+    let clipped =
+        (0..3).into_par_iter().any(|ch| {
+            let vals: Vec<f32> = sample.iter().skip(ch).step_by(3).copied().collect();
+            let Some(p) = crate::stats::np_percentiles(&vals, &[c.percentile]) else {
+                return true;
+            };
+            let max = vals.iter().copied().fold(f32::NEG_INFINITY, |m, v| {
+                if v > m || v.is_nan() { v } else { m }
+            });
+            p[0] >= c.clip_plateau as f32 * max
+        });
+    if clipped {
+        return None;
+    }
+    let scale = c.grid_edge / h.max(w) as f64;
+    let small;
+    let (cells, (sh, sw)) = if scale < 1.0 {
+        let dw = ((w as f64 * scale).round_ties_even() as usize).max(1);
+        let dh = ((h as f64 * scale).round_ties_even() as usize).max(1);
+        small = crate::resize::resize_area(sample, h, w, 3, dh, dw)?;
+        (&small[..], (dh, dw))
+    } else {
+        (sample, (h, w))
+    };
+    let n = sh * sw;
+    let floor = c.log_floor;
+    let logs: Vec<f64> = cells
+        .par_iter()
+        .map(|&v| crate::mathf::np_logf(if v.is_nan() || v > floor { v } else { floor }) as f64)
+        .collect();
+    let q = c.percentile / 100.0;
+    let thin_end: Vec<f64> = (0..3)
+        .into_par_iter()
+        .map(|ch| {
+            let mut col: Vec<f64> = logs.iter().skip(ch).step_by(3).copied().collect();
+            crate::stats::quantile_f64(&mut col, q).unwrap_or(f64::NAN)
+        })
+        .collect();
+    let thin: Vec<f64> = (0..n)
+        .map(|i| {
+            (0..3).fold(f64::INFINITY, |m, ch| {
+                let v = logs[3 * i + ch] - thin_end[ch];
+                if v < m || v.is_nan() { v } else { m }
+            })
+        })
+        .collect();
+    let bar = crate::stats::quantile_f64(&mut thin.clone(), 1.0 - c.share)?;
+    Some(std::array::from_fn(|ch| {
+        let mut sel: Vec<f64> = (0..n)
+            .filter(|&i| thin[i] >= bar)
+            .map(|i| logs[3 * i + ch])
+            .collect();
+        libm::exp(crate::stats::median_f64(&mut sel))
+    }))
+}

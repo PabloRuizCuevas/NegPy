@@ -141,7 +141,33 @@ fn sensor_two_scale(
     Ok(())
 }
 
+/// `film_base` of its HxWx3 analysis crop with (percentile, clip plateau, grid edge, log
+/// floor, share): the base color, or None.
+#[pyfunction]
+fn film_base(
+    py: Python<'_>,
+    sample: PyReadonlyArrayDyn<'_, f32>,
+    constants: (f64, f64, f64, f32, f64),
+) -> PyResult<Option<[f64; 3]>> {
+    let [h, w, 3] = sample.shape()[..] else {
+        return Err(PyValueError::new_err("needs an HxWx3 crop"));
+    };
+    let s = data(&sample)?;
+    let (percentile, clip_plateau, grid_edge, log_floor, share) = constants;
+    let c = sensor::FilmBase {
+        percentile,
+        clip_plateau,
+        grid_edge,
+        log_floor,
+        share,
+    };
+    Ok(super::detach(py, s.len(), || {
+        sensor::film_base(s, (h, w), &c)
+    }))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(film_base, m)?)?;
     m.add_function(wrap_pyfunction!(sensor_unmix, m)?)?;
     m.add_function(wrap_pyfunction!(sensor_log_unmix, m)?)?;
     m.add_function(wrap_pyfunction!(sensor_two_scale_layer, m)?)?;

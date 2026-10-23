@@ -6,7 +6,6 @@ density; `SensorUnmix` picks how that case is handled.
 
 from typing import Optional
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -151,19 +150,9 @@ def film_base(x: np.ndarray) -> Optional[np.ndarray]:
     together. One shared cell set, so a colored object cannot pass for the base in a single
     channel. Only the color is meaningful. None when the thin end is clipped in the capture."""
     sample = np.ascontiguousarray(get_analysis_crop(x[::4, ::4, :3], _BASE_BUFFER), dtype=np.float32)
-    flat = sample.reshape(-1, 3)
-    if flat.shape[0] == 0 or np.any(np.percentile(flat, _BASE_PERCENTILE, axis=0) >= _CLIP_PLATEAU * flat.max(axis=0)):
-        return None
-    h, w = sample.shape[:2]
-    scale = _BASE_GRID_EDGE / max(h, w)
-    if scale < 1.0:
-        sample = negpy_core.resize_area(
-            np.ascontiguousarray(sample, dtype=np.float32), (max(1, round(w * scale)), max(1, round(h * scale)))
-        )
-    logs = np.log(np.maximum(sample.reshape(-1, 3), _LOG_FLOOR)).astype(np.float64)
     # A cell is as thin as its least-thin channel, each channel against its own thin end.
-    thin = (logs - np.percentile(logs, _BASE_PERCENTILE, axis=0)).min(axis=1)
-    return np.exp(np.median(logs[thin >= np.quantile(thin, 1.0 - _BASE_SHARE)], axis=0))
+    base = negpy_core.film_base(sample, (_BASE_PERCENTILE, _CLIP_PLATEAU, float(_BASE_GRID_EDGE), _LOG_FLOOR, _BASE_SHARE))
+    return None if base is None else np.array(base)
 
 
 def _density_unmix(x: np.ndarray, m: np.ndarray) -> Optional[np.ndarray]:
@@ -196,7 +185,7 @@ def _two_scale_unmix(x: np.ndarray, m: np.ndarray) -> Optional[np.ndarray]:
     # The color layer and the weight are smooth by construction, so they are built small.
     step = max(1, int(sigma // 2))
     small = x if step == 1 else negpy_core.resize_area(np.ascontiguousarray(x, dtype=np.float32), (-(-w // step), -(-h // step)))
-    small = cv2.GaussianBlur(small, (0, 0), sigma / step)
+    small = negpy_core.gaussian_blur(np.ascontiguousarray(small, dtype=np.float32), (0, 0), sigma / step)
     color = np.empty_like(small)
     weight = np.empty(small.shape[:2], np.float32)
     _two_scale_layer_kernel(small, m, own, COLOR_FLOOR, _LOG_FLOOR, TWO_SCALE_START, TWO_SCALE_FULL, color, weight)
