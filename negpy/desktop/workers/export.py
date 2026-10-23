@@ -183,6 +183,8 @@ def _looks_border_crushed(buffer, task: "ExportTask") -> bool:
     arr = arr if arr.ndim == 2 else negpy_core.mean_channels(np.ascontiguousarray(arr[..., :3]))
     h, w = arr.shape[:2]
     m = max(2, int(0.04 * min(h, w)))
+    if 2 * m >= min(h, w):
+        return False
     ring, inner = negpy_core.ring_inner_medians(arr, m)
     return float(ring) < 0.02 and float(inner) < 0.12
 

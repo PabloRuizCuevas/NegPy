@@ -1,6 +1,6 @@
 import hashlib
 import os
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
 import negpy_core
 import numpy as np
 from negpy.domain.types import LUMA_R, LUMA_G, LUMA_B
@@ -35,9 +35,8 @@ def uint8_to_float32(img: np.ndarray) -> np.ndarray:
 
 
 def rgb_to_rgba_into(src: np.ndarray, dst: np.ndarray) -> None:
-    """Copies the three colour planes of float32 ``src`` into the RGBA ``dst``; alpha is left
-    as is. numpy cannot vectorise a 3-of-4 strided copy, so a texture upload spent longer here
-    than on the GPU."""
+    """Copies the three color planes of float32 ``src`` into the RGBA ``dst``; alpha is left
+    as is. numpy cannot vectorize a 3-of-4 strided copy."""
     negpy_core.rgb_to_rgba_into(np.asarray(src, dtype=np.float32), dst)
 
 
@@ -290,7 +289,7 @@ def get_luminance(img: np.ndarray) -> np.ndarray:
     Calculates relative luminance. Supports (H, W, 3) and (N, 3) arrays.
     """
     if img.ndim == 3:
-        return negpy_core.luminance(np.ascontiguousarray(img, dtype=np.float32))
+        return negpy_core.luminance(np.ascontiguousarray(img[..., :3], dtype=np.float32))
 
     return LUMA_R * img[..., 0] + LUMA_G * img[..., 1] + LUMA_B * img[..., 2]
 
@@ -378,11 +377,3 @@ def percentile_from_sorted(sorted_grid: np.ndarray, q: float) -> np.ndarray:
     a, b = sorted_grid[lo], sorted_grid[hi]
     diff = b - a
     return b - diff * (1 - t) if t >= 0.5 else a + diff * t
-
-
-def percentiles(values: np.ndarray, qs: Sequence[float]) -> tuple:
-    """`np.percentile(values, q)` of a float32 array for each Python-number q, bit for bit."""
-    if values.dtype != np.float32:
-        raise TypeError(f"percentiles needs float32, got {values.dtype}")
-    flat = np.ascontiguousarray(values).ravel()
-    return tuple(np.float32(v) for v in negpy_core.percentiles(flat, [float(q) for q in qs]))

@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from negpy.kernel.image.logic import percentiles
+import negpy_core
+
+
+def percentiles(values, qs):
+    return negpy_core.percentiles(np.ascontiguousarray(values).ravel(), [float(q) for q in qs])
+
 
 _RNG = np.random.default_rng(3)
 _ARRAYS = {
@@ -25,9 +30,8 @@ def test_percentiles_match_numpy_bit_for_bit(name, qs):
     got = percentiles(a, qs)
     for value, q in zip(got, qs):
         want = np.percentile(a, q)
-        assert value == want
-        assert type(value) is type(want)
-        assert value.dtype == want.dtype
+        assert np.float32(value) == want
+        assert want.dtype == np.float32
 
 
 def test_percentiles_leave_the_input_unchanged():

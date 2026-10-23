@@ -1,6 +1,7 @@
 //! Ports of the preview and capture metering in negpy/services/capture, negpy/services/scanning
 //! and the scan preview widgets.
 
+use multiversion::multiversion;
 use rayon::prelude::*;
 
 use crate::stats::{np_median, np_percentiles, np_quantile, pairwise_sum_f32};
@@ -259,6 +260,7 @@ pub fn ring_inner_medians(arr: &[f32], h: usize, w: usize, m: usize) -> (f32, f3
 
 /// `print_dmax`: the float32 mean colour, each channel rounded half to even, of the pixels whose
 /// Rec. 709 luma (OpenBLAS's sgemv order) is at most its `share` quantile. None for no pixels.
+#[multiversion(targets("x86_64+avx2+fma", "aarch64+neon"))]
 pub fn print_dmax(px: &[[u8; 3]], share: f64) -> Option<[i64; 3]> {
     if px.is_empty() {
         return None;

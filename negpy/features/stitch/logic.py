@@ -226,7 +226,7 @@ def find_seams(warped: Sequence[np.ndarray], masks: Sequence[np.ndarray], canvas
                 claim = orphan & mask
                 seam |= claim
                 orphan &= ~claim
-    except MemoryError:
+    except (ValueError, MemoryError):
         return None
     return seams
 
