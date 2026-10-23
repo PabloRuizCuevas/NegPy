@@ -91,6 +91,27 @@ fn log_density_block(src: &[f32], dst: &mut [f32]) {
     }
 }
 
+/// The normalization processors' log density: log10 of the value clamped below at 1e-6, with
+/// NaN and -inf at 1e-6 and +inf at 1 (`np.nan_to_num`), no upper clamp.
+pub fn log_density_open(img: &[f32], dst: &mut [f32]) {
+    dst.par_chunks_mut(1 << 14)
+        .zip(img.par_chunks(1 << 14))
+        .for_each(|(d, s)| log_density_open_block(s, d));
+}
+
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2+fma",
+    "aarch64+neon"
+))]
+fn log_density_open_block(src: &[f32], dst: &mut [f32]) {
+    for (d, &v) in dst.iter_mut().zip(src) {
+        let v = if v == f32::INFINITY { 1.0 } else { v };
+        // max drops NaN, as nan_to_num then np.clip do.
+        *d = crate::mathf::log10f(v.max(1e-6));
+    }
+}
+
 /// `normalize_log_image`: `(v - floor) / (ceil - floor)` per channel of an HxWx3 log image,
 /// unclamped. A span under 1e-6 divides by +-1e-6, by the span's sign.
 pub fn normalize_log_image(img: &[f32], floors: [f32; 3], ceils: [f32; 3], dst: &mut [f32]) {

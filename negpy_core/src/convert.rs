@@ -164,6 +164,48 @@ pub fn extract_channel(src: &[f32], cn: usize, c: usize, dst: &mut [f32]) {
         });
 }
 
+/// `np.stack([lum, lum, lum], axis=-1)`.
+pub fn gray_to_rgb(src: &[f32], dst: &mut [f32]) {
+    crate::par_zip(dst.as_chunks_mut::<3>().0, src, |d, &v| *d = [v; 3]);
+}
+
+/// `a + b` of two float32 arrays of one shape.
+pub fn add(a: &[f32], b: &[f32], dst: &mut [f32]) {
+    dst.par_chunks_mut(BLOCK)
+        .zip(a.par_chunks(BLOCK).zip(b.par_chunks(BLOCK)))
+        .for_each(|(o, (a, b))| {
+            for ((o, &a), &b) in o.iter_mut().zip(a).zip(b) {
+                *o = a + b;
+            }
+        });
+}
+
+/// `img[..., c].any()`: whether channel `c` holds a nonzero (NaN counts, as in NumPy).
+pub fn channel_any(src: &[f32], cn: usize, c: usize) -> bool {
+    src.par_chunks(cn * BLOCK)
+        .any(|s| s.chunks_exact(cn).any(|p| p[c] != 0.0))
+}
+
+/// `np.clip(src, 0, 1)` into `dst`; NaN stays.
+pub fn clip_unit(src: &[f32], dst: &mut [f32]) {
+    crate::par_zip(dst, src, |d, &v| *d = v.clamp(0.0, 1.0));
+}
+
+/// `np.nan_to_num(src, nan=nan, posinf=posinf, neginf=neginf)` into `dst`.
+pub fn nan_to_num(src: &[f32], dst: &mut [f32], (nan, posinf, neginf): (f32, f32, f32)) {
+    crate::par_zip(dst, src, move |d, &v| {
+        *d = if v.is_nan() {
+            nan
+        } else if v == f32::INFINITY {
+            posinf
+        } else if v == f32::NEG_INFINITY {
+            neginf
+        } else {
+            v
+        };
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

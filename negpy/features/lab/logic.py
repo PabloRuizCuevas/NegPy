@@ -176,13 +176,14 @@ def _saturation_block(img: ImageBuffer, saturation: float, skin_protection: floa
     if saturation == 1.0 and skin_protection <= 0.0:
         return img
 
-    lab = rgb_to_lab_working(img.astype(np.float32))
+    lab = rgb_to_lab_working(np.ascontiguousarray(img, dtype=np.float32))
     if saturation != 1.0:
         lab = gamut_aware_chroma_scale(lab, saturation)
     if skin_protection > 0.0:
         lab = skin_chroma_rein(lab, skin_protection)
-    res_rgb = lab_to_rgb_working(lab)
-    return ensure_image(np.clip(res_rgb, 0.0, 1.0))
+    res_rgb = np.ascontiguousarray(lab_to_rgb_working(lab), dtype=np.float32)
+    negpy_core.clip_unit(res_rgb)
+    return ensure_image(res_rgb)
 
 
 # Below this blur sigma (px) both engines skip the stage.

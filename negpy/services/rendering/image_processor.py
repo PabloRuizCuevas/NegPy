@@ -2,7 +2,6 @@ import hashlib
 import os
 import ctypes
 import threading
-import cv2
 import rawpy
 import imagecodecs
 import negpy_core
@@ -289,7 +288,7 @@ def _downsample_to_long_edge(buf: np.ndarray, long_px: int) -> np.ndarray:
     if long_px <= 0 or long_edge <= long_px:
         return buf
     s = long_px / long_edge
-    return cv2.resize(buf, (max(1, int(round(w * s))), max(1, int(round(h * s)))), interpolation=cv2.INTER_AREA)
+    return negpy_core.resize_area(np.ascontiguousarray(buf, dtype=np.float32), (max(1, int(round(w * s))), max(1, int(round(h * s)))))
 
 
 def _detection_downsample(buf: np.ndarray) -> np.ndarray:
@@ -1901,7 +1900,7 @@ class ImageProcessor:
             f32_buffer = _downsample_to_long_edge(f32_buffer, target_long_px)
             if ir_full is not None and ir_full.shape[:2] != f32_buffer.shape[:2]:
                 th, tw = f32_buffer.shape[:2]
-                ir_full = cv2.resize(ir_full, (tw, th), interpolation=cv2.INTER_AREA)
+                ir_full = negpy_core.resize_area(np.ascontiguousarray(ir_full, dtype=np.float32), (tw, th))
             # Keep the decode only for the other half of the same scan, rendered next; else it pins memory across the next decode.
             if not keep_source:
                 self._source_cache_key = None

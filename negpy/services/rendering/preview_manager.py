@@ -3,7 +3,6 @@ import time
 from collections.abc import Callable
 from typing import Any, Optional, Sequence, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -271,7 +270,7 @@ class PreviewManager:
         if max(h, w) > APP_CONFIG.preview_render_size:
             scale = APP_CONFIG.preview_render_size / max(h, w)
             tw, th = int(w * scale), int(h * scale)
-            arr = ensure_image(cv2.resize(arr, (tw, th), interpolation=cv2.INTER_AREA).astype(np.float32))
+            arr = ensure_image(negpy_core.resize_area(np.ascontiguousarray(arr, dtype=np.float32), (tw, th)))
         logger.debug("preview _try_splash_from_open_raw ok %.3fs for %s", time.perf_counter() - t0, file_path)
         return ensure_image(arr), full_dims
 

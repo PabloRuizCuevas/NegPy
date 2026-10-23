@@ -1255,23 +1255,21 @@ def expand_mask_plane(
     Split from `contrast_mask_ev` so a caller can cache this across slider values: only
     the scalar depends on the gamma. The GPU shader mirrors the bilinear mapping.
     """
+    return _expanded(plane, out_shape, roi, 1.0)
+
+
+def _expanded(
+    plane: Optional[np.ndarray], out_shape: Tuple[int, int], roi: Optional[Tuple[int, int, int, int]], scale: float
+) -> Optional[np.ndarray]:
     if plane is None:
         return None
     h, w = out_shape
-    if roi is None:
-        if plane.shape[:2] != (h, w):
-            plane = negpy_core.resize_linear(np.ascontiguousarray(plane, dtype=np.float32), (w, h))
-        return np.ascontiguousarray(plane, dtype=np.float32)
-
-    y1, y2, x1, x2 = roi
+    y1, y2, x1, x2 = (0, h, 0, w) if roi is None else roi
     y1, x1 = max(0, y1), max(0, x1)
     y2, x2 = min(h, y2), min(w, x2)
     if y2 - y1 < 1 or x2 - x1 < 1:
         return None
-    inner = negpy_core.resize_linear(np.ascontiguousarray(plane, dtype=np.float32), (x2 - x1, y2 - y1))
-    if (y1, x1, y2, x2) == (0, 0, h, w):
-        return np.ascontiguousarray(inner, dtype=np.float32)
-    return np.ascontiguousarray(np.pad(inner, ((y1, h - y2), (x1, w - x2)), mode="edge"), dtype=np.float32)
+    return negpy_core.expand_plane(np.ascontiguousarray(plane, dtype=np.float32), (h, w), (y1, y2, x1, x2), scale)
 
 
 def contrast_mask_scale(gamma: float, density_range: float) -> float:
@@ -1297,10 +1295,7 @@ def contrast_mask_ev(
     """The contrast mask as print-exposure stops, ready to add to the dodge/burn map."""
     if plane is None or abs(gamma) < 1e-6:
         return None
-    expanded = expand_mask_plane(plane, out_shape, roi)
-    if expanded is None:
-        return None
-    return (expanded * contrast_mask_scale(gamma, density_range)).astype(np.float32)
+    return _expanded(plane, out_shape, roi, contrast_mask_scale(gamma, density_range))
 
 
 def cmy_to_density(val: float, log_range: float = 1.0) -> float:

@@ -125,7 +125,41 @@ fn resize_nearest<'py>(
     Ok(out)
 }
 
+/// `expand_mask_plane(plane, (h, w), roi)` times `scale` for a float32 plane and a clamped,
+/// non-empty roi (y1, y2, x1, x2).
+#[pyfunction]
+fn expand_plane<'py>(
+    py: Python<'py>,
+    plane: PyReadonlyArrayDyn<'py, f32>,
+    out_shape: (usize, usize),
+    roi: (usize, usize, usize, usize),
+    scale: f32,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let [ph, pw] = plane.shape()[..] else {
+        return Err(PyValueError::new_err("expand_plane needs a 2-D plane"));
+    };
+    let src = plane
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("expand_plane needs a contiguous plane"))?;
+    let (h, w) = out_shape;
+    let out = PyArrayDyn::<f32>::zeros(py, vec![h, w], false);
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        super::detach(py, dst.len(), || {
+            resize::expand_plane(src, (ph, pw), (h, w), roi, scale, dst)
+        })
+        .ok_or_else(|| {
+            PyValueError::new_err("expand_plane needs a non-empty roi inside the output")
+        })?;
+    }
+    Ok(out)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(expand_plane, m)?)?;
     m.add_function(wrap_pyfunction!(resize_nearest, m)?)?;
     m.add_function(wrap_pyfunction!(resize_area, m)?)?;
     m.add_function(wrap_pyfunction!(resize_linear, m)?)

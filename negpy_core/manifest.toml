@@ -1361,6 +1361,12 @@ status = "ported"
 calls = ["negpy_core.rasterise_mask"]
 depends = []
 
+["features/process/capture_color.py::apply_camera_matrix"]
+phase = 4
+status = "todo"
+calls = ["negpy_core.matmul_3x3"]
+depends = []
+
 ["features/process/capture_color.py::lightbox_level"]
 phase = 4
 status = "ported"
@@ -1945,15 +1951,17 @@ depends = []
 
 ["features/cyanotype/processor.py::CyanotypeProcessor.process"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "orchestration"
 
 ["features/exposure/densitometer.py::compute_reading"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "one pixel"
 
 ["features/exposure/logic.py::_apply_print_curve_kernel"]
 phase = 6
@@ -1966,6 +1974,13 @@ phase = 6
 status = "ported"
 calls = ["numba"]
 depends = []
+
+["features/exposure/logic.py::_expanded"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.expand_plane"]
+depends = []
+note = "negpy_core.expand_plane"
 
 ["features/exposure/logic.py::_softplus"]
 phase = 6
@@ -1982,15 +1997,17 @@ depends = []
 
 ["features/exposure/logic.py::contrast_mask_ev"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = []
-depends = ["expand_mask_plane"]
+depends = ["_expanded"]
+note = "negpy_core.expand_plane"
 
 ["features/exposure/logic.py::expand_mask_plane"]
 phase = 6
-status = "todo"
-calls = ["negpy_core.resize_linear"]
-depends = []
+status = "ported"
+calls = []
+depends = ["_expanded"]
+note = "negpy_core.expand_plane"
 
 ["features/exposure/logic.py::plane_taps"]
 phase = 6
@@ -2000,9 +2017,10 @@ depends = []
 
 ["features/exposure/logic.py::print_curve_output"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "chart samples"
 
 ["features/exposure/logic.py::quadratic_core"]
 phase = 6
@@ -2018,87 +2036,101 @@ depends = []
 
 ["features/exposure/placement.py::_pick_knee"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["predicted_zone"]
+note = "scalar solver"
 
 ["features/exposure/placement.py::_solve_density"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["predicted_zone"]
+note = "scalar solver"
 
 ["features/exposure/placement.py::_solve_density.residual"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["predicted_zone"]
+note = "scalar solver"
 
 ["features/exposure/placement.py::_solve_grade_and_density"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_solve_density", "predicted_zone"]
+note = "scalar solver"
 
 ["features/exposure/placement.py::_solve_grade_and_density.light_residual"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_solve_density", "predicted_zone"]
+note = "scalar solver"
 
 ["features/exposure/placement.py::_solve_knee_field"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["predicted_zone"]
+note = "scalar solver"
 
 ["features/exposure/placement.py::_solve_knee_field.residual"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["predicted_zone"]
+note = "scalar solver"
 
 ["features/exposure/placement.py::_solve_with_knee"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_pick_knee", "_solve_grade_and_density", "_solve_knee_field", "predicted_zone"]
+note = "scalar solver"
 
 ["features/exposure/placement.py::_zones_of"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "scalar solver"
 
 ["features/exposure/placement.py::key_edges"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_zones_of"]
+note = "scalar solver"
 
 ["features/exposure/placement.py::limited_mask_params"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["key_edges"]
+note = "scalar solver"
 
 ["features/exposure/placement.py::predicted_zone"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_zones_of"]
+note = "scalar solver"
 
 ["features/exposure/placement.py::solve_placement"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_solve_density", "_solve_grade_and_density", "_solve_with_knee", "predicted_zone"]
+note = "scalar solver"
 
 ["features/exposure/print_lut.py::lut_black_luminance"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["tetra_lookup"]
+note = "one color"
 
 ["features/exposure/print_lut.py::tetra_lookup"]
 phase = 6
@@ -2108,33 +2140,39 @@ depends = []
 
 ["features/exposure/processor.py::NormalizationProcessor.process"]
 phase = 6
-status = "todo"
-calls = []
+status = "ported"
+compare = "abs=2e-6"
+calls = ["negpy_core.log_density_open"]
 depends = []
+note = "negpy_core.log_density_open"
 
 ["features/exposure/processor.py::NormalizationProcessor.process.analyze_base"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "orchestration"
 
 ["features/exposure/processor.py::PhotometricProcessor._build_local_maps"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "calls the Rust local maps"
 
 ["features/exposure/processor.py::PhotometricProcessor._process_flat"]
 phase = 6
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.gray_to_rgb"]
 depends = []
+note = "negpy_core.gray_to_rgb"
 
 ["features/exposure/processor.py::PhotometricProcessor.process"]
 phase = 6
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.add", "negpy_core.channel_any", "negpy_core.extract_channel", "negpy_core.gray_to_rgb"]
 depends = []
+note = "negpy_core gray_to_rgb, extract_channel, add, channel_any"
 
 ["features/finish/logic.py::_carrier_block"]
 phase = 6
@@ -2145,9 +2183,10 @@ depends = ["carrier_profiles"]
 
 ["features/finish/logic.py::_filed_edge"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = ["np.cumsum"]
 depends = []
+note = "one cached 1-D profile set"
 
 ["features/finish/logic.py::apply_carrier"]
 phase = 6
@@ -2158,27 +2197,31 @@ depends = ["carrier_profiles"]
 
 ["features/finish/logic.py::carrier_profiles"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_filed_edge"]
+note = "one cached 1-D profile set"
 
 ["features/finish/processor.py::FinishProcessor.process"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "orchestration"
 
 ["features/finish/processor.py::rebate_tone"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "one 1-D strip"
 
 ["features/lab/logic.py::_saturation_block"]
 phase = 6
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.clip_unit"]
 depends = []
+note = "negpy_core Lab kernels, clip_unit"
 
 ["features/lab/logic.py::_usm_sharpening_block"]
 phase = 6
@@ -2206,15 +2249,17 @@ depends = []
 
 ["features/lab/logic.py::apply_resize_sharpening"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_usm_sharpening_block"]
+note = "negpy_core decode, usm, encode"
 
 ["features/lab/logic.py::apply_resize_sharpening.block"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_usm_sharpening_block"]
+note = "negpy_core decode, usm, encode"
 
 ["features/lab/logic.py::apply_rl_sharpening"]
 phase = 6
@@ -2225,9 +2270,10 @@ depends = []
 
 ["features/lab/logic.py::apply_saturation"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_saturation_block"]
+note = "row-block orchestration"
 
 ["features/lab/logic.py::apply_usm_sharpening"]
 phase = 6
@@ -2237,9 +2283,10 @@ depends = ["_usm_sharpening_block"]
 
 ["features/lab/processor.py::PhotoLabProcessor.process"]
 phase = 6
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.clip01"]
 depends = []
+note = "negpy_core.clip01"
 
 ["features/lith/logic.py::apply_lith"]
 phase = 6
@@ -2250,9 +2297,10 @@ depends = []
 
 ["features/lith/processor.py::LithProcessor.process"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "orchestration"
 
 ["features/sabattier/logic.py::apply_sabattier"]
 phase = 6
@@ -2263,9 +2311,10 @@ depends = []
 
 ["features/sabattier/processor.py::SabattierProcessor.process"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "orchestration"
 
 ["features/toning/logic.py::_apply_chemical_toning_jit"]
 phase = 6
@@ -2287,15 +2336,18 @@ depends = []
 
 ["features/toning/processor.py::ToningProcessor.process"]
 phase = 6
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "orchestration"
 
 ["features/transparency/processor.py::TransparencyBaseProcessor.process"]
 phase = 6
-status = "todo"
-calls = []
+status = "ported"
+compare = "abs=2e-6"
+calls = ["negpy_core.log_density_open", "negpy_core.nan_to_num"]
 depends = []
+note = "negpy_core nan_to_num, matmul_3x3, log_density_open"
 
 ["services/rendering/gpu_engine.py::GPUEngine._process_tiled"]
 phase = 6
@@ -2305,63 +2357,73 @@ depends = ["_downsample_for_analysis"]
 
 ["services/rendering/gpu_engine.py::_downsample_for_analysis"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = ["negpy_core.resize_area"]
 depends = []
+note = "negpy_core.resize_area"
 
 ["services/rendering/image_processor.py::ImageProcessor.render_display_array"]
 phase = 6
-status = "todo"
-calls = ["cv2.resize"]
+status = "ported"
+calls = ["negpy_core.resize_area"]
 depends = ["_downsample_to_long_edge"]
+note = "negpy_core.resize_area"
 
 ["services/rendering/image_processor.py::_downsample_to_long_edge"]
 phase = 6
-status = "todo"
-calls = ["cv2.resize"]
+status = "ported"
+calls = ["negpy_core.resize_area"]
 depends = []
+note = "negpy_core.resize_area"
 
 ["services/rendering/image_processor.py::_resize_mask"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = ["negpy_core.resize_nearest"]
 depends = []
+note = "negpy_core.resize_nearest"
 
 ["services/rendering/preview_manager.py::PreviewManager._load_from_open_raw"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = ["negpy_core.resize_area"]
 depends = []
+note = "negpy_core.resize_area"
 
 ["services/rendering/preview_manager.py::PreviewManager._try_splash_from_open_raw"]
 phase = 6
-status = "todo"
-calls = ["cv2.resize"]
+status = "ported"
+calls = ["negpy_core.resize_area"]
 depends = []
+note = "negpy_core.resize_area"
 
 ["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_hdr"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = ["negpy_core.resize_area"]
 depends = ["_load"]
+note = "negpy_core.resize_area"
 
 ["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_hdr._load"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = ["negpy_core.resize_area"]
 depends = []
+note = "negpy_core.resize_area"
 
 ["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_rgb"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = ["negpy_core.resize_area"]
 depends = ["_match"]
+note = "negpy_core.resize_area"
 
 ["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_rgb._match"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = ["negpy_core.resize_area"]
 depends = []
+note = "negpy_core.resize_area"
 
 ["desktop/controller.py::AppController._paint_flatfield_peek"]
 phase = 7

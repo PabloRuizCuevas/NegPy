@@ -271,7 +271,78 @@ fn extract_channel<'py>(
     })
 }
 
+/// `np.stack([lum, lum, lum], axis=-1)` of a float32 plane.
+#[pyfunction]
+fn gray_to_rgb<'py>(
+    py: Python<'py>,
+    lum: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let mut shape = lum.shape().to_vec();
+    shape.push(3);
+    let src = contiguous(&lum)?;
+    filled(py, &shape, "float32", |d| convert::gray_to_rgb(src, d))
+}
+
+/// `a + b` of two float32 arrays of one shape.
+#[pyfunction]
+fn add<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArrayDyn<'py, f32>,
+    b: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    if a.shape() != b.shape() {
+        return Err(PyValueError::new_err("needs arrays of one shape"));
+    }
+    let (sa, sb) = (contiguous(&a)?, contiguous(&b)?);
+    filled(py, a.shape(), "float32", |d| convert::add(sa, sb, d))
+}
+
+/// `img[..., c].any()` of an HxWxC float32 image.
+#[pyfunction]
+fn channel_any(py: Python<'_>, img: PyReadonlyArrayDyn<'_, f32>, c: usize) -> PyResult<bool> {
+    let [_, _, cn] = img.shape()[..] else {
+        return Err(PyValueError::new_err("channel_any needs an HxWxC array"));
+    };
+    if c >= cn {
+        return Err(PyValueError::new_err("channel out of range"));
+    }
+    let src = contiguous(&img)?;
+    Ok(super::detach(py, src.len(), || {
+        convert::channel_any(src, cn, c)
+    }))
+}
+
+/// `np.clip(img, 0, 1)` of a float32 array, as a new array.
+#[pyfunction]
+fn clip01<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let src = contiguous(&img)?;
+    filled(py, img.shape(), "float32", |d| convert::clip_unit(src, d))
+}
+
+/// `np.nan_to_num(img, nan=nan, posinf=posinf, neginf=neginf)` of a float32 array.
+#[pyfunction]
+fn nan_to_num<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    nan: f32,
+    posinf: f32,
+    neginf: f32,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let src = contiguous(&img)?;
+    filled(py, img.shape(), "float32", |d| {
+        convert::nan_to_num(src, d, (nan, posinf, neginf))
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(nan_to_num, m)?)?;
+    m.add_function(wrap_pyfunction!(gray_to_rgb, m)?)?;
+    m.add_function(wrap_pyfunction!(add, m)?)?;
+    m.add_function(wrap_pyfunction!(channel_any, m)?)?;
+    m.add_function(wrap_pyfunction!(clip01, m)?)?;
     m.add_function(wrap_pyfunction!(mean_channels, m)?)?;
     m.add_function(wrap_pyfunction!(pick_channels, m)?)?;
     m.add_function(wrap_pyfunction!(extract_channel, m)?)?;

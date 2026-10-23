@@ -430,6 +430,32 @@ fn accumulate_any(
     }
 }
 
+/// `expand_mask_plane` times `scale`: a ph x pw plane resized bilinearly onto rows y1..y2 and
+/// columns x1..x2 of an oh x ow plane, the edges replicated outside, each value times `scale`
+/// in float32.
+pub fn expand_plane(
+    plane: &[f32],
+    (ph, pw): (usize, usize),
+    (oh, ow): (usize, usize),
+    (y1, y2, x1, x2): (usize, usize, usize, usize),
+    scale: f32,
+    dst: &mut [f32],
+) -> Option<()> {
+    let (ih, iw) = (y2.checked_sub(y1)?, x2.checked_sub(x1)?);
+    if ih == 0 || iw == 0 || y2 > oh || x2 > ow || dst.len() != oh * ow {
+        return None;
+    }
+    let mut inner = vec![0f32; ih * iw];
+    resize_linear(plane, (ph, pw, 1), (ih, iw), false, &mut inner)?;
+    dst.par_chunks_mut(ow).enumerate().for_each(|(y, row)| {
+        let src = &inner[(y.clamp(y1, y2 - 1) - y1) * iw..][..iw];
+        for (x, d) in row.iter_mut().enumerate() {
+            *d = src[x.clamp(x1, x2 - 1) - x1] * scale;
+        }
+    });
+    Some(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

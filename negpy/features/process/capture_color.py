@@ -107,8 +107,7 @@ def apply_camera_matrix(img: np.ndarray, matrix: Optional[np.ndarray]) -> np.nda
     """
     if matrix is None:
         return img
-    flat = img.reshape(-1, 3).astype(np.float32, copy=False)
-    return (flat @ np.asarray(matrix, dtype=np.float32).T).reshape(img.shape)
+    return negpy_core.matmul_3x3(np.ascontiguousarray(img, dtype=np.float32), np.asarray(matrix, dtype=np.float32))
 
 
 # Percentile of the whole frame taken as the light, and where it lands in the working

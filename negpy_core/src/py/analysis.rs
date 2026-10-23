@@ -752,9 +752,29 @@ fn diffusion_tail<'py>(
     })
 }
 
+/// The normalization processors' open-ended log density of a float32 image, any shape.
+#[pyfunction]
+fn log_density_open<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let shape = img.shape().to_vec();
+    let data = slice(&img)?;
+    let out = empty::<f32>(py, &shape, "float32")?;
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        super::detach(py, dst.len(), || analysis::log_density_open(data, dst));
+    }
+    Ok(out)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(luminance, m)?)?;
     m.add_function(wrap_pyfunction!(to_log_density, m)?)?;
+    m.add_function(wrap_pyfunction!(log_density_open, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_to_uint8, m)?)?;
     m.add_function(wrap_pyfunction!(detection_luma, m)?)?;
     m.add_function(wrap_pyfunction!(base_blocks, m)?)?;
