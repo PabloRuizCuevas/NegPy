@@ -43,7 +43,7 @@ class AppConfig:
     override_toml_path: str = ""
     max_texture_size: int | None = None
     force_hq_preview: bool | None = None
-    # Multi-core CPU rendering. None = the platform default, on everywhere except macOS.
+    # Multi-core CPU rendering. None = the default, on.
     # True/False = an explicit override.toml choice.
     cpu_parallel: bool | None = None
     # Smaller tiles and no readback pipelining in the tiled export path, at the cost of

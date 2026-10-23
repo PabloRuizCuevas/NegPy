@@ -265,8 +265,7 @@ def main() -> None:
         if override_cfg.low_vram_export_tiling is None:
             APP_CONFIG.low_vram_export_tiling = bool(repo.get_global_setting("low_vram_export_tiling", False))
 
-        # Multi-core CPU rendering: override.toml, then the saved setting, then the platform
-        # default (off on macOS).
+        # Multi-core CPU rendering: override.toml, then the saved setting, then the default (on).
         stored_parallel = repo.get_global_setting("cpu_parallel", None)
         configure_cpu_parallel(resolve_cpu_parallel(APP_CONFIG.cpu_parallel, None if stored_parallel is None else bool(stored_parallel)))
 

@@ -17,12 +17,6 @@ def _restore_flag():
     par.set_parallel_enabled(before)
 
 
-def test_platform_policy():
-    assert default_cpu_parallel("darwin") is False
-    assert default_cpu_parallel("win32") is True
-    assert default_cpu_parallel("linux") is True
-
-
 def test_print_curve_parity_serial_vs_parallel():
     from negpy.features.exposure.logic import apply_characteristic_curve
 

@@ -53,9 +53,8 @@ qt_platform = "auto"
 # Override HQ preview on startup. Uncomment to force a value.
 # force_hq_preview = false
 
-# Multi-core CPU rendering kernels. Defaults to true except on macOS, where it
-# defaults to false while crash reports are investigated. Uncomment to force.
-# cpu_parallel = true
+# Multi-core CPU rendering. Defaults to true. Uncomment to force.
+# cpu_parallel = false
 
 # Smaller tiles and no readback pipelining during export, at some cost to export speed.
 # Off by default. Turn on if exporting crashes on your GPU (typically an older or
