@@ -872,14 +872,14 @@ depends = []
 ["features/geometry/skew.py::_fit_side"]
 phase = 2
 status = "todo"
-calls = ["np.mean", "np.median"]
-depends = ["_profile_peaks", "_ransac_line", "sample"]
+calls = ["negpy_core.skew_sample", "np.mean", "np.median"]
+depends = ["_ransac_line", "sample"]
 
 ["features/geometry/skew.py::_fit_side.sample"]
 phase = 2
 status = "todo"
-calls = []
-depends = ["_profile_peaks"]
+calls = ["negpy_core.skew_sample"]
+depends = []
 
 ["features/geometry/skew.py::_frame_lines"]
 phase = 2
@@ -910,12 +910,6 @@ phase = 2
 status = "todo"
 calls = ["negpy_core.morphology_ex", "negpy_core.sobel", "np.percentile"]
 depends = ["_fit_side"]
-
-["features/geometry/skew.py::_profile_peaks"]
-phase = 2
-status = "todo"
-calls = ["negpy_core.gaussian_blur", "np.median"]
-depends = []
 
 ["features/geometry/skew.py::_ransac_line"]
 phase = 2

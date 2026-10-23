@@ -18,6 +18,7 @@ pub mod print_curve;
 pub mod resize;
 pub mod retouch;
 pub mod sensor;
+pub mod skew;
 pub mod stats;
 pub mod toning;
 pub mod warp;

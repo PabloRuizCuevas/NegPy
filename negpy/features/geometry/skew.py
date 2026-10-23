@@ -118,22 +118,6 @@ def _coarse_angles(lum: np.ndarray) -> list[float]:
     return modes
 
 
-def _profile_peaks(profile: np.ndarray) -> np.ndarray:
-    """Subpixel positions of the strong gradient steps along one profile."""
-    if profile.size < 5:
-        return np.empty(0)
-    grad = np.abs(np.gradient(negpy_core.gaussian_blur(profile.reshape(-1, 1).astype(np.float32), (1, 0), 0, 1.0).ravel()))
-    peak = float(grad.max())
-    if peak <= 3.0 * float(np.median(grad)) + 1e-6:
-        return np.empty(0)
-    i = np.arange(1, grad.size - 1)
-    i = i[(grad[i] >= grad[i - 1]) & (grad[i] > grad[i + 1]) & (grad[i] >= 0.4 * peak)]
-    a, b, c = grad[i - 1], grad[i], grad[i + 1]
-    denom = a - 2 * b + c
-    safe = np.where(np.abs(denom) > 1e-9, denom, 1.0)
-    return i + np.where(np.abs(denom) > 1e-9, 0.5 * (a - c) / safe, 0.0)
-
-
 def _ransac_line(xs: np.ndarray, ys: np.ndarray, expected: float, half: float, span: float) -> np.ndarray | None:
     """The straight run of peaks with the most distinct stations, preferring one near `expected`."""
     if xs.size < 12:
@@ -171,21 +155,11 @@ def _fit_side(lum: np.ndarray, horizontal: bool, at: float, start: float, stop: 
         return None
     stations = np.linspace(start + 0.1 * length, stop - 0.1 * length, int(min(240, max(24, length / 4))))
 
+    plane = np.ascontiguousarray(lum, dtype=np.float32)
+
     def sample(center: np.ndarray, half: float, nearest: bool) -> tuple[np.ndarray, np.ndarray]:
-        xs, ys = [], []
-        for x, c in zip(stations, center):
-            x0 = int(round(x))
-            lo, hi = int(max(0, math.floor(c - half))), int(min(h, math.ceil(c + half) + 1))
-            if hi - lo < 5 or x0 < 1 or x0 > w - 2:
-                continue
-            peaks = _profile_peaks(img[lo:hi, x0 - 1 : x0 + 2].mean(axis=1))
-            if peaks.size == 0:
-                continue
-            if nearest:
-                peaks = peaks[[int(np.argmin(np.abs(peaks - (c - lo))))]]
-            xs.extend([x] * peaks.size)
-            ys.extend(lo + peaks)
-        return np.asarray(xs), np.asarray(ys)
+        """Per station, the gradient steps of the 3-column mean profile within `half` of `center`."""
+        return negpy_core.skew_sample(plane, horizontal, stations, np.ascontiguousarray(center, dtype=np.float64), float(half), nearest)
 
     # Keystone leaves the far end of an edge a degree or two inside the box; a stronger edge
     # outside it (the holder, the next frame) sits past the detector's error.
