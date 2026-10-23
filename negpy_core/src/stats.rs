@@ -54,13 +54,13 @@ fn select_ranks(values: &[f32], ranks: &[usize]) -> Vec<f32> {
             .collect();
     }
 
-    // One histogram per thread-sized block: each costs a megabyte to clear and merge. Four
-    // interleaved u32 lanes, because on a smooth image neighbours share a bucket and one counter
-    // would serialize on its own increments.
+    // One histogram per thread-sized block, and at least a million values per block: each costs a
+    // megabyte to clear and merge. Four interleaved u32 lanes, because on a smooth image
+    // neighbours share a bucket and one counter would serialize on its own increments.
     let block = values
         .len()
         .div_ceil(rayon::current_num_threads())
-        .max(CHUNK);
+        .max(1 << 20);
     let hist = values
         .par_chunks(block)
         .map(|chunk| {

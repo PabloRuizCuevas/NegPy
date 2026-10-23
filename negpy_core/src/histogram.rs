@@ -189,16 +189,18 @@ fn count_rows<T: Copy + Send + Sync>(
     n: usize,
     count: impl Fn(&[T], &mut [u32]) + Sync,
 ) -> Vec<f64> {
-    s.row_starts()
-        .par_iter()
-        .fold(
-            || (vec![0u32; LANES * n], Vec::new()),
-            |(mut counts, mut buf), &y| {
+    // One chunk of rows per thread: rayon's fold makes an accumulator per split job, and each
+    // holds lanes of counters for every cell.
+    let rows = s.row_starts();
+    let chunk = rows.len().div_ceil(rayon::current_num_threads()).max(1);
+    rows.par_chunks(chunk)
+        .map(|ys| {
+            let (mut counts, mut buf) = (vec![0u32; LANES * n], Vec::new());
+            for &y in ys {
                 count(s.rgb_row(y, &mut buf), &mut counts);
-                (counts, buf)
-            },
-        )
-        .map(|(counts, _)| fold_lanes(&counts))
+            }
+            fold_lanes(&counts)
+        })
         .reduce(
             || vec![0u64; n],
             |mut a, b| {

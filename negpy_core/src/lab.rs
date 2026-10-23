@@ -253,19 +253,21 @@ const CLAHE_BINS: usize = 256;
 fn clahe_cdfs(bins: &[u8], (h, w): (usize, usize), clip_limit: f32) -> Vec<[f32; CLAHE_BINS]> {
     let (tsy, tsx) = (h.div_ceil(CLAHE_GRID), w.div_ceil(CLAHE_GRID));
     let tiles = CLAHE_GRID * CLAHE_GRID;
+    // One chunk of rows per thread: rayon's fold would make a histogram per split job.
+    let chunk = h.div_ceil(rayon::current_num_threads()).max(1);
     let hist = bins
-        .par_chunks(w)
+        .par_chunks(chunk * w)
         .enumerate()
-        .fold(
-            || vec![0i64; tiles * CLAHE_BINS],
-            |mut acc, (y, row)| {
-                let base = (y / tsy) * CLAHE_GRID;
+        .map(|(ci, block)| {
+            let mut acc = vec![0i64; tiles * CLAHE_BINS];
+            for (dy, row) in block.chunks(w).enumerate() {
+                let base = ((ci * chunk + dy) / tsy) * CLAHE_GRID;
                 for (x, &b) in row.iter().enumerate() {
                     acc[(base + x / tsx) * CLAHE_BINS + b as usize] += 1;
                 }
-                acc
-            },
-        )
+            }
+            acc
+        })
         .reduce(
             || vec![0i64; tiles * CLAHE_BINS],
             |mut a, b| {
