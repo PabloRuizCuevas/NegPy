@@ -455,6 +455,24 @@ pub fn morphology_mask<T: Pixel>(
     Some(())
 }
 
+/// `cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (w, h))`: `h` rows of `w` cells.
+pub fn ellipse_kernel(w: usize, h: usize) -> Vec<u8> {
+    let (r, c) = ((h / 2) as i64, (w / 2) as i64);
+    let inv_r2 = if r > 0 { 1.0 / (r * r) as f64 } else { 0.0 };
+    let mut out = vec![0u8; w * h];
+    for (i, row) in out.chunks_mut(w.max(1)).enumerate() {
+        let dy = i as i64 - r;
+        if dy.abs() > r {
+            continue;
+        }
+        // OpenCV's saturate_cast<int> rounds half to even.
+        let dx = (c as f64 * (((r * r - dy * dy) as f64) * inv_r2).sqrt()).round_ties_even() as i64;
+        let (j1, j2) = ((c - dx).max(0) as usize, ((c + dx + 1) as usize).min(w));
+        row[j1..j2].fill(1);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,5 +520,19 @@ mod tests {
         )
         .unwrap();
         assert!(dst.iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
+    fn ellipse_matches_opencv() {
+        assert_eq!(ellipse_kernel(1, 1), vec![1]);
+        #[rustfmt::skip]
+        let want = vec![
+            0, 0, 1, 0, 0,
+            1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1,
+            0, 0, 1, 0, 0,
+        ];
+        assert_eq!(ellipse_kernel(5, 5), want);
     }
 }

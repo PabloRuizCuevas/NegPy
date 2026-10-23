@@ -15,6 +15,7 @@ pub mod hdr;
 pub mod histogram;
 pub mod lab;
 pub mod lens;
+pub mod loaders;
 pub mod meter;
 pub mod morph;
 pub mod print_curve;

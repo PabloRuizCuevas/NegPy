@@ -148,6 +148,11 @@ fn gaussian_kernel(n: usize, sigma: f64) -> Vec<f32> {
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // OpenCV's border codes, so callers need no cv2 import.
+    m.add("BORDER_CONSTANT", 0)?;
+    m.add("BORDER_REPLICATE", 1)?;
+    m.add("BORDER_REFLECT", 2)?;
+    m.add("BORDER_REFLECT_101", 4)?;
     m.add_function(wrap_pyfunction!(box_filter, m)?)?;
     m.add_function(wrap_pyfunction!(gaussian_blur, m)?)?;
     m.add_function(wrap_pyfunction!(sep_filter2d, m)?)?;

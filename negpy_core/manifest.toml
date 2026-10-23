@@ -1019,21 +1019,24 @@ note = "orchestration of negpy_core kernels"
 
 ["infrastructure/loaders/logluv.py::normalize_linear"]
 phase = 3
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.normalize_linear"]
 depends = []
+note = "negpy_core::loaders::normalize_linear"
 
 ["infrastructure/loaders/pakon_loader.py::PakonLoader._looks_interleaved"]
 phase = 3
-status = "todo"
+status = "stays"
 calls = ["np.mean"]
 depends = []
+note = "6000-sample layout probe"
 
 ["infrastructure/loaders/rawpy_loader.py::_stream_linearraw_preview"]
 phase = 3
-status = "todo"
-calls = ["cv2.erode", "cv2.getStructuringElement", "cv2.resize"]
+status = "ported"
+calls = ["negpy_core.ellipse_kernel", "negpy_core.morphology_ex", "negpy_core.resize_area"]
 depends = []
+note = "negpy_core resize_area, morphology_ex, ellipse_kernel"
 
 ["kernel/image/logic.py::_float_to_uint16_luma_jit"]
 phase = 3

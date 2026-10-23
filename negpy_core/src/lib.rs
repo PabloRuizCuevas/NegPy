@@ -18,6 +18,7 @@ pub mod histogram;
 pub mod inpaint;
 pub mod lab;
 pub mod lens;
+pub mod loaders;
 pub mod lsd;
 pub mod mathf;
 pub mod median;
@@ -59,6 +60,7 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::resize::register(m)?;
     py::filter::register(m)?;
     py::morph::register(m)?;
+    py::loaders::register(m)?;
     py::print_curve::register(m)?;
     py::gray::register(m)?;
     py::contours::register(m)?;

@@ -84,6 +84,31 @@ fn morphology_ex<'py>(
     }
 }
 
+/// `cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (w, h))` as an h x w uint8 array.
+#[pyfunction]
+fn ellipse_kernel<'py>(
+    py: Python<'py>,
+    ksize: (usize, usize),
+) -> PyResult<Bound<'py, numpy::PyArray2<u8>>> {
+    let (w, h) = ksize;
+    if w == 0 || h == 0 {
+        return Err(PyValueError::new_err("kernel size must be positive"));
+    }
+    numpy::PyArray1::from_vec(py, morph::ellipse_kernel(w, h)).reshape([h, w])
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(morphology_ex, m)?)
+    for (name, code) in [
+        ("MORPH_ERODE", 0),
+        ("MORPH_DILATE", 1),
+        ("MORPH_OPEN", 2),
+        ("MORPH_CLOSE", 3),
+        ("MORPH_GRADIENT", 4),
+        ("MORPH_TOPHAT", 5),
+        ("MORPH_BLACKHAT", 6),
+    ] {
+        m.add(name, code)?;
+    }
+    m.add_function(wrap_pyfunction!(morphology_ex, m)?)?;
+    m.add_function(wrap_pyfunction!(ellipse_kernel, m)?)
 }
