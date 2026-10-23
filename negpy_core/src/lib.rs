@@ -34,6 +34,7 @@ pub mod stats;
 pub mod stitch;
 pub mod toning;
 pub mod warp;
+pub mod zones;
 
 /// `f(dst[i], src[i])` for every i, in parallel blocks: a rayon task per element costs more than
 /// the work. Pass a `move` closure: a capture read through a reference may alias `dst`, so the
@@ -80,5 +81,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::stitch::register(m)?;
     py::skew::register(m)?;
     py::register::register(m)?;
-    py::autocrop::register(m)
+    py::autocrop::register(m)?;
+    py::zones::register(m)
 }

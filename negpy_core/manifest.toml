@@ -11,19 +11,20 @@ note = "negpy_core::stats::percentiles"
 
 ["features/exposure/analysis.py::_mid_gray_encoded"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "scalar or roll-size math"
 
 ["features/exposure/analysis.py::_scope_lookup"]
 phase = 2
-status = "todo"
-calls = ["np.bincount"]
+status = "ported"
+calls = ["negpy_core.scope_lookup"]
 depends = []
 
 ["features/exposure/analysis.py::_waveform"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["negpy_core.waveform"]
 depends = []
 
@@ -53,14 +54,15 @@ depends = []
 
 ["features/exposure/analysis.py::encoded_of_zone"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_mid_gray_encoded"]
+note = "scalar or roll-size math"
 
 ["features/exposure/analysis.py::loupe_acutance"]
 phase = 2
-status = "todo"
-calls = ["cv2.Laplacian", "np.mean"]
+status = "ported"
+calls = ["negpy_core.loupe_acutance"]
 depends = []
 
 ["features/exposure/analysis.py::output_histogram"]
@@ -71,9 +73,10 @@ depends = []
 
 ["features/exposure/analysis.py::paper_grid_mosaic"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = ["negpy_core.resize_area"]
 depends = []
+note = "orchestration of negpy_core kernels"
 
 ["features/exposure/analysis.py::scan_full_scale_columns"]
 phase = 2
@@ -83,14 +86,15 @@ depends = []
 
 ["features/exposure/analysis.py::scope_point"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "scalar or roll-size math"
 
 ["features/exposure/analysis.py::vectorscope_density"]
 phase = 2
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.vectorscope_density"]
 depends = ["_scope_lookup"]
 
 ["features/exposure/analysis.py::vectorscope_histogram"]
@@ -119,44 +123,46 @@ depends = ["_waveform"]
 
 ["features/exposure/analysis.py::zone_anchors"]
 phase = 2
-status = "todo"
-calls = ["cv2.connectedComponentsWithStats", "cv2.distanceTransform", "np.unique"]
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.zone_anchors"]
 depends = []
 
 ["features/exposure/analysis.py::zone_field"]
 phase = 2
-status = "todo"
-calls = ["cv2.medianBlur", "negpy_core.gaussian_blur", "negpy_core.resize_area"]
-depends = ["zone_of_encoded"]
+status = "ported"
+calls = ["negpy_core.zone_field"]
+depends = ["_mid_gray_encoded"]
 
 ["features/exposure/analysis.py::zone_grid"]
 phase = 2
-status = "todo"
-calls = ["negpy_core.resize_area"]
-depends = ["zone_of_encoded"]
+status = "ported"
+calls = ["negpy_core.zone_grid"]
+depends = ["_mid_gray_encoded"]
 
 ["features/exposure/analysis.py::zone_occupancy"]
 phase = 2
-status = "todo"
-calls = []
-depends = ["zone_of_encoded"]
+status = "ported"
+calls = ["negpy_core.zone_occupancy"]
+depends = ["_mid_gray_encoded"]
 
 ["features/exposure/analysis.py::zone_of_encoded"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_mid_gray_encoded"]
+note = "scalar or roll-size math"
 
 ["features/exposure/analysis.py::zone_region_labels"]
 phase = 2
-status = "todo"
-calls = ["cv2.connectedComponentsWithStats", "np.unique"]
+status = "ported"
+calls = ["negpy_core.zone_region_labels"]
 depends = []
 
 ["features/exposure/analysis.py::zone_shares"]
 phase = 2
-status = "todo"
-calls = ["np.bincount"]
+status = "ported"
+calls = ["negpy_core.zone_shares"]
 depends = []
 
 ["features/exposure/normalization.py::_base_blocks"]

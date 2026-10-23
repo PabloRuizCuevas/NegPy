@@ -12,7 +12,6 @@ from negpy.domain.models import WorkspaceConfig
 from negpy.features.exposure.analysis import (
     SCOPE_CHROMA_BINS,
     SCOPE_HUE_BINS,
-    _scope_bins,
     scope_chroma,
     scope_radius,
     vectorscope_density,
@@ -21,6 +20,14 @@ from negpy.features.exposure.analysis import (
 from negpy.features.process.models import ProcessMode
 from negpy.kernel.image.logic import rgb_to_lab_working, working_oetf_decode
 from negpy.infrastructure.gpu.device import GPUDevice
+
+
+def _scope_bins(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """The NumPy polar binning vectorscope_histogram copies."""
+    hue = np.floor((np.arctan2(b, a) + np.pi) / (2 * np.pi) * SCOPE_HUE_BINS).astype(np.int64) % SCOPE_HUE_BINS
+    radius = scope_radius(np.hypot(a, b), log=True)
+    chroma = np.clip(np.floor(radius * SCOPE_CHROMA_BINS), 0, SCOPE_CHROMA_BINS - 1).astype(np.int64)
+    return hue * SCOPE_CHROMA_BINS + chroma
 
 
 def test_counts_match_the_numpy_binning() -> None:

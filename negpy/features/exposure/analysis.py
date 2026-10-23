@@ -3,7 +3,6 @@
 from functools import lru_cache
 from typing import Any, List, Optional, Sequence, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -149,13 +148,6 @@ def scope_chroma(radius: Any, log: bool) -> Any:
     return r * SCOPE_MAX_CHROMA
 
 
-def _scope_bins(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    hue = np.floor((np.arctan2(b, a) + np.pi) / (2 * np.pi) * SCOPE_HUE_BINS).astype(np.int64) % SCOPE_HUE_BINS
-    radius = scope_radius(np.hypot(a, b), log=True)
-    chroma = np.clip(np.floor(radius * SCOPE_CHROMA_BINS), 0, SCOPE_CHROMA_BINS - 1).astype(np.int64)
-    return hue * SCOPE_CHROMA_BINS + chroma
-
-
 def vectorscope_histogram(buffer: Any) -> Optional[np.ndarray]:
     """(SCOPE_HUE_BINS, SCOPE_CHROMA_BINS) a*b* counts of an H×W×3 encoded buffer. CPU
     counterpart of vectorscope.wgsl."""
@@ -188,35 +180,14 @@ def scope_point(rgb: Sequence[float]) -> Tuple[float, float, float]:
 def _scope_lookup(size: int, log: bool) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Polar bin of each display pixel (-1 outside the disc), each bin's pixel count, and for
     the bins no pixel samples (near neutral, finer than a pixel) the flat pixel they fold into."""
-    u = (np.arange(size) + 0.5) / size * 2.0 - 1.0
-    x, y = np.meshgrid(u, u[::-1])
-    radius = np.hypot(x, y)
-    chroma = scope_chroma(np.minimum(radius, 1.0), log)
-    hue = np.arctan2(y, x)
-    idx = _scope_bins(chroma * np.cos(hue), chroma * np.sin(hue))
-    idx[radius > 1.0] = -1
-    area = np.bincount(idx[idx >= 0], minlength=SCOPE_HUE_BINS * SCOPE_CHROMA_BINS).astype(float)
-
-    orphans = np.flatnonzero(area == 0)
-    centre_hue = ((orphans // SCOPE_CHROMA_BINS) + 0.5) / SCOPE_HUE_BINS * 2 * np.pi - np.pi
-    centre_c = scope_chroma(((orphans % SCOPE_CHROMA_BINS) + 0.5) / SCOPE_CHROMA_BINS, log=True)
-    r = np.minimum(scope_radius(centre_c, log), 1.0)
-    col = np.clip(((r * np.cos(centre_hue) + 1.0) / 2.0 * size).astype(np.int64), 0, size - 1)
-    row = np.clip(((1.0 - r * np.sin(centre_hue)) / 2.0 * size).astype(np.int64), 0, size - 1)
-    return idx, area, orphans, row * size + col
+    return negpy_core.scope_lookup(int(size), bool(log))
 
 
 def vectorscope_density(counts: Any, size: int, log: bool) -> np.ndarray:
     """(size, size) pixels per display pixel, +a right and +b up. Each polar bin's count is
     spread over the display pixels it covers, so a bin's on-screen area does not change its brightness."""
-    idx, area, orphans, orphan_px = _scope_lookup(size, log)
-    flat = np.asarray(counts, dtype=float).ravel()
-    out = np.zeros(idx.shape)
-    inside = idx >= 0
-    picked = idx[inside]
-    out[inside] = flat[picked] / np.maximum(area[picked], 1.0)
-    np.add.at(out.reshape(-1), orphan_px, flat[orphans])
-    return out
+    flat = np.ascontiguousarray(np.asarray(counts, dtype=float).ravel())
+    return negpy_core.vectorscope_density(flat, *_scope_lookup(size, log))
 
 
 def output_clip_fractions(bins: np.ndarray) -> Tuple[float, float]:
@@ -258,15 +229,7 @@ def encoded_of_zone(zone: float) -> float:
 def zone_occupancy(l_bins: np.ndarray) -> np.ndarray:
     """Fold display-encoded luma histogram bins into the share of each zone 0..X, rounded to the
     nearest zone as zone_field rounds, so the strip and the Zone Overlay count alike."""
-    l_bins = np.asarray(l_bins, dtype=float)
-    out = np.zeros(ZONE_COUNT + 1)
-    total = float(l_bins.sum())
-    if total <= 0.0:
-        return out
-    centers = (np.arange(l_bins.size) + 0.5) / l_bins.size
-    cells = np.clip(np.rint(np.asarray(zone_of_encoded(centers))), 0, ZONE_COUNT).astype(int)
-    np.add.at(out, cells, l_bins)
-    return out / total
+    return negpy_core.zone_occupancy(np.ascontiguousarray(l_bins, dtype=np.float64).ravel(), _mid_gray_encoded())
 
 
 def zone_warnings(occ: np.ndarray) -> Tuple[bool, bool]:
@@ -311,15 +274,7 @@ def zone_grid(rgb: Any, cells: int = ZONE_GRID_CELLS) -> Optional[np.ndarray]:
     rgb = np.asarray(rgb)
     if rgb.ndim != 3 or rgb.shape[-1] < 3 or min(rgb.shape[:2]) < 2:
         return None
-    h, w = rgb.shape[:2]
-    # Slice first: INTER_AREA straight off a full-res HQ buffer costs ~50 ms.
-    step = max(1, min(h, w) // (4 * cells))
-    small = np.ascontiguousarray(rgb[::step, ::step, :3], dtype=np.float32)
-    scale = cells / max(small.shape[:2])
-    sh, sw = small.shape[:2]
-    small = negpy_core.resize_area(np.ascontiguousarray(small, dtype=np.float32), (max(1, round(sw * scale)), max(1, round(sh * scale))))
-    z = np.nan_to_num(zone_of_encoded(get_luminance(small)))
-    return np.rint(z).astype(np.int32)
+    return negpy_core.zone_grid(np.ascontiguousarray(rgb, dtype=np.float32), int(cells), _mid_gray_encoded())
 
 
 def zone_region_labels(zones: np.ndarray) -> List[Tuple[int, int, int]]:
@@ -328,15 +283,7 @@ def zone_region_labels(zones: np.ndarray) -> List[Tuple[int, int, int]]:
     Anchors are snapped to a cell the region actually owns, so a concave region's numeral
     can't land outside it (its centroid can).
     """
-    out: List[Tuple[int, int, int]] = []
-    for zone in np.unique(zones):
-        count, comp, _, centroids = cv2.connectedComponentsWithStats((zones == zone).astype(np.uint8), connectivity=4)
-        for i in range(1, count):  # 0 is the background (everything not this zone)
-            ys, xs = np.nonzero(comp == i)
-            cx, cy = centroids[i]
-            j = int(np.argmin((xs - cx) ** 2 + (ys - cy) ** 2))
-            out.append((int(xs[j]), int(ys[j]), int(zone)))
-    return out
+    return negpy_core.zone_region_labels(np.ascontiguousarray(zones, dtype=np.int32))
 
 
 ZONE_FIELD_MAX_EDGE = 768  # drawn scaled to the view; finer only sharpens grain
@@ -349,43 +296,19 @@ def zone_field(rgb: Any, max_edge: int = ZONE_FIELD_MAX_EDGE) -> Optional[np.nda
     rgb = np.asarray(rgb)
     if rgb.ndim != 3 or rgb.shape[-1] < 3 or min(rgb.shape[:2]) < 2:
         return None
-    h, w = rgb.shape[:2]
-    # Slice first: INTER_AREA straight off a full-res HQ buffer is slow.
-    step = max(1, max(h, w) // (2 * max_edge))
-    small = np.ascontiguousarray(rgb[::step, ::step, :3], dtype=np.float32)
-    scale = min(1.0, max_edge / max(small.shape[:2]))
-    sh, sw = small.shape[:2]
-    lum = get_luminance(
-        negpy_core.resize_area(np.ascontiguousarray(small, dtype=np.float32), (max(1, round(sw * scale)), max(1, round(sh * scale))))
-    )
-    lum = negpy_core.gaussian_blur(np.ascontiguousarray(lum, dtype=np.float32), (0, 0), 2.0)
-    zones = np.clip(np.rint(np.nan_to_num(zone_of_encoded(lum))), 0, ZONE_COUNT).astype(np.uint8)
-    return cv2.medianBlur(zones, 5)
+    return negpy_core.zone_field(np.ascontiguousarray(rgb, dtype=np.float32), int(max_edge), _mid_gray_encoded())
 
 
 def zone_shares(zones: np.ndarray) -> np.ndarray:
     """Fraction of the frame in each zone 0..10."""
-    return np.bincount(zones.ravel(), minlength=ZONE_COUNT + 1)[: ZONE_COUNT + 1] / max(1, zones.size)
+    return negpy_core.zone_shares(np.ascontiguousarray(zones, dtype=np.uint8))
 
 
 def zone_anchors(zones: np.ndarray, min_share: float = 0.01) -> List[Tuple[int, int, int, float]]:
     """(x, y, zone, inset) per region holding at least `min_share` of the frame, at its most
     interior pixel; `inset` is that pixel's distance to the region's edge. The frame edge
     counts as an edge, so a numeral never sits half off the picture."""
-    out: List[Tuple[int, int, int, float]] = []
-    min_area = min_share * zones.size
-    for zone in np.unique(zones):
-        count, comp, stats, _ = cv2.connectedComponentsWithStats((zones == zone).astype(np.uint8), connectivity=4)
-        for i in range(1, count):  # 0 is the background (everything not this zone)
-            if stats[i, cv2.CC_STAT_AREA] < min_area:
-                continue
-            mask = (comp == i).astype(np.uint8)
-            mask[0, :] = mask[-1, :] = 0
-            mask[:, 0] = mask[:, -1] = 0
-            dist = cv2.distanceTransform(mask, cv2.DIST_L2, 3)
-            y, x = np.unravel_index(int(np.argmax(dist)), dist.shape)
-            out.append((int(x), int(y), int(zone), float(dist[y, x])))
-    return out
+    return negpy_core.zone_anchors(np.ascontiguousarray(zones, dtype=np.uint8), float(min_share))
 
 
 # Absolute ladders, centred on the defaults and inside the sliders' travel (density 0-2,
@@ -612,8 +535,7 @@ def loupe_acutance(patch: Any) -> float:
     patch = np.asarray(patch)
     if patch.ndim != 3 or patch.shape[-1] < 3 or min(patch.shape[:2]) < 3:
         return 0.0
-    lum = get_luminance(np.ascontiguousarray(patch[..., :3], dtype=np.float32))
-    return float(np.sqrt(np.mean(cv2.Laplacian(lum, cv2.CV_32F) ** 2)) * 100.0)
+    return negpy_core.loupe_acutance(np.ascontiguousarray(patch, dtype=np.float32))
 
 
 def density_histogram(normalized_log: np.ndarray, roi: Optional[Tuple[int, int, int, int]] = None) -> np.ndarray:

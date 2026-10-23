@@ -27,6 +27,7 @@ pub mod stats;
 pub mod stitch;
 pub mod toning;
 pub mod warp;
+pub mod zones;
 
 use pyo3::Python;
 use pyo3::marker::Ungil;
