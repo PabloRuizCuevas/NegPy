@@ -601,3 +601,275 @@ mod tests {
         assert_eq!(mask.iter().filter(|&&v| v == 1).count(), 25);
     }
 }
+
+#[derive(Clone, Copy)]
+struct PolyEdge {
+    y0: i64,
+    y1: i64,
+    x: i64,
+    dx: i64,
+    next: usize,
+}
+
+/// `cv2.fillPoly(mask, [pts], color)` for one contour (8-connected outline, shift 0): OpenCV's
+/// CollectPolyEdges and FillEdgeCollection, the active edge list kept as indices.
+pub fn fill_poly(mask: &mut [u8], w: usize, h: usize, v: &[(i64, i64)], color: u8) {
+    const NONE: usize = usize::MAX;
+    let count = v.len();
+    if count == 0 {
+        return;
+    }
+    let mut edges: Vec<PolyEdge> = Vec::with_capacity(count + 1);
+    let mut pt0 = (v[count - 1].0 << XY_SHIFT, v[count - 1].1);
+    for &p in v {
+        let pt1 = (p.0 << XY_SHIFT, p.1);
+        let (mut pt0c, mut pt1c) = (pt0, pt1);
+        let mut t0 = ((pt0.0 + (XY_ONE >> 1)) >> XY_SHIFT, pt0.1);
+        let mut t1 = ((pt1.0 + (XY_ONE >> 1)) >> XY_SHIFT, pt1.1);
+        draw_line(mask, w, h, t0, t1, color);
+        let out = |q: (i64, i64)| q.0 < 0 || q.0 >= w as i64 || q.1 < 0 || q.1 >= h as i64;
+        if out(t0) || out(t1) {
+            clip_line(w as i64, h as i64, &mut t0, &mut t1);
+            if t0.1 != t1.1 {
+                pt0c.1 = t0.1;
+                pt1c.1 = t1.1;
+            }
+        }
+        pt0c.0 = t0.0 << XY_SHIFT;
+        pt1c.0 = t1.0 << XY_SHIFT;
+        if pt0.1 != pt1.1 {
+            let dx = (pt1c.0 - pt0c.0) / (pt1c.1 - pt0c.1);
+            let (y0, y1, x) = if pt0.1 < pt1.1 {
+                (pt0.1, pt1.1, pt0c.0 + (pt0.1 - pt0c.1) * dx)
+            } else {
+                (pt1.1, pt0.1, pt1c.0 + (pt1.1 - pt1c.1) * dx)
+            };
+            edges.push(PolyEdge {
+                y0,
+                y1,
+                x,
+                dx,
+                next: NONE,
+            });
+        }
+        pt0 = pt1;
+    }
+
+    let total = edges.len();
+    if total < 2 {
+        return;
+    }
+    let (mut y_max, mut y_min) = (i64::MIN, i64::MAX);
+    let (mut x_max, mut x_min) = (-1i64, i64::MAX);
+    for e in &edges {
+        let x1 = e.x + (e.y1 - e.y0) * e.dx;
+        y_min = y_min.min(e.y0);
+        y_max = y_max.max(e.y1);
+        x_min = x_min.min(e.x).min(x1);
+        x_max = x_max.max(e.x).max(x1);
+    }
+    if y_max < 0 || y_min >= h as i64 || x_max < 0 || x_min >= (w as i64) << XY_SHIFT {
+        return;
+    }
+    edges.sort_by_key(|e| (e.y0, e.x, e.dx));
+    edges.push(PolyEdge {
+        y0: i64::MAX,
+        y1: 0,
+        x: 0,
+        dx: 0,
+        next: NONE,
+    });
+    // Slot `total + 1` is the list head (OpenCV's `tmp`).
+    let head = total + 1;
+    edges.push(PolyEdge {
+        y0: i64::MAX,
+        y1: 0,
+        x: 0,
+        dx: 0,
+        next: NONE,
+    });
+    let delta = XY_ONE - 1;
+    let mut i = 0;
+    let y_max = y_max.min(h as i64);
+    let mut y = edges[0].y0;
+    while y < y_max {
+        let mut draw = false;
+        let clipline = y < 0;
+        let mut prelast = head;
+        let mut last = edges[head].next;
+        while last != NONE || edges[i].y0 == y {
+            if last != NONE && edges[last].y1 == y {
+                edges[prelast].next = edges[last].next;
+                last = edges[last].next;
+                continue;
+            }
+            let keep_prelast = prelast;
+            if last != NONE && (edges[i].y0 > y || edges[last].x < edges[i].x) {
+                prelast = last;
+                last = edges[last].next;
+            } else if i < total {
+                edges[prelast].next = i;
+                edges[i].next = last;
+                prelast = i;
+                i += 1;
+            } else {
+                break;
+            }
+            if draw {
+                if !clipline {
+                    let (a, b) = (edges[keep_prelast].x, edges[prelast].x);
+                    let (mut x1, mut x2) = if a > b {
+                        ((b + delta) >> XY_SHIFT, a >> XY_SHIFT)
+                    } else {
+                        ((a + delta) >> XY_SHIFT, b >> XY_SHIFT)
+                    };
+                    if x1 < w as i64 && x2 >= 0 {
+                        x1 = x1.max(0);
+                        x2 = x2.min(w as i64 - 1);
+                        let row = y as usize * w;
+                        mask[row + x1 as usize..=row + x2 as usize].fill(color);
+                    }
+                }
+                edges[keep_prelast].x += edges[keep_prelast].dx;
+                edges[prelast].x += edges[prelast].dx;
+            }
+            draw = !draw;
+        }
+
+        // Bubble sort of the active list by x.
+        let mut keep_prelast = NONE;
+        loop {
+            let mut prelast = head;
+            let mut last = edges[head].next;
+            let mut last_exchange = NONE;
+            while last != keep_prelast && last != NONE && edges[last].next != NONE {
+                let te = edges[last].next;
+                if edges[last].x > edges[te].x {
+                    edges[prelast].next = te;
+                    edges[last].next = edges[te].next;
+                    edges[te].next = last;
+                    prelast = te;
+                    last_exchange = prelast;
+                } else {
+                    prelast = last;
+                    last = te;
+                }
+            }
+            if last_exchange == NONE {
+                break;
+            }
+            keep_prelast = last_exchange;
+            if keep_prelast == edges[head].next || keep_prelast == head {
+                break;
+            }
+        }
+        y += 1;
+    }
+}
+
+/// One mask of `compute_local_maps`, its outline already in pixels.
+pub enum MaskAlpha {
+    /// A filled outline, feathered by a Gaussian of this sigma in pixels.
+    Fill {
+        outline: Vec<(i64, i64)>,
+        sigma: f64,
+    },
+    /// `_rasterise_ramp`: 1 at (ax, ay), 0 at (ax + dx, ay + dy), the offsets over their
+    /// squared length.
+    Ramp { ax: f32, ay: f32, kx: f32, ky: f32 },
+    /// A ramp whose two points coincide.
+    Empty,
+}
+
+/// `rasterise` into `alpha` (h x w float32).
+pub fn rasterise(
+    mask: &MaskAlpha,
+    (h, w): (usize, usize),
+    invert: bool,
+    alpha: &mut [f32],
+) -> Option<()> {
+    use rayon::prelude::*;
+    match mask {
+        MaskAlpha::Fill { outline, sigma } => {
+            let mut filled = vec![0u8; h * w];
+            fill_poly(&mut filled, w, h, outline, 255);
+            let hard: Vec<f32> = filled.par_iter().map(|&v| v as f32 / 255.0).collect();
+            if *sigma > 1e-3 {
+                let k = (sigma * 3.0) as usize | 1;
+                crate::filter::gaussian_blur(
+                    &hard,
+                    alpha,
+                    (h, w, 1),
+                    (k, k),
+                    (*sigma, *sigma),
+                    crate::filter::Border::Reflect101,
+                )?;
+            } else {
+                alpha.copy_from_slice(&hard);
+            }
+        }
+        &MaskAlpha::Ramp { ax, ay, kx, ky } => {
+            let xs: Vec<f32> = (0..w).map(|x| (x as f32 - ax) * kx).collect();
+            alpha.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
+                let yv = (y as f32 - ay) * ky;
+                for (a, &xv) in row.iter_mut().zip(&xs) {
+                    let t = xv + yv;
+                    let t = if t.is_nan() || t > 0.0 { t } else { 0.0 };
+                    let t = if t.is_nan() || t < 1.0 { t } else { 1.0 };
+                    *a = 1.0 - t * t * (3.0 - 2.0 * t);
+                }
+            });
+        }
+        MaskAlpha::Empty => alpha.fill(0.0),
+    }
+    if invert {
+        alpha.par_iter_mut().for_each(|a| *a = 1.0 - *a);
+    }
+    Some(())
+}
+
+/// One mask of `compute_local_maps`: its alpha, and either its own plane (a tone-limited
+/// mask) or the stops, grade and flash it adds to planes 0-2.
+pub struct LocalMask {
+    pub alpha: MaskAlpha,
+    pub invert: bool,
+    pub plane: Option<usize>,
+    pub stops: f32,
+    pub grade: f32,
+    pub flash: f32,
+}
+
+/// `compute_local_maps`' planes (h x w x planes float32) from masks in pixel space.
+pub fn local_maps(
+    masks: &[LocalMask],
+    (h, w): (usize, usize),
+    planes: usize,
+    maps: &mut [f32],
+) -> Option<()> {
+    use rayon::prelude::*;
+    maps.fill(0.0);
+    let mut alpha = vec![0f32; h * w];
+    for m in masks {
+        rasterise(&m.alpha, (h, w), m.invert, &mut alpha)?;
+        let (stops, grade, flash, plane) = (m.stops, m.grade, m.flash, m.plane);
+        maps.par_chunks_mut(planes * 1024)
+            .zip(alpha.par_chunks(1024))
+            .for_each(|(px, a)| {
+                for (p, &a) in px.chunks_exact_mut(planes).zip(a) {
+                    match plane {
+                        Some(k) => p[3 + k] = a,
+                        None => {
+                            p[0] += stops * a;
+                            if grade != 0.0 {
+                                p[1] += grade * a;
+                            }
+                            if flash != 0.0 {
+                                p[2] += flash * a;
+                            }
+                        }
+                    }
+                }
+            });
+    }
+    Some(())
+}

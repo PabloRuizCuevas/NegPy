@@ -106,7 +106,111 @@ fn fill_convex_poly<'py>(
     numpy::PyArray1::from_vec(py, mask).reshape([h, w])
 }
 
+/// `cv2.fillPoly(zeros((h, w), uint8), [points], 255)` as a new mask.
+#[pyfunction]
+fn fill_poly<'py>(
+    py: Python<'py>,
+    shape: (usize, usize),
+    pts: numpy::PyReadonlyArrayDyn<'_, i32>,
+) -> PyResult<Bound<'py, numpy::PyArray2<u8>>> {
+    let (h, w) = shape;
+    let v: Vec<(i64, i64)> = int_points(&pts)?
+        .iter()
+        .map(|&(x, y)| (x as i64, y as i64))
+        .collect();
+    let mut mask = vec![0u8; h * w];
+    crate::shapes::fill_poly(&mut mask, w, h, &v, 255);
+    numpy::PyArray1::from_vec(py, mask).reshape([h, w])
+}
+
+/// One mask for `local_maps`: ("fill", outline Nx2 int32, sigma) or ("ramp", (ax, ay, kx, ky))
+/// or ("empty",), then invert, plane (-1 for none), stops, grade, flash.
+type MaskSpec<'py> = (
+    String,
+    Option<numpy::PyReadonlyArrayDyn<'py, i32>>,
+    (f64, f32, f32, f32, f32),
+    bool,
+    i64,
+    (f32, f32, f32),
+);
+
+fn local_mask(spec: MaskSpec<'_>, planes: usize) -> PyResult<crate::shapes::LocalMask> {
+    use crate::shapes::{LocalMask, MaskAlpha};
+    let (kind, outline, (sigma, ax, ay, kx, ky), invert, plane, (stops, grade, flash)) = spec;
+    let alpha = match kind.as_str() {
+        "fill" => {
+            let pts = outline.ok_or_else(|| PyValueError::new_err("a fill needs its outline"))?;
+            let outline = int_points(&pts)?
+                .iter()
+                .map(|&(x, y)| (x as i64, y as i64))
+                .collect();
+            MaskAlpha::Fill { outline, sigma }
+        }
+        "ramp" => MaskAlpha::Ramp { ax, ay, kx, ky },
+        _ => MaskAlpha::Empty,
+    };
+    let plane = usize::try_from(plane).ok();
+    if plane.is_some_and(|k| 3 + k >= planes) {
+        return Err(PyValueError::new_err("plane out of range"));
+    }
+    Ok(LocalMask {
+        alpha,
+        invert,
+        plane,
+        stops,
+        grade,
+        flash,
+    })
+}
+
+/// `rasterise` of one mask spec (as for `local_maps`) to an HxW float32 alpha.
+#[pyfunction]
+fn rasterise_mask<'py>(
+    py: Python<'py>,
+    shape: (usize, usize),
+    spec: MaskSpec<'py>,
+) -> PyResult<Bound<'py, numpy::PyArray2<f32>>> {
+    let (h, w) = shape;
+    let m = local_mask(spec, 4)?;
+    let mut alpha = vec![0f32; h * w];
+    super::detach(py, alpha.len(), || {
+        crate::shapes::rasterise(&m.alpha, (h, w), m.invert, &mut alpha)
+    })
+    .ok_or_else(|| PyValueError::new_err("invalid mask"))?;
+    numpy::PyArray1::from_vec(py, alpha).reshape([h, w])
+}
+
+/// `compute_local_maps`' HxWxP float32 planes from masks already in pixel space.
+#[pyfunction]
+fn local_maps<'py>(
+    py: Python<'py>,
+    shape: (usize, usize, usize),
+    masks: Vec<MaskSpec<'py>>,
+) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
+    use numpy::{PyArrayDyn, PyArrayMethods};
+    let (h, w, planes) = shape;
+    let specs = masks
+        .into_iter()
+        .map(|m| local_mask(m, planes))
+        .collect::<PyResult<Vec<_>>>()?;
+    let out = PyArrayDyn::<f32>::zeros(py, vec![h, w, planes], false);
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        super::detach(py, dst.len(), || {
+            crate::shapes::local_maps(&specs, (h, w), planes, dst)
+        })
+        .ok_or_else(|| PyValueError::new_err("invalid mask"))?;
+    }
+    Ok(out)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(local_maps, m)?)?;
+    m.add_function(wrap_pyfunction!(rasterise_mask, m)?)?;
+    m.add_function(wrap_pyfunction!(fill_poly, m)?)?;
     m.add_function(wrap_pyfunction!(find_external_contours, m)?)?;
     m.add_function(wrap_pyfunction!(min_area_rect, m)?)?;
     m.add_function(wrap_pyfunction!(box_points, m)?)?;

@@ -1252,9 +1252,9 @@ depends = ["rasterise"]
 
 ["features/local/logic.py::compute_local_maps"]
 phase = 4
-status = "todo"
-calls = []
-depends = ["rasterise"]
+status = "ported"
+calls = ["negpy_core.local_maps"]
+depends = []
 
 ["features/local/logic.py::overlapping_masks"]
 phase = 4
@@ -1264,8 +1264,8 @@ depends = ["_tinted_area"]
 
 ["features/local/logic.py::rasterise"]
 phase = 4
-status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.fillPoly"]
+status = "ported"
+calls = ["negpy_core.rasterise_mask"]
 depends = []
 
 ["features/process/capture_color.py::lightbox_level"]
