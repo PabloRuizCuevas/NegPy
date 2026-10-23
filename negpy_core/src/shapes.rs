@@ -860,6 +860,13 @@ pub struct LocalMask {
 }
 
 /// `compute_local_maps`' planes (h x w x planes float32) from masks in pixel space.
+/// `overlapping_masks`' test: whether any pixel has both alphas above `threshold`.
+pub fn alphas_overlap(a: &[f32], b: &[f32], threshold: f32) -> bool {
+    a.iter()
+        .zip(b)
+        .any(|(&p, &q)| p > threshold && q > threshold)
+}
+
 pub fn local_maps(
     masks: &[LocalMask],
     (h, w): (usize, usize),

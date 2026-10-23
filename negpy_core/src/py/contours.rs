@@ -228,7 +228,25 @@ fn stroke_cover<'py>(
     numpy::PyArray1::from_vec(py, mask).reshape([h, w])
 }
 
+/// Whether two same-shape float32 alphas both exceed `threshold` at any pixel.
+#[pyfunction]
+fn alphas_overlap(
+    a: numpy::PyReadonlyArrayDyn<'_, f32>,
+    b: numpy::PyReadonlyArrayDyn<'_, f32>,
+    threshold: f32,
+) -> PyResult<bool> {
+    use numpy::PyUntypedArrayMethods;
+    if a.shape() != b.shape() {
+        return Err(PyValueError::new_err("alphas differ in shape"));
+    }
+    let (Ok(a), Ok(b)) = (a.as_slice(), b.as_slice()) else {
+        return Err(PyValueError::new_err("needs contiguous arrays"));
+    };
+    Ok(crate::shapes::alphas_overlap(a, b, threshold))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(alphas_overlap, m)?)?;
     m.add_function(wrap_pyfunction!(stroke_cover, m)?)?;
     m.add_function(wrap_pyfunction!(local_maps, m)?)?;
     m.add_function(wrap_pyfunction!(rasterise_mask, m)?)?;

@@ -19,6 +19,7 @@ pub mod loaders;
 pub mod meter;
 pub mod morph;
 pub mod print_curve;
+pub mod process;
 pub mod register;
 pub mod resize;
 pub mod retouch;

@@ -594,7 +594,7 @@ def lines_to_score(img: ImageBuffer, lines: List[Tuple], threshold: float = 0.5)
         along = sheared[row]
         sign = np.sign(along.mean()) or 1.0
         on = (along * sign > bar).astype(np.float32)
-        run = cv2.blur(on.reshape(1, -1), (_SCRATCH_RUN_WIN, 1)).ravel() >= _SCRATCH_RUN_FRAC
+        run = negpy_core.box_filter(on.reshape(1, -1), (_SCRATCH_RUN_WIN, 1)).ravel() >= _SCRATCH_RUN_FRAC
         lo, hi = int(max(0, min(x0, x1))), int(min(w, max(x0, x1)) + 1)
         keep = np.zeros(w, dtype=bool)
         keep[lo:hi] = run[lo:hi]

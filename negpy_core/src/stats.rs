@@ -3,7 +3,7 @@ use rayon::prelude::*;
 const BUCKETS: usize = 1 << 16;
 const CHUNK: usize = 1 << 16;
 /// Below this size one `select_nth_unstable` beats the histogram passes.
-const DIRECT_MAX: usize = 1 << 15;
+const DIRECT_MAX: usize = 1 << 17;
 
 /// Total-order key of an f32. Every NaN maps to the top, where `np.partition` puts it.
 fn order_key(v: f32) -> u32 {

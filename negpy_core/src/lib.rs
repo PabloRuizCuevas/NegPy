@@ -25,6 +25,7 @@ pub mod median;
 pub mod meter;
 pub mod morph;
 pub mod print_curve;
+pub mod process;
 pub mod register;
 pub mod resize;
 pub mod retouch;
@@ -61,6 +62,7 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::filter::register(m)?;
     py::morph::register(m)?;
     py::loaders::register(m)?;
+    py::process::register(m)?;
     py::print_curve::register(m)?;
     py::gray::register(m)?;
     py::contours::register(m)?;

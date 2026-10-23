@@ -73,11 +73,10 @@ def rasterise(
 
 
 def _tinted_area(mask, grid: int) -> np.ndarray | None:
-    """The mask's alpha above the faint-tail threshold, or None if it has too few points."""
+    """The mask's alpha on the overlap grid, or None if it has too few points."""
     if len(mask.vertices) < min_points(mask.shape):
         return None
-    alpha = rasterise(mask.shape, mask.vertices, grid, grid, mask.feather * grid, mask.invert)
-    return alpha > _OVERLAP_ALPHA
+    return rasterise(mask.shape, mask.vertices, grid, grid, mask.feather * grid, mask.invert)
 
 
 def overlapping_masks(config: LocalAdjustmentsConfig, index: int, grid: int = _OVERLAP_GRID) -> frozenset:
@@ -99,7 +98,7 @@ def overlapping_masks(config: LocalAdjustmentsConfig, index: int, grid: int = _O
         if i == index:
             continue
         other = _tinted_area(mask, grid)
-        if other is not None and bool((target & other).any()):
+        if other is not None and negpy_core.alphas_overlap(target, other, _OVERLAP_ALPHA):
             hits.add(i)
     return frozenset(hits)
 

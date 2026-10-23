@@ -1283,21 +1283,24 @@ depends = []
 
 ["features/lens/logic.py::_edge_reads"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_lookup"]
+note = "orchestration over Rust warp maps, edge-size math"
 
 ["features/lens/logic.py::_lookup"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = ["np.unique"]
 depends = []
+note = "orchestration over Rust warp maps, edge-size math"
 
 ["features/lens/logic.py::_search_fill_scale"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_edge_reads"]
+note = "orchestration over Rust warp maps, edge-size math"
 
 ["features/lens/logic.py::apply_lens"]
 phase = 4
@@ -1307,15 +1310,17 @@ depends = ["fill_scale"]
 
 ["features/lens/logic.py::fill_scale"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_search_fill_scale"]
+note = "orchestration over Rust warp maps, edge-size math"
 
 ["features/lens/warps.py::PanasonicWarp.remap"]
 phase = 4
-status = "todo"
+status = "ported"
 calls = ["negpy_core.panasonic_map"]
 depends = []
+note = "negpy_core::lens"
 
 ["features/lens/warps.py::RectilinearWarp.remap"]
 phase = 4
@@ -1325,15 +1330,17 @@ depends = []
 
 ["features/lens/warps.py::SonyWarp.remap"]
 phase = 4
-status = "todo"
+status = "ported"
 calls = ["negpy_core.sony_map"]
 depends = []
+note = "negpy_core::lens"
 
 ["features/local/logic.py::_tinted_area"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = []
 depends = ["rasterise"]
+note = "calls the Rust rasteriser"
 
 ["features/local/logic.py::compute_local_maps"]
 phase = 4
@@ -1343,9 +1350,10 @@ depends = []
 
 ["features/local/logic.py::overlapping_masks"]
 phase = 4
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.alphas_overlap"]
 depends = ["_tinted_area"]
+note = "negpy_core::shapes::alphas_overlap"
 
 ["features/local/logic.py::rasterise"]
 phase = 4
@@ -1355,57 +1363,73 @@ depends = []
 
 ["features/process/capture_color.py::lightbox_level"]
 phase = 4
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.lightbox_white"]
 depends = []
+note = "negpy_core::process::lightbox_white"
+
+["features/process/chart.py::_patch_medians"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.chart_patches"]
+depends = ["patch_centers", "sample_radius"]
+note = "negpy_core::process::chart_patches"
 
 ["features/process/chart.py::detect_orientation"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = ["np.mean"]
 depends = ["measure_lab"]
+note = "24-patch math and orchestration"
 
 ["features/process/chart.py::fit_chart_matrix"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = []
 depends = ["detect_orientation", "lab_for", "measure_lab"]
+note = "24-patch math and orchestration"
 
 ["features/process/chart.py::fit_chart_matrix.lab_for"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = []
 depends = ["measure_lab"]
+note = "24-patch math and orchestration"
 
 ["features/process/chart.py::grid_corners"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = ["np.argsort"]
 depends = []
+note = "24-patch math and orchestration"
 
 ["features/process/chart.py::measure_lab"]
 phase = 4
-status = "todo"
+status = "ported"
 calls = ["np.mean"]
-depends = ["sample_patches"]
+depends = ["_patch_medians"]
+note = "negpy_core::process::chart_patches"
 
 ["features/process/chart.py::patch_centers"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = []
 depends = ["grid_corners"]
+note = "24-patch math and orchestration"
 
 ["features/process/chart.py::sample_patches"]
 phase = 4
-status = "todo"
-calls = ["np.median"]
-depends = ["patch_centers", "sample_radius"]
+status = "ported"
+calls = []
+depends = ["_patch_medians"]
+note = "negpy_core::process::chart_patches"
 
 ["features/process/chart.py::sample_radius"]
 phase = 4
-status = "todo"
+status = "stays"
 calls = []
 depends = ["grid_corners"]
+note = "24-patch math and orchestration"
 
 ["features/process/hue.py::apply_hue_trim"]
 phase = 4
@@ -1413,17 +1437,12 @@ status = "ported"
 calls = ["negpy_core.hue_trim"]
 depends = []
 
-["features/process/logic.py::_corr"]
-phase = 4
-status = "todo"
-calls = ["np.sum"]
-depends = []
-
 ["features/process/logic.py::detect_process_mode"]
 phase = 4
-status = "todo"
-calls = ["np.mean", "np.percentile"]
-depends = ["_corr"]
+status = "ported"
+calls = ["negpy_core.process_mode_stats"]
+depends = []
+note = "negpy_core::process::process_mode_stats"
 
 ["features/process/sensor.py::_density_unmix"]
 phase = 4
@@ -1657,9 +1676,10 @@ depends = ["_fit_refraction_gammas", "_ir_clean_base", "_ir_decontaminate", "_ir
 
 ["features/retouch/logic.py::lines_to_score"]
 phase = 4
-status = "todo"
-calls = ["cv2.blur"]
+status = "ported"
+calls = ["negpy_core.box_filter"]
 depends = ["_mask_to_score", "_scratch_ridge_rows", "_shear_rows"]
+note = "negpy_core.box_filter"
 
 ["features/retouch/logic.py::normalize_ir"]
 phase = 4
