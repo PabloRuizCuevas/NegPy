@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 
-import cv2
 import negpy_core
 import numpy as np
 
