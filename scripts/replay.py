@@ -247,8 +247,11 @@ def same(a, b, compare: str = "exact") -> bool:
     return a == b
 
 
+KEY_FILTER = ""
+
+
 def _calls(keys: list[str]):
-    for key in keys:
+    for key in [k for k in keys if KEY_FILTER in k]:
         resolved = _resolve(key)
         files = sorted(_folder(key).glob("*.pkl"))
         if resolved is None or not files:
@@ -292,6 +295,7 @@ def main() -> None:
     parser.add_argument("mode", choices=("record", "replay", "bench"))
     parser.add_argument("files", nargs="*")
     parser.add_argument("--phase", type=int, action="append", help="only functions of this phase (repeatable)")
+    parser.add_argument("--key", default="", help="only functions whose manifest key holds this text")
     parser.add_argument("--edits", help="record each frame with its saved edit from this edits.db (read from a copy)")
     parser.add_argument(
         "--set",
@@ -301,6 +305,8 @@ def main() -> None:
         help="override one config field for every frame, e.g. retouch.dust_remove=true",
     )
     args = parser.parse_args()
+    global KEY_FILTER
+    KEY_FILTER = args.key
     if args.mode == "record":
         if not args.files:
             parser.error("record needs at least one frame")

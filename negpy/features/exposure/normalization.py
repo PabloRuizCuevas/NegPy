@@ -201,14 +201,8 @@ def sorted_channel_grid(img_log: ImageBuffer) -> np.ndarray:
 
 
 def to_log_density(image: ImageBuffer) -> ImageBuffer:
-    """
-    Linear scan -> log10 density, the domain every meter reads.
-
-    fmin/fmax rather than clip: they drop a NaN in favour of the bound, so one clamp covers
-    the NaN and infinity fixup as well.
-    """
-    epsilon = 1e-6
-    return np.log10(np.fmin(np.fmax(image, epsilon), 1.0))
+    """Linear scan -> log10 density clamped to 1e-6..1 (NaN to 1e-6), the domain every meter reads."""
+    return negpy_core.to_log_density(np.ascontiguousarray(image, dtype=np.float32))
 
 
 def _rms_chroma(triplets: np.ndarray) -> np.ndarray:

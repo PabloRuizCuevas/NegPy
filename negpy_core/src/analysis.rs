@@ -71,6 +71,26 @@ pub fn detection_luma(lum: &[f32], dst: &mut [f32]) -> Option<()> {
     Some(())
 }
 
+/// `to_log_density`: log10 of the value clamped to 1e-6..1, NaN to 1e-6.
+pub fn to_log_density(img: &[f32], dst: &mut [f32]) {
+    dst.par_chunks_mut(1 << 14)
+        .zip(img.par_chunks(1 << 14))
+        .for_each(|(d, s)| log_density_block(s, d));
+}
+
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2+fma",
+    "aarch64+neon"
+))]
+#[allow(clippy::manual_clamp)]
+fn log_density_block(src: &[f32], dst: &mut [f32]) {
+    for (d, &v) in dst.iter_mut().zip(src) {
+        // max drops NaN, as np.fmax does; clamp would keep it.
+        *d = crate::mathf::log10f(v.max(1e-6).min(1.0));
+    }
+}
+
 /// `normalize_log_image`: `(v - floor) / (ceil - floor)` per channel of an HxWx3 log image,
 /// unclamped. A span under 1e-6 divides by +-1e-6, by the span's sign.
 pub fn normalize_log_image(img: &[f32], floors: [f32; 3], ceils: [f32; 3], dst: &mut [f32]) {

@@ -8,6 +8,7 @@ pub mod distance;
 pub mod filter;
 pub mod gray;
 pub mod histogram;
+pub mod mathf;
 pub mod median;
 pub mod meter;
 pub mod morph;

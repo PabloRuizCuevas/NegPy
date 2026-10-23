@@ -231,7 +231,7 @@ depends = []
 phase = 2
 status = "todo"
 calls = []
-depends = ["analyze_log_exposure_bounds_from_log"]
+depends = ["analyze_log_exposure_bounds_from_log", "to_log_density"]
 
 ["features/exposure/normalization.py::analyze_log_exposure_bounds_from_log"]
 phase = 2
@@ -279,7 +279,7 @@ depends = ["resolve_crosstalk_matrix"]
 phase = 2
 status = "todo"
 calls = []
-depends = ["measure_anchor_from_log"]
+depends = ["measure_anchor_from_log", "to_log_density"]
 
 ["features/exposure/normalization.py::measure_anchor_from_log"]
 phase = 2
@@ -309,7 +309,7 @@ depends = ["_block_median_grid"]
 phase = 2
 status = "todo"
 calls = []
-depends = ["measure_neutral_axis_from_log"]
+depends = ["measure_neutral_axis_from_log", "to_log_density"]
 
 ["features/exposure/normalization.py::measure_neutral_axis_from_log"]
 phase = 2
@@ -333,7 +333,7 @@ depends = ["_block_median_grid"]
 phase = 2
 status = "todo"
 calls = []
-depends = ["measure_textural_range_from_log"]
+depends = ["measure_textural_range_from_log", "to_log_density"]
 
 ["features/exposure/normalization.py::measure_textural_range_from_log"]
 phase = 2
@@ -367,9 +367,10 @@ depends = ["_weighted_median"]
 
 ["features/exposure/normalization.py::prefilter_log_grid"]
 phase = 2
-status = "todo"
+status = "ported"
+compare = "ulp=3"
 calls = []
-depends = ["_block_median_grid"]
+depends = ["_block_median_grid", "to_log_density"]
 
 ["features/exposure/normalization.py::resolve_crosstalk_matrix"]
 phase = 2
@@ -381,6 +382,12 @@ depends = []
 phase = 2
 status = "todo"
 calls = ["np.sort"]
+depends = []
+
+["features/exposure/normalization.py::to_log_density"]
+phase = 2
+status = "todo"
+calls = ["negpy_core.to_log_density"]
 depends = []
 
 ["features/geometry/batch_autocrop.py::_border_without_a_film_box"]

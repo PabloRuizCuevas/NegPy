@@ -28,6 +28,7 @@ _CASES = {
         [c.ravel() for c in negpy_core.find_external_contours((_IMG1 > 0.5).astype(np.uint8) * np.uint8(255))[0]]
     ),
     "morph_close_u8": lambda: negpy_core.morphology_ex((_IMG1 > 0.5).astype(np.uint8) * 255, 3, np.ones((9, 7), np.uint8), 2),
+    "to_log_density": lambda: negpy_core.to_log_density(np.ascontiguousarray(_IMG1 * _IMG1)),
 }
 
 _HASHES = {
@@ -44,6 +45,7 @@ _HASHES = {
     "canny": "1e3125ae47a5dd1719f97531ffebffc79a6461ba1fae024d26d4d7a85b89b968",
     "find_external_contours": "ebb4302dd2bc7226a7ed24fbb5e16e14f407d5693ce47128a649cee9e4a098be",
     "morph_close_u8": "4be9a2976881ff83eb0b92a8ec484e048c61612324afbde73b6e0c89aa92865e",
+    "to_log_density": "cc4d2086edf051826619f024a4f5d28c80d28528291d9df4610c1d3854144038",
 }
 
 
