@@ -840,7 +840,7 @@ Shows the whole strip, to place and pick the frames before the scan. **Apply Fra
 *   **GPU Acceleration**: renders on the graphics card. Off uses the slower CPU, with the same result. If the GPU fails at launch, an amber line here says so.
 *   **Multi-core CPU Rendering**: uses all CPU cores. It is off at first on macOS, where it can crash.
 *   **Search by Meaning**: find frames by description (§2).
-*   **Update Thumbnails Automatically**: after a change to many frames, renders their thumbnails again in the background. Off (the default), the frames get an amber dot until you use **Update Thumbnails**.
+*   **Update Thumbnails Automatically**: renders out-of-date thumbnails again in the background, when a roll opens and after a change to many frames. Off (the default), the frames get an amber dot until you use **Update Thumbnails**.
 *   **Preview size**: the canvas resolution. Higher is sharper and uses more memory.
 *   **Preview cache**, **HQ buffers**, **Rendered frames** and **GPU texture cap**: how much memory NegPy uses. Lower them on a computer with little memory, or if exports run out of GPU memory.
 *   **Reduce Export Memory Use**: exports in smaller pieces, for a computer where exports run out of GPU memory.

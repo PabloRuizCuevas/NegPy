@@ -722,6 +722,7 @@ class AppController(QObject):
         # Hashes a pre-emption cut short, retried once the pre-empting batch is done.
         self._thumbnail_render_resume: set[str] = set()
         self._stale_seed_pending: list[dict] = []
+        self._dotted_refresh_waiting = False
         # True between cancel_thumbnail_refresh() and the worker's cancelled signal
         # landing — marks that cancellation as a user stop, not a pre-emption, so the
         # cancelled handler discards the backlog instead of resuming it.
@@ -1092,6 +1093,7 @@ class AppController(QObject):
         self.thumbnail_render_worker.cancelled.connect(self._on_thumbnail_render_cancelled)
         self.thumbnail_render_worker.error.connect(self._on_thumbnail_render_error)
         self.session.frames_edited_offscreen.connect(self._on_frames_edited_offscreen)
+        self.session.auto_thumbnail_refresh_changed.connect(self._on_auto_thumbnail_refresh_changed)
 
         self.asset_discovery_requested.connect(self.discovery_worker.process)
         self.discovery_worker.progress.connect(self._on_discovery_progress)
@@ -1358,6 +1360,8 @@ class AppController(QObject):
             # Thumbnails first: each file's preview is on disk by now, so the embedding
             # pass reuses it instead of decoding the RAW a second time.
             self.generate_missing_embeddings()
+            if self._dotted_refresh_waiting:
+                self._refresh_dotted_thumbnails()
 
     def embed_search_query(self, text: str) -> Optional[np.ndarray]:
         """Embeds free text for search-by-meaning ranking. None if the model is not
@@ -4635,6 +4639,25 @@ class AppController(QObject):
             self.session.asset_model.refresh()
         if self._stale_seed_pending:
             QTimer.singleShot(0, self._seed_stale_chunk)
+        elif self.state.auto_thumbnail_refresh:
+            self._refresh_dotted_thumbnails()
+
+    def _on_auto_thumbnail_refresh_changed(self, on: bool) -> None:
+        if on:
+            self._refresh_dotted_thumbnails()
+
+    def _refresh_dotted_thumbnails(self) -> None:
+        """Renders every loaded frame that shows a stale dot, except frames already in flight.
+        Waits for the first-thumbnail queue to go idle, so a roll's load decodes come first."""
+        if self._thumbnail_queue_active:
+            self._dotted_refresh_waiting = True
+            return
+        self._dotted_refresh_waiting = False
+        stale = self.state.stale_thumbnails
+        in_flight = self._thumbnail_render_pending if self._thumbnail_render_running else set()
+        hashes = [a["hash"] for a in self.state.uploaded_files if asset_thumbnail_key(a) in stale and a["hash"] not in in_flight]
+        if hashes:
+            self.refresh_thumbnails_for(hashes)
 
     def _on_frames_edited_offscreen(self, hashes: list[str]) -> None:
         if self.state.auto_thumbnail_refresh:

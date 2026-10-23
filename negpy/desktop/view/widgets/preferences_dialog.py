@@ -362,7 +362,7 @@ class PreferencesDialog(QDialog):
             "mdi6.image-sync-outline",
             tr("Update Thumbnails Automatically"),
             self.session.state.auto_thumbnail_refresh,
-            tr("Render thumbnails again in the background after a change to many frames"),
+            tr("Render out-of-date thumbnails again in the background"),
         )
         self.auto_thumbnails_box.toggled.connect(self.session.set_auto_thumbnail_refresh)
         self._add_toggles(grid, row, self.semantic_box, self.auto_thumbnails_box)
