@@ -1,7 +1,6 @@
 import math
 from typing import Any, Dict, Optional, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -1261,7 +1260,7 @@ def expand_mask_plane(
     h, w = out_shape
     if roi is None:
         if plane.shape[:2] != (h, w):
-            plane = cv2.resize(plane, (w, h), interpolation=cv2.INTER_LINEAR)
+            plane = negpy_core.resize_linear(np.ascontiguousarray(plane, dtype=np.float32), (w, h))
         return np.ascontiguousarray(plane, dtype=np.float32)
 
     y1, y2, x1, x2 = roi
@@ -1269,7 +1268,7 @@ def expand_mask_plane(
     y2, x2 = min(h, y2), min(w, x2)
     if y2 - y1 < 1 or x2 - x1 < 1:
         return None
-    inner = cv2.resize(plane, (x2 - x1, y2 - y1), interpolation=cv2.INTER_LINEAR)
+    inner = negpy_core.resize_linear(np.ascontiguousarray(plane, dtype=np.float32), (x2 - x1, y2 - y1))
     if (y1, x1, y2, x2) == (0, 0, h, w):
         return np.ascontiguousarray(inner, dtype=np.float32)
     return np.ascontiguousarray(np.pad(inner, ((y1, h - y2), (x1, w - x2)), mode="edge"), dtype=np.float32)

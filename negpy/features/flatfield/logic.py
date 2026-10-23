@@ -2,6 +2,7 @@ import hashlib
 from typing import Callable, Dict, NamedTuple, Optional, Tuple
 
 import cv2
+import negpy_core
 import numpy as np
 
 from negpy.domain.types import ImageBuffer
@@ -179,7 +180,7 @@ def check_reference(reference: ImageBuffer, gain: np.ndarray) -> Evenness:
 
 def self_corrected(reference: np.ndarray, gain: np.ndarray) -> np.ndarray:
     if gain.shape[:2] != reference.shape[:2]:
-        gain = cv2.resize(gain, (reference.shape[1], reference.shape[0]), interpolation=cv2.INTER_LINEAR)
+        gain = negpy_core.resize_linear(np.ascontiguousarray(gain, dtype=np.float32), (reference.shape[1], reference.shape[0]))
     return reference.astype(np.float32) * gain
 
 
@@ -240,5 +241,5 @@ def apply_flatfield(
     if gain_crop is not None:
         gain = gain_crop(gain)
     if gain.shape[:2] != image.shape[:2]:
-        gain = cv2.resize(gain, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_LINEAR)
+        gain = negpy_core.resize_linear(np.ascontiguousarray(gain, dtype=np.float32), (image.shape[1], image.shape[0]))
     return (image * gain).astype(np.float32)

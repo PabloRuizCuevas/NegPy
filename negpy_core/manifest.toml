@@ -1167,7 +1167,7 @@ depends = []
 ["features/flatfield/logic.py::apply_flatfield"]
 phase = 4
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_linear"]
 depends = []
 
 ["features/flatfield/logic.py::check_copy"]
@@ -1203,7 +1203,7 @@ depends = ["_evenness"]
 ["features/flatfield/logic.py::self_corrected"]
 phase = 4
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_linear"]
 depends = []
 
 ["features/flatfield/logic.py::work_copy"]
@@ -1371,7 +1371,7 @@ depends = []
 ["features/process/sensor.py::_two_scale_unmix"]
 phase = 4
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.resize"]
+calls = ["cv2.GaussianBlur", "cv2.resize", "negpy_core.resize_linear"]
 depends = ["_two_scale_kernel", "_two_scale_layer_kernel", "film_base"]
 
 ["features/process/sensor.py::_unmix_kernel"]
@@ -1539,13 +1539,13 @@ depends = []
 ["features/retouch/logic.py::apply_ir_attenuation"]
 phase = 4
 status = "todo"
-calls = ["cv2.multiply", "cv2.resize"]
+calls = ["cv2.multiply", "negpy_core.resize_linear"]
 depends = []
 
 ["features/retouch/logic.py::apply_score_repair"]
 phase = 4
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.resize"]
+calls = ["cv2.GaussianBlur", "negpy_core.resize_linear"]
 depends = ["_add_floor_deficit", "_blend_fill", "_borrow_clean_grain", "score_weighted_fill"]
 
 ["features/retouch/logic.py::compute_dust_stats"]
@@ -1605,7 +1605,7 @@ depends = []
 ["features/retouch/logic.py::repair_components"]
 phase = 4
 status = "todo"
-calls = ["cv2.connectedComponentsWithStats", "cv2.resize"]
+calls = ["cv2.connectedComponentsWithStats", "cv2.resize", "negpy_core.resize_linear"]
 depends = ["apply_score_repair"]
 
 ["features/retouch/logic.py::route_wide_defects"]
@@ -1870,7 +1870,7 @@ depends = ["expand_mask_plane"]
 ["features/exposure/logic.py::expand_mask_plane"]
 phase = 6
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_linear"]
 depends = []
 
 ["features/exposure/logic.py::plane_taps"]
@@ -2500,7 +2500,7 @@ depends = []
 ["features/retouch/logic.py::apply_hair_inpaint"]
 phase = 9
 status = "todo"
-calls = ["cv2.connectedComponentsWithStats", "cv2.dilate", "cv2.distanceTransform", "cv2.getStructuringElement", "cv2.inpaint", "cv2.resize", "np.percentile"]
+calls = ["cv2.connectedComponentsWithStats", "cv2.dilate", "cv2.distanceTransform", "cv2.getStructuringElement", "cv2.inpaint", "negpy_core.resize_linear", "np.percentile"]
 depends = ["_borrow_clean_grain", "_hair_encode"]
 
 ["features/rgbscan/logic.py::estimate_shift"]

@@ -199,7 +199,7 @@ def _two_scale_unmix(x: np.ndarray, m: np.ndarray) -> Optional[np.ndarray]:
     weight = np.empty(small.shape[:2], np.float32)
     _two_scale_layer_kernel(small, m, own, COLOR_FLOOR, _LOG_FLOOR, TWO_SCALE_START, TWO_SCALE_FULL, color, weight)
     if step > 1:
-        small, color, weight = (cv2.resize(a, (w, h), interpolation=cv2.INTER_LINEAR) for a in (small, color, weight))
+        small, color, weight = (negpy_core.resize_linear(np.ascontiguousarray(a, dtype=np.float32), (w, h)) for a in (small, color, weight))
     out = np.empty_like(x)
     _two_scale_kernel(x, small, color, weight, m, c, _LOG_FLOOR, float(np.log(_DEFECT_RATIO)), out)
     return out

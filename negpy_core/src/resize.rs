@@ -1,3 +1,4 @@
+use multiversion::multiversion;
 use rayon::prelude::*;
 
 /// One source-to-destination contribution of OpenCV's area table (`DecimateAlpha`).
@@ -44,8 +45,9 @@ fn area_tab(ssize: usize, dsize: usize, scale: f64) -> Vec<Tap> {
     tab
 }
 
-/// `cv2.resize(src, (dw, dh), interpolation=cv2.INTER_AREA)` for a float32 downscale. `src` is
-/// row-major with `cn` channels interleaved. None for an upscale or a 2x2 two-channel image.
+/// `cv2.resize(src, (dw, dh), interpolation=cv2.INTER_AREA)` of a float32 image. `src` is
+/// row-major with `cn` channels interleaved. An axis that grows makes it OpenCV's bilinear
+/// variant. None for a 2x2 two-channel image.
 pub fn resize_area(
     src: &[f32],
     h: usize,
@@ -63,7 +65,9 @@ pub fn resize_area(
     let int_x = (scale_x - scale_x.round()).abs() < f64::EPSILON;
     let int_y = (scale_y - scale_y.round()).abs() < f64::EPSILON;
     if scale_x < 1.0 || scale_y < 1.0 {
-        return None;
+        let mut dst = vec![0f32; dh * dw * cn];
+        resize_linear(src, (h, w, cn), (dh, dw), true, &mut dst)?;
+        return Some(dst);
     }
     if dh == h && dw == w {
         return Some(src.to_vec());
@@ -104,6 +108,162 @@ pub fn resize_area(
             }
         });
     Some(dst)
+}
+
+/// One axis of OpenCV's bilinear resize (`hal::resize`): per destination index, the first
+/// source index and the float32 weight of the next one. `area` takes INTER_AREA's upscale
+/// fractions. Without `clamp` (the y axis) a fraction outside the source stays and both rows
+/// clip to the edge.
+fn linear_axis(ssize: usize, dsize: usize, area: bool, clamp: bool) -> Vec<(i64, f32)> {
+    let inv = dsize as f64 / ssize as f64;
+    let scale = 1.0 / inv;
+    (0..dsize)
+        .map(|d| {
+            let (mut s, mut f) = if area {
+                let s = (d as f64 * scale).floor() as i64;
+                let f = ((d + 1) as f64 - (s + 1) as f64 * inv) as f32;
+                (s, if f <= 0.0 { 0.0 } else { f - f.floor() })
+            } else {
+                let f = ((d as f64 + 0.5) * scale - 0.5) as f32;
+                let s = f.floor();
+                (s as i64, f - s)
+            };
+            if clamp && s < 0 {
+                (s, f) = (0, 0.0);
+            }
+            if clamp && s >= ssize as i64 - 1 {
+                (s, f) = (ssize as i64 - 1, 0.0);
+            }
+            (s, f)
+        })
+        .collect()
+}
+
+/// `cv2.resize(src, (dw, dh), interpolation=cv2.INTER_LINEAR)` of a float32 image, or with
+/// `area` INTER_AREA where either axis grows, as OpenCV runs it without IPP: a row pass then a
+/// column pass, each `a * (1 - f) + b * f` in float32. An exact halving is INTER_AREA's mean.
+pub fn resize_linear(
+    src: &[f32],
+    (h, w, cn): (usize, usize, usize),
+    (dh, dw): (usize, usize),
+    area: bool,
+    dst: &mut [f32],
+) -> Option<()> {
+    if h == 0 || w == 0 || dh == 0 || dw == 0 || cn == 0 || src.len() != h * w * cn {
+        return None;
+    }
+    if dst.len() != dh * dw * cn {
+        return None;
+    }
+    if !area && dw * 2 == w && dh * 2 == h {
+        dst.copy_from_slice(&resize_area(src, h, w, cn, dh, dw)?);
+        return Some(());
+    }
+    let xs = linear_axis(w, dw, area, true);
+    let ys = linear_axis(h, dh, area, false);
+    // From xmax on, OpenCV reads one source pixel (weight 1) instead of two.
+    let xmax = xs
+        .iter()
+        .position(|&(s, _)| s + 1 >= w as i64)
+        .unwrap_or(dw);
+    let xs: Vec<(usize, f32, f32)> = xs.iter().map(|&(s, f)| (s as usize, 1.0 - f, f)).collect();
+    let row_pass = |sy: usize, out: &mut [f32]| {
+        let row = &src[sy * w * cn..][..w * cn];
+        match cn {
+            1 => linear_row::<1>(row, &xs, xmax, out),
+            3 => linear_row::<3>(row, &xs, xmax, out),
+            4 => linear_row::<4>(row, &xs, xmax, out),
+            _ => linear_row_any(row, cn, &xs, xmax, out),
+        }
+    };
+    let dwidth = dw * cn;
+    let clip = |v: i64| v.clamp(0, h as i64 - 1) as usize;
+    // A block of output rows reuses each row pass; a few blocks per thread keep the
+    // repeated passes at block starts rare.
+    let block = dh.div_ceil(4 * rayon::current_num_threads()).max(16);
+    dst.par_chunks_mut(block * dwidth)
+        .zip(ys.par_chunks(block))
+        .for_each(|(out, ys)| {
+            let mut cache = [
+                (usize::MAX, vec![0f32; dwidth]),
+                (usize::MAX, vec![0f32; dwidth]),
+            ];
+            for (o, &(sy, fy)) in out.chunks_exact_mut(dwidth).zip(ys) {
+                let (r0, r1) = (clip(sy), clip(sy + 1));
+                if cache[0].0 != r0 && cache[1].0 == r0 {
+                    cache.swap(0, 1);
+                }
+                let (c0, c1) = cache.split_at_mut(1);
+                let (c0, c1) = (&mut c0[0], &mut c1[0]);
+                if c0.0 != r0 {
+                    c0.0 = r0;
+                    row_pass(r0, &mut c0.1);
+                }
+                if c1.0 != r1 {
+                    c1.0 = r1;
+                    if r1 == r0 {
+                        c1.1.copy_from_slice(&c0.1);
+                    } else {
+                        row_pass(r1, &mut c1.1);
+                    }
+                }
+                blend_rows(&c0.1, &c1.1, (1.0 - fy, fy), o);
+            }
+        });
+    Some(())
+}
+
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2+fma",
+    "aarch64+neon"
+))]
+fn blend_rows(r0: &[f32], r1: &[f32], (b0, b1): (f32, f32), out: &mut [f32]) {
+    for ((o, &a), &b) in out.iter_mut().zip(r0).zip(r1) {
+        *o = a * b0 + b * b1;
+    }
+}
+
+/// One row of the bilinear row pass; from `xmax` on, OpenCV weights one source pixel.
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2+fma",
+    "aarch64+neon"
+))]
+fn linear_row<const CN: usize>(
+    row: &[f32],
+    xs: &[(usize, f32, f32)],
+    xmax: usize,
+    out: &mut [f32],
+) {
+    let last = row.len() - CN;
+    let (two, one) = out.split_at_mut(xmax * CN);
+    for (o, &(sx, a0, a1)) in two.as_chunks_mut::<CN>().0.iter_mut().zip(&xs[..xmax]) {
+        let i = (sx * CN).min(last - CN);
+        let (p, q) = (&row[i..][..CN], &row[i + CN..][..CN]);
+        for k in 0..CN {
+            o[k] = p[k] * a0 + q[k] * a1;
+        }
+    }
+    for (o, &(sx, a0, _)) in one.as_chunks_mut::<CN>().0.iter_mut().zip(&xs[xmax..]) {
+        let p = &row[(sx * CN).min(last)..][..CN];
+        for k in 0..CN {
+            o[k] = p[k] * a0;
+        }
+    }
+}
+
+fn linear_row_any(row: &[f32], cn: usize, xs: &[(usize, f32, f32)], xmax: usize, out: &mut [f32]) {
+    for (dx, (o, &(sx, a0, a1))) in out.chunks_exact_mut(cn).zip(xs).enumerate() {
+        let p = &row[sx * cn..];
+        for (k, o) in o.iter_mut().enumerate() {
+            *o = if dx < xmax {
+                p[k] * a0 + p[cn + k] * a1
+            } else {
+                p[k] * a0
+            };
+        }
+    }
 }
 
 /// OpenCV's `resizeAreaFast_` for an integer scale. A 2x2 one- or four-channel image takes its
@@ -230,11 +390,13 @@ mod tests {
     }
 
     #[test]
-    fn upscale_is_not_covered() {
-        let src = vec![0f32; 40 * 40];
-        assert!(resize_area(&src, 40, 40, 1, 20, 20).is_some());
-        assert!(resize_area(&src, 40, 40, 1, 80, 30).is_none());
-        assert!(resize_area(&src, 40, 40, 1, 20, 30).is_some());
+    fn upscale_of_a_flat_image_stays_flat() {
+        let src = vec![0.5f32; 40 * 40];
+        let out = resize_area(&src, 40, 40, 1, 80, 30).unwrap();
+        assert!(out.iter().all(|&v| v == 0.5));
+        let mut lin = vec![0f32; 90 * 70 * 3];
+        resize_linear(&vec![0.5f32; 40 * 40 * 3], (40, 40, 3), (90, 70), false, &mut lin).unwrap();
+        assert!(lin.iter().all(|&v| v == 0.5));
     }
 
     #[test]

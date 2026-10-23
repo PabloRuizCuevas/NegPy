@@ -980,7 +980,7 @@ def apply_score_repair(
         factor = factor or 1.0
     else:
         factor = max(h / score_det.shape[0], w / score_det.shape[1])
-        score = cv2.resize(score_det, (w, h), interpolation=cv2.INTER_LINEAR)
+        score = negpy_core.resize_linear(np.ascontiguousarray(score_det, dtype=np.float32), (w, h))
     out = score_weighted_fill(src, score, _fill_supports(long_edge or max(h, w), factor), reject_floor_mass=not floor)
     # The fill buffer becomes the output: blended over the source under the write ramp.
     a = np.empty((h, w), dtype=np.float32)
@@ -1055,7 +1055,7 @@ def repair_components(
         factor = factor or 1.0
     else:
         factor = max(h / score_det.shape[0], w / score_det.shape[1])
-        score = cv2.resize(score_det, (w, h), interpolation=cv2.INTER_LINEAR)
+        score = negpy_core.resize_linear(np.ascontiguousarray(score_det, dtype=np.float32), (w, h))
         if dirty is not None and dirty.shape[:2] != (h, w):
             dirty = cv2.resize(dirty.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
     m = (score < 1.0).astype(np.uint8)
@@ -1253,7 +1253,7 @@ def ir_ratio_and_gain(ir_det: np.ndarray, img_det: np.ndarray) -> Tuple[np.ndarr
 def apply_ir_attenuation(img: ImageBuffer, gain_det: np.ndarray) -> ImageBuffer:
     """Visible buffer × upsampled per-channel IR gain map (new array — buffers are read-only)."""
     h, w = img.shape[:2]
-    gain = gain_det if gain_det.shape[:2] == (h, w) else cv2.resize(gain_det, (w, h), interpolation=cv2.INTER_LINEAR)
+    gain = gain_det if gain_det.shape[:2] == (h, w) else negpy_core.resize_linear(np.ascontiguousarray(gain_det, dtype=np.float32), (w, h))
     # cv2.multiply, not `a * b`: the product of two float32 buffers is already float32, so
     # the astype numpy needs here would copy the whole frame a second time.
     return ensure_image(cv2.multiply(np.ascontiguousarray(img, dtype=np.float32), gain))
@@ -1307,7 +1307,7 @@ def apply_hair_inpaint(
         dilate_px = max(_HAIR_DILATE_PX, round(factor))
     m = np.zeros((h, w), dtype=np.uint8)
     for hm in masks:
-        r = hm if hm.shape[:2] == (h, w) else cv2.resize(hm.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+        r = hm if hm.shape[:2] == (h, w) else negpy_core.resize_linear(np.ascontiguousarray(hm, dtype=np.float32), (w, h))
         m |= (np.asarray(r) > 0.5).astype(np.uint8)
     if not m.any():
         return img

@@ -2,6 +2,7 @@ import os
 import tempfile
 
 import cv2
+import negpy_core
 import numpy as np
 import pytest
 import tifffile
@@ -1165,7 +1166,7 @@ def test_ir_attenuation_is_the_upsampled_gain_product():
     img = _noisy_frame(64, 96, seed=4)
     rng = np.random.default_rng(5)
     gain_det = rng.uniform(1.0, 2.0, (16, 24, 3)).astype(np.float32)
-    expected = img * cv2.resize(gain_det, (96, 64), interpolation=cv2.INTER_LINEAR)
+    expected = img * negpy_core.resize_linear(gain_det, (96, 64))
     out = apply_ir_attenuation(img, gain_det)
     assert out.dtype == np.float32
     assert np.array_equal(out, expected.astype(np.float32))

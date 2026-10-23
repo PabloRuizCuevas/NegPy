@@ -165,9 +165,10 @@ fn walk_border_depth<'py>(
         return Err(PyValueError::new_err("walk_border_depth needs a 2-D array"));
     };
     let data = slice(&lines)?;
-    let out = py
-        .detach(|| analysis::walk_border_depth(data, rows, n, limit, bridge, relative_step))
-        .ok_or_else(|| PyValueError::new_err("walk_border_depth needs at least limit + 3 rows"))?;
+    let out = super::detach(py, || {
+        analysis::walk_border_depth(data, rows, n, limit, bridge, relative_step)
+    })
+    .ok_or_else(|| PyValueError::new_err("walk_border_depth needs at least limit + 3 rows"))?;
     Ok(numpy::PyArray1::from_vec(py, out))
 }
 
@@ -247,13 +248,11 @@ fn smooth_signal<'py>(
     window: usize,
 ) -> PyResult<Bound<'py, numpy::PyArray1<f32>>> {
     let data = slice(&signal)?.to_vec();
-    let out = py
-        .detach(|| analysis::smooth_signal(&data, window))
-        .ok_or_else(|| {
-            PyValueError::new_err(
-                "smooth_signal covers a window of at most 31, no longer than the signal",
-            )
-        })?;
+    let out = super::detach(py, || analysis::smooth_signal(&data, window)).ok_or_else(|| {
+        PyValueError::new_err(
+            "smooth_signal covers a window of at most 31, no longer than the signal",
+        )
+    })?;
     Ok(numpy::PyArray1::from_vec(py, out))
 }
 
@@ -358,11 +357,12 @@ fn refine_roi_to_image<'py>(
         }
     };
     let data = slice(&img)?;
-    let (roi, tiers) = py
-        .detach(|| analysis::refine_roi_to_image(data, h, w, cn, film_roi))
-        .ok_or_else(|| {
-            PyValueError::new_err("refine_roi_to_image: image too small for the Sobel path")
-        })?;
+    let (roi, tiers) = super::detach(py, || {
+        analysis::refine_roi_to_image(data, h, w, cn, film_roi)
+    })
+    .ok_or_else(|| {
+        PyValueError::new_err("refine_roi_to_image: image too small for the Sobel path")
+    })?;
     Ok(match tiers {
         Some(t) => (
             roi,
