@@ -11,6 +11,7 @@ pub mod filter;
 pub mod gray;
 pub mod hdr;
 pub mod histogram;
+pub mod lab;
 pub mod mathf;
 pub mod median;
 pub mod meter;
@@ -61,5 +62,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::hdr::register(m)?;
     py::display::register(m)?;
     py::analysis::register(m)?;
-    py::warp::register(m)
+    py::warp::register(m)?;
+    py::lab::register(m)
 }

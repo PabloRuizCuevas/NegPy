@@ -6,6 +6,7 @@ import pytest
 
 from negpy.features.exposure.logic import apply_characteristic_curve
 from negpy.features.toning.logic import apply_chemical_toning
+from negpy.kernel.image.logic import WORKING_LAB
 
 # Recorded on Linux x86-64, where the cv2 oracles pass. Every release platform must give these
 # bytes; CI runs this file on each one. A port adds its case here; a hash only changes with a
@@ -72,6 +73,9 @@ _CASES = {
     ),
     "lut_f32": lambda: negpy_core.apply_lut_f32(_IMG3, _LUT),
     "matrix_trc_u8": lambda: negpy_core.matrix_trc_u8((_IMG3 * 255).astype(np.uint8), np.ascontiguousarray(_RAMP[:, ::256]), _M, _RAMP),
+    "usm_sharpen": lambda: negpy_core.usm_sharpen(
+        _IMG3, np.float32(2.0), 0.4, np.array([0.0625, 0.25, 0.375, 0.25, 0.0625], np.float32), *WORKING_LAB
+    ),
     "warp_affine": lambda: negpy_core.warp_affine(_IMG3, np.array([[0.998, 0.061, -3.1], [-0.061, 0.998, 4.2]]), (131, 97)),
     "warp_perspective": lambda: negpy_core.warp_perspective(
         _IMG1, np.array([[1.02, 0.03, -1.5], [-0.01, 0.97, 2.25], [1e-4, -2e-4, 1.0]]), (61, 83)
@@ -114,6 +118,7 @@ _HASHES = {
     "sensor_log_unmix": "f7eb8efe1bbcfe884fd2e849e99d0546fac2f4829d3fb558d54a0128e681e53b",
     "lut_f32": "467bb9fd495d4797d912f6aeabd34f9a61b56491105464a0c852ed524488b1c1",
     "matrix_trc_u8": "acec1eadffb13dfef8473a02fb250b4ad8f57ac211a6265661b77d3cad49ab16",
+    "usm_sharpen": "7267d2a3976c9381eadde01fe11ea60d46345b4747283e6ac68a2aa4a025d0a8",
     "warp_affine": "83562b3183484dcbf80fc65c4fb2f241d3b13ec9793cf43fd22bf11ea44d9e1d",
     "warp_perspective": "61e89302e793e24f1ad131b661e95186d7d9a82e8331a96164e338bec3ec1420",
     "warp_affine_cubic_constant": "a3d3d1a3d6c5e0e77686cfd37850199aa880943936e83edf8ada48307501cd69",

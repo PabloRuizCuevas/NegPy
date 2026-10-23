@@ -46,7 +46,7 @@ fn oetf_decode<'py>(
     filled(py, &img, |s, d| color::oetf_decode(s, d, gamma))
 }
 
-fn space(
+pub(crate) fn space(
     m: &PyReadonlyArray2<'_, f32>,
     white: &PyReadonlyArray1<'_, f32>,
     eps: f32,

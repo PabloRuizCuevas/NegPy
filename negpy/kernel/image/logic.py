@@ -207,6 +207,10 @@ def gamut_aware_chroma_scale(lab: np.ndarray, saturation: float, iters: int = 10
     return out.reshape(arr.shape)
 
 
+# The working Lab constants, in the order negpy_core's Lab-stage kernels take them.
+WORKING_LAB = (_WORKING_TO_XYZ, _XYZ_TO_WORKING, _WORKING_WHITE, np.float32(_LAB_EPS), np.float32(_LAB_KAPPA))
+
+
 def rgb_to_lab_working(img: np.ndarray) -> np.ndarray:
     """Linear working RGB -> CIELAB (D65). No transfer decode — the buffer is linear.
 

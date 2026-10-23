@@ -2,10 +2,12 @@ import math
 from typing import Callable
 
 import cv2
+import negpy_core
 import numpy as np
 
 from negpy.domain.types import ImageBuffer
 from negpy.kernel.image.logic import (
+    WORKING_LAB,
     gamut_aware_chroma_scale,
     lab_to_rgb_working,
     rgb_to_lab_working,
@@ -207,31 +209,8 @@ def _usm_sharpening_block(
     lab_sharpen_h/v.wgsl and lab.wgsl mirror this."""
     if amount <= 0:
         return img
-
-    lab = rgb_to_lab_working(img.astype(np.float32))
-    l_chan, a, b = cv2.split(lab)
-
     k = gaussian_kernel_1d(radius)
-    l_blur = cv2.sepFilter2D(l_chan, -1, k, k, borderType=cv2.BORDER_REFLECT_101)
-
-    diff = l_chan - l_blur
-    gain = np.float32(amount * 2.5) * _smoothstep(SHARPEN_GATE_LO, SHARPEN_GATE_HI, np.abs(diff)) * sharpen_shadow_gain(l_chan)
-
-    if masking > 0.0:
-        gain = gain * _edge_mask(l_chan, masking)
-
-    kern3 = np.ones((3, 3), np.uint8)
-    l_min = cv2.erode(l_chan, kern3, borderType=cv2.BORDER_REPLICATE)
-    l_max = cv2.dilate(l_chan, kern3, borderType=cv2.BORDER_REPLICATE)
-
-    l_new = l_chan + diff * gain
-    l_new = np.clip(l_new, l_min - np.float32(SHARPEN_OVERSHOOT_DARK), l_max + np.float32(SHARPEN_OVERSHOOT_LIGHT))
-    l_new = np.clip(l_new, 0.0, 100.0)
-
-    res_lab = cv2.merge([l_new.astype(np.float32), a, b])
-    res_rgb = lab_to_rgb_working(res_lab)
-
-    return ensure_image(np.clip(res_rgb, 0.0, 1.0))
+    return negpy_core.usm_sharpen(np.ascontiguousarray(img, dtype=np.float32), np.float32(amount * 2.5), masking, k, *WORKING_LAB)
 
 
 def apply_rl_sharpening(

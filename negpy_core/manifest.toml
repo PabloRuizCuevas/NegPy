@@ -2073,9 +2073,9 @@ depends = []
 
 ["features/lab/logic.py::_usm_sharpening_block"]
 phase = 6
-status = "todo"
-calls = ["cv2.dilate", "cv2.erode", "cv2.merge", "cv2.sepFilter2D", "cv2.split"]
-depends = ["_edge_mask"]
+status = "ported"
+calls = ["negpy_core.usm_sharpen"]
+depends = []
 
 ["features/lab/logic.py::apply_chroma_denoise"]
 phase = 6
@@ -2121,7 +2121,7 @@ depends = ["_saturation_block"]
 
 ["features/lab/logic.py::apply_usm_sharpening"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_usm_sharpening_block"]
 
