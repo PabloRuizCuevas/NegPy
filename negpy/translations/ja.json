@@ -1519,6 +1519,7 @@
   "Moves the black point: positive lifts the blacks, and negative makes them deeper.": "黒点を動かします: 正の値で黒が浮き、負の値で黒が深くなります。",
   "Moves the crop inside (positive) or outside (negative) the found edge.": "見つけた端の内側（正）または外側（負）にトリミングを動かします。",
   "Moves the white point: positive brightens the print, and negative brings back highlights.": "白点を動かします: 正の値でプリントが明るくなり、負の値でハイライトが戻ります。",
+  "Multi-Exposure and Multi-Pass are not available at {dpi} dpi.": "{dpi} dpi では多重露出とマルチパスを使用できません。",
   "Multi-Pass": "マルチパス",
   "Multi-core CPU Rendering": "マルチコアCPUレンダリング",
   "Multi-core CPU rendering is on. Turn it off if the app closes unexpectedly.": "マルチコア CPU レンダリングがオンになっています - アプリが予期せず終了した場合はオフにします",

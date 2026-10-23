@@ -1519,6 +1519,7 @@
   "Moves the black point: positive lifts the blacks, and negative makes them deeper.": "移动黑点：正值提亮黑色，负值使其更深。",
   "Moves the crop inside (positive) or outside (negative) the found edge.": "把裁切移到找到的边缘内侧（正）或外侧（负）。",
   "Moves the white point: positive brightens the print, and negative brings back highlights.": "移动白点：正值使照片变亮，负值找回高光。",
+  "Multi-Exposure and Multi-Pass are not available at {dpi} dpi.": "{dpi} dpi 下无法使用多重曝光和多次扫描。",
   "Multi-Pass": "多次扫描",
   "Multi-core CPU Rendering": "多核 CPU 渲染",
   "Multi-core CPU rendering is on. Turn it off if the app closes unexpectedly.": "多核 CPU 渲染已开启，若应用意外关闭请禁用",
