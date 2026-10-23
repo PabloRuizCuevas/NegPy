@@ -17,6 +17,10 @@ _GRAY = negpy_core.bgr_to_gray((_IMG3 * 255).astype(np.uint8))
 _M = np.array([[0.58, 0.19, 0.19], [0.30, 0.63, 0.08], [0.03, 0.07, 0.99]], np.float32)
 
 
+_LUT = np.ascontiguousarray(np.clip(np.cumsum(_RNG.random((9, 9, 9, 3), dtype=np.float32), axis=0) / 6, 0, 1))
+_RAMP = np.ascontiguousarray(np.tile(np.linspace(0.0, 1.0, 65536, dtype=np.float32) ** 0.45, (3, 1)))
+
+
 def _filled(fill):
     out = np.empty_like(_IMG3)
     fill(out)
@@ -61,6 +65,8 @@ _CASES = {
     "sensor_log_unmix": lambda: _filled(
         lambda out: negpy_core.sensor_log_unmix(_IMG3, _M, np.array([0.01, -0.02, 0.03], np.float32), np.full(3, 1e-3, np.float32), out)
     ),
+    "lut_f32": lambda: negpy_core.apply_lut_f32(_IMG3, _LUT),
+    "matrix_trc_u8": lambda: negpy_core.matrix_trc_u8((_IMG3 * 255).astype(np.uint8), np.ascontiguousarray(_RAMP[:, ::256]), _M, _RAMP),
 }
 
 _HASHES = {
@@ -87,6 +93,8 @@ _HASHES = {
     "print_curve": "c06516de4316987b8cb37dcf977915373302d36b0bd6c1018e3e4bfba0929b09",
     "chemical_toning": "7ddd3949c04bd5af38177bfcd6576888092bf73ad173206c34b153d6cce5d648",
     "sensor_log_unmix": "f7eb8efe1bbcfe884fd2e849e99d0546fac2f4829d3fb558d54a0128e681e53b",
+    "lut_f32": "467bb9fd495d4797d912f6aeabd34f9a61b56491105464a0c852ed524488b1c1",
+    "matrix_trc_u8": "cf09517a502fcd513e1ee8deddd9f1983108d52c2d882dc7bca374096ecee708",
 }
 
 

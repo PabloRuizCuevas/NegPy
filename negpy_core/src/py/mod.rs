@@ -4,6 +4,7 @@ pub mod color;
 pub mod components;
 pub mod contours;
 pub mod convert;
+pub mod display;
 pub mod filter;
 pub mod gray;
 pub mod hdr;

@@ -5,6 +5,7 @@ pub mod components;
 pub mod contours;
 pub mod convert;
 pub mod detect;
+pub mod display;
 pub mod distance;
 pub mod filter;
 pub mod gray;
@@ -56,5 +57,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::toning::register(m)?;
     py::sensor::register(m)?;
     py::hdr::register(m)?;
+    py::display::register(m)?;
     py::analysis::register(m)
 }

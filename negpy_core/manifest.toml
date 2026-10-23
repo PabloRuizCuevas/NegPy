@@ -2361,20 +2361,38 @@ depends = []
 
 ["infrastructure/display/icc_lut.py::_apply_lut_f32_jit"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["numba"]
 depends = []
 
 ["infrastructure/display/icc_lut.py::_apply_lut_u16_jit"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["numba"]
 depends = []
 
 ["infrastructure/display/icc_lut.py::_matrix_trc_u8_jit"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["numba"]
+depends = []
+
+["infrastructure/display/icc_lut.py::apply_lut_f32"]
+phase = 7
+status = "todo"
+calls = ["negpy_core.apply_lut_f32"]
+depends = []
+
+["infrastructure/display/icc_lut.py::apply_lut_u16"]
+phase = 7
+status = "todo"
+calls = ["negpy_core.apply_lut_u16"]
+depends = []
+
+["infrastructure/display/icc_lut.py::apply_matrix_trc_u8"]
+phase = 7
+status = "todo"
+calls = ["negpy_core.matrix_trc_u8"]
 depends = []
 
 ["services/assets/half_frame.py::_edge_band"]
