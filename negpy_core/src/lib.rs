@@ -27,6 +27,7 @@ pub mod sensor;
 pub mod shapes;
 pub mod skew;
 pub mod stats;
+pub mod stitch;
 pub mod toning;
 pub mod warp;
 
@@ -72,5 +73,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::altprocess::register(m)?;
     py::finish::register(m)?;
     py::flatfield::register(m)?;
+    py::stitch::register(m)?;
     py::skew::register(m)
 }

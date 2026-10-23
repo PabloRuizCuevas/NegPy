@@ -22,6 +22,7 @@ pub mod retouch;
 pub mod sensor;
 pub mod skew;
 pub mod stats;
+pub mod stitch;
 pub mod toning;
 pub mod warp;
 

@@ -162,16 +162,17 @@ _MIN_OVERLAP_PX = 1000
 def gain_compensate(ref: np.ndarray, ref_mask: np.ndarray, mov: np.ndarray, mov_mask: np.ndarray) -> np.ndarray:
     """Scale ``mov`` (in place) so its overlap with ``ref`` matches per channel —
     removes light-source drift between shots. No-op on tiny overlap."""
-    overlap = ref_mask & mov_mask
-    if int(overlap.sum()) < _MIN_OVERLAP_PX:
-        return mov
-    # float64: a full-res overlap is tens of millions of rows, and a float32 axis-0 sum
+    # The means are float64: a full-res overlap is tens of millions of rows, and a float32 sum
     # drifts per channel, so export gains would differ from the preview's.
-    ref_mean = ref[overlap].mean(axis=0, dtype=np.float64)
-    mov_mean = mov[overlap].mean(axis=0, dtype=np.float64)
-    if np.any(mov_mean < 1e-6):
-        return mov
-    mov *= (ref_mean / mov_mean).astype(np.float32)
+    gains = negpy_core.compensation_gains(
+        np.ascontiguousarray(ref, dtype=np.float32),
+        np.ascontiguousarray(ref_mask),
+        np.ascontiguousarray(mov, dtype=np.float32),
+        np.ascontiguousarray(mov_mask),
+        _MIN_OVERLAP_PX,
+    )
+    if gains is not None:
+        mov *= np.array(gains, dtype=np.float32)
     return mov
 
 

@@ -1786,6 +1786,12 @@ status = "todo"
 calls = ["cv2.distanceTransform"]
 depends = []
 
+["features/stitch/logic.py::gain_compensate"]
+phase = 5
+status = "todo"
+calls = ["negpy_core.compensation_gains"]
+depends = []
+
 ["features/stitch/logic.py::register_parts"]
 phase = 5
 status = "todo"
@@ -1802,7 +1808,7 @@ depends = ["_seam_weight"]
 phase = 5
 status = "todo"
 calls = []
-depends = ["blend_ir", "feather_blend", "find_seams", "seam_blend", "warp_into_canvas"]
+depends = ["blend_ir", "feather_blend", "find_seams", "gain_compensate", "seam_blend", "warp_into_canvas"]
 
 ["features/stitch/logic.py::warp_into_canvas"]
 phase = 5
