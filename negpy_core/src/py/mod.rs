@@ -17,6 +17,7 @@ pub mod retouch;
 pub mod sensor;
 pub mod stats;
 pub mod toning;
+pub mod warp;
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};

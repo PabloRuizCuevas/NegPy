@@ -69,6 +69,11 @@ _CASES = {
     ),
     "lut_f32": lambda: negpy_core.apply_lut_f32(_IMG3, _LUT),
     "matrix_trc_u8": lambda: negpy_core.matrix_trc_u8((_IMG3 * 255).astype(np.uint8), np.ascontiguousarray(_RAMP[:, ::256]), _M, _RAMP),
+    "warp_affine": lambda: negpy_core.warp_affine(_IMG3, np.array([[0.998, 0.061, -3.1], [-0.061, 0.998, 4.2]]), (131, 97)),
+    "warp_perspective": lambda: negpy_core.warp_perspective(
+        _IMG1, np.array([[1.02, 0.03, -1.5], [-0.01, 0.97, 2.25], [1e-4, -2e-4, 1.0]]), (61, 83)
+    ),
+    "remap_radial": lambda: negpy_core.remap_radial(_IMG3, (65.0, 48.0), 0.93, -0.05, 1.0 / 6600.0),
 }
 
 _HASHES = {
@@ -97,6 +102,9 @@ _HASHES = {
     "sensor_log_unmix": "f7eb8efe1bbcfe884fd2e849e99d0546fac2f4829d3fb558d54a0128e681e53b",
     "lut_f32": "467bb9fd495d4797d912f6aeabd34f9a61b56491105464a0c852ed524488b1c1",
     "matrix_trc_u8": "acec1eadffb13dfef8473a02fb250b4ad8f57ac211a6265661b77d3cad49ab16",
+    "warp_affine": "83562b3183484dcbf80fc65c4fb2f241d3b13ec9793cf43fd22bf11ea44d9e1d",
+    "warp_perspective": "61e89302e793e24f1ad131b661e95186d7d9a82e8331a96164e338bec3ec1420",
+    "remap_radial": "a23f3b21f15cb5d9db26cc532ec920dc8b194d73515a786d9febc93ae17370e0",
 }
 
 

@@ -659,12 +659,6 @@ calls = ["negpy_core.refine_roi_to_image"]
 depends = []
 note = "negpy_core::analysis::refine_roi_to_image"
 
-["features/geometry/logic.py::_remap_tiled"]
-phase = 2
-status = "todo"
-calls = ["cv2.remap"]
-depends = []
-
 ["features/geometry/logic.py::_roi_from_measured_border"]
 phase = 2
 status = "ported"
@@ -737,21 +731,21 @@ depends = []
 
 ["features/geometry/logic.py::apply_fine_rotation"]
 phase = 2
-status = "todo"
-calls = ["cv2.getRotationMatrix2D", "cv2.invertAffineTransform", "cv2.warpAffine"]
-depends = ["_remap_tiled"]
+status = "ported"
+calls = ["cv2.getRotationMatrix2D", "negpy_core.warp_affine"]
+depends = []
 
 ["features/geometry/logic.py::apply_keystone"]
 phase = 2
-status = "todo"
-calls = ["cv2.warpPerspective"]
-depends = ["_remap_tiled", "keystone_matrix"]
+status = "ported"
+calls = ["negpy_core.warp_perspective"]
+depends = ["keystone_matrix"]
 
 ["features/geometry/logic.py::apply_radial_distortion"]
 phase = 2
-status = "todo"
-calls = ["cv2.remap"]
-depends = ["_remap_tiled"]
+status = "ported"
+calls = ["negpy_core.remap_radial"]
+depends = []
 
 ["features/geometry/logic.py::compute_geometry_crop_rect"]
 phase = 2

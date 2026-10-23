@@ -22,6 +22,7 @@ pub mod sensor;
 pub mod shapes;
 pub mod stats;
 pub mod toning;
+pub mod warp;
 
 /// `f(dst[i], src[i])` for every i, in parallel blocks: a rayon task per element costs more than
 /// the work. Pass a `move` closure: a capture read through a reference may alias `dst`, so the
@@ -59,5 +60,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::sensor::register(m)?;
     py::hdr::register(m)?;
     py::display::register(m)?;
-    py::analysis::register(m)
+    py::analysis::register(m)?;
+    py::warp::register(m)
 }

@@ -1,7 +1,7 @@
 import math
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import negpy_core
@@ -371,39 +371,6 @@ def _trim_opaque_border(
     return ny1, ny2, nx1, nx2
 
 
-# OpenCV's warps assert on a side of SHRT_MAX px or more; a larger frame is warped in tiles.
-_CV_WARP_MAX = 32767
-_WARP_TILE = 8192
-
-
-def _remap_tiled(img: ImageBuffer, source_of: Callable[[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]) -> ImageBuffer:
-    """Same-size bilinear warp with replicated edges, one output tile at a time. ``source_of(xs, ys)`` maps output
-    to source coords; each tile reads only its source box, so every remap stays under OpenCV's size limit."""
-    h, w = img.shape[:2]
-    out = np.empty_like(img)
-    for y0 in range(0, h, _WARP_TILE):
-        for x0 in range(0, w, _WARP_TILE):
-            y1, x1 = min(h, y0 + _WARP_TILE), min(w, x0 + _WARP_TILE)
-            ys, xs = np.meshgrid(np.arange(y0, y1, dtype=np.float64), np.arange(x0, x1, dtype=np.float64), indexing="ij")
-            map_x, map_y = source_of(xs, ys)
-            sx0 = int(np.clip(np.floor(map_x.min()) - 1, 0, w - 1))
-            sx1 = int(np.clip(np.ceil(map_x.max()) + 2, sx0 + 1, w))
-            sy0 = int(np.clip(np.floor(map_y.min()) - 1, 0, h - 1))
-            sy1 = int(np.clip(np.ceil(map_y.max()) + 2, sy0 + 1, h))
-            out[y0:y1, x0:x1] = cv2.remap(
-                np.ascontiguousarray(img[sy0:sy1, sx0:sx1]),
-                (map_x - sx0).astype(np.float32),
-                (map_y - sy0).astype(np.float32),
-                interpolation=cv2.INTER_LINEAR,
-                borderMode=cv2.BORDER_REPLICATE,
-            )
-    return out
-
-
-def _too_big_to_warp(img: ImageBuffer) -> bool:
-    return max(img.shape[:2]) >= _CV_WARP_MAX
-
-
 def apply_fine_rotation(img: ImageBuffer, angle: float) -> ImageBuffer:
     """
     Sub-degree rotation (bilinear).
@@ -412,22 +379,8 @@ def apply_fine_rotation(img: ImageBuffer, angle: float) -> ImageBuffer:
         return img
 
     h, w = img.shape[:2]
-    center = (w / 2.0, h / 2.0)
-    m_mat = cv2.getRotationMatrix2D(center, angle, 1.0)
-    if _too_big_to_warp(img):
-        inv = cv2.invertAffineTransform(m_mat)
-        return ensure_image(
-            _remap_tiled(img, lambda xs, ys: (inv[0, 0] * xs + inv[0, 1] * ys + inv[0, 2], inv[1, 0] * xs + inv[1, 1] * ys + inv[1, 2]))
-        )
-
-    res = cv2.warpAffine(
-        img,
-        m_mat,
-        (w, h),
-        flags=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    )
-    return ensure_image(res)
+    m_mat = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), angle, 1.0)
+    return negpy_core.warp_affine(np.ascontiguousarray(img, dtype=np.float32), m_mat, (w, h))
 
 
 # Radial lens-distortion correction (poly3 / Brown-Conrady k1). The radius is normalized to
@@ -488,39 +441,15 @@ def compute_distortion_scale(k1: float, w: int, h: int, _samples: int = 128) -> 
     return 0.5 * (lo + hi)
 
 
-def _radial_maps(k1: float, w: int, h: int) -> Tuple[np.ndarray, np.ndarray]:
-    """cv2.remap source-coordinate maps for the radial correction (incl. scale-to-fill)."""
-    cx, cy, halfdiag = _radial_center(w, h)
-    s = compute_distortion_scale(k1, w, h)
-    inv_hd2 = 1.0 / (halfdiag * halfdiag)
-    ys, xs = np.meshgrid(np.arange(h, dtype=np.float32), np.arange(w, dtype=np.float32), indexing="ij")
-    px = (xs - cx) * s
-    py = (ys - cy) * s
-    f = 1.0 + k1 * (px * px + py * py) * inv_hd2
-    map_x = (cx + px * f).astype(np.float32)
-    map_y = (cy + py * f).astype(np.float32)
-    return map_x, map_y
-
-
 def apply_radial_distortion(img: ImageBuffer, k1: float) -> ImageBuffer:
     """Radial lens-distortion correction. Purely geometric — moves pixels via a
     coordinate remap, never scales values (brightness-preserving). No-op for k1≈0."""
     if abs(k1) < _DISTORT_EPS:
         return img
     h, w = img.shape[:2]
-    if _too_big_to_warp(img):
-        cx, cy, halfdiag = _radial_center(w, h)
-        s = compute_distortion_scale(k1, w, h)
-
-        def source_of(xs: np.ndarray, ys: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-            px, py = (xs - cx) * s, (ys - cy) * s
-            f = 1.0 + k1 * (px * px + py * py) / (halfdiag * halfdiag)
-            return cx + px * f, cy + py * f
-
-        return ensure_image(_remap_tiled(img, source_of))
-    map_x, map_y = _radial_maps(k1, w, h)
-    res = cv2.remap(img, map_x, map_y, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-    return ensure_image(res)
+    cx, cy, halfdiag = _radial_center(w, h)
+    s = compute_distortion_scale(k1, w, h)
+    return negpy_core.remap_radial(np.ascontiguousarray(img, dtype=np.float32), (cx, cy), s, k1, 1.0 / (halfdiag * halfdiag))
 
 
 def map_point_radial(px: float, py: float, k1: float, w: int, h: int) -> Tuple[float, float]:
@@ -590,22 +519,8 @@ def apply_keystone(img: ImageBuffer, converge_v: float, converge_h: float) -> Im
     if abs(converge_v) < _KEYSTONE_EPS and abs(converge_h) < _KEYSTONE_EPS:
         return img
     h, w = img.shape[:2]
-    if _too_big_to_warp(img):
-        hi = np.linalg.inv(keystone_matrix(converge_v, converge_h, w, h))
-
-        def source_of(xs: np.ndarray, ys: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-            d = hi[2, 0] * xs + hi[2, 1] * ys + hi[2, 2]
-            return (hi[0, 0] * xs + hi[0, 1] * ys + hi[0, 2]) / d, (hi[1, 0] * xs + hi[1, 1] * ys + hi[1, 2]) / d
-
-        return ensure_image(_remap_tiled(img, source_of))
-    res = cv2.warpPerspective(
-        img,
-        keystone_matrix(converge_v, converge_h, w, h),
-        (w, h),
-        flags=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    )
-    return ensure_image(res)
+    m = keystone_matrix(converge_v, converge_h, w, h)
+    return negpy_core.warp_perspective(np.ascontiguousarray(img, dtype=np.float32), m, (w, h))
 
 
 def map_point_keystone(px: float, py: float, converge_v: float, converge_h: float, w: int, h: int) -> Tuple[float, float]:
