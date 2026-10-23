@@ -913,28 +913,10 @@ def score_weighted_fill(
     return fill
 
 
-@parallel_njit(cache=True)
 def _fill_rung(num, den, fill, first, reject_floor_mass):
     """One rung of the fill ladder in place: the score-normalized candidate, blended over the
-    coarser result by the rung's clean fraction. Same float32 operation order as the array
-    form, one pass over the frame."""
-    f32 = np.float32
-    h, w = den.shape
-    floor = f32(_IR_SCORE_FLOOR)
-    inv_span = f32(1.0) - floor
-    tau = f32(_IR_FILL_TAU)
-    for y in prange(h):
-        for x in range(w):
-            d = max(den[y, x], f32(1e-6))
-            if first:
-                for c in range(3):
-                    fill[y, x, c] = num[y, x, c] / d
-            else:
-                mass = (den[y, x] - floor) / inv_span if reject_floor_mass else den[y, x]
-                conf = min(max(mass / tau, f32(0.0)), f32(1.0))
-                keep = f32(1.0) - conf
-                for c in range(3):
-                    fill[y, x, c] = fill[y, x, c] * keep + (num[y, x, c] / d) * conf
+    coarser result by the rung's clean fraction, in the array form's float32 operation order."""
+    negpy_core.fill_rung(num, den, fill, bool(first), bool(reject_floor_mass), (_IR_SCORE_FLOOR, _IR_FILL_TAU))
 
 
 def _fill_supports(buffer_long_edge: int, factor: float) -> Tuple[int, ...]:
@@ -1026,36 +1008,15 @@ def apply_score_repair(
     return ensure_image(out)
 
 
-@parallel_njit(cache=True)
 def _blend_fill(src, score, fill, a_out):
     """``fill`` becomes ``src * (1 - a) + fill * a`` under the smoothstep write ramp of the
     score; the ramp is kept in ``a_out`` for the grain and floor passes."""
-    f32 = np.float32
-    h, w = score.shape
-    hi = f32(_IR_WRITE_HI)
-    span = f32(_IR_WRITE_HI - _IR_WRITE_LO)
-    for y in prange(h):
-        for x in range(w):
-            a = min(max((hi - score[y, x]) / span, f32(0.0)), f32(1.0))
-            a = a * a * (f32(3.0) - f32(2.0) * a)
-            a_out[y, x] = a
-            keep = f32(1.0) - a
-            for c in range(3):
-                fill[y, x, c] = src[y, x, c] * keep + fill[y, x, c] * a
+    negpy_core.blend_fill(src, score, fill, a_out, (_IR_WRITE_HI, _IR_WRITE_HI - _IR_WRITE_LO))
 
 
-@parallel_njit(cache=True)
 def _add_floor_deficit(out, a, blur_src, blur_out):
     """``out += a * max(blur_src - blur_out, 0)``, then clamps at zero, in place."""
-    f32 = np.float32
-    h, w = a.shape
-    for y in prange(h):
-        for x in range(w):
-            av = a[y, x]
-            for c in range(3):
-                deficit = blur_src[y, x, c] - blur_out[y, x, c]
-                v = out[y, x, c] + av * max(deficit, f32(0.0))
-                out[y, x, c] = max(v, f32(0.0))
+    negpy_core.add_floor_deficit(out, a, blur_src, blur_out)
 
 
 def film_scale(shape: Tuple[int, int]) -> float:

@@ -1423,14 +1423,14 @@ depends = ["apply_clone_stroke"]
 
 ["features/retouch/logic.py::_add_floor_deficit"]
 phase = 4
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.add_floor_deficit"]
 depends = []
 
 ["features/retouch/logic.py::_blend_fill"]
 phase = 4
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.blend_fill"]
 depends = []
 
 ["features/retouch/logic.py::_borrow_clean_grain"]
@@ -1459,8 +1459,8 @@ depends = []
 
 ["features/retouch/logic.py::_fill_rung"]
 phase = 4
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.fill_rung"]
 depends = []
 
 ["features/retouch/logic.py::_fit_refraction_gammas"]

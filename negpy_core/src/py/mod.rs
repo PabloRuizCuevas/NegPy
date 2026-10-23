@@ -9,4 +9,5 @@ pub mod histogram;
 pub mod meter;
 pub mod morph;
 pub mod resize;
+pub mod retouch;
 pub mod stats;

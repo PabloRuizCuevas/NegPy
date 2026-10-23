@@ -12,6 +12,7 @@ pub mod median;
 pub mod meter;
 pub mod morph;
 pub mod resize;
+pub mod retouch;
 pub mod shapes;
 pub mod stats;
 
@@ -42,6 +43,7 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::convert::register(m)?;
     py::histogram::register(m)?;
     py::meter::register(m)?;
+    py::retouch::register(m)?;
     py::bounds::register(m)?;
     py::analysis::register(m)
 }
