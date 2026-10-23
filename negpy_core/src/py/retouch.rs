@@ -428,26 +428,6 @@ fn ir_defect_score<'py>(
     })
 }
 
-/// `apply_ir_attenuation`'s product of an HxWx3 image and a gain map of its shape.
-#[pyfunction]
-fn ir_attenuate<'py>(
-    py: Python<'py>,
-    img: PyReadonlyArrayDyn<'py, f32>,
-    gain: PyReadonlyArrayDyn<'py, f32>,
-) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
-    let (src, (h, w)) = image3(&img)?;
-    if gain.shape() != img.shape() {
-        return Err(PyValueError::new_err(
-            "needs a gain map of the image's shape",
-        ));
-    }
-    let g = plane(&gain, 3 * h * w)?;
-    new_image(py, img.shape(), |dst| {
-        retouch::ir_attenuate(src, g, dst);
-        Some(())
-    })
-}
-
 type Plane<'py> = Bound<'py, numpy::PyArray2<f32>>;
 
 fn plane_array<'py>(py: Python<'py>, v: Vec<f32>, (h, w): (usize, usize)) -> PyResult<Plane<'py>> {
@@ -783,7 +763,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_luma_score, m)?)?;
     m.add_function(wrap_pyfunction!(dust_stats, m)?)?;
     m.add_function(wrap_pyfunction!(ir_defect_score, m)?)?;
-    m.add_function(wrap_pyfunction!(ir_attenuate, m)?)?;
     m.add_function(wrap_pyfunction!(fit_refraction_gammas, m)?)?;
     m.add_function(wrap_pyfunction!(route_wide_defects, m)?)?;
     m.add_function(wrap_pyfunction!(repair_components, m)?)?;

@@ -151,8 +151,8 @@ def evenness(image: ImageBuffer) -> Evenness:
 def evenness_view(image: ImageBuffer, span: float = EVENNESS_RANGE) -> Tuple[np.ndarray, Evenness]:
     """Each channel over its lit-area median, ±span mapped to black..white; carrier black."""
     ratio, result = _evenness(image)
-    view = np.clip(0.5 + (ratio - 1.0) / (2.0 * span), 0.0, 1.0)
-    return view.astype(np.float32), result
+    negpy_core.evenness_view(ratio, 2.0 * span)
+    return ratio, result
 
 
 def check_reference(reference: ImageBuffer, gain: np.ndarray) -> Evenness:
@@ -168,7 +168,7 @@ def check_reference(reference: ImageBuffer, gain: np.ndarray) -> Evenness:
 def self_corrected(reference: np.ndarray, gain: np.ndarray) -> np.ndarray:
     if gain.shape[:2] != reference.shape[:2]:
         gain = negpy_core.resize_linear(np.ascontiguousarray(gain, dtype=np.float32), (reference.shape[1], reference.shape[0]))
-    return reference.astype(np.float32) * gain
+    return negpy_core.multiply(np.ascontiguousarray(reference, dtype=np.float32), np.ascontiguousarray(gain, dtype=np.float32))
 
 
 def _is_clipped(image: np.ndarray) -> bool:
@@ -225,4 +225,4 @@ def apply_flatfield(
         gain = gain_crop(gain)
     if gain.shape[:2] != image.shape[:2]:
         gain = negpy_core.resize_linear(np.ascontiguousarray(gain, dtype=np.float32), (image.shape[1], image.shape[0]))
-    return (image * gain).astype(np.float32)
+    return negpy_core.multiply(np.ascontiguousarray(image, dtype=np.float32), np.ascontiguousarray(gain, dtype=np.float32))

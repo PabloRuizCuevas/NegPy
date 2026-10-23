@@ -975,7 +975,7 @@ def apply_ir_attenuation(img: ImageBuffer, gain_det: np.ndarray) -> ImageBuffer:
     """Visible buffer × upsampled per-channel IR gain map (new array — buffers are read-only)."""
     h, w = img.shape[:2]
     gain = gain_det if gain_det.shape[:2] == (h, w) else negpy_core.resize_linear(np.ascontiguousarray(gain_det, dtype=np.float32), (w, h))
-    return ensure_image(negpy_core.ir_attenuate(np.ascontiguousarray(img, dtype=np.float32), np.ascontiguousarray(gain, dtype=np.float32)))
+    return ensure_image(negpy_core.multiply(np.ascontiguousarray(img, dtype=np.float32), np.ascontiguousarray(gain, dtype=np.float32)))
 
 
 def luma_bake_token(retouch) -> str:

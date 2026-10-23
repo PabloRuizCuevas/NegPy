@@ -253,3 +253,14 @@ pub fn compute_gain(
     }
     Some(dark)
 }
+
+/// `evenness_view`'s map, in place on the ratio: ±`span` about 1 onto 0..1.
+pub fn evenness_view(ratio: &mut [f32], span: f32) {
+    ratio.par_chunks_mut(BLOCK).for_each(move |run| {
+        for v in run {
+            let m = 0.5 + (*v - 1.0) / span;
+            let m = if m.is_nan() || m > 0.0 { m } else { 0.0 };
+            *v = if m.is_nan() || m < 1.0 { m } else { 1.0 };
+        }
+    });
+}

@@ -121,6 +121,18 @@ pub fn rgb_to_rgba(src: &[f32], cn: usize, dst: &mut [f32]) {
         });
 }
 
+/// `a * b` of two float32 arrays of one shape.
+pub fn multiply(a: &[f32], b: &[f32], dst: &mut [f32]) {
+    const BLOCK: usize = 1 << 14;
+    dst.par_chunks_mut(BLOCK)
+        .zip(a.par_chunks(BLOCK).zip(b.par_chunks(BLOCK)))
+        .for_each(|(o, (a, b))| {
+            for ((o, &a), &b) in o.iter_mut().zip(a).zip(b) {
+                *o = a * b;
+            }
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1160,8 +1160,8 @@ depends = []
 
 ["features/flatfield/logic.py::apply_flatfield"]
 phase = 4
-status = "todo"
-calls = ["negpy_core.resize_linear"]
+status = "ported"
+calls = ["negpy_core.multiply", "negpy_core.resize_linear"]
 depends = []
 
 ["features/flatfield/logic.py::check_copy"]
@@ -1191,15 +1191,15 @@ depends = ["_evenness"]
 
 ["features/flatfield/logic.py::evenness_view"]
 phase = 4
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.evenness_view"]
 depends = ["_evenness"]
 
 ["features/flatfield/logic.py::self_corrected"]
 phase = 4
-status = "todo"
+status = "ported"
 compare = "ulp=4"
-calls = ["negpy_core.resize_linear"]
+calls = ["negpy_core.multiply", "negpy_core.resize_linear"]
 depends = []
 
 ["features/flatfield/logic.py::work_copy"]
@@ -1518,7 +1518,7 @@ depends = []
 ["features/retouch/logic.py::apply_ir_attenuation"]
 phase = 4
 status = "ported"
-calls = ["negpy_core.ir_attenuate", "negpy_core.resize_linear"]
+calls = ["negpy_core.multiply", "negpy_core.resize_linear"]
 depends = []
 
 ["features/retouch/logic.py::apply_score_repair"]

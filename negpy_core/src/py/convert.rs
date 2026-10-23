@@ -179,7 +179,22 @@ fn rgba_to_rgb_into(
     Ok(())
 }
 
+/// `a * b` of two float32 arrays of one shape (`cv2.multiply` without the copies NumPy makes).
+#[pyfunction]
+fn multiply<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArrayDyn<'py, f32>,
+    b: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    if a.shape() != b.shape() {
+        return Err(PyValueError::new_err("needs arrays of one shape"));
+    }
+    let (sa, sb) = (contiguous(&a)?, contiguous(&b)?);
+    filled(py, a.shape(), "float32", |d| convert::multiply(sa, sb, d))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(multiply, m)?)?;
     m.add_function(wrap_pyfunction!(to_uint8, m)?)?;
     m.add_function(wrap_pyfunction!(to_uint16, m)?)?;
     m.add_function(wrap_pyfunction!(uint8_to_float32, m)?)?;

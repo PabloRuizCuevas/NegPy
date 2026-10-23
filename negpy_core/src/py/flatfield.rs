@@ -138,7 +138,22 @@ fn fill_from_nearest<'py>(
     numpy::PyArray1::from_vec(py, v).reshape(vec![h, w, cn])
 }
 
+/// `evenness_view`'s map in place on a ratio from `evenness`, with twice the span.
+#[pyfunction]
+fn evenness_view(
+    py: Python<'_>,
+    mut ratio: numpy::PyReadwriteArrayDyn<'_, f32>,
+    span: f32,
+) -> PyResult<()> {
+    let r = ratio
+        .as_slice_mut()
+        .map_err(|_| PyValueError::new_err("needs a contiguous ratio"))?;
+    super::detach(py, r.len(), || flatfield::evenness_view(r, span));
+    Ok(())
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(evenness_view, m)?)?;
     m.add_function(wrap_pyfunction!(compute_gain, m)?)?;
     m.add_function(wrap_pyfunction!(fill_from_nearest, m)?)?;
     m.add_function(wrap_pyfunction!(lit_mask, m)?)?;

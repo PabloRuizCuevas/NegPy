@@ -870,17 +870,6 @@ pub fn ir_defect_score(
     )
 }
 
-/// `apply_ir_attenuation`'s product of the image and a gain map of its size.
-pub fn ir_attenuate(img: &[f32], gain: &[f32], dst: &mut [f32]) {
-    dst.par_chunks_mut(3 * BLOCK)
-        .zip(img.par_chunks(3 * BLOCK).zip(gain.par_chunks(3 * BLOCK)))
-        .for_each(|(o, (a, b))| {
-            for ((o, &a), &b) in o.iter_mut().zip(a).zip(b) {
-                *o = a * b;
-            }
-        });
-}
-
 /// `_box_mean_std(plane, win)`: the box mean and the standard deviation over `win` x `win`,
 /// `sqrt(max(blur(p * p) - mean * mean, 0))` in float32.
 pub fn box_mean_std(
