@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 # Bump in any change that alters the bounds a frame measures for unchanged settings. Saved
 # per-frame bounds from an older version are dropped at startup (migrations/bounds.py).
-BOUNDS_VERSION = 1
+BOUNDS_VERSION = 2
 
 # Contrast-mask spacer, per-cent of the analysis grid's short side. Of the grid, not of
 # the render, so preview and export mask alike. Under the minimum the mask stops being

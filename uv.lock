@@ -354,7 +354,6 @@ dependencies = [
     { name = "negpy-core" },
     { name = "numpy" },
     { name = "onnxruntime" },
-    { name = "opencv-python-headless" },
     { name = "piexif" },
     { name = "pillow" },
     { name = "pyqt6" },
@@ -374,6 +373,7 @@ nkscan = [
     { name = "nkscan" },
 ]
 plustek = [
+    { name = "opencv-python-headless" },
     { name = "pyopticfilm" },
 ]
 sane = [
@@ -385,6 +385,7 @@ camera = [
     { name = "gphoto2", marker = "sys_platform != 'win32'" },
 ]
 dev = [
+    { name = "opencv-python-headless" },
     { name = "pyinstaller" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -398,6 +399,7 @@ pieusb = [
     { name = "pieusb" },
 ]
 plustek = [
+    { name = "opencv-python-headless" },
     { name = "pyopticfilm" },
 ]
 sane = [
@@ -414,7 +416,7 @@ requires-dist = [
     { name = "nkscan", marker = "extra == 'nkscan'", specifier = ">=0.14.2" },
     { name = "numpy", specifier = "==2.4.4" },
     { name = "onnxruntime", specifier = "==1.23.2" },
-    { name = "opencv-python-headless", specifier = "==4.13.0.92" },
+    { name = "opencv-python-headless", marker = "extra == 'plustek'", specifier = "==4.13.0.92" },
     { name = "piexif", specifier = "==1.1.3" },
     { name = "pillow", specifier = "==12.2.0" },
     { name = "pyopticfilm", marker = "extra == 'plustek'", specifier = ">=1.3.7" },
@@ -432,6 +434,7 @@ provides-extras = ["nkscan", "plustek", "sane", "camera"]
 [package.metadata.requires-dev]
 camera = [{ name = "gphoto2", marker = "sys_platform != 'win32'", specifier = ">=2.5" }]
 dev = [
+    { name = "opencv-python-headless", specifier = "==4.13.0.92" },
     { name = "pyinstaller", specifier = ">=6.18.0" },
     { name = "pytest", specifier = "==9.0.2" },
     { name = "pytest-cov", specifier = ">=7.0" },
@@ -440,7 +443,10 @@ dev = [
 ]
 nkscan = [{ name = "nkscan", specifier = ">=0.15" }]
 pieusb = [{ name = "pieusb", specifier = ">=0.3.7" }]
-plustek = [{ name = "pyopticfilm", specifier = ">=1.3.7" }]
+plustek = [
+    { name = "opencv-python-headless", specifier = "==4.13.0.92" },
+    { name = "pyopticfilm", specifier = ">=1.3.7" },
+]
 sane = [{ name = "python-sane", specifier = ">=2.9" }]
 
 [[package]]
