@@ -207,7 +207,29 @@ fn local_maps<'py>(
     Ok(out)
 }
 
+/// Brush footprints drawn into one new uint8 mask: for each (points, radius, thickness),
+/// `cv2.polylines(mask, [pts], False, 1, thickness)` when there are two points or more, then
+/// `cv2.circle(mask, p, radius, 1, -1)` at every point.
+#[pyfunction]
+fn stroke_cover<'py>(
+    py: Python<'py>,
+    shape: (usize, usize),
+    strokes: Vec<(numpy::PyReadonlyArrayDyn<'py, i32>, i64, i64)>,
+) -> PyResult<Bound<'py, numpy::PyArray2<u8>>> {
+    let (h, w) = shape;
+    let mut mask = vec![0u8; h * w];
+    for (pts, radius, thickness) in &strokes {
+        let v: Vec<(i64, i64)> = int_points(pts)?
+            .iter()
+            .map(|&(x, y)| (x as i64, y as i64))
+            .collect();
+        crate::shapes::stroke_cover(&mut mask, w, h, &v, *radius, *thickness);
+    }
+    numpy::PyArray1::from_vec(py, mask).reshape([h, w])
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(stroke_cover, m)?)?;
     m.add_function(wrap_pyfunction!(local_maps, m)?)?;
     m.add_function(wrap_pyfunction!(rasterise_mask, m)?)?;
     m.add_function(wrap_pyfunction!(fill_poly, m)?)?;

@@ -462,13 +462,27 @@ fn draw_line(mask: &mut [u8], w: usize, h: usize, pt1: (i64, i64), pt2: (i64, i6
 
 /// `cv2.fillConvexPoly(mask, pts, color)` (8-connected outline, shift 0) on a w x h uint8 mask.
 pub fn fill_convex_poly(mask: &mut [u8], w: usize, h: usize, v: &[(i64, i64)], color: u8) {
+    fill_convex_poly_shift(mask, w, h, v, color, 0);
+}
+
+/// OpenCV's FillConvexPoly with points of `shift` fractional bits, 8-connected.
+fn fill_convex_poly_shift(
+    mask: &mut [u8],
+    w: usize,
+    h: usize,
+    v: &[(i64, i64)],
+    color: u8,
+    shift: i64,
+) {
     let npts = v.len();
     if npts == 0 {
         return;
     }
     let delta1 = XY_ONE >> 1;
     let delta2 = XY_ONE >> 1;
-    let mut p0 = (v[npts - 1].0 << XY_SHIFT, v[npts - 1].1 << XY_SHIFT);
+    let delta = (1i64 << shift) >> 1;
+    let up = XY_SHIFT - shift;
+    let mut p0 = (v[npts - 1].0 << up, v[npts - 1].1 << up);
     let (mut xmin, mut xmax, mut ymin, mut ymax) = (v[0].0, v[0].0, v[0].1, v[0].1);
     let mut imin = 0usize;
     for (i, &q) in v.iter().enumerate() {
@@ -479,17 +493,23 @@ pub fn fill_convex_poly(mask: &mut [u8], w: usize, h: usize, v: &[(i64, i64)], c
         ymax = ymax.max(q.1);
         xmax = xmax.max(q.0);
         xmin = xmin.min(q.0);
-        let p = (q.0 << XY_SHIFT, q.1 << XY_SHIFT);
-        draw_line(
-            mask,
-            w,
-            h,
-            (p0.0 >> XY_SHIFT, p0.1 >> XY_SHIFT),
-            (p.0 >> XY_SHIFT, p.1 >> XY_SHIFT),
-            color,
-        );
+        let p = (q.0 << up, q.1 << up);
+        if shift == 0 {
+            draw_line(
+                mask,
+                w,
+                h,
+                (p0.0 >> XY_SHIFT, p0.1 >> XY_SHIFT),
+                (p.0 >> XY_SHIFT, p.1 >> XY_SHIFT),
+                color,
+            );
+        } else {
+            line2(mask, w, h, p0, p, color);
+        }
         p0 = p;
     }
+    let (xmin, xmax) = ((xmin + delta) >> shift, (xmax + delta) >> shift);
+    let (ymin, ymax) = ((ymin + delta) >> shift, (ymax + delta) >> shift);
     if npts < 3 || xmax < 0 || ymax < 0 || xmin >= w as i64 || ymin >= h as i64 {
         return;
     }
@@ -531,10 +551,10 @@ pub fn fill_convex_poly(mask: &mut [u8], w: usize, h: usize, v: &[(i64, i64)], c
                     if !go {
                         break;
                     }
-                    let ty = v[idx].1;
+                    let ty = (v[idx].1 + delta) >> shift;
                     if ty > y {
-                        let xs = v[idx0].0 << XY_SHIFT;
-                        let xe = v[idx].0 << XY_SHIFT;
+                        let xs = v[idx0].0 << up;
+                        let xe = v[idx].0 << up;
                         e.ye = ty;
                         e.dx = ((xe - xs) * 2 + (ty - y)) / (2 * (ty - y));
                         e.x = xs;
@@ -872,4 +892,244 @@ pub fn local_maps(
             });
     }
     Some(())
+}
+
+/// OpenCV's Line2: an 8-connected line between points of XY_SHIFT fractional bits.
+fn line2(mask: &mut [u8], w: usize, h: usize, pt1: (i64, i64), pt2: (i64, i64), color: u8) {
+    let (mut p1, mut p2) = (pt1, pt2);
+    if !clip_line(
+        (w as i64) << XY_SHIFT,
+        (h as i64) << XY_SHIFT,
+        &mut p1,
+        &mut p2,
+    ) {
+        return;
+    }
+    let (mut dx, mut dy) = (p2.0 - p1.0, p2.1 - p1.1);
+    let j = if dx < 0 { -1i64 } else { 0 };
+    let ax = (dx ^ j) - j;
+    let i = if dy < 0 { -1i64 } else { 0 };
+    let ay = (dy ^ i) - i;
+    let mut put = |x: i64, y: i64| {
+        if 0 <= x && x < w as i64 && 0 <= y && y < h as i64 {
+            mask[y as usize * w + x as usize] = color;
+        }
+    };
+    let (x_step, y_step, mut ecount);
+    let swap = |p1: &mut (i64, i64), p2: &mut (i64, i64), m: i64| {
+        p1.0 ^= p2.0 & m;
+        p2.0 ^= p1.0 & m;
+        p1.0 ^= p2.0 & m;
+        p1.1 ^= p2.1 & m;
+        p2.1 ^= p1.1 & m;
+        p1.1 ^= p2.1 & m;
+    };
+    if ax > ay {
+        dy = (dy ^ j) - j;
+        swap(&mut p1, &mut p2, j);
+        x_step = XY_ONE;
+        y_step = dy * (1 << XY_SHIFT) / (ax | 1);
+        ecount = (p2.0 - p1.0) >> XY_SHIFT;
+    } else {
+        dx = (dx ^ i) - i;
+        swap(&mut p1, &mut p2, i);
+        x_step = dx * (1 << XY_SHIFT) / (ay | 1);
+        y_step = XY_ONE;
+        ecount = (p2.1 - p1.1) >> XY_SHIFT;
+    }
+    p1.0 += XY_ONE >> 1;
+    p1.1 += XY_ONE >> 1;
+    put(
+        (p2.0 + (XY_ONE >> 1)) >> XY_SHIFT,
+        (p2.1 + (XY_ONE >> 1)) >> XY_SHIFT,
+    );
+    if ax > ay {
+        p1.0 >>= XY_SHIFT;
+        while ecount >= 0 {
+            put(p1.0, p1.1 >> XY_SHIFT);
+            p1.0 += 1;
+            p1.1 += y_step;
+            ecount -= 1;
+        }
+    } else {
+        p1.1 >>= XY_SHIFT;
+        while ecount >= 0 {
+            put(p1.0 >> XY_SHIFT, p1.1);
+            p1.0 += x_step;
+            p1.1 += 1;
+            ecount -= 1;
+        }
+    }
+}
+
+/// OpenCV's Circle with `fill`: the midpoint circle, filled with spans when asked.
+pub fn circle(
+    mask: &mut [u8],
+    w: usize,
+    h: usize,
+    center: (i64, i64),
+    radius: i64,
+    color: u8,
+    fill: bool,
+) {
+    let (wi, hi) = (w as i64, h as i64);
+    let (mut err, mut dx, mut dy, mut plus, mut minus) =
+        (0i64, radius, 0i64, 1i64, (radius << 1) - 1);
+    let hline = |m: &mut [u8], y: i64, x1: i64, x2: i64| {
+        let (x1, x2) = (x1.max(0), x2.min(wi - 1));
+        if (0..hi).contains(&y) && x1 <= x2 {
+            let row = y as usize * w;
+            m[row + x1 as usize..=row + x2 as usize].fill(color);
+        }
+    };
+    let point = |m: &mut [u8], y: i64, x: i64| {
+        if (0..hi).contains(&y) && (0..wi).contains(&x) {
+            m[y as usize * w + x as usize] = color;
+        }
+    };
+    while dx >= dy {
+        let (y11, y12, y21, y22) = (center.1 - dy, center.1 + dy, center.1 - dx, center.1 + dx);
+        let (x11, x12, x21, x22) = (center.0 - dx, center.0 + dx, center.0 - dy, center.0 + dy);
+        // OpenCV draws the spans unclipped when the circle is inside and clips them otherwise;
+        // both write the same pixels.
+        if x11 < wi && x12 >= 0 && y21 < hi && y22 >= 0 {
+            if fill {
+                hline(mask, y11, x11, x12);
+                hline(mask, y12, x11, x12);
+                if x21 < wi && x22 >= 0 {
+                    hline(mask, y21, x21, x22);
+                    hline(mask, y22, x21, x22);
+                }
+            } else {
+                for (y, x) in [(y11, x11), (y11, x12), (y12, x11), (y12, x12)] {
+                    point(mask, y, x);
+                }
+                if x21 < wi && x22 >= 0 {
+                    for (y, x) in [(y21, x21), (y21, x22), (y22, x21), (y22, x22)] {
+                        point(mask, y, x);
+                    }
+                }
+            }
+        }
+        dy += 1;
+        err += plus;
+        plus += 2;
+        let m = ((err <= 0) as i64) - 1;
+        err -= minus & m;
+        dx += m;
+        minus -= m & 2;
+    }
+}
+
+/// OpenCV's ThickLine for shift 0 and 8-connected lines; `flags` bit 0 caps `p0`, bit 1 `p1`.
+#[allow(clippy::too_many_arguments)]
+fn thick_line(
+    mask: &mut [u8],
+    w: usize,
+    h: usize,
+    p0: (i64, i64),
+    p1: (i64, i64),
+    color: u8,
+    thickness: i64,
+    flags: u8,
+) {
+    let (wi, hi) = (w as i64, h as i64);
+    let (mut p0, mut p1) = (p0, p1);
+    let inside = |p: (i64, i64)| p.0 >= 0 && p.0 < wi && p.1 >= 0 && p.1 < hi;
+    if thickness > 1 && (!inside(p0) || !inside(p1)) {
+        let m = thickness;
+        let (mut a, mut b) = ((p0.0 + m, p0.1 + m), (p1.0 + m, p1.1 + m));
+        clip_line(wi + 2 * m, hi + 2 * m, &mut a, &mut b);
+        p0 = (a.0 - m, a.1 - m);
+        p1 = (b.0 - m, b.1 - m);
+    }
+    let mut p0 = (p0.0 << XY_SHIFT, p0.1 << XY_SHIFT);
+    let p1 = (p1.0 << XY_SHIFT, p1.1 << XY_SHIFT);
+    if thickness <= 1 {
+        let round = |p: (i64, i64)| {
+            (
+                (p.0 + (XY_ONE >> 1)) >> XY_SHIFT,
+                (p.1 + (XY_ONE >> 1)) >> XY_SHIFT,
+            )
+        };
+        draw_line(mask, w, h, round(p0), round(p1), color);
+        return;
+    }
+    let inv = 1.0 / XY_ONE as f64;
+    let dx = (p0.0 - p1.0) as f64 * inv;
+    let dy = (p1.1 - p0.1) as f64 * inv;
+    let r = dx * dx + dy * dy;
+    let odd = thickness & 1;
+    let thickness = thickness << (XY_SHIFT - 1);
+    if r.abs() > f64::EPSILON {
+        let r = (thickness as f64 + odd as f64 * XY_ONE as f64 * 0.5) / r.sqrt();
+        let dp = (
+            (dy * r).round_ties_even() as i64,
+            (dx * r).round_ties_even() as i64,
+        );
+        let pt = [
+            (p0.0 + dp.0, p0.1 + dp.1),
+            (p0.0 - dp.0, p0.1 - dp.1),
+            (p1.0 - dp.0, p1.1 - dp.1),
+            (p1.0 + dp.0, p1.1 + dp.1),
+        ];
+        fill_convex_poly_shift(mask, w, h, &pt, color, XY_SHIFT);
+    }
+    for i in 0..2 {
+        if flags & (i + 1) != 0 {
+            let center = (
+                (p0.0 + (XY_ONE >> 1)) >> XY_SHIFT,
+                (p0.1 + (XY_ONE >> 1)) >> XY_SHIFT,
+            );
+            circle(
+                mask,
+                w,
+                h,
+                center,
+                (thickness + (XY_ONE >> 1)) >> XY_SHIFT,
+                color,
+                true,
+            );
+        }
+        p0 = p1;
+    }
+}
+
+/// `cv2.polylines(mask, [pts], False, color, thickness)`, 8-connected, shift 0.
+pub fn polyline_open(
+    mask: &mut [u8],
+    w: usize,
+    h: usize,
+    v: &[(i64, i64)],
+    color: u8,
+    thickness: i64,
+) {
+    let Some(&first) = v.first() else {
+        return;
+    };
+    let mut p0 = first;
+    let mut flags = 3;
+    for &p in &v[1..] {
+        thick_line(mask, w, h, p0, p, color, thickness, flags);
+        p0 = p;
+        flags = 2;
+    }
+}
+
+/// A brush footprint: the open polyline of `pts` at twice `radius` and a filled circle of
+/// `radius` at every point, as retouch's `_cover` and `exclusion_cover` draw it.
+pub fn stroke_cover(
+    mask: &mut [u8],
+    w: usize,
+    h: usize,
+    pts: &[(i64, i64)],
+    radius: i64,
+    thickness: i64,
+) {
+    if pts.len() > 1 {
+        polyline_open(mask, w, h, pts, 1, thickness);
+    }
+    for &p in pts {
+        circle(mask, w, h, p, radius, 1, true);
+    }
 }

@@ -317,19 +317,16 @@ def exclusion_cover(strokes: List[Tuple], shape: Tuple[int, int]) -> np.ndarray:
     loose dabs would leave the film between them repaired. Smoothed past two points and
     round-capped, so the band matches the one the overlay draws."""
     h, w = shape[:2]
-    cover = np.zeros((h, w), dtype=np.uint8)
     scale = max(w, h) / HEAL_SIZE_REF
+    bands = []
     for points, size in strokes:
         radius = max(1, int(round(float(size) * scale * 0.5)))
         chain = [(float(p[0]) * w, float(p[1]) * h) for p in points]
         if len(chain) >= 3:
             chain = smooth_polyline(chain, closed=False)
-        pts = np.round(np.array(chain, dtype=np.float32)).astype(np.int32)
-        if len(pts) > 1:
-            cv2.polylines(cover, [pts], False, 1, thickness=max(1, 2 * radius))
-        for cx, cy in pts:  # round caps and joins, as a thick polyline alone ends flat
-            cv2.circle(cover, (int(cx), int(cy)), radius, 1, -1)
-    return cover
+        pts = np.ascontiguousarray(np.round(np.array(chain, dtype=np.float32)).astype(np.int32))
+        bands.append((pts, radius, max(1, 2 * radius)))
+    return negpy_core.stroke_cover((h, w), bands)
 
 
 def drop_exclusions(
@@ -349,10 +346,8 @@ def drop_exclusions(
     if score is not None:
         # Feather the rim, as the manual heal does its own: the score is a ramp, and cutting
         # one at the brush edge prints the edge as a step.
-        d = cv2.distanceTransform(cover, cv2.DIST_L2, 3)
-        alpha = np.clip(d / _MANUAL_RIM_PX, 0.0, 1.0)
-        score = (score + alpha * (1.0 - score)).astype(np.float32)
-        if not (score < 1.0).any():
+        score = np.array(score, dtype=np.float32)
+        if not negpy_core.release_score(score, cover, _MANUAL_RIM_PX):
             score = None
     if hair_mask is not None:
         # Binary, so it takes the footprint unfeathered.
@@ -415,50 +410,25 @@ def strokes_to_score(
         if x1 <= x0 or y1 <= y0:
             continue
 
-        cover = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
-        local = np.round(pts - (x0, y0)).astype(np.int32)
-        if len(local) > 1:
-            cv2.polylines(cover, [local], False, 1, thickness=max(1, int(round(2.0 * radius))))
-        for cx, cy in local:  # round caps and joins — a thick polyline alone leaves flat ends
-            cv2.circle(cover, (int(cx), int(cy)), max(1, int(round(radius))), 1, -1)
-        if not cover.any():
+        local = np.ascontiguousarray(np.round(pts - (x0, y0)).astype(np.int32))
+        brush = (max(1, int(round(radius))), max(1, int(round(2.0 * radius))))
+        # Inside the brush a pixel repairs by how far it stands out from the film around it:
+        # MAD about zero over the whole crop, so the defect stays a minority in its own noise
+        # estimate, then hysteresis from the core, because grain is isolated and never joins.
+        constants = (
+            win,
+            _MANUAL_Z_MIN,
+            _MANUAL_Z_HI,
+            _MANUAL_Z_GROW,
+            _MANUAL_Z_GROW_FRAC,
+            _DETECT_PAD_PX * film_scale((h, w)),
+            _IR_SCORE_FLOOR,
+            _MANUAL_RIM_PX,
+        )
+        region = negpy_core.heal_region(_density(img[y0:y1, x0:x1]), local, brush, constants)
+        if region is None:
             continue
-
-        crop = _density(img[y0:y1, x0:x1])
-        detail = cv2.blur(crop - cv2.blur(crop, (win, win)), (3, 3))
-        # MAD about zero over the whole crop, so the defect stays a minority in its own
-        # noise estimate. 0.6745 is the half-normal median, which turns it into a σ.
-        sigma = float(np.median(np.abs(detail))) / 0.6745
-        z = np.abs(detail) / max(sigma, 1e-9)
-
-        inside = cover > 0
-        peak = float(z[inside].max())
-        if peak < _MANUAL_Z_MIN:
-            continue  # the brush found clean film; repairing it would only smooth grain
-        # Self-normalize a faint defect against its own peak, so a real mark under the
-        # absolute bar still repairs.
-        hi = _MANUAL_Z_HI if peak >= _MANUAL_Z_HI else peak * 0.9
-        # Hysteresis, because a single bar cannot do this job: a defect's core clears any bar
-        # but its soft skirt does not, and a bar low enough to catch the skirt catches grain
-        # everywhere. Grow from the core to the low bar through connected pixels only. Grain
-        # is isolated, so it never joins.
-        lo = max(_MANUAL_Z_GROW, hi * _MANUAL_Z_GROW_FRAC)
-        strong = inside & (z >= hi)
-        if not strong.any():
-            continue
-        _n, lab = cv2.connectedComponents((inside & (z >= lo)).astype(np.uint8), connectivity=8)
-        seeded = np.unique(lab[strong])
-        keep = np.isin(lab, seeded[seeded > 0]).astype(np.uint8)
-
-        # Pad past the defect, like the detector does: the soft PSF skirt falls under any bar
-        # that keeps grain out, and left unrepaired it prints as a dark outline.
-        region = _mask_to_score(keep, _DETECT_PAD_PX * film_scale((h, w)))
-        # Soften the search area's rim, or a defect crossing it repairs to a hard line.
-        d = cv2.distanceTransform(cover, cv2.DIST_L2, 3)
-        alpha = np.clip(d / _MANUAL_RIM_PX, 0.0, 1.0)
-
-        region = 1.0 - alpha * (1.0 - region)
-        np.minimum(score[y0:y1, x0:x1], region.astype(np.float32), out=score[y0:y1, x0:x1])
+        np.minimum(score[y0:y1, x0:x1], region, out=score[y0:y1, x0:x1])
         touched = True
 
     return score if touched else None

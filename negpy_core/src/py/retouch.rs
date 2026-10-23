@@ -622,7 +622,126 @@ fn scratch_slope_search<'py>(
     Ok(found.map(|(s, i, k, row)| (s, i, k, row.into_pyarray(py))))
 }
 
+/// `apply_clone_stroke` in place: the crop (x0, y0, x1, y1), the smoothed path in crop
+/// pixels, the brush radius in whole pixels, then (radius, sigma), the source shift and
+/// (feather, strength, match tone).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn clone_stroke(
+    py: Python<'_>,
+    mut out: PyReadwriteArrayDyn<'_, f32>,
+    rect: (usize, usize, usize, usize),
+    path: numpy::PyReadonlyArrayDyn<'_, i32>,
+    brush: i64,
+    sizes: (f64, f64),
+    shift: (i64, i64),
+    brush_settings: (f64, f64, bool),
+) -> PyResult<()> {
+    use numpy::PyUntypedArrayMethods;
+    let [h, w, 3] = out.shape()[..] else {
+        return Err(PyValueError::new_err("needs an HxWx3 image"));
+    };
+    let (x0, y0, x1, y1) = rect;
+    if x1 > w || y1 > h || x0 >= x1 || y0 >= y1 {
+        return Err(PyValueError::new_err("crop outside the image"));
+    }
+    let path = path_points(&path)?;
+    let (radius, sigma) = sizes;
+    let (feather, strength, match_tone) = brush_settings;
+    let s = retouch::CloneStroke {
+        rect,
+        path: &path,
+        brush,
+        radius,
+        shift,
+        sigma,
+        feather,
+        strength,
+        match_tone,
+    };
+    let o = out
+        .as_slice_mut()
+        .map_err(|_| PyValueError::new_err("needs a contiguous image"))?;
+    super::detach(py, (x1 - x0) * (y1 - y0), || {
+        retouch::clone_stroke(o, (h, w), &s)
+    })
+    .ok_or_else(|| PyValueError::new_err("invalid clone stroke"))
+}
+
+fn path_points(path: &numpy::PyReadonlyArrayDyn<'_, i32>) -> PyResult<Vec<(i64, i64)>> {
+    let pts = path
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous path"))?;
+    Ok(pts
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|p| (p[0] as i64, p[1] as i64))
+        .collect())
+}
+
+/// `drop_exclusions`' score release in place under a uint8 footprint, with the rim in pixels;
+/// returns whether anything stays under 1.
+#[pyfunction]
+fn release_score(
+    py: Python<'_>,
+    mut score: PyReadwriteArrayDyn<'_, f32>,
+    cover: numpy::PyReadonlyArray2<'_, u8>,
+    rim: f32,
+) -> PyResult<bool> {
+    let [h, w] = score.shape()[..] else {
+        return Err(PyValueError::new_err("needs an HxW score"));
+    };
+    if cover.shape() != [h, w] {
+        return Err(PyValueError::new_err(
+            "needs a footprint of the score's shape",
+        ));
+    }
+    let c = cover
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous footprint"))?;
+    let s = score
+        .as_slice_mut()
+        .map_err(|_| PyValueError::new_err("needs a contiguous score"))?;
+    Ok(super::detach(py, s.len(), || {
+        retouch::release_score(s, c, (h, w), rim)
+    }))
+}
+
+/// One stroke of `strokes_to_score`: the density crop, the smoothed path in crop pixels, (cap
+/// radius, line thickness), then (window, z min, z hi, z grow, grow fraction, pad, floor, rim).
+#[pyfunction]
+fn heal_region<'py>(
+    py: Python<'py>,
+    dens: PyReadonlyArrayDyn<'py, f32>,
+    path: numpy::PyReadonlyArrayDyn<'py, i32>,
+    brush: (i64, i64),
+    constants: (usize, f64, f64, f64, f64, f64, f64, f32),
+) -> PyResult<Option<Plane<'py>>> {
+    let (d, dims) = plane2(&dens)?;
+    let path = path_points(&path)?;
+    let (win, z_min, z_hi, z_grow, z_grow_frac, pad_px, score_floor, rim) = constants;
+    let c = retouch::HealSearch {
+        win,
+        z_min,
+        z_hi,
+        z_grow,
+        z_grow_frac,
+        pad_px,
+        score_floor,
+        rim,
+    };
+    super::detach(py, d.len(), || {
+        retouch::heal_region(d, dims, &path, brush, &c)
+    })
+    .map(|r| plane_array(py, r, dims))
+    .transpose()
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(release_score, m)?)?;
+    m.add_function(wrap_pyfunction!(heal_region, m)?)?;
+    m.add_function(wrap_pyfunction!(clone_stroke, m)?)?;
     m.add_function(wrap_pyfunction!(scratch_ridge, m)?)?;
     m.add_function(wrap_pyfunction!(scratch_slope_search, m)?)?;
     m.add_function(wrap_pyfunction!(split_hairs, m)?)?;

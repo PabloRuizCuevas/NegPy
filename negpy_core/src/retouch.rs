@@ -1339,3 +1339,298 @@ pub fn scratch_slope_search(
     }
     best
 }
+
+/// One clone stroke's geometry, as `apply_clone_stroke` derives it.
+pub struct CloneStroke<'a> {
+    /// The crop it works in: x0, y0, x1, y1.
+    pub rect: (usize, usize, usize, usize),
+    /// Its smoothed path, in crop pixels.
+    pub path: &'a [(i64, i64)],
+    pub brush: i64,
+    pub radius: f64,
+    pub shift: (i64, i64),
+    pub sigma: f64,
+    pub feather: f64,
+    pub strength: f64,
+    pub match_tone: bool,
+}
+
+/// `_local_mean(plane, weight, sigma)` of a 3-channel crop: a Gaussian mean over the pixels the
+/// weight admits.
+fn local_mean(
+    plane: &[f32],
+    weight: &[f32],
+    (h, w): (usize, usize),
+    sigma: f64,
+) -> Option<Vec<f32>> {
+    use crate::filter::{Border, gaussian_blur};
+    let weighted: Vec<f32> = plane
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .zip(weight)
+        .flat_map(|(p, &k)| [p[0] * k, p[1] * k, p[2] * k])
+        .collect();
+    let (mut num, mut den) = (vec![0f32; 3 * h * w], vec![0f32; h * w]);
+    gaussian_blur(
+        &weighted,
+        &mut num,
+        (h, w, 3),
+        (0, 0),
+        (sigma, sigma),
+        Border::Reflect101,
+    )?;
+    gaussian_blur(
+        weight,
+        &mut den,
+        (h, w, 1),
+        (0, 0),
+        (sigma, sigma),
+        Border::Reflect101,
+    )?;
+    for (n, &d) in num.as_chunks_mut::<3>().0.iter_mut().zip(&den) {
+        let d = if d.is_nan() || d > 1e-6 { d } else { 1e-6 };
+        for v in n {
+            *v /= d;
+        }
+    }
+    Some(num)
+}
+
+/// `apply_clone_stroke` in place on an HxWx3 image: the source patch, tone-matched to the
+/// destination's surround when asked, blended over the brush footprint.
+pub fn clone_stroke(out: &mut [f32], (h, w): (usize, usize), s: &CloneStroke) -> Option<()> {
+    use crate::distance::{Metric, distance_transform};
+    let (x0, y0, x1, y1) = s.rect;
+    let (ch, cw) = (y1 - y0, x1 - x0);
+    let mut cover = vec![0u8; ch * cw];
+    crate::shapes::stroke_cover(&mut cover, cw, ch, s.path, s.brush, 2 * s.brush);
+    if !cover.iter().any(|&c| c != 0) {
+        return Some(());
+    }
+    let (sx, sy) = s.shift;
+    let (hi, wi) = (h as i64, w as i64);
+    let mut valid = vec![false; ch * cw];
+    let (mut src, mut dst) = (vec![0f32; 3 * ch * cw], vec![0f32; 3 * ch * cw]);
+    for y in 0..ch {
+        let yy = (y0 + y) as i64 + sy;
+        let ys = yy.clamp(0, hi - 1) as usize;
+        for x in 0..cw {
+            let xx = (x0 + x) as i64 + sx;
+            let xs = xx.clamp(0, wi - 1) as usize;
+            let p = y * cw + x;
+            valid[p] = (0..hi).contains(&yy) && (0..wi).contains(&xx);
+            src[3 * p..3 * p + 3].copy_from_slice(&out[3 * (ys * w + xs)..3 * (ys * w + xs) + 3]);
+            let d = 3 * ((y0 + y) * w + x0 + x);
+            dst[3 * p..3 * p + 3].copy_from_slice(&out[d..d + 3]);
+        }
+    }
+    let mut alpha: Vec<f32> = if s.feather > 0.0 {
+        let depth = distance_transform(&cover, ch, cw, Metric::L2Mask3);
+        let deepest = depth.iter().fold(0f32, |m, &v| m.max(v)) as f64;
+        // Python's min and max: the first argument unless the second is strictly past it.
+        let reach = if deepest < s.radius {
+            deepest
+        } else {
+            s.radius
+        };
+        let denom = s.feather * reach;
+        let denom = (if 1e-6 > denom { 1e-6 } else { denom }) as f32;
+        depth
+            .iter()
+            .map(|&d| {
+                let v = d / denom;
+                let v = if v.is_nan() || v > 0.0 { v } else { 0.0 };
+                if v.is_nan() || v < 1.0 { v } else { 1.0 }
+            })
+            .collect()
+    } else {
+        cover.iter().map(|&c| c as f32).collect()
+    };
+    // `alpha *= strength * valid` multiplies by a float64 array.
+    for (a, &v) in alpha.iter_mut().zip(&valid) {
+        *a = (*a as f64 * (s.strength * v as u8 as f64)) as f32;
+    }
+    let mut patch = src.clone();
+    if s.match_tone {
+        let ring: Vec<f32> = cover
+            .iter()
+            .zip(&valid)
+            .map(|(&c, &v)| (c == 0 && v) as u8 as f32)
+            .collect();
+        if ring.iter().any(|&r| r != 0.0) {
+            let near = local_mean(&dst, &ring, (ch, cw), s.sigma)?;
+            let far = local_mean(&src, &ring, (ch, cw), s.sigma)?;
+            for ((p, &n), &f) in patch.iter_mut().zip(&near).zip(&far) {
+                let gain = n / if f.is_nan() || f > 1e-6 { f } else { 1e-6 };
+                let gain = if gain.is_nan() || gain > 1.0 / 64.0 {
+                    gain
+                } else {
+                    1.0 / 64.0
+                };
+                let gain = if gain.is_nan() || gain < 64.0 {
+                    gain
+                } else {
+                    64.0
+                };
+                *p *= gain;
+            }
+        }
+    }
+    for y in 0..ch {
+        for x in 0..cw {
+            let p = y * cw + x;
+            let a = alpha[p];
+            let d = 3 * ((y0 + y) * w + x0 + x);
+            for c in 0..3 {
+                out[d + c] = dst[3 * p + c] * (1.0 - a) + patch[3 * p + c] * a;
+            }
+        }
+    }
+    Some(())
+}
+
+/// `drop_exclusions`' release of a score under the excluded footprint: the score lifted to 1
+/// over `rim` pixels of distance inside the footprint. Returns whether anything stays under 1.
+pub fn release_score(score: &mut [f32], cover: &[u8], (h, w): (usize, usize), rim: f32) -> bool {
+    // The distance only matters inside the footprint, and a one-pixel ring of zeros around its
+    // box holds every pixel's nearest zero, so the transform runs on that box alone.
+    let rows: Vec<usize> = (0..h)
+        .filter(|&y| cover[y * w..(y + 1) * w].iter().any(|&c| c != 0))
+        .collect();
+    if let (Some(&top), Some(&bottom)) = (rows.first(), rows.last()) {
+        let cols: Vec<usize> = (0..w)
+            .filter(|&x| (top..=bottom).any(|y| cover[y * w + x] != 0))
+            .collect();
+        let (y0, y1) = (top.saturating_sub(1), (bottom + 2).min(h));
+        let (x0, x1) = (cols[0].saturating_sub(1), (cols[cols.len() - 1] + 2).min(w));
+        let (ch, cw) = (y1 - y0, x1 - x0);
+        let crop: Vec<u8> = (y0..y1)
+            .flat_map(|y| cover[y * w + x0..y * w + x1].iter().copied())
+            .collect();
+        let d =
+            crate::distance::distance_transform(&crop, ch, cw, crate::distance::Metric::L2Mask3);
+        for y in 0..ch {
+            for x in 0..cw {
+                let a = d[y * cw + x] / rim;
+                let a = if a.is_nan() || a > 0.0 { a } else { 0.0 };
+                let a = if a.is_nan() || a < 1.0 { a } else { 1.0 };
+                let s = &mut score[(y0 + y) * w + x0 + x];
+                *s += a * (1.0 - *s);
+            }
+        }
+    }
+    score.par_iter().any(|&s| s < 1.0)
+}
+
+/// The scalars of `strokes_to_score`, as Python floats.
+pub struct HealSearch {
+    pub win: usize,
+    pub z_min: f64,
+    pub z_hi: f64,
+    pub z_grow: f64,
+    pub z_grow_frac: f64,
+    pub pad_px: f64,
+    pub score_floor: f64,
+    pub rim: f32,
+}
+
+/// One stroke of `strokes_to_score` on its crop: the score of what stands out from the film
+/// inside the brush footprint (a two-sided local z-score on density, grown by hysteresis),
+/// softened at the footprint's rim. `None` when the brush found nothing.
+pub fn heal_region(
+    dens: &[f32],
+    (h, w): (usize, usize),
+    path: &[(i64, i64)],
+    (radius, thickness): (i64, i64),
+    c: &HealSearch,
+) -> Option<Vec<f32>> {
+    use crate::filter::{Border, box_filter};
+    let n = h * w;
+    let mut cover = vec![0u8; n];
+    crate::shapes::stroke_cover(&mut cover, w, h, path, radius, thickness);
+    if !cover.iter().any(|&v| v != 0) {
+        return None;
+    }
+    let mut local = vec![0f32; n];
+    box_filter(
+        dens,
+        &mut local,
+        (h, w, 1),
+        (c.win, c.win),
+        true,
+        Border::Reflect101,
+    )?;
+    let diff: Vec<f32> = dens.iter().zip(&local).map(|(&d, &l)| d - l).collect();
+    let mut detail = vec![0f32; n];
+    box_filter(
+        &diff,
+        &mut detail,
+        (h, w, 1),
+        (3, 3),
+        true,
+        Border::Reflect101,
+    )?;
+    let abs: Vec<f32> = detail.iter().map(|v| v.abs()).collect();
+    let sigma = crate::stats::median(&abs) as f64 / 0.6745;
+    let sigma = (if 1e-9 > sigma { 1e-9 } else { sigma }) as f32;
+    let z: Vec<f32> = abs.iter().map(|&a| a / sigma).collect();
+    let peak =
+        z.iter()
+            .zip(&cover)
+            .filter(|&(_, &c)| c != 0)
+            .fold(
+                f32::NEG_INFINITY,
+                |m, (&z, _)| if z > m || z.is_nan() { z } else { m },
+            ) as f64;
+    if peak < c.z_min {
+        return None;
+    }
+    let hi = if peak >= c.z_hi { c.z_hi } else { peak * 0.9 };
+    let lo = if hi * c.z_grow_frac > c.z_grow {
+        hi * c.z_grow_frac
+    } else {
+        c.z_grow
+    };
+    let (hi32, lo32) = (hi as f32, lo as f32);
+    let strong: Vec<bool> = z
+        .iter()
+        .zip(&cover)
+        .map(|(&z, &c)| c != 0 && z >= hi32)
+        .collect();
+    if !strong.iter().any(|&s| s) {
+        return None;
+    }
+    let grow: Vec<u8> = z
+        .iter()
+        .zip(&cover)
+        .map(|(&z, &c)| (c != 0 && z >= lo32) as u8)
+        .collect();
+    let cc = crate::components::connected_components(&grow, h, w, 8);
+    let mut seeded = vec![false; cc.count];
+    for (p, &s) in strong.iter().enumerate() {
+        if s {
+            seeded[cc.labels[p] as usize] = true;
+        }
+    }
+    seeded[0] = false;
+    let keep: Vec<u8> = cc
+        .labels
+        .iter()
+        .map(|&l| seeded[l as usize] as u8)
+        .collect();
+    let region = crate::distance::mask_to_score(&keep, h, w, c.pad_px, c.score_floor);
+    let d = crate::distance::distance_transform(&cover, h, w, crate::distance::Metric::L2Mask3);
+    Some(
+        region
+            .iter()
+            .zip(&d)
+            .map(|(&r, &d)| {
+                let a = d / c.rim;
+                let a = if a.is_nan() || a > 0.0 { a } else { 0.0 };
+                let a = if a.is_nan() || a < 1.0 { a } else { 1.0 };
+                1.0 - a * (1.0 - r)
+            })
+            .collect(),
+    )
+}

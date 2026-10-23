@@ -53,3 +53,18 @@ def test_rasterise_matches_cv2():
     for shape, pts, sigma, invert in cases:
         want = _rasterise_cv2(shape, pts, 150, 210, sigma, invert)
         assert rasterise(shape, pts, 150, 210, sigma, invert).tobytes() == want.tobytes(), shape
+
+
+def test_stroke_cover_matches_cv2_on_random_strokes():
+    rng = np.random.default_rng(1)
+    for _ in range(800):
+        h, w = (int(v) for v in rng.integers(4, 90, 2))
+        n = int(rng.integers(1, 7))
+        pts = np.stack([rng.integers(-30, w + 30, n), rng.integers(-30, h + 30, n)], 1).astype(np.int32)
+        radius, thickness = int(rng.integers(0, 25)), int(rng.integers(1, 50))
+        want = np.zeros((h, w), np.uint8)
+        if n > 1:
+            cv2.polylines(want, [pts], False, 1, thickness=thickness)
+        for cx, cy in pts:
+            cv2.circle(want, (int(cx), int(cy)), radius, 1, -1)
+        np.testing.assert_array_equal(negpy_core.stroke_cover((h, w), [(pts, radius, thickness)]), want)

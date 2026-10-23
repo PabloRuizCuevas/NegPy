@@ -244,7 +244,43 @@ fn split_toning<'py>(
     Ok(out)
 }
 
+/// `apply_hue_trim` of an HxWx3 float32 image with (cos, sin) of a nonzero angle, then the
+/// working Lab constants.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn hue_trim<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    rotation: (f32, f32),
+    to_xyz: PyReadonlyArray2<'py, f32>,
+    to_rgb: PyReadonlyArray2<'py, f32>,
+    white: PyReadonlyArray1<'py, f32>,
+    eps: f32,
+    kappa: f32,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    if img.shape().last() != Some(&3) {
+        return Err(PyValueError::new_err("needs an HxWx3 image"));
+    }
+    let spaces = (
+        space(&to_xyz, &white, eps, kappa)?,
+        space(&to_rgb, &white, eps, kappa)?,
+    );
+    let src = img
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous image"))?;
+    let out = PyArrayDyn::<f32>::zeros(py, img.shape(), false);
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        super::detach(py, dst.len(), || lab::hue_trim(src, rotation, spaces, dst));
+    }
+    Ok(out)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(hue_trim, m)?)?;
     m.add_function(wrap_pyfunction!(split_toning, m)?)?;
     m.add_function(wrap_pyfunction!(rl_sharpen, m)?)?;
     m.add_function(wrap_pyfunction!(clahe, m)?)?;

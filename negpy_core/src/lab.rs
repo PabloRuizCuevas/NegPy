@@ -460,3 +460,29 @@ pub fn split_toning(
     color::lab_to_rgb(&lab, dst, to_rgb);
     dst.par_iter_mut().for_each(|v| *v = clip(*v, 0.0, 1.0));
 }
+
+/// `apply_hue_trim` of an HxWx3 image for a nonzero angle given as its (cos, sin): Lab, a*b*
+/// rotated in float32, back to working RGB clipped to 0..1.
+pub fn hue_trim(
+    src: &[f32],
+    (cos, sin): (f32, f32),
+    spaces: (LabSpace, LabSpace),
+    dst: &mut [f32],
+) {
+    let mut lab = vec![0f32; src.len()];
+    color::rgb_to_lab(src, &mut lab, spaces.0);
+    lab.par_chunks_mut(3 * 4096).for_each(move |run| {
+        for p in run.as_chunks_mut::<3>().0 {
+            let (a, b) = (p[1], p[2]);
+            p[1] = a * cos - b * sin;
+            p[2] = a * sin + b * cos;
+        }
+    });
+    color::lab_to_rgb(&lab, dst, spaces.1);
+    dst.par_chunks_mut(4096).for_each(|run| {
+        for v in run {
+            let c = if v.is_nan() || *v > 0.0 { *v } else { 0.0 };
+            *v = if c.is_nan() || c < 1.0 { c } else { 1.0 };
+        }
+    });
+}

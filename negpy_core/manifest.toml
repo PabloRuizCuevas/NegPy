@@ -1324,8 +1324,8 @@ depends = ["grid_corners"]
 
 ["features/process/hue.py::apply_hue_trim"]
 phase = 4
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.hue_trim"]
 depends = []
 
 ["features/process/logic.py::_corr"]
@@ -1390,27 +1390,15 @@ status = "todo"
 calls = ["negpy_core.resize_area", "np.median", "np.percentile", "np.quantile"]
 depends = []
 
-["features/retouch/clone.py::_cover"]
-phase = 4
-status = "todo"
-calls = ["cv2.circle", "cv2.polylines"]
-depends = []
-
-["features/retouch/clone.py::_local_mean"]
-phase = 4
-status = "todo"
-calls = ["cv2.GaussianBlur"]
-depends = []
-
 ["features/retouch/clone.py::apply_clone_stroke"]
 phase = 4
-status = "todo"
-calls = ["cv2.distanceTransform"]
-depends = ["_cover", "_local_mean"]
+status = "ported"
+calls = ["negpy_core.clone_stroke"]
+depends = []
 
 ["features/retouch/clone.py::apply_clone_strokes"]
 phase = 4
-status = "todo"
+status = "ported"
 calls = []
 depends = ["apply_clone_stroke"]
 
@@ -1554,14 +1542,14 @@ depends = ["_erode_resize_bounded"]
 
 ["features/retouch/logic.py::drop_exclusions"]
 phase = 4
-status = "todo"
-calls = ["cv2.distanceTransform"]
+status = "ported"
+calls = ["negpy_core.release_score"]
 depends = ["exclusion_cover"]
 
 ["features/retouch/logic.py::exclusion_cover"]
 phase = 4
-status = "todo"
-calls = ["cv2.circle", "cv2.polylines"]
+status = "ported"
+calls = ["negpy_core.stroke_cover"]
 depends = []
 
 ["features/retouch/logic.py::ir_defect_score"]
@@ -1614,9 +1602,9 @@ depends = []
 
 ["features/retouch/logic.py::strokes_to_score"]
 phase = 4
-status = "todo"
-calls = ["cv2.blur", "cv2.circle", "cv2.connectedComponents", "cv2.distanceTransform", "cv2.polylines", "np.median", "np.unique"]
-depends = ["_density", "_mask_to_score"]
+status = "ported"
+calls = ["negpy_core.heal_region"]
+depends = ["_density"]
 
 ["features/retouch/logic.py::trace_scratch"]
 phase = 4
