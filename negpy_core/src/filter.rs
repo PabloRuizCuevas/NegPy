@@ -666,6 +666,73 @@ fn column_step(sum: &mut [f64], sp: &[f64], old: &[f64], out: Option<&mut [f32]>
     }
 }
 
+/// `box_filter` for a kernel up to five wide in one parallel pass: each strip of pixels sums
+/// its own rows (fresh sums need no state from the left) into a ring of `kh` rows that stays in
+/// cache, then runs the column recurrence down the frame.
+fn box_narrow(
+    src: &[f32],
+    dst: &mut [f32],
+    (h, w, cn): (usize, usize, usize),
+    (kw, kh): (usize, usize),
+    scale: f64,
+    (xmap, ymap): (&[Option<usize>], &[Option<usize>]),
+) {
+    let n = w * cn;
+    let px = w.div_ceil(rayon::current_num_threads()).max(64 / cn.max(1));
+    let total = h + kh - 1;
+    let ax = kw / 2;
+    let (lo, hi) = (ax.min(w), (w + ax + 1).saturating_sub(kw).max(ax.min(w)));
+    // Many threads writing the same fresh huge page at once stall each other.
+    dst.par_chunks_mut(1 << 19).for_each(|c| c.fill(0.0));
+    let mut outs: Vec<Vec<&mut [f32]>> = (0..w.div_ceil(px)).map(|_| Vec::new()).collect();
+    for row in dst.chunks_exact_mut(n) {
+        for (o, part) in outs.iter_mut().zip(row.chunks_mut(px * cn)) {
+            o.push(part);
+        }
+    }
+    outs.par_iter_mut().enumerate().for_each(|(si, out)| {
+        let x0 = si * px;
+        let sw = out[0].len();
+        let pw = sw / cn;
+        let mut ring = vec![0f64; kh * sw];
+        let mut sum = vec![0f64; sw];
+        let zeros = vec![0f64; sw];
+        for (rc, &source) in ymap.iter().enumerate().take(total) {
+            let slot = rc % kh;
+            let line = &mut ring[slot * sw..(slot + 1) * sw];
+            match source {
+                None => line.fill(0.0),
+                Some(y) => {
+                    let row = &src[y * n..(y + 1) * n];
+                    // Pixels whose taps all lie inside the row sum straight off the source.
+                    let (a, b) = (lo.clamp(x0, x0 + pw), hi.clamp(x0, x0 + pw));
+                    for x in (x0..a).chain(b.max(a)..x0 + pw) {
+                        for c in 0..cn {
+                            line[(x - x0) * cn + c] = (0..kw).fold(0.0, |s, k| {
+                                s + xmap[x + k].map_or(0.0, |sx| row[sx * cn + c] as f64)
+                            });
+                        }
+                    }
+                    if b > a {
+                        let out = &mut line[(a - x0) * cn..(b - x0) * cn];
+                        narrow_rows(out, &row[(a - ax) * cn..], cn, kw);
+                    }
+                }
+            }
+            // After writing, row rc + 1 - kh leaves the window; it sits kh - 1 slots back.
+            let line = &ring[slot * sw..(slot + 1) * sw];
+            let old = if rc + 1 >= kh {
+                let o = (rc + 1) % kh;
+                &ring[o * sw..(o + 1) * sw]
+            } else {
+                &zeros[..]
+            };
+            let o = rc.checked_sub(kh - 1).map(|y| &mut *out[y]);
+            column_step(&mut sum, line, old, o, scale);
+        }
+    });
+}
+
 /// `cv2.boxFilter(src, -1, (kw, kh), normalize=..., borderType=border)` (and `cv2.blur`) for
 /// float32, anchor at the center. Row sums in float64: a fresh sum per output up to five wide,
 /// a running sum (`s += a - b`) past that. Column sums keep a running total: add the new row
@@ -703,6 +770,10 @@ pub fn box_filter(
     let ymap: Vec<Option<usize>> = (0..h + kh - 1)
         .map(|r| border_interpolate(r as isize - ay as isize, h, border))
         .collect();
+    if kw <= 5 {
+        box_narrow(src, dst, (h, w, cn), (kw, kh), scale, (&xmap, &ymap));
+        return Some(());
+    }
     let row_sums = |y: Option<usize>, pad: &mut Vec<f64>, out: &mut [f64]| {
         let Some(y) = y else {
             out.fill(0.0);
@@ -749,22 +820,29 @@ pub fn box_filter(
     // Bands of rows: their row sums in parallel, then the column recurrence (sequential down a
     // column, independent across columns) in parallel strips. The ring keeps the row sums a
     // later row still subtracts.
-    const BAND: usize = 128;
-    const STRIP: usize = 512;
+    // Bands as tall as about 2 MB of row sums allow: each band costs two parallel phases, and the
+    // ring stays in cache.
+    const STRIP: usize = 64;
     let total = h + kh - 1;
-    let slots = kh + BAND.min(total);
-    let mut ring: Vec<Vec<f64>> = vec![vec![0f64; n]; slots];
+    let band_rows = ((1usize << 18) / n).clamp(128, total.max(128));
+    let slots = kh + band_rows.min(total);
+    let mut ring_buf = vec![0f64; slots * n];
+    ring_buf.par_chunks_mut(1 << 18).for_each(|c| c.fill(0.0));
+    let mut ring: Vec<&mut [f64]> = ring_buf.chunks_exact_mut(n).collect();
     let mut sum = vec![0f64; n];
     let zeros = vec![0f64; n];
     // One strip of columns per thread, each writing its part of every output row.
-    let strip = n.div_ceil(rayon::current_num_threads()).max(STRIP);
-    // Strips write every row of a band at once, so threads would fault the same fresh huge
-    // pages together; touching dst first in large blocks avoids that contention.
+    let strip = n
+        .div_ceil(rayon::current_num_threads())
+        .next_multiple_of(16)
+        .max(STRIP);
+    // Many threads writing the same fresh huge page at once stall each other; the ring and dst
+    // are touched first in large blocks.
     dst.par_chunks_mut(1 << 19).for_each(|c| c.fill(0.0));
     let mut rc0 = 0;
     while rc0 < total {
-        let rc1 = (rc0 + BAND).min(total);
-        let band: Vec<(usize, &mut Vec<f64>)> = ring
+        let rc1 = (rc0 + band_rows).min(total);
+        let band: Vec<(usize, &mut &mut [f64])> = ring
             .iter_mut()
             .enumerate()
             .filter_map(|(slot, row)| {

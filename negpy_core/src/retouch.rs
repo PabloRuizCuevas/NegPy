@@ -1226,3 +1226,116 @@ pub fn detect_luma_score(
         .then(|| crate::distance::mask_to_score(&compact, h, w, c.pad_px, c.score_floor));
     Some((score, hairs))
 }
+
+/// `_scratch_ridge` from the density plane: the vertical band-pass (Gaussian of `fine` minus
+/// Gaussian of `broad` sigma, down the columns only) over the box mean of its magnitude across
+/// `win`, which is 0.8 sigma for Gaussian noise.
+pub fn scratch_ridge(
+    dens: &[f32],
+    (h, w): (usize, usize),
+    (fine, broad, win): (f64, f64, usize),
+    dst: &mut [f32],
+) -> Option<()> {
+    use crate::filter::{Border, box_filter, gaussian_blur};
+    let n = h * w;
+    let (mut a, mut b) = (vec![0f32; n], vec![0f32; n]);
+    gaussian_blur(
+        dens,
+        &mut a,
+        (h, w, 1),
+        (1, 0),
+        (0.0, fine),
+        Border::Reflect101,
+    )?;
+    gaussian_blur(
+        dens,
+        &mut b,
+        (h, w, 1),
+        (1, 0),
+        (0.0, broad),
+        Border::Reflect101,
+    )?;
+    crate::par_zip(&mut a, &b, |r, &b| *r -= b);
+    let abs: Vec<f32> = a.par_iter().map(|v| v.abs()).collect();
+    box_filter(
+        &abs,
+        &mut b,
+        (h, w, 1),
+        (win, win),
+        true,
+        Border::Reflect101,
+    )?;
+    dst.par_chunks_mut(BLOCK)
+        .zip(a.par_chunks(BLOCK).zip(b.par_chunks(BLOCK)))
+        .for_each(|(o, (r, s))| {
+            for ((o, &r), &s) in o.iter_mut().zip(r).zip(s) {
+                let s = s / 0.8;
+                *o = r / if s.is_nan() || s > 1e-6 { s } else { 1e-6 };
+            }
+        });
+    Some(())
+}
+
+/// The strongest sheared row of `trace_scratch`'s slope search: (strength, slope index, row,
+/// that row). For each slope the ridge band `z` is sheared about `cx` as `_shear_rows` does,
+/// rows `rows` of it averaged and weighted by `pull`. The first slope wins a tie.
+pub fn scratch_slope_search(
+    z: &[f32],
+    (h, w): (usize, usize),
+    cx: f64,
+    rows: std::ops::Range<usize>,
+    pull: &[f64],
+    slopes: &[f64],
+) -> Option<(f64, usize, usize, Vec<f32>)> {
+    use crate::warp::{Border, Image, Interp, warp_affine};
+    if rows.end > h || pull.len() != rows.len() || z.len() != h * w {
+        return None;
+    }
+    let img = Image {
+        data: z,
+        h,
+        w,
+        cn: 1,
+    };
+    let found: Vec<(f64, usize, Vec<f32>)> = slopes
+        .par_iter()
+        .map(|&slope| {
+            // The matrix goes through float32, as `np.float32([...])` builds it.
+            let m = [
+                1.0,
+                0.0,
+                0.0,
+                -slope as f32 as f64,
+                1.0,
+                (slope * cx) as f32 as f64,
+            ];
+            let mut sheared = vec![0f32; h * w];
+            warp_affine(
+                &img,
+                (Interp::Linear, Border::Replicate),
+                m,
+                false,
+                w,
+                &mut sheared,
+            );
+            let mut best = (f64::NEG_INFINITY, 0usize);
+            for (i, (y, &p)) in rows.clone().zip(pull).enumerate() {
+                let row = &sheared[y * w..(y + 1) * w];
+                let mean = crate::stats::pairwise_sum_f32(row) / w as f32;
+                let s = mean.abs() as f64 * p;
+                if s > best.0 || (s.is_nan() && !best.0.is_nan()) {
+                    best = (s, i);
+                }
+            }
+            let y = rows.start + best.1;
+            (best.0, best.1, sheared[y * w..(y + 1) * w].to_vec())
+        })
+        .collect();
+    let mut best: Option<(f64, usize, usize, Vec<f32>)> = None;
+    for (i, (s, k, row)) in found.into_iter().enumerate() {
+        if best.as_ref().is_none_or(|b| s > b.0) {
+            best = Some((s, i, k, row));
+        }
+    }
+    best
+}

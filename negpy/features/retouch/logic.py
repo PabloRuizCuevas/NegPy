@@ -503,14 +503,9 @@ def _scratch_ridge(img: ImageBuffer) -> np.ndarray:
     divided by a local scale of that same response. Local, because a global scale lets one
     busy corner of the frame set the bar and bury a faint scratch running through smooth sky.
     """
-    dens = _density(img)
-    fine = cv2.GaussianBlur(dens, (1, 0), sigmaX=0, sigmaY=_SCRATCH_FINE_PX)
-    broad = cv2.GaussianBlur(dens, (1, 0), sigmaX=0, sigmaY=_SCRATCH_BROAD_PX)
-    ridge = fine - broad
-    win = (_SCRATCH_NOISE_WIN, _SCRATCH_NOISE_WIN)
-    # mean|x| is 0.8σ for gaussian noise, and the bars above are quoted in that ratio.
-    scale = cv2.blur(np.abs(ridge), win) / 0.8
-    return ridge / np.maximum(scale, 1e-6)
+    # The noise scale is mean|x| over 0.8, its ratio to σ for gaussian noise: the bars above
+    # are quoted in σ.
+    return negpy_core.scratch_ridge(_density(img), (_SCRATCH_FINE_PX, _SCRATCH_BROAD_PX, _SCRATCH_NOISE_WIN))
 
 
 def _shear_rows(plane: np.ndarray, slope: float, about_x: float, width: int) -> np.ndarray:
@@ -547,17 +542,14 @@ def trace_scratch(img: ImageBuffer, nx: float, ny: float, threshold: float = 0.5
     z, z0 = _scratch_ridge_rows(img, y0 - reach, y1 + reach)
     pull = np.exp(-0.5 * ((np.arange(y0, y1) - cy) / _SCRATCH_CLICK_PULL) ** 2)
 
-    best: Optional[Tuple[float, float, int, np.ndarray]] = None
-    for slope in np.arange(-_SCRATCH_SLOPE_MAX, _SCRATCH_SLOPE_MAX + 1e-9, _SCRATCH_SLOPE_STEP):
-        # Sheared with its reach, then cut: a line leaves the search rows across a wide frame.
-        sheared = _shear_rows(z, float(slope), cx, w)[y0 - z0 : y1 - z0]
-        strength = np.abs(sheared.mean(axis=1)) * pull
-        k = int(np.argmax(strength))
-        if best is None or strength[k] > best[0]:
-            best = (float(strength[k]), float(slope), k, sheared[k])
-    if best is None or best[0] < _SCRATCH_MIN_EVIDENCE:
+    slopes = np.arange(-_SCRATCH_SLOPE_MAX, _SCRATCH_SLOPE_MAX + 1e-9, _SCRATCH_SLOPE_STEP)
+    # Each slope shears the ridge with its reach, then cuts the search rows: a line leaves them
+    # across a wide frame.
+    found = negpy_core.scratch_slope_search(np.ascontiguousarray(z, dtype=np.float32), cx, (y0 - z0, y1 - z0), pull, slopes)
+    if found is None or found[0] < _SCRATCH_MIN_EVIDENCE:
         return None
-    _, slope, k, along = best
+    _, index, k, along = found
+    slope = float(slopes[index])
 
     # A transport scratch fades in and out, so measure its extent instead of assuming it
     # spans the frame.

@@ -1343,6 +1343,7 @@ depends = ["_corr"]
 ["features/process/sensor.py::_density_unmix"]
 phase = 4
 status = "todo"
+compare = "ulp=16"
 calls = []
 depends = ["_log_unmix_kernel", "film_base"]
 
@@ -1379,6 +1380,7 @@ depends = []
 ["features/process/sensor.py::apply_sensor_correction"]
 phase = 4
 status = "todo"
+compare = "ulp=16"
 calls = []
 depends = ["_density_unmix", "_two_scale_unmix", "_unmix_kernel"]
 
@@ -1504,13 +1506,13 @@ depends = []
 
 ["features/retouch/logic.py::_scratch_ridge"]
 phase = 4
-status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.blur"]
+status = "ported"
+calls = ["negpy_core.scratch_ridge"]
 depends = ["_density"]
 
 ["features/retouch/logic.py::_scratch_ridge_rows"]
 phase = 4
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_scratch_ridge"]
 
@@ -1618,8 +1620,8 @@ depends = ["_density", "_mask_to_score"]
 
 ["features/retouch/logic.py::trace_scratch"]
 phase = 4
-status = "todo"
-calls = ["cv2.blur", "np.median"]
+status = "ported"
+calls = ["cv2.blur", "negpy_core.scratch_slope_search", "np.median"]
 depends = ["_scratch_ridge_rows", "_shear_rows"]
 
 ["features/hdr/logic.py::_accumulate"]

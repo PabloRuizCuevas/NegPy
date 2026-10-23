@@ -585,7 +585,46 @@ fn detect_luma_score<'py>(
     ))
 }
 
+/// `_scratch_ridge` from the density plane, with (fine sigma, broad sigma, noise window).
+#[pyfunction]
+fn scratch_ridge<'py>(
+    py: Python<'py>,
+    dens: PyReadonlyArrayDyn<'py, f32>,
+    constants: (f64, f64, usize),
+) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
+    let (d, dims) = plane2(&dens)?;
+    new_image(py, dens.shape(), |dst| {
+        retouch::scratch_ridge(d, dims, constants, dst)
+    })
+}
+
+type SlopeFound<'py> = (f64, usize, usize, Bound<'py, numpy::PyArray1<f32>>);
+
+/// `trace_scratch`'s slope search over the ridge band `z`: (strength, slope index, row,
+/// that sheared row), or None for bad input.
+#[pyfunction]
+fn scratch_slope_search<'py>(
+    py: Python<'py>,
+    z: PyReadonlyArrayDyn<'py, f32>,
+    cx: f64,
+    rows: (usize, usize),
+    pull: numpy::PyReadonlyArray1<'py, f64>,
+    slopes: numpy::PyReadonlyArray1<'py, f64>,
+) -> PyResult<Option<SlopeFound<'py>>> {
+    use numpy::IntoPyArray;
+    let (zs, dims) = plane2(&z)?;
+    let not_contiguous = |_| PyValueError::new_err("needs contiguous arrays");
+    let pull = pull.as_slice().map_err(not_contiguous)?;
+    let slopes = slopes.as_slice().map_err(not_contiguous)?;
+    let found = super::detach(py, zs.len() * slopes.len(), || {
+        retouch::scratch_slope_search(zs, dims, cx, rows.0..rows.1, pull, slopes)
+    });
+    Ok(found.map(|(s, i, k, row)| (s, i, k, row.into_pyarray(py))))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(scratch_ridge, m)?)?;
+    m.add_function(wrap_pyfunction!(scratch_slope_search, m)?)?;
     m.add_function(wrap_pyfunction!(split_hairs, m)?)?;
     m.add_function(wrap_pyfunction!(detect_luma_score, m)?)?;
     m.add_function(wrap_pyfunction!(dust_stats, m)?)?;
