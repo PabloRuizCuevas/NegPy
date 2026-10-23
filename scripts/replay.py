@@ -67,6 +67,9 @@ def _time(fn, args, kwargs) -> float:
     import cv2
 
     cv2.setNumThreads(-1)
+    # One untimed call first: the first call in a process starts the thread pools.
+    a, kw = copy.deepcopy((args, kwargs))
+    fn(*a, **kw)
     best = float("inf")
     for _ in range(TIMING_REPEATS):
         a, kw = copy.deepcopy((args, kwargs))

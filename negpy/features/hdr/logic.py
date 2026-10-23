@@ -64,8 +64,13 @@ def subsample(frame: np.ndarray) -> np.ndarray:
     A stride, not a resize: averaging neighbours would blend back in the very samples
     these measurements exclude — saturated ones, noise-floor ones.
     """
-    step = int(np.sqrt(frame.shape[0] * frame.shape[1] / MEASURE_PIXELS))
+    step = _step(frame)
     return frame[::step, ::step] if step > 1 else frame
+
+
+def _step(frame: np.ndarray) -> int:
+    """The stride that leaves about MEASURE_PIXELS pixels."""
+    return max(1, int(np.sqrt(frame.shape[0] * frame.shape[1] / MEASURE_PIXELS)))
 
 
 def _count_clipped_rows(values: np.ndarray, out: np.ndarray) -> None:
@@ -91,8 +96,8 @@ def measure_exposure(frame: np.ndarray) -> Tuple[float, float]:
     It saturates too, only later: a frame clipping more than 1% has level exactly 1.0,
     so level alone cannot order the long end of a bracket. Use `exposure_order_key`.
     """
-    f = to_float(frame)
-    return float(np.percentile(subsample(f), 99.0)), float(clipped_fraction(f))
+    f = np.ascontiguousarray(to_float(frame), dtype=np.float32)
+    return float(negpy_core.exposure_level(f, _step(f), 99.0)), float(clipped_fraction(f))
 
 
 def exposure_order_key(level: float, clipped: float) -> Tuple[float, float]:
@@ -146,12 +151,8 @@ def pair_ratio(short: np.ndarray, long_: np.ndarray) -> Optional[float]:
     s, lo = to_float(short), to_float(long_)
     if s.shape != lo.shape:
         raise ValueError(f"bracket frames differ in shape: {s.shape}, {lo.shape}")
-    s, lo = subsample(s), subsample(lo)
-    valid = (s >= RATIO_FLOOR) & (lo < SATURATION)
-    if int(valid.sum()) < 1000:
-        return None
-    ratio = float(np.median(lo[valid] / s[valid]))
-    return ratio if np.isfinite(ratio) and ratio > 0.0 else None
+    s, lo = (np.ascontiguousarray(a, dtype=np.float32) for a in (s, lo))
+    return negpy_core.pair_ratio(s, lo, _step(s), (RATIO_FLOOR, SATURATION))
 
 
 def solve_ratios(frames: Sequence[np.ndarray], reference: int) -> Tuple[float, ...]:
@@ -366,11 +367,7 @@ def merge_providers(
 
     # Every frame saturated in a channel leaves no measurement there. It is a genuine
     # highlight, so take the reference's own clipped value rather than a hole.
-    empty = den <= 0.0
-    if empty.any():
-        num[empty] = ref[empty]
-        den[empty] = 1.0
-    return np.ascontiguousarray(num / den, dtype=np.float32)
+    return negpy_core.finish_merge(num, den, np.ascontiguousarray(ref, dtype=np.float32))
 
 
 def apply_render_exposure(merged: np.ndarray, ratios: Sequence[float], anchor: Optional[float] = None) -> np.ndarray:
@@ -379,8 +376,8 @@ def apply_render_exposure(merged: np.ndarray, ratios: Sequence[float], anchor: O
     Split from the merge because it is cheap and the merge is not: one full-res multiply
     against seconds of decode. That is what lets the render exposure be dragged.
     """
-    scale = np.float32(output_scale(ratios, anchor))
-    return np.clip(merged * scale, 0.0, 1.0).astype(np.float32)
+    scale = float(np.float32(output_scale(ratios, anchor)))
+    return negpy_core.render_exposure(np.ascontiguousarray(merged, dtype=np.float32), scale)
 
 
 def _align(ref_gray: np.ndarray, mov: np.ndarray, max_shift: float) -> np.ndarray:

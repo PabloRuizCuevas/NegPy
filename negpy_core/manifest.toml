@@ -1650,8 +1650,8 @@ depends = []
 
 ["features/hdr/logic.py::apply_render_exposure"]
 phase = 5
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.render_exposure"]
 depends = ["output_scale"]
 
 ["features/hdr/logic.py::clipped_fraction"]
@@ -1662,8 +1662,8 @@ depends = ["_count_clipped_rows"]
 
 ["features/hdr/logic.py::measure_exposure"]
 phase = 5
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.exposure_level"]
 depends = ["clipped_fraction"]
 
 ["features/hdr/logic.py::merge_bracket"]
@@ -1681,7 +1681,7 @@ depends = ["apply_render_exposure", "merge_providers"]
 ["features/hdr/logic.py::merge_providers"]
 phase = 5
 status = "todo"
-calls = []
+calls = ["negpy_core.finish_merge"]
 depends = ["_accumulate", "_align"]
 
 ["features/hdr/logic.py::output_scale"]
@@ -1692,8 +1692,8 @@ depends = []
 
 ["features/hdr/logic.py::pair_ratio"]
 phase = 5
-status = "todo"
-calls = ["np.median"]
+status = "ported"
+calls = ["negpy_core.pair_ratio"]
 depends = []
 
 ["features/hdr/logic.py::probe_exposures"]
