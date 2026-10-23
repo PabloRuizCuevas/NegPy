@@ -25,11 +25,12 @@ fn resize_area<'py>(
         .as_slice()
         .map_err(|_| PyValueError::new_err("resize_area needs a contiguous array"))?;
     let (dw, dh) = dsize;
-    let out = py
-        .detach(|| resize::resize_area(data, h, w, cn, dh, dw))
-        .ok_or_else(|| {
-            PyValueError::new_err("resize_area does not cover a 2x2 two-channel downscale")
-        })?;
+    let out = super::detach(py, data.len(), || {
+        resize::resize_area(data, h, w, cn, dh, dw)
+    })
+    .ok_or_else(|| {
+        PyValueError::new_err("resize_area does not cover a 2x2 two-channel downscale")
+    })?;
     let dims: Vec<usize> = if shape.len() == 2 {
         vec![dh, dw]
     } else {
@@ -71,12 +72,14 @@ fn resize_linear<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        py.detach(|| resize::resize_linear(data, (h, w, cn), (dh, dw), false, dst))
-            .ok_or_else(|| {
-                PyValueError::new_err(
-                    "resize_linear needs a non-empty size and covers no 2x2 two-channel halving",
-                )
-            })?;
+        super::detach(py, dst.len(), || {
+            resize::resize_linear(data, (h, w, cn), (dh, dw), false, dst)
+        })
+        .ok_or_else(|| {
+            PyValueError::new_err(
+                "resize_linear needs a non-empty size and covers no 2x2 two-channel halving",
+            )
+        })?;
     }
     Ok(out)
 }
@@ -115,7 +118,9 @@ fn resize_nearest<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        py.detach(|| resize::resize_nearest(data, (h, w, cn), (dh, dw), dst));
+        super::detach(py, dst.len(), || {
+            resize::resize_nearest(data, (h, w, cn), (dh, dw), dst)
+        });
     }
     Ok(out)
 }

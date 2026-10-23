@@ -188,9 +188,68 @@ pub fn cbrtf(x: f32) -> f32 {
     }
 }
 
+/// NumPy's float32 `exp` on x86 with AVX2 or AVX-512, which runs its own SIMD code, not libm:
+/// a Cody-Waite reduction by ln 2 and a rational polynomial, every step fused. Other platforms
+/// run libm's expf.
+// The constants are NumPy's literals, rounded to f32 as its C compiler rounds them.
+#[allow(clippy::excessive_precision)]
+#[inline(always)]
+pub fn np_expf(x: f32) -> f32 {
+    const XMAX: f32 = 88.722_839_355_468_75;
+    const XMIN: f32 = -103.972_084_045_410_156_25;
+    const MAGIC: f32 = 12_582_912.0;
+    const LN2_HI: f32 = -6.931_457_52e-1;
+    const LN2_LO: f32 = -1.428_606_77e-6;
+    let (nan, big, small) = (x.is_nan(), x >= XMAX, x <= XMIN);
+    let x = if nan || big || small { 0.0 } else { x };
+    let q = (x * std::f32::consts::LOG2_E + MAGIC) - MAGIC;
+    let r = q.mul_add(LN2_LO, q.mul_add(LN2_HI, x));
+    let num = 5.082_762_527_590_693_718_096e-4f32
+        .mul_add(r, 6.757_896_990_527_504_603_057e-3)
+        .mul_add(r, 5.114_512_081_637_298_353_406e-2)
+        .mul_add(r, 2.473_615_434_895_520_810_817e-1)
+        .mul_add(r, 7.257_664_613_233_124_478_488e-1)
+        .mul_add(r, 9.999_999_999_980_870_924_916e-1);
+    let den = 2.159_509_375_685_829_852_307e-2f32
+        .mul_add(r, -2.742_335_390_411_667_452_936e-1)
+        .mul_add(r, 1.0);
+    // AVX-512's scalef rounds once, also into the subnormals; the product is exact in f64.
+    let scale = f64::from_bits((q as f64 + (1023.0 + 4_503_599_627_370_496.0)).to_bits() << 52);
+    let y = ((num / den) as f64 * scale) as f32;
+    if nan {
+        f32::NAN
+    } else if big {
+        f32::INFINITY
+    } else if small {
+        0.0
+    } else {
+        y
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn np_expf_matches_numpy() {
+        // np.exp of a float32 array on an AVX-512 x86 CPU, as bits.
+        for (x, want) in [
+            (0.0f32, 0x3f80_0000u32),
+            (1.0, 0x402d_f855),
+            (-1.0, 0x3ebc_5ab1),
+            (0.5, 0x3fd3_094c),
+            (10.0, 0x46ac_14ef),
+            (-50.0, 0x1b69_2beb),
+            (88.0, 0x7ef8_82b7),
+            (-90.0, 0x0008_ec28),
+        ] {
+            assert_eq!(np_expf(x).to_bits(), want, "{x}");
+        }
+        assert_eq!(np_expf(89.0), f32::INFINITY);
+        assert_eq!(np_expf(-104.0), 0.0);
+        assert!(np_expf(f32::NAN).is_nan());
+    }
 
     #[test]
     fn cbrtf_is_correctly_rounded_on_a_sample() {

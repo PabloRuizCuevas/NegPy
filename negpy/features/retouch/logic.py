@@ -738,24 +738,12 @@ def ir_detect_target(buffer_long_edge: int, preview_long_edge: int) -> int:
 
 def _ir_live(plane: np.ndarray) -> np.ndarray:
     """Film under the head: everything but the below-floor regions large enough to be holder."""
-    dead = plane < _IR_DEAD_FLOOR
-    if not dead.any():
-        return np.ones(plane.shape[:2], dtype=bool)
-    n_lbl, labels, stats, _ = cv2.connectedComponentsWithStats(dead.astype(np.uint8), connectivity=8)
-    holder = np.zeros(n_lbl, dtype=bool)
-    holder[1:] = stats[1:, cv2.CC_STAT_AREA] >= _IR_DEAD_MIN_AREA * dead.size
-    return ~holder[labels]
+    return negpy_core.ir_live(np.ascontiguousarray(plane, dtype=np.float32), _IR_DEAD_FLOOR, _IR_DEAD_MIN_AREA)
 
 
 def _ir_glare(plane: np.ndarray, live: np.ndarray) -> Optional[np.ndarray]:
     """Pixels more than ``_IR_GLARE_SIGMA`` over the median of the live film, or None."""
-    sample = plane.ravel()[_fit_sample(live)]
-    if sample.size < 500:
-        return None
-    med = float(np.median(sample))
-    sigma = 1.4826 * float(np.median(np.abs(sample - med)))
-    glare = plane > med + _IR_GLARE_SIGMA * sigma
-    return glare if glare.any() else None
+    return negpy_core.ir_glare(np.ascontiguousarray(plane, dtype=np.float32), np.ascontiguousarray(live), _IR_FIT_MAX_PX, _IR_GLARE_SIGMA)
 
 
 def _ir_detect_scale(plane: np.ndarray) -> float:
@@ -855,9 +843,7 @@ def normalize_ir(plane: np.ndarray, glare: Optional[np.ndarray] = None) -> np.nd
     ``glare`` pixels stay out of the base."""
     plane = np.ascontiguousarray(plane, dtype=np.float32)
     win = _ir_win(_IR_BASE_WIN, _ir_detect_scale(plane))
-    src = plane if glare is None else np.where(glare, np.float32(0.0), plane)
-    base = cv2.blur(cv2.dilate(src, cv2.getStructuringElement(cv2.MORPH_RECT, (win, win))), (win, win))
-    return plane / np.maximum(base, 1e-4)
+    return negpy_core.normalize_ir(plane, None if glare is None else np.ascontiguousarray(glare), win)
 
 
 def ir_detect_cutoff(slider: float, attenuation: bool) -> float:
@@ -879,44 +865,6 @@ def ir_defect_score(ratio: np.ndarray, cutoff: float) -> np.ndarray:
     return cv2.erode(score, np.ones((3, 3), np.uint8))
 
 
-def score_weighted_fill(
-    img: np.ndarray,
-    score: np.ndarray,
-    scales: Tuple[int, ...] = _IR_FILL_SCALES,
-    reject_floor_mass: bool = False,
-) -> np.ndarray:
-    """Multiscale score-normalized average, blended coarse→fine by clean fraction.
-    Where no support holds clean film the quotient tends to zero and the original-floor
-    rule in apply_score_repair keeps the source pixel.
-
-    ``reject_floor_mass`` measures that clean fraction *above* the score floor. A defect
-    pixel scores 0.02 rather than 0, so a support seeing nothing but defect still carries
-    den ≈ 0.02 — enough confidence to win, with the defect's own value as its candidate,
-    and the fill quietly puts back a share of what it was asked to remove. Callers keeping
-    the original-floor rule leave this off: it corrects them downstream, and rejecting those
-    rungs outright shifts weight onto the coarsest support, which is the one that reaches
-    across a tonal edge and over-lifts the dense side of it. A repair allowed to darken has
-    no such corrector, so it has to pay for honest confidence there instead.
-    """
-    weighted = img * score[..., None]
-    fill = np.empty_like(img)
-    for i, k in enumerate(scales):
-        if i == len(scales) - 1:
-            num = cv2.GaussianBlur(weighted, (k, k), 0)
-            den = cv2.GaussianBlur(score, (k, k), 0)
-        else:
-            num = cv2.boxFilter(weighted, -1, (k, k))
-            den = cv2.boxFilter(score, -1, (k, k))
-        _fill_rung(num, den, fill, i == 0, reject_floor_mass)
-    return fill
-
-
-def _fill_rung(num, den, fill, first, reject_floor_mass):
-    """One rung of the fill ladder in place: the score-normalized candidate, blended over the
-    coarser result by the rung's clean fraction, in the array form's float32 operation order."""
-    negpy_core.fill_rung(num, den, fill, bool(first), bool(reject_floor_mass), (_IR_SCORE_FLOOR, _IR_FILL_TAU))
-
-
 def _fill_supports(buffer_long_edge: int, factor: float) -> Tuple[int, ...]:
     """Fill ladder in buffer px: ``_IR_FILL_SCALES`` at the detection plane, plus a coarse rung
     at the reference footprint when detection runs finer than it. Both ends carry: a small fine
@@ -925,32 +873,6 @@ def _fill_supports(buffer_long_edge: int, factor: float) -> Tuple[int, ...]:
     fine = [int(round(k * factor)) | 1 for k in _IR_FILL_SCALES]
     film = max(factor, buffer_long_edge / _IR_DETECT_REF)
     return tuple(dict.fromkeys([int(round(_IR_FILL_SCALES[0] * film)) | 1] + fine))
-
-
-def _borrow_clean_grain(src: np.ndarray, clean: np.ndarray, sigma: float, idx: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """Detail of the nearest clean pixel, high-passed at ``sigma``, for the flat pixel
-    indices ``idx`` only: an (N, 3) array, N = len(idx), plus the ``sigma`` blur of ``src``
-    it was measured against, for a caller that needs the same low-pass again.
-
-    Real film rather than synthesized noise: the donor is the closest pixel the IR score calls
-    clean, so it carries the same emulsion, density and scanner noise as the hole it fills.
-    Ceiling: deep inside a wide defect every pixel resolves to the same few boundary donors and
-    the paste flattens toward a constant, leaving those interiors to the fill's own blend.
-    Only the repaired pixels take grain, so the donor lookup runs on their indices alone; the
-    distance transform still covers the frame, because a donor can sit anywhere near a hole.
-    """
-    h, w = clean.shape
-    # DIST_LABEL_PIXEL numbers the zero pixels 1..N in raster order, so flatnonzero inverts it.
-    _, labels = cv2.distanceTransformWithLabels((~clean).astype(np.uint8), cv2.DIST_L2, 3, labelType=cv2.DIST_LABEL_PIXEL)
-    nearest = np.flatnonzero(clean.ravel())[labels.ravel()[idx].astype(np.intp) - 1]
-    # Mirror through the donor, do not sample it: a whole row across a hair shares one
-    # nearest clean pixel, and pasting that verbatim streaks the grain into bands.
-    ny, nx = np.divmod(nearest, w)
-    py, px = np.divmod(idx, w)
-    mirrored = np.clip(2 * ny - py, 0, h - 1) * w + np.clip(2 * nx - px, 0, w - 1)
-    take = np.where(clean.ravel()[mirrored], mirrored, nearest)
-    blur = cv2.GaussianBlur(src, (0, 0), sigma)
-    return src.reshape(-1, 3)[take] - blur.reshape(-1, 3)[take], blur
 
 
 def apply_score_repair(
@@ -981,40 +903,10 @@ def apply_score_repair(
     else:
         factor = max(h / score_det.shape[0], w / score_det.shape[1])
         score = negpy_core.resize_linear(np.ascontiguousarray(score_det, dtype=np.float32), (w, h))
-    out = score_weighted_fill(src, score, _fill_supports(long_edge or max(h, w), factor), reject_floor_mass=not floor)
-    # The fill buffer becomes the output: blended over the source under the write ramp.
-    a = np.empty((h, w), dtype=np.float32)
-    _blend_fill(src, score, out, a)
-    # A weighted average lands grainless, so a repair reads as a smooth patch against film.
-    sigma = max(1.0, factor)
-    clean = score >= _IR_WRITE_HI
-    idx = np.flatnonzero(~clean)
-    blur_src: Optional[np.ndarray] = None
-    if clean.any() and idx.size:
-        grain, blur_src = _borrow_clean_grain(src, clean, sigma, idx)
-        out.reshape(-1, 3)[idx] += a.reshape(-1, 1)[idx] * grain
-    # Original-floor rule: dust is dark in negative transmittance, so repairs only lighten.
-    # Compared on the low-frequency deficit, because per pixel the rule is a half-wave
-    # rectifier that keeps the fill's grain peaks, clips its troughs and leaves the repair
-    # bright and half-textured. Under the same ramp, so an untouched pixel stays identical.
-    if floor:
-        if blur_src is None:
-            blur_src = cv2.GaussianBlur(src, (0, 0), sigma)
-        _add_floor_deficit(out, a, blur_src, cv2.GaussianBlur(out, (0, 0), sigma))
-    else:
-        np.maximum(out, 0.0, out=out)
+    supports = list(_fill_supports(long_edge or max(h, w), factor))
+    constants = (_IR_SCORE_FLOOR, _IR_FILL_TAU, _IR_WRITE_HI, _IR_WRITE_HI - _IR_WRITE_LO)
+    out = negpy_core.apply_score_repair(src, score, supports, bool(floor), max(1.0, factor), constants)
     return ensure_image(out)
-
-
-def _blend_fill(src, score, fill, a_out):
-    """``fill`` becomes ``src * (1 - a) + fill * a`` under the smoothstep write ramp of the
-    score; the ramp is kept in ``a_out`` for the grain and floor passes."""
-    negpy_core.blend_fill(src, score, fill, a_out, (_IR_WRITE_HI, _IR_WRITE_HI - _IR_WRITE_LO))
-
-
-def _add_floor_deficit(out, a, blur_src, blur_out):
-    """``out += a * max(blur_src - blur_out, 0)``, then clamps at zero, in place."""
-    negpy_core.add_floor_deficit(out, a, blur_src, blur_out)
 
 
 def film_scale(shape: Tuple[int, int]) -> float:
@@ -1135,7 +1027,8 @@ def _ir_decontaminate(ratio: np.ndarray, vis_log: np.ndarray) -> Tuple[np.ndarra
     # defect away as ghost and the division stops lifting it. Trim by ratio percentile: a
     # fixed cutoff fails because a strong ghost drags clean film below it, and residual
     # fails because the dust fits itself perfectly.
-    keep = _fit_sample(ratio >= np.percentile(ratio, _IR_XTALK_TRIM))
+    ratio = np.ascontiguousarray(ratio, dtype=np.float32)
+    keep = _fit_sample(ratio >= np.float32(negpy_core.percentiles(ratio.ravel(), [_IR_XTALK_TRIM])[0]))
     y = np.log(np.clip(ratio.ravel()[keep], 1e-4, 1.0))
     x = vis_log.reshape(-1, vis_log.shape[-1])[keep]
     if y.size < 500:
@@ -1148,7 +1041,7 @@ def _ir_decontaminate(ratio: np.ndarray, vis_log: np.ndarray) -> Tuple[np.ndarra
     ghost = float(np.abs(b).sum())
     if ghost < _IR_XTALK_MIN:
         return ratio, ghost
-    return np.clip(ratio / np.exp((vis_log * b).sum(-1)), 0.0, 1.5).astype(np.float32), ghost
+    return negpy_core.ir_ghost_divide(ratio, np.ascontiguousarray(vis_log, dtype=np.float32), b.tolist()), ghost
 
 
 def _fit_refraction_gammas(ratio: np.ndarray, vis_log: np.ndarray, img_det: np.ndarray) -> Tuple[float, ...]:
@@ -1177,16 +1070,11 @@ def _fit_refraction_gammas(ratio: np.ndarray, vis_log: np.ndarray, img_det: np.n
 def _ir_clean_base(img_det: np.ndarray, ratio: np.ndarray) -> np.ndarray:
     """Local clean-film level per channel over ``_IR_CAP_WIN``: mean of the pixels the
     IR ratio calls clean, minus ``_IR_CAP_SIGMA`` of their σ (see the constants block)."""
-    win_px = _ir_win(_IR_CAP_WIN, _ir_detect_scale(ratio))
-    win = (win_px, win_px)
-    w_clean = (ratio >= _IR_GAIN_IDENTITY).astype(np.float32)
-    den = np.maximum(cv2.blur(w_clean, win), 1e-6)[..., None]
-    mean = cv2.blur(img_det * w_clean[..., None], win) / den
-    var = cv2.blur(img_det * img_det * w_clean[..., None], win) / den - mean * mean
-    base = mean - _IR_CAP_SIGMA * np.sqrt(np.clip(var, 0.0, None))
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, win)
-    dil = cv2.blur(cv2.dilate(img_det, kernel), win)
-    return np.where(den > _IR_CAP_MIN_SUPPORT, base, dil)
+    win = _ir_win(_IR_CAP_WIN, _ir_detect_scale(ratio))
+    constants = (win, _IR_GAIN_IDENTITY, _IR_CAP_SIGMA, _IR_CAP_MIN_SUPPORT)
+    return negpy_core.ir_clean_base(
+        np.ascontiguousarray(img_det, dtype=np.float32), np.ascontiguousarray(ratio, dtype=np.float32), constants
+    )
 
 
 def _ir_normalize_ratio(ratio: np.ndarray, live: np.ndarray) -> np.ndarray:
@@ -1194,23 +1082,11 @@ def _ir_normalize_ratio(ratio: np.ndarray, live: np.ndarray) -> np.ndarray:
     ``_IR_GAIN_IDENTITY``, dip scale on ``_IR_REF_SIGMA`` (see the constants block). ``live``
     only: the dead-margin 1.0s inflate σ ~20% on a strip scan. MAD, not std, so a dusty
     minority can't move either landmark."""
-    sample = ratio[live]
-    if sample.size < 500:  # nothing measurable: leave the landmarks alone
-        return ratio
-    med = float(np.median(sample))
-    sigma = 1.4826 * float(np.median(np.abs(sample - med)))
-    pivot = float(np.clip(med - _IR_NOISE_SIGMA * sigma, _IR_PIVOT_LO, _IR_GAIN_IDENTITY))
-    if pivot <= _IR_PIVOT_LO:
-        logger.warning("IR dust: clean-film pivot floored at %.2f (IR σ %.3f) — very noisy IR plane", _IR_PIVOT_LO, sigma)
-    # A clipped pivot is an exact no-op: x/x is 1.0 in IEEE, float32 × 1.0 exact.
-    scale = _IR_GAIN_IDENTITY / pivot
-    ratio = (ratio * scale).astype(np.float32)
-    # The rescale carries σ with it, so there is no second median pass. Dips only: a
-    # noiseless plane takes the full _IR_SCALE_MAX and would land its clean level above 1.
-    k = float(np.clip(_IR_REF_SIGMA / max(sigma * scale, 1e-6), 1.0, _IR_SCALE_MAX))
-    if k > 1.0:
-        stretched = _IR_GAIN_IDENTITY - (_IR_GAIN_IDENTITY - ratio) * k
-        ratio = np.where(ratio < _IR_GAIN_IDENTITY, stretched, ratio).astype(np.float32)
+    ratio = np.array(ratio, dtype=np.float32)
+    constants = (_IR_GAIN_IDENTITY, _IR_NOISE_SIGMA, _IR_PIVOT_LO, _IR_REF_SIGMA, _IR_SCALE_MAX)
+    measured = negpy_core.ir_normalize_ratio(ratio, np.ascontiguousarray(live), constants)
+    if measured is not None and measured[0] <= _IR_PIVOT_LO:
+        logger.warning("IR dust: clean-film pivot floored at %.2f (IR σ %.3f) — very noisy IR plane", _IR_PIVOT_LO, measured[1])
     return ratio
 
 
@@ -1370,10 +1246,7 @@ def apply_hair_inpaint(
                 out.reshape(-1, 3)[(y0 + ay0 + ry) * w + (x0 + ax0 + rx)] = tile_px * (1.0 - a) + dec * a
     # Navier-Stokes propagates a smooth field, so the fill lands grainless. See
     # apply_score_repair, which fills the same kind of hole by a different route.
-    idx = np.flatnonzero(m)
-    clean = m == 0
-    if clean.any() and idx.size:
-        out.reshape(-1, 3)[idx] += _borrow_clean_grain(src, clean, max(1.0, factor), idx)[0]
+    negpy_core.add_clean_grain(out, np.ascontiguousarray(src, dtype=np.float32), m == 0, max(1.0, factor))
     return out
 
 

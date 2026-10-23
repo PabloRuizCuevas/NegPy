@@ -19,7 +19,9 @@ fn find_external_contours<'py>(
     let data = src
         .as_slice()
         .map_err(|_| PyValueError::new_err("needs a contiguous array"))?;
-    let found = py.detach(|| contours::find_external_contours(data, h, w));
+    let found = super::detach(py, data.len(), || {
+        contours::find_external_contours(data, h, w)
+    });
     let k = found.len();
     let arrays: Vec<Bound<'py, PyArray3<i32>>> = found
         .iter()

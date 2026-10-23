@@ -44,7 +44,7 @@ fn density_histogram<'py>(
     step: usize,
 ) -> PyResult<Counts<'py>> {
     let s = samples(&img, roi, step)?;
-    let counts = py.detach(|| histogram::density_histogram(s));
+    let counts = super::detach(py, s.img.len(), || histogram::density_histogram(s));
     numpy::PyArray1::from_vec(py, counts).reshape(vec![4, DENSITY_HIST_BINS])
 }
 
@@ -57,7 +57,7 @@ fn density_parade<'py>(
     step: usize,
 ) -> PyResult<Counts<'py>> {
     let s = samples(&img, roi, step)?;
-    let counts = py.detach(|| histogram::density_parade(s));
+    let counts = super::detach(py, s.img.len(), || histogram::density_parade(s));
     numpy::PyArray1::from_vec(py, counts).reshape(vec![3, WAVEFORM_BINS, WAVEFORM_COLS])
 }
 
@@ -79,11 +79,11 @@ fn output_histogram<'py>(
 ) -> PyResult<Counts<'py>> {
     let counts = if let Ok(a) = img.extract::<PyReadonlyArrayDyn<'py, u8>>() {
         let s = frame(&a, step)?;
-        py.detach(|| histogram::output_histogram_u8(s))
+        super::detach(py, s.img.len(), || histogram::output_histogram_u8(s))
     } else {
         let a = img.extract::<PyReadonlyArrayDyn<'py, f32>>()?;
         let s = frame(&a, step)?;
-        py.detach(|| histogram::output_histogram(s))
+        super::detach(py, s.img.len(), || histogram::output_histogram(s))
     };
     numpy::PyArray1::from_vec(py, counts).reshape(vec![4, OUTPUT_HIST_BINS])
 }
@@ -96,7 +96,7 @@ fn color_histogram<'py>(
     step: usize,
 ) -> PyResult<Counts<'py>> {
     let s = frame(&img, step)?;
-    let counts = py.detach(|| histogram::color_histogram(s));
+    let counts = super::detach(py, s.img.len(), || histogram::color_histogram(s));
     numpy::PyArray1::from_vec(py, counts).reshape(vec![COLOR_HIST_BINS; 3])
 }
 
@@ -116,7 +116,7 @@ fn waveform<'py>(
         _ => return Err(PyValueError::new_err(format!("unknown waveform {kind:?}"))),
     };
     let s = frame(&img, step)?;
-    let counts = py.detach(|| histogram::waveform(s, kind));
+    let counts = super::detach(py, s.img.len(), || histogram::waveform(s, kind));
     let shape = if kind == Waveform::Luma {
         vec![WAVEFORM_BINS, WAVEFORM_COLS]
     } else {
@@ -135,7 +135,9 @@ fn scan_full_scale_columns<'py>(
     level: f32,
 ) -> PyResult<Counts<'py>> {
     let s = samples(&img, roi, step)?;
-    let counts = py.detach(|| histogram::scan_full_scale_columns(s, level));
+    let counts = super::detach(py, s.img.len(), || {
+        histogram::scan_full_scale_columns(s, level)
+    });
     numpy::PyArray1::from_vec(py, counts).reshape(vec![3, WAVEFORM_COLS])
 }
 
@@ -166,7 +168,9 @@ fn vectorscope_histogram<'py>(
         eps,
         kappa,
     );
-    let counts = py.detach(|| histogram::vectorscope_histogram(s, space, gamma));
+    let counts = super::detach(py, s.img.len(), || {
+        histogram::vectorscope_histogram(s, space, gamma)
+    });
     numpy::PyArray1::from_vec(py, counts).reshape(vec![SCOPE_HUE_BINS, SCOPE_CHROMA_BINS])
 }
 

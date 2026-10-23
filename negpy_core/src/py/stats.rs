@@ -19,7 +19,7 @@ fn percentiles(
     let values = values
         .as_slice()
         .map_err(|_| PyValueError::new_err("percentiles needs a contiguous array"))?;
-    py.detach(|| stats::percentiles(values, &qs))
+    super::detach(py, values.len(), || stats::percentiles(values, &qs))
         .ok_or_else(|| PyIndexError::new_err("percentiles of an empty array"))
 }
 

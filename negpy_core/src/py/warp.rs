@@ -36,7 +36,7 @@ fn output<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        py.detach(|| f(dst));
+        super::detach(py, dst.len(), || f(dst));
     }
     Ok(out)
 }

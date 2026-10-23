@@ -221,6 +221,19 @@ pub fn np_median(values: &mut [f32]) -> f32 {
     (lo + hi) / 2.0
 }
 
+/// `np.median` of float32 values without reordering them, by the histogram selection.
+pub fn median(values: &[f32]) -> f32 {
+    let n = values.len();
+    if n == 0 || values.par_iter().any(|v| v.is_nan()) {
+        return f32::NAN;
+    }
+    if n % 2 == 1 {
+        return select_ranks(values, &[n / 2])[0];
+    }
+    let m = select_ranks(values, &[n / 2 - 1, n / 2]);
+    (m[0] + m[1]) / 2.0
+}
+
 /// NumPy's float32 sum of a contiguous run: one pairwise sum (blocks of 128, eight
 /// accumulators), the order `np.sum` and `mean(axis=-1)` use.
 pub fn pairwise_sum_f32(a: &[f32]) -> f32 {

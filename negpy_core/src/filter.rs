@@ -747,15 +747,20 @@ pub fn box_filter(
     };
 
     // Bands of rows: their row sums in parallel, then the column recurrence (sequential down a
-    // column, independent across columns) in parallel strips, each into its own tile. The ring
-    // keeps the row sums a later row still subtracts.
+    // column, independent across columns) in parallel strips. The ring keeps the row sums a
+    // later row still subtracts.
     const BAND: usize = 128;
     const STRIP: usize = 512;
-    let slots = kh + BAND;
+    let total = h + kh - 1;
+    let slots = kh + BAND.min(total);
     let mut ring: Vec<Vec<f64>> = vec![vec![0f64; n]; slots];
     let mut sum = vec![0f64; n];
     let zeros = vec![0f64; n];
-    let total = h + kh - 1;
+    // One strip of columns per thread, each writing its part of every output row.
+    let strip = n.div_ceil(rayon::current_num_threads()).max(STRIP);
+    // Strips write every row of a band at once, so threads would fault the same fresh huge
+    // pages together; touching dst first in large blocks avoids that contention.
+    dst.par_chunks_mut(1 << 19).for_each(|c| c.fill(0.0));
     let mut rc0 = 0;
     while rc0 < total {
         let rc1 = (rc0 + BAND).min(total);
@@ -775,51 +780,29 @@ pub fn box_filter(
         // Output rows this band writes: extended row rc writes image row rc - (kh - 1).
         let y0 = rc0.max(kh - 1) - (kh - 1);
         let y1 = rc1.saturating_sub(kh - 1).max(y0);
-        // One strip per thread; when one strip spans the row it writes straight into dst.
-        let threads = rayon::current_num_threads();
-        let strip = n.div_ceil(threads).max(STRIP);
-        let column = |x0: usize, s: &mut [f64], tile: &mut [f32], tile_w: usize, tile_x0: usize| {
-            let sw = s.len();
-            for rc in rc0..rc1 {
-                let sp = &line(rc)[x0..x0 + sw];
-                // Before kh - 1 rows have passed, nothing leaves the window yet.
-                let old = if rc + 1 >= kh {
-                    &line(rc + 1 - kh)[x0..x0 + sw]
-                } else {
-                    &zeros[..sw]
-                };
-                if let Some(y) = rc.checked_sub(kh - 1) {
-                    let at = (y - y0) * tile_w + tile_x0;
-                    column_step(s, sp, old, Some(&mut tile[at..at + sw]), scale);
-                } else {
-                    column_step(s, sp, old, None, scale);
-                }
+        let mut outs: Vec<Vec<&mut [f32]>> = (0..n.div_ceil(strip)).map(|_| Vec::new()).collect();
+        for row in dst[y0 * n..y1 * n].chunks_exact_mut(n) {
+            for (o, part) in outs.iter_mut().zip(row.chunks_mut(strip)) {
+                o.push(part);
             }
-        };
-        if strip >= n {
-            column(0, &mut sum, &mut dst[y0 * n..y1 * n], n, 0);
-        } else {
-            let tiles: Vec<Vec<f32>> = sum
-                .par_chunks_mut(strip)
-                .enumerate()
-                .map(|(si, s)| {
-                    let mut tile = vec![0f32; (y1 - y0) * s.len()];
-                    let sw = s.len();
-                    column(si * strip, s, &mut tile, sw, 0);
-                    tile
-                })
-                .collect();
-            dst[y0 * n..y1 * n]
-                .par_chunks_mut(n)
-                .enumerate()
-                .for_each(|(j, out)| {
-                    for (si, tile) in tiles.iter().enumerate() {
-                        let sw = tile.len() / (y1 - y0);
-                        out[si * strip..si * strip + sw]
-                            .copy_from_slice(&tile[j * sw..(j + 1) * sw]);
-                    }
-                });
         }
+        sum.par_chunks_mut(strip)
+            .zip(outs.par_iter_mut())
+            .enumerate()
+            .for_each(|(si, (s, out))| {
+                let (x0, sw) = (si * strip, s.len());
+                for rc in rc0..rc1 {
+                    let sp = &line(rc)[x0..x0 + sw];
+                    // Before kh - 1 rows have passed, nothing leaves the window yet.
+                    let old = if rc + 1 >= kh {
+                        &line(rc + 1 - kh)[x0..x0 + sw]
+                    } else {
+                        &zeros[..sw]
+                    };
+                    let o = rc.checked_sub(kh - 1).map(|y| &mut *out[y - y0]);
+                    column_step(s, sp, old, o, scale);
+                }
+            });
         rc0 = rc1;
     }
     Some(())

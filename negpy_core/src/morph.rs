@@ -152,55 +152,35 @@ fn rect_pass<T: Pixel, const ERODE: bool>(
         .map(|px| border_interpolate(px as isize - ax as isize, w, border))
         .collect();
 
-    let mut rows = vec![identity; h * n];
-    rows.par_chunks_mut(n).enumerate().for_each_init(
-        || (Vec::new(), Vec::new()),
-        |(padded, scratch): &mut (Vec<T>, Vec<T>), (y, out)| {
-            padded.resize((w + kw - 1) * cn, identity);
-            let row = &src[y * n..(y + 1) * n];
-            padded[ax * cn..(ax + w) * cn].copy_from_slice(row);
-            for px in (0..ax).chain(ax + w..w + kw - 1) {
-                let chunk = &mut padded[px * cn..(px + 1) * cn];
-                match xmap[px] {
-                    Some(sx) => chunk.copy_from_slice(&row[sx * cn..(sx + 1) * cn]),
-                    None => chunk.fill(identity),
+    // Bands of output rows, each with its own row pass over the kh - 1 rows of halo, so the
+    // intermediate rows stay in cache.
+    let band = (2 * kh).max(32);
+    dst.par_chunks_mut(band * n).enumerate().for_each_init(
+        || (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+        |(padded, scratch, cur, next): &mut (Vec<T>, Vec<T>, Vec<T>, Vec<T>), (bi, out)| {
+            let total = out.len() / n + kh - 1;
+            cur.clear();
+            cur.resize(total * n, identity);
+            for (t, line) in cur.chunks_exact_mut(n).enumerate() {
+                let Some(y) = border_interpolate((bi * band + t) as isize - ay as isize, h, border)
+                else {
+                    continue;
+                };
+                padded.resize((w + kw - 1) * cn, identity);
+                let row = &src[y * n..(y + 1) * n];
+                padded[ax * cn..(ax + w) * cn].copy_from_slice(row);
+                for px in (0..ax).chain(ax + w..w + kw - 1) {
+                    let chunk = &mut padded[px * cn..(px + 1) * cn];
+                    match xmap[px] {
+                        Some(sx) => chunk.copy_from_slice(&row[sx * cn..(sx + 1) * cn]),
+                        None => chunk.fill(identity),
+                    }
                 }
+                window::<T, ERODE>(padded, scratch, line, kw, cn);
             }
-            window::<T, ERODE>(padded, scratch, out, kw, cn);
+            window::<T, ERODE>(cur, next, out, kh, n);
         },
     );
-
-    // The column pass doubles whole rows: row t of `a` holds the extreme of rows t..t+win.
-    let total = h + kh - 1;
-    let mut a = vec![identity; total * n];
-    a.par_chunks_mut(n).enumerate().for_each(|(t, line)| {
-        if let Some(sy) = border_interpolate(t as isize - ay as isize, h, border) {
-            line.copy_from_slice(&rows[sy * n..(sy + 1) * n]);
-        }
-    });
-    let mut b = vec![identity; total * n];
-    let mut win = 1;
-    while win * 2 <= kh {
-        let valid = total - win * 2 + 1;
-        b[..valid * n]
-            .par_chunks_mut(n)
-            .enumerate()
-            .for_each(|(t, line)| {
-                let (x, y) = (&a[t * n..(t + 1) * n], &a[(t + win) * n..(t + win + 1) * n]);
-                for ((o, &p), &q) in line.iter_mut().zip(x).zip(y) {
-                    *o = pick::<T, ERODE>(p, q);
-                }
-            });
-        std::mem::swap(&mut a, &mut b);
-        win *= 2;
-    }
-    let off = kh - win;
-    dst.par_chunks_mut(n).enumerate().for_each(|(y, line)| {
-        let (x, z) = (&a[y * n..(y + 1) * n], &a[(y + off) * n..(y + off + 1) * n]);
-        for ((o, &p), &q) in line.iter_mut().zip(x).zip(z) {
-            *o = pick::<T, ERODE>(p, q);
-        }
-    });
 }
 
 /// `cv2.erode`/`cv2.dilate` with a full `kw` x `kh` rectangle and `iterations`: OpenCV turns

@@ -37,7 +37,7 @@ fn run<'py, T: Pixel + Element>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        py.detach(|| {
+        super::detach(py, dst.len(), || {
             if kernel.mask.iter().all(|&v| v != 0) {
                 let ksize = (kernel.w, kernel.h);
                 morph::morphology(data, dst, dims, op, ksize, iterations, border)
