@@ -1358,20 +1358,20 @@ depends = ["_log_unmix_kernel", "film_base"]
 
 ["features/process/sensor.py::_log_unmix_kernel"]
 phase = 4
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.sensor_log_unmix"]
 depends = []
 
 ["features/process/sensor.py::_two_scale_kernel"]
 phase = 4
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.sensor_two_scale"]
 depends = []
 
 ["features/process/sensor.py::_two_scale_layer_kernel"]
 phase = 4
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.sensor_two_scale_layer"]
 depends = []
 
 ["features/process/sensor.py::_two_scale_unmix"]
@@ -1382,8 +1382,8 @@ depends = ["_two_scale_kernel", "_two_scale_layer_kernel", "film_base"]
 
 ["features/process/sensor.py::_unmix_kernel"]
 phase = 4
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.sensor_unmix"]
 depends = []
 
 ["features/process/sensor.py::apply_sensor_correction"]

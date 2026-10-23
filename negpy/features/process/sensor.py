@@ -7,13 +7,12 @@ density; `SensorUnmix` picks how that case is handled.
 from typing import Optional
 
 import cv2
+import negpy_core
 import numpy as np
-from numba import prange
 
 from negpy.domain.types import ImageBuffer
 from negpy.features.exposure.normalization import get_analysis_crop
 from negpy.features.process.models import ProcessConfig, ProcessMode, SensorUnmix
-from negpy.kernel.system.parallel import parallel_njit
 
 _EPS = 1e-4
 # Three captures whose normalized responses are this ill-conditioned are one light three times.
@@ -86,7 +85,7 @@ def apply_sensor_correction(img: ImageBuffer, matrix: Optional[tuple], mode: str
     if matrix is None:
         return img
     m = np.asarray(matrix, dtype=np.float32).reshape(3, 3)
-    x = img[:, :, :3].astype(np.float32, copy=False)
+    x = np.ascontiguousarray(img[:, :, :3], dtype=np.float32)
     mode = SensorUnmix(mode)
     if mode in (SensorUnmix.DENSITY, SensorUnmix.TWO_SCALE):
         out = _density_unmix(x, m) if mode == SensorUnmix.DENSITY else _two_scale_unmix(x, m)
@@ -97,31 +96,16 @@ def apply_sensor_correction(img: ImageBuffer, matrix: Optional[tuple], mode: str
     return out
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _unmix_kernel(x: np.ndarray, m: np.ndarray, out: np.ndarray) -> None:
     """The unmix, clipped at zero."""
-    h, w = x.shape[0], x.shape[1]
-    for i in prange(h):
-        for j in range(w):
-            x0, x1, x2 = x[i, j, 0], x[i, j, 1], x[i, j, 2]
-            for c in range(3):
-                out[i, j, c] = max(m[c, 0] * x0 + m[c, 1] * x1 + m[c, 2] * x2, 0.0)
+    negpy_core.sensor_unmix(x, m, out)
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _log_unmix_kernel(x: np.ndarray, c: np.ndarray, offset: np.ndarray, floor: np.ndarray, out: np.ndarray) -> None:
     """exp(c @ ln x + offset) per pixel, with each channel held at its ``floor`` or above."""
-    h, w = x.shape[0], x.shape[1]
-    for i in prange(h):
-        for j in range(w):
-            l0 = np.log(max(x[i, j, 0], floor[0]))
-            l1 = np.log(max(x[i, j, 1], floor[1]))
-            l2 = np.log(max(x[i, j, 2], floor[2]))
-            for k in range(3):
-                out[i, j, k] = np.exp(c[k, 0] * l0 + c[k, 1] * l1 + c[k, 2] * l2 + offset[k])
+    negpy_core.sensor_log_unmix(x, c, offset, floor, out)
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _two_scale_layer_kernel(
     blurred: np.ndarray,
     m: np.ndarray,
@@ -136,22 +120,9 @@ def _two_scale_layer_kernel(
     """Soft-floored unmix of the blurred capture, and the blend weight: a smoothstep on the
     largest ratio of a channel's unmix gain to its gain at the film base (``own``). The gain
     is the unfloored unmix's, so a channel the floor holds up still reads as amplified."""
-    h, w = blurred.shape[0], blurred.shape[1]
-    for i in prange(h):
-        for j in range(w):
-            x0, x1, x2 = blurred[i, j, 0], blurred[i, j, 1], blurred[i, j, 2]
-            ratio = 0.0
-            for c in range(3):
-                u = m[c, 0] * x0 + m[c, 1] * x1 + m[c, 2] * x2
-                ratio = max(ratio, blurred[i, j, c] * own[c] / max(u, log_floor))
-                f = floor * m[c, c] * blurred[i, j, c]
-                d = u - f
-                color[i, j, c] = max(0.5 * (u + f + np.sqrt(d * d + f * f)), log_floor)
-            t = min(max((ratio - start) / (full - start), 0.0), 1.0)
-            weight[i, j] = t * t * (3.0 - 2.0 * t)
+    negpy_core.sensor_two_scale_layer(blurred, m, own, floor, log_floor, start, full, color, weight)
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _two_scale_kernel(
     x: np.ndarray,
     blurred: np.ndarray,
@@ -165,24 +136,7 @@ def _two_scale_kernel(
 ) -> None:
     """Linear, blended by ``weight`` toward ``color`` carrying the detail x / blurred through c.
     A channel whose detail sits ``log_defect`` below both others takes their mean instead."""
-    h, w = x.shape[0], x.shape[1]
-    for i in prange(h):
-        for j in range(w):
-            x0, x1, x2 = x[i, j, 0], x[i, j, 1], x[i, j, 2]
-            wt = weight[i, j]
-            if wt > 0.0:
-                e0 = np.log(max(x0, floor) / max(blurred[i, j, 0], floor))
-                e1 = np.log(max(x1, floor) / max(blurred[i, j, 1], floor))
-                e2 = np.log(max(x2, floor) / max(blurred[i, j, 2], floor))
-                d0 = 0.5 * (e1 + e2) if e0 < log_defect + min(e1, e2) else e0
-                d1 = 0.5 * (e0 + e2) if e1 < log_defect + min(e0, e2) else e1
-                d2 = 0.5 * (e0 + e1) if e2 < log_defect + min(e0, e1) else e2
-            for k in range(3):
-                lin = max(m[k, 0] * x0 + m[k, 1] * x1 + m[k, 2] * x2, 0.0)
-                if wt > 0.0:
-                    capped = color[i, j, k] * np.exp(c[k, 0] * d0 + c[k, 1] * d1 + c[k, 2] * d2)
-                    lin += wt * (capped - lin)
-                out[i, j, k] = lin
+    negpy_core.sensor_two_scale(x, blurred, color, weight, m, c, floor, log_defect, out)
 
 
 def density_unmix_matrix(matrix, base) -> np.ndarray:

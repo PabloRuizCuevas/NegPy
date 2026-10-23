@@ -16,6 +16,7 @@ pub mod morph;
 pub mod print_curve;
 pub mod resize;
 pub mod retouch;
+pub mod sensor;
 pub mod shapes;
 pub mod stats;
 pub mod toning;
@@ -52,5 +53,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::bounds::register(m)?;
     py::color::register(m)?;
     py::toning::register(m)?;
+    py::sensor::register(m)?;
     py::analysis::register(m)
 }

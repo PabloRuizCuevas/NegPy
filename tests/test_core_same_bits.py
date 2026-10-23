@@ -15,6 +15,14 @@ _IMG3 = _RNG.random((97, 131, 3), dtype=np.float32)
 _IMG1 = (_RNG.random((83, 61), dtype=np.float32) - 0.4) * 5
 _GRAY = negpy_core.bgr_to_gray((_IMG3 * 255).astype(np.uint8))
 _M = np.array([[0.58, 0.19, 0.19], [0.30, 0.63, 0.08], [0.03, 0.07, 0.99]], np.float32)
+
+
+def _filled(fill):
+    out = np.empty_like(_IMG3)
+    fill(out)
+    return out
+
+
 _LAB = (_IMG3 * np.array([100.0, 160.0, 160.0], np.float32) - np.array([0.0, 80.0, 80.0], np.float32)).astype(np.float32)
 
 _CASES = {
@@ -50,6 +58,9 @@ _CASES = {
         _IMG3 * 0.8 - 0.1, (0.45, 2.1), (0.5, 2.0), (0.55, 1.9), toe=0.3, shoulder=0.2, midtone_gamma=0.2, shadow_density=-0.1, bpc=True
     ),
     "chemical_toning": lambda: apply_chemical_toning(_IMG3, 0.3, 0.4, 0.3, 0.2, 0.3, 0.4),
+    "sensor_log_unmix": lambda: _filled(
+        lambda out: negpy_core.sensor_log_unmix(_IMG3, _M, np.array([0.01, -0.02, 0.03], np.float32), np.full(3, 1e-3, np.float32), out)
+    ),
 }
 
 _HASHES = {
@@ -75,6 +86,7 @@ _HASHES = {
     "gamut_aware_chroma_scale": "ef1a9474817c0bca19e3c847a4667ba47ba75829722a1c7939a77e135d8b7da4",
     "print_curve": "c06516de4316987b8cb37dcf977915373302d36b0bd6c1018e3e4bfba0929b09",
     "chemical_toning": "7ddd3949c04bd5af38177bfcd6576888092bf73ad173206c34b153d6cce5d648",
+    "sensor_log_unmix": "f7eb8efe1bbcfe884fd2e849e99d0546fac2f4829d3fb558d54a0128e681e53b",
 }
 
 

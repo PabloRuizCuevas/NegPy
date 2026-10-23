@@ -71,6 +71,13 @@ def separation_damping_gain_np(k: float, damping: float, chroma: Any, ref_spread
     return np.minimum(kf, np.float32(3.0))
 
 
+def tone_key_weight_np(lum: Any, e0: float, e1: float) -> Any:
+    """A tone-limited mask's weight at luma `lum`, over a whole raster: a smoothstep from 0 at e0
+    to 1 at e1 (see placement.key_edges). The print curve in negpy_core and exposure.wgsl mirror it."""
+    t = np.clip((np.asarray(lum, dtype=np.float32) - np.float32(e0)) / np.float32(e1 - e0), 0.0, 1.0)
+    return t * t * (np.float32(3.0) - np.float32(2.0) * t)
+
+
 class CharacteristicCurve:
     """
     Asymmetric H&D print curve (toe-linear-shoulder) in density space — the NumPy
