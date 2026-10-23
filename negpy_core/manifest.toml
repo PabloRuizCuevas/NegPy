@@ -2020,7 +2020,8 @@ depends = []
 
 ["features/finish/logic.py::_carrier_block"]
 phase = 6
-status = "todo"
+status = "ported"
+compare = "abs=1e-6"
 calls = []
 depends = ["carrier_profiles"]
 
@@ -2032,9 +2033,10 @@ depends = []
 
 ["features/finish/logic.py::apply_carrier"]
 phase = 6
-status = "todo"
-calls = []
-depends = ["_carrier_block"]
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.apply_carrier"]
+depends = ["carrier_profiles"]
 
 ["features/finish/logic.py::carrier_profiles"]
 phase = 6
