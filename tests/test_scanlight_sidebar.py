@@ -2235,7 +2235,7 @@ def test_single_capture_calibration_saves_a_sensor_profile_with_the_preset(monke
 
     assert saves == [("Portra 400", _UNMIX)]
     assert preset.sensor_profile == "Portra 400"
-    assert "sensor profile" in w.status_strip.message()
+    assert "sensor crosstalk profile" in w.status_strip.message()
 
 
 def test_sensor_profile_toggle_off_saves_the_preset_alone(monkeypatch):
@@ -2257,7 +2257,7 @@ def test_a_run_that_measured_no_unmix_saves_the_preset_and_says_so(monkeypatch):
     preset = _calibrate(w, monkeypatch, single_capture=True, sensor_matrix=None)
 
     assert saves == [] and preset.sensor_profile == ""
-    assert "no sensor profile" in w.status_strip.message()
+    assert "no sensor crosstalk profile" in w.status_strip.message()
 
 
 def test_scan_request_carries_the_single_capture_presets_sensor_profile(tmp_path, monkeypatch):
