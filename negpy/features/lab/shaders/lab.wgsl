@@ -24,7 +24,7 @@ struct LabUniforms {
 // (low-pass a*, low-pass b*) from chroma_lowpass_h/v.wgsl. 1x1 dummy when Chroma Denoise is off.
 @group(0) @binding(4) var chroma_tex: texture_2d<f32>;
 
-// Sharpen constants — mirrored from features/lab/logic.py.
+// Sharpen constants — mirrored from negpy_core/src/lab.rs.
 const SHARPEN_GATE_LO = 0.25;
 const SHARPEN_GATE_HI = 0.33;
 const SHARPEN_OVERSHOOT_LIGHT = 1.0;
@@ -122,7 +122,7 @@ const FIBONACCI_64 = array<vec2<f32>, 64>(
 // accumulator the same way a Gaussian convolution kernel is normalized (sum=1).
 const BLOOM_GAUSS_SUM = 27.668145;
 
-// Chroma Denoise edge test — mirrors CHROMA_EDGE_LO/HI in lab/logic.py.
+// Chroma Denoise edge test — mirrors CHROMA_EDGE_LO/HI in negpy_core/src/lab.rs.
 const CHROMA_EDGE_LO = 1.0;
 const CHROMA_EDGE_HI = 2.5;
 

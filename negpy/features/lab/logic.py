@@ -85,15 +85,8 @@ def apply_clahe(img: ImageBuffer, strength: float) -> ImageBuffer:
     return ensure_image(np.clip(lab_to_rgb_working(lab), 0.0, 1.0))
 
 
-# Sharpen constants, mirrored as WGSL consts in shaders/lab.wgsl.
-# Gate separating grain from detail in L*, sized against |L - blur| at a 1 px radius,
-# which tops out near 1.0.
-SHARPEN_GATE_LO = 0.25
-SHARPEN_GATE_HI = 0.33
-# L*-domain USM exaggerates light halos, so overshoot above the local max is clamped
-# tighter than undershoot below the local min.
-SHARPEN_OVERSHOOT_LIGHT = 1.0
-SHARPEN_OVERSHOOT_DARK = 2.0
+# Sharpen constants, mirrored as WGSL consts in shaders/lab.wgsl; the USM gate and overshoot
+# limits live in negpy_core/src/lab.rs.
 SHARPEN_MASK_T_HI = 10.0
 # Gain rolls off toward paper black, where the thin negative's grain lives: floor at
 # L* 0, full gain from SHARPEN_SHADOW_L_HI up (Gallagher & Gindele, US 7,228,004).
@@ -286,29 +279,8 @@ def _saturation_block(img: ImageBuffer, saturation: float, skin_protection: floa
     return ensure_image(np.clip(res_rgb, 0.0, 1.0))
 
 
-# Chroma Denoise edge test: the low band's gradient times sigma, in CIELAB a*/b* units. Chroma
-# above the cutoff is kept from LO, fully from HI. Mirrored as WGSL literals in lab.wgsl.
-CHROMA_EDGE_LO = 1.0
-CHROMA_EDGE_HI = 2.5
 # Below this blur sigma (px) both engines skip the stage.
 CHROMA_DENOISE_MIN_SIGMA = 0.25
-
-
-def chroma_edge_keep(low_ab: np.ndarray, sigma: float) -> np.ndarray:
-    """How much of the chroma above the cutoff a pixel keeps (0 to 1). Central differences on the
-    edge-replicated low band, as the shader reads it with clamped coordinates."""
-    gx = cv2.filter2D(low_ab, -1, _CENTRAL_DIFF, borderType=cv2.BORDER_REPLICATE)
-    gy = cv2.filter2D(low_ab, -1, _CENTRAL_DIFF.T, borderType=cv2.BORDER_REPLICATE)
-    sq = gx * gx
-    sq += gy * gy
-    g = np.sqrt(sq[:, :, 0] + sq[:, :, 1])
-    g *= np.float32(sigma / (CHROMA_EDGE_HI - CHROMA_EDGE_LO))
-    g -= np.float32(CHROMA_EDGE_LO / (CHROMA_EDGE_HI - CHROMA_EDGE_LO))
-    t = np.clip(g, 0.0, 1.0, out=g)
-    return t * t * (3.0 - 2.0 * t)
-
-
-_CENTRAL_DIFF = np.array([[-0.5, 0.0, 0.5]], dtype=np.float32)
 
 
 def chroma_denoise_sigma(radius: float, scale_factor: float) -> float:
@@ -326,16 +298,8 @@ def apply_chroma_denoise(img: ImageBuffer, radius: float, scale_factor: float = 
     if sigma == 0.0:
         return img
 
-    lab = rgb_to_lab_working(img.astype(np.float32))
-    ab = np.ascontiguousarray(lab[:, :, 1:3])
     k = gaussian_kernel_1d(sigma)
-    low = cv2.sepFilter2D(ab, -1, k, k)
-    ab -= low
-    ab *= chroma_edge_keep(low, sigma)[:, :, None]
-    ab += low
-    lab[:, :, 1:3] = ab
-
-    return ensure_image(np.clip(lab_to_rgb_working(lab), 0.0, 1.0))
+    return negpy_core.chroma_denoise(np.ascontiguousarray(img, dtype=np.float32), sigma, k, *WORKING_LAB)
 
 
 # Halation mask threshold in LINEAR reflectance: the regions the negative rendered dense,

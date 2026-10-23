@@ -6,9 +6,12 @@ use rayon::prelude::*;
 use crate::color::{self, LabSpace};
 use crate::filter::{self, Border};
 
-// Sharpen constants of logic.py; lab.wgsl mirrors them.
+// Sharpen constants; shaders/lab.wgsl mirrors them. The gate separates grain from detail in
+// L*, sized against |L - blur| at a 1 px radius, which tops out near 1.0.
 const GATE_LO: f32 = 0.25;
 const GATE_HI: f64 = 0.33;
+// L*-domain USM exaggerates light halos, so overshoot above the local max is clamped tighter
+// than undershoot below the local min.
 const OVERSHOOT_LIGHT: f32 = 1.0;
 const OVERSHOOT_DARK: f32 = 2.0;
 const MASK_T_HI: f64 = 10.0;
@@ -118,4 +121,59 @@ fn f32_hi(a: f32, b: f32) -> f32 {
 fn clip(v: f32, lo: f32, hi: f32) -> f32 {
     let m = if v.is_nan() || v > lo { v } else { lo };
     if m.is_nan() || m < hi { m } else { hi }
+}
+
+// Chroma Denoise edge test: the low band's gradient times sigma, in CIELAB a*/b* units. Chroma
+// above the cutoff is kept from LO, fully from HI. lab.wgsl mirrors them as literals.
+const CHROMA_EDGE_LO: f64 = 1.0;
+const CHROMA_EDGE_HI: f64 = 2.5;
+
+/// `apply_chroma_denoise` once sigma is known: the a*/b* band above the Gaussian low pass `k`
+/// (reflect-101 edges) is kept only where the low band has a color edge (`chroma_edge_keep`).
+pub fn chroma_denoise(
+    src: &[f32],
+    (h, w): (usize, usize),
+    sigma: f64,
+    k: &[f32],
+    (to_lab, to_rgb): (LabSpace, LabSpace),
+    dst: &mut [f32],
+) -> Option<()> {
+    let n = h * w;
+    let mut lab = vec![0f32; n * 3];
+    color::rgb_to_lab(src, &mut lab, to_lab);
+    let ab: Vec<f32> = lab.par_chunks(3).flat_map_iter(|p| [p[1], p[2]]).collect();
+    let mut low = vec![0f32; n * 2];
+    filter::sep_filter2d(&ab, &mut low, (h, w, 2), (k, k), Border::Reflect101)?;
+    let span = CHROMA_EDGE_HI - CHROMA_EDGE_LO;
+    let (scale, shift) = ((sigma / span) as f32, (CHROMA_EDGE_LO / span) as f32);
+    lab.par_chunks_mut(w * 3).enumerate().for_each(|(y, out)| {
+        let (up, down) = (y.saturating_sub(1), (y + 1).min(h - 1));
+        let at = |r: usize, x: usize| &low[(r * w + x) * 2..][..2];
+        for (x, p) in out.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+            let (left, right) = (at(y, x.saturating_sub(1)), at(y, (x + 1).min(w - 1)));
+            let (top, bottom) = (at(up, x), at(down, x));
+            // cv2.filter2D drops the zero tap: -0.5 a + 0.5 c rounds once, as (c - a) * 0.5 does.
+            let sq: [f32; 2] = std::array::from_fn(|c| {
+                let gx = (right[c] - left[c]) * 0.5;
+                let gy = (bottom[c] - top[c]) * 0.5;
+                let s = gx * gx;
+                s + gy * gy
+            });
+            let mut g = (sq[0] + sq[1]).sqrt();
+            g *= scale;
+            g -= shift;
+            let t = clip(g, 0.0, 1.0);
+            let keep = t * t * (3.0 - 2.0 * t);
+            let i = y * w + x;
+            for c in 0..2 {
+                let lo = low[i * 2 + c];
+                let mut v = ab[i * 2 + c] - lo;
+                v *= keep;
+                p[1 + c] = v + lo;
+            }
+        }
+    });
+    color::lab_to_rgb(&lab, dst, to_rgb);
+    dst.par_iter_mut().for_each(|v| *v = clip(*v, 0.0, 1.0));
+    Some(())
 }

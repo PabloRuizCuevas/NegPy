@@ -2079,9 +2079,9 @@ depends = []
 
 ["features/lab/logic.py::apply_chroma_denoise"]
 phase = 6
-status = "todo"
-calls = ["cv2.sepFilter2D"]
-depends = ["chroma_edge_keep"]
+status = "ported"
+calls = ["negpy_core.chroma_denoise"]
+depends = []
 
 ["features/lab/logic.py::apply_clahe"]
 phase = 6
@@ -2124,12 +2124,6 @@ phase = 6
 status = "ported"
 calls = []
 depends = ["_usm_sharpening_block"]
-
-["features/lab/logic.py::chroma_edge_keep"]
-phase = 6
-status = "todo"
-calls = ["cv2.filter2D"]
-depends = []
 
 ["features/lab/processor.py::PhotoLabProcessor.process"]
 phase = 6
