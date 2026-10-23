@@ -80,31 +80,7 @@ class FrameSkew:
 def _coarse_angles(lum: np.ndarray) -> list[float]:
     """Dominant folded angles of long segments, strongest first. The runner-up is a second
     start: picture lines at their own tilt can outvote the frame."""
-    h, w = lum.shape
-    lo, hi = np.percentile(lum, (1.0, 99.0))
-    u8 = (np.clip((lum - lo) / max(hi - lo, 1e-6), 0.0, 1.0) * 255.0).astype(np.uint8)
-    segments = cv2.createLineSegmentDetector().detect(u8)[0]
-    if segments is None:
-        return []
-    seg = segments.reshape(-1, 4).astype(np.float64)
-    dx, dy = seg[:, 2] - seg[:, 0], seg[:, 3] - seg[:, 1]
-    length = np.hypot(dx, dy)
-    angle = np.degrees(np.arctan2(dy, dx))
-    angle = (angle + 45.0) % 90.0 - 45.0
-    keep = (length >= _MIN_SEGMENT * max(h, w)) & (np.abs(angle) <= _MAX_SKEW_DEGREES)
-    if not np.any(keep):
-        return []
-    bins = np.arange(-_MAX_SKEW_DEGREES, _MAX_SKEW_DEGREES + _ANGLE_BIN, _ANGLE_BIN)
-    hist, _ = np.histogram(angle[keep], bins=bins, weights=length[keep] ** 2)
-    hist = negpy_core.gaussian_blur(hist.astype(np.float32).reshape(1, -1), (0, 0), 3.0).ravel()
-    first = int(np.argmax(hist))
-    modes = [float(bins[first] + _ANGLE_BIN / 2)]
-    rest = hist.copy()
-    rest[max(0, first - 10) : first + 11] = 0.0
-    second = int(np.argmax(rest))
-    if rest[second] >= 0.25 * hist[first]:
-        modes.append(float(bins[second] + _ANGLE_BIN / 2))
-    return modes
+    return negpy_core.coarse_angles(np.ascontiguousarray(lum, dtype=np.float32), _MIN_SEGMENT, _MAX_SKEW_DEGREES, _ANGLE_BIN)
 
 
 def _fit_side(lum: np.ndarray, horizontal: bool, at: float, start: float, stop: float, source: str, outward: int = 0) -> EdgeLine | None:

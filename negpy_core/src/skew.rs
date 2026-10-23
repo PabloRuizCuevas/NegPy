@@ -529,6 +529,77 @@ pub fn at_canvas_edges(lum: &[f32], (h, w): (usize, usize), lines: &[(bool, f64)
     spread(true, h) >= MIN_PAIR_SEPARATION && spread(false, w) >= MIN_PAIR_SEPARATION
 }
 
+/// `_coarse_angles`: the dominant folded angles (degrees) of long line segments on an HxW
+/// luminance plane, strongest first, with a runner-up at a quarter of its weight or more.
+pub fn coarse_angles(
+    lum: &[f32],
+    (h, w): (usize, usize),
+    min_segment: f64,
+    max_skew: f64,
+    angle_bin: f64,
+) -> Vec<f64> {
+    let q = crate::stats::np_percentiles_f64(lum, &[1.0, 99.0]);
+    let (lo, span) = (q[0], (q[1] - q[0]).max(1e-6));
+    let mut u8s = vec![0u8; lum.len()];
+    crate::par_zip(&mut u8s, lum, move |o, &v| {
+        *o = (((v as f64 - lo) / span).clamp(0.0, 1.0) * 255.0) as u8;
+    });
+    let min_len = min_segment * h.max(w) as f64;
+    let found: Vec<(f64, f64)> = crate::lsd::line_segments(&u8s, (h, w))
+        .iter()
+        .map(|s| {
+            let (dx, dy) = ((s[2] - s[0]) as f64, (s[3] - s[1]) as f64);
+            let angle = libm::atan2(dy, dx).to_degrees();
+            ((angle + 45.0).rem_euclid(90.0) - 45.0, dx.hypot(dy))
+        })
+        .filter(|&(a, l)| l >= min_len && a.abs() <= max_skew)
+        .collect();
+    if found.is_empty() {
+        return Vec::new();
+    }
+    // np.arange(-max_skew, max_skew + angle_bin, angle_bin), filled as NumPy fills it.
+    let start = -max_skew;
+    let delta = (start + angle_bin) - start;
+    let n = (((max_skew + angle_bin) - start) / angle_bin).ceil() as usize;
+    let edges: Vec<f64> = (0..n).map(|i| start + i as f64 * delta).collect();
+    let mut hist = vec![0f64; n - 1];
+    for &(a, l) in &found {
+        if a < edges[0] || a > edges[n - 1] {
+            continue;
+        }
+        let bin = (edges.partition_point(|&e| e <= a) - 1).min(n - 2);
+        hist[bin] += l * l;
+    }
+    let hist32: Vec<f32> = hist.iter().map(|&v| v as f32).collect();
+    let mut smooth = vec![0f32; n - 1];
+    if filter::gaussian_blur(
+        &hist32,
+        &mut smooth,
+        (1, n - 1, 1),
+        (0, 0),
+        (3.0, 0.0),
+        Border::Reflect101,
+    )
+    .is_none()
+    {
+        return Vec::new();
+    }
+    let argmax = |v: &[f32]| {
+        v.iter()
+            .enumerate()
+            .fold(0, |b, (i, &x)| if x > v[b] { i } else { b })
+    };
+    let first = argmax(&smooth);
+    let mut modes = vec![edges[first] + angle_bin / 2.0];
+    let mut rest = smooth.clone();
+    rest[first.saturating_sub(10)..(first + 11).min(n - 1)].fill(0.0);
+    let second = argmax(&rest);
+    if rest[second] >= 0.25 * smooth[first] {
+        modes.push(edges[second] + angle_bin / 2.0);
+    }
+    modes
+}
+
 #[cfg(test)]
 mod tests {
     use super::Pcg64;
