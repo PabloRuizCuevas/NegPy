@@ -68,7 +68,7 @@ Pixel values are linear transmittance. The source corrections run in that domain
 **Code**: `negpy.features.exposure`
 
 *   **B&W Negative**: the normalized signal collapses to one density (its luminance) before the curve.
-*   **Color timing**: subtractive CMY in log space, on Global, Shadows or Highlights. Regional offsets weigh by $w_{sh} = \sigma(3 \cdot (v - z))$ about the midtone zone center $z$ (`anchor_target_density`). Temperature, the WB picker and the temperature roll-lock act on the selected region's M/Y pair.
+*   **Color timing**: subtractive CMY in log space, on Global, Shadows or Highlights. Regional offsets weigh by $w_{sh} = \sigma(3 \cdot (v - z))$ about the midtone zone center $z$ (`reference_print_density`). Temperature, the WB picker and the temperature roll-lock act on the selected region's M/Y pair.
 *   **The H&D curve**: a toe-linear-shoulder curve in density. A line of slope $k$ through the pivot is bounded by two independent softplus knees. With $v = k \cdot (x_{adj} - x_0)$:
     $$v_1 = D_{min} + \frac{\text{softplus}\big(a_{hl} (v - D_{min})\big)}{a_{hl}} \qquad \text{(shoulder → paper white)}$$
     $$D = D_{max} - \frac{\text{softplus}\big(a_{sh} (D_{max} - v_1)\big)}{a_{sh}} \qquad \text{(toe → paper black)}$$
@@ -104,7 +104,7 @@ Pixel values are linear transmittance. The source corrections run in that domain
 
 *   **Auto Density** (`auto_exposure`, on): the metered tone $m$ averages the trimmed window's mean and midpoint ($P_5$ to $P_{95}$ of textured cells; Boyack & Juenger). The anchor is a partial pull from `assumed_anchor` ($0.46$):
     $$\text{anchor} = \text{assumed} + s \cdot (m - \text{assumed}), \quad \text{clamped to } \pm b$$
-    with $s$ = `anchor_meter_strength` ($0.2$), $b$ = `anchor_meter_band` ($0.12$). It prints at `anchor_target_density` ($0.75$).
+    with $s$ = `anchor_meter_strength` ($0.2$), $b$ = `anchor_meter_band` ($0.12$). It prints at `anchor_target_density` ($0.75$, Print Density Target). With Auto Density off, the reference tone prints at the fixed `reference_print_density` ($0.75$).
 *   **Auto Grade** (`auto_normalize_contrast`, on): a partial ISO R match (Alkofer, US 4,731,671) on the textural range $t$ ($P_{10}$ to $P_{90}$, log D). With $r$ the floor-to-ceil range, the effective range is
     $$K \cdot r \cdot \min\!\Big((1 - s) + s \cdot \frac{n}{t},\; c \cdot \frac{n}{t}\Big)$$
     $K$ = `auto_grade_target` ($0.85$), $n$ = `auto_grade_nominal_range` ($0.9$), $s$ = `auto_grade_strength` ($0.4$), $c$ = `auto_grade_max_overfill` ($1.2$).
@@ -112,7 +112,7 @@ Pixel values are linear transmittance. The source corrections run in that domain
     *   **Highlight hold** (Agfa, US 4,104,069): the brightest textured tone ($P_2$) must print at least `highlight_hold_density` ($0.10$; 0 off). Otherwise an automatic burn joins the Zone Density highlight term, capped at `highlight_hold_max` ($0.5$). Highlights Grade is not the actuator, because it pivots where these tones sit.
     *   **Shadow hold**: the Zone Density shadow term gets $-\min\big(h \cdot (v - v_r - o),\; m\big)$ when the tail's value $v > v_r + o$, with $v_r$ the value that prints `shadow_reach_density`, $h$ = `shadow_hold_strength` ($0.40$; 0 off), $o$ = `shadow_hold_overshoot` ($0.15$), $m$ = `shadow_hold_max` ($0.3$).
     *   All three aim through the midtone gamma (the stock's plus Snap). Shadow reach and the preflash threshold invert it, and the holds read the tail's $v$ after it, where the Zone Density terms add.
-*   **On the sliders** (`features/exposure/auto_sliders.py`; transfer twin in `features/transparency/logic.py`): stored values are offsets on the meter. Density shifts by $(\text{anchor} - \text{assumed})/$`density_multiplier`, Grade is the ISO R of the auto slope on the frame's range (`slope_to_grade`), and the zone densities add the holds. The meters come from the frame's last plain render (`desktop/auto_sliders.py`).
+*   **On the sliders** (`features/exposure/auto_sliders.py`; transfer twin in `features/transparency/logic.py`): stored values are offsets on the meter. Density shifts by the gap between the metered and the reference pivot at green's slope, over `density_multiplier`, Grade is the ISO R of the auto slope on the frame's range (`slope_to_grade`), and the zone densities add the holds. The meters come from the frame's last plain render (`desktop/auto_sliders.py`).
 *   **Set Targets**: eight app-global aim values (`TUNABLE_TARGETS`), overlaid on `EXPOSURE_CONSTANTS` by `apply_targets()` and saved as `exposure_targets`. No `WorkspaceConfig` hash sees them, so both engines fold `TARGETS_REVISION` into their cache keys (CPU base stage; GPU analysis key and exposure diff). A target read outside those stages needs its own invalidation.
 *   **Cast Removal** (`cast_removal_strength`; 1.0 on a negative, 0 on a slide): balances each layer against the frame's grays from shadows to highlights, at `confidence × slider` (`effective_cast_strength`). `cast_removal_for_mode` is the one place the per-mode default swap lives; it rewrites only the other mode's default, so a chosen strength survives a mode switch. It is a roll default.
 
