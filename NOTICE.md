@@ -69,5 +69,6 @@ negpy_core/Cargo.lock lists the exact versions.
 
 negpy_core/src/resize.rs and negpy_core/src/filter.rs port OpenCV's float32 area
 resize, separable filter engine and bit-exact Gaussian kernel (including its
-softfloat exp table) so their results match cv2 bit for bit. OpenCV, Apache
+softfloat exp table) so their results match cv2 bit for bit.
+negpy_core/src/inpaint.rs ports OpenCV's Navier-Stokes inpaint. OpenCV, Apache
 License 2.0. https://github.com/opencv/opencv

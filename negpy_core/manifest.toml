@@ -2485,9 +2485,10 @@ depends = []
 
 ["features/retouch/logic.py::apply_hair_inpaint"]
 phase = 9
-status = "todo"
-calls = ["cv2.connectedComponentsWithStats", "cv2.dilate", "cv2.distanceTransform", "cv2.getStructuringElement", "cv2.inpaint", "negpy_core.add_clean_grain", "negpy_core.resize_linear", "np.percentile"]
-depends = ["_hair_encode"]
+status = "ported"
+compare = "quality"
+calls = ["cv2.getStructuringElement", "negpy_core.add_clean_grain", "negpy_core.hair_fill", "negpy_core.morphology_ex", "negpy_core.resize_linear"]
+depends = []
 
 ["features/rgbscan/logic.py::estimate_shift"]
 phase = 9

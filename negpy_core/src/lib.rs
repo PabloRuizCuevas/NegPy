@@ -14,6 +14,7 @@ pub mod flatfield;
 pub mod gray;
 pub mod hdr;
 pub mod histogram;
+pub mod inpaint;
 pub mod lab;
 pub mod lens;
 pub mod mathf;

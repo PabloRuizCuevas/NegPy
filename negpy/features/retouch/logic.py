@@ -209,9 +209,9 @@ _REPAIR_MAX_COMPONENTS = 256
 # the inpaint follows. Detection-scale px. See is_hair in negpy_core/src/retouch.rs.
 _HAIR_MIN_AREA = 20
 _HAIR_MIN_ELONG = 8.0  # area/thickness² ≈ length/thickness; round specks measure 1–3
-# cv2.inpaint fill: the dilate covers the PSF skirt at 1:1 (apply_hair_inpaint widens it to
+# Inpaint fill: the dilate covers the PSF skirt at 1:1 (apply_hair_inpaint widens it to
 # track the mask's upsample), then the NS radius, then gamma to give the 8-bit encode a
-# perceptual spread (cv2.inpaint is 8-bit only). Navier-Stokes propagates outward from the
+# perceptual spread (the inpaint is 8-bit). Navier-Stokes propagates outward from the
 # mask boundary only, so each defect is filled in its own bbox + _HAIR_INPAINT_PAD. Same
 # pixels, without gamma-encoding the whole frame to serve a hairline.
 _HAIR_DILATE_PX = 1
@@ -999,21 +999,16 @@ def ir_bake_token(retouch, has_ir: bool) -> str:
     return f"|ir{int(retouch.ir_attenuation)}r{round(float(retouch.ir_threshold), 3)}"
 
 
-def _hair_encode(crop, lo, inv_span, out_u8):
-    """``clip((crop - lo) / span, 0, 1) ** (1/γ)`` to 8-bit, for cv2.inpaint."""
-    negpy_core.hair_encode(crop, lo, inv_span, np.float32(1.0 / _HAIR_INPAINT_GAMMA), out_u8)
-
-
 def apply_hair_inpaint(
     img: ImageBuffer,
     hair_masks: List[np.ndarray],
     radius: int = _HAIR_INPAINT_RADIUS,
     dilate_px: Optional[int] = None,
 ) -> ImageBuffer:
-    """Structure-following fill of long/twisted defects (``cv2.inpaint``, Navier–Stokes)
+    """Structure-following fill of long/twisted defects (Navier–Stokes inpaint, ``negpy_core::inpaint``)
     baked into the linear source. Each detection-scale mask is upsampled to the buffer,
     unioned and dilated to cover the PSF skirt; only masked pixels are overwritten (the
-    rest stay byte-identical — the 8-bit encode cv2.inpaint requires touches only the
+    rest stay byte-identical — the 8-bit encode of the inpaint touches only the
     fabricated hairline). Returns a new array (buffers are read-only)."""
     h, w = img.shape[:2]
     masks = [hm for hm in hair_masks if hm is not None]
@@ -1032,61 +1027,15 @@ def apply_hair_inpaint(
         return img
     if dilate_px > 0:
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate_px + 1, 2 * dilate_px + 1))
-        m = cv2.dilate(m, k)
+        m = negpy_core.morphology_ex(m, cv2.MORPH_DILATE, k)
     src = np.ascontiguousarray(img, dtype=np.float32)
-    out = src.copy()
-    n_lbl, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
-    for i in range(1, n_lbl):
-        bx = int(stats[i, cv2.CC_STAT_LEFT])
-        by = int(stats[i, cv2.CC_STAT_TOP])
-        x0, y0 = max(0, bx - _HAIR_INPAINT_PAD), max(0, by - _HAIR_INPAINT_PAD)
-        x1 = min(w, bx + int(stats[i, cv2.CC_STAT_WIDTH]) + _HAIR_INPAINT_PAD)
-        y1 = min(h, by + int(stats[i, cv2.CC_STAT_HEIGHT]) + _HAIR_INPAINT_PAD)
-        # Mask the whole crop, not just this component: a neighbour reaching into the bbox
-        # must stay unknown, or it becomes clone source and its dust is filled back in.
-        sub_m = np.ascontiguousarray(m[y0:y1, x0:x1])
-        crop = np.ascontiguousarray(src[y0:y1, x0:x1])
-        # Encode against the crop's clean range: clip(0,1) posterizes fills in dark regions.
-        # A hair can join enough specks that one component spans the frame, so the range is
-        # read off a strided sample of the clean pixels rather than all of them.
-        step = max(1, int(math.isqrt(max(1, crop.shape[0] * crop.shape[1] // _HAIR_RANGE_SAMPLE_PX))))
-        ctx = crop[::step, ::step][sub_m[::step, ::step] == 0]
-        lo = float(np.percentile(ctx, 0.5)) if ctx.size else 0.0
-        hi = float(np.percentile(ctx, 99.5)) if ctx.size else 1.0
-        span = max(hi - lo, 1e-4)
-        # The fill is 8-bit, so its decode is a 256-entry table.
-        dec_lut = ((np.arange(256, dtype=np.float32) / 255.0) ** _HAIR_INPAINT_GAMMA) * span + lo
-        ch, cw = crop.shape[:2]
-        # The inpaint walks the whole image it is handed, and a hair joining specks can make
-        # this crop the frame: tile it, skip tiles without this component, keep a halo so
-        # the fill at a tile's core sees the same neighbourhood.
-        for ty0 in range(0, ch, _HAIR_TILE_PX):
-            for tx0 in range(0, cw, _HAIR_TILE_PX):
-                ty1, tx1 = min(ch, ty0 + _HAIR_TILE_PX), min(cw, tx0 + _HAIR_TILE_PX)
-                if not (labels[y0 + ty0 : y0 + ty1, x0 + tx0 : x0 + tx1] == i).any():
-                    continue
-                ay0, ay1 = max(0, ty0 - _HAIR_TILE_HALO), min(ch, ty1 + _HAIR_TILE_HALO)
-                ax0, ax1 = max(0, tx0 - _HAIR_TILE_HALO), min(cw, tx1 + _HAIR_TILE_HALO)
-                tile = np.ascontiguousarray(crop[ay0:ay1, ax0:ax1])
-                enc = np.empty(tile.shape, dtype=np.uint8)
-                _hair_encode(tile, np.float32(lo), np.float32(1.0 / span), enc)
-                filled = cv2.inpaint(enc, np.ascontiguousarray(sub_m[ay0:ay1, ax0:ax1]), radius, cv2.INPAINT_NS)
-                # ...but keep only this component, alpha-feathered across the dilate band: full
-                # fill on the detected defect, ramp over the skirt. A neighbour clipped by the
-                # bbox fills badly here and gets its own padded crop anyway. dilate_px=0 means
-                # no feather. Only the tile's core is written; the halo belongs to its neighbours.
-                mb = labels[y0 + ay0 : y0 + ay1, x0 + ax0 : x0 + ax1] == i
-                d = cv2.distanceTransform(mb.astype(np.uint8), cv2.DIST_C, 3)
-                core = np.zeros(mb.shape, dtype=bool)
-                core[ty0 - ay0 : ty1 - ay0, tx0 - ax0 : tx1 - ax0] = True
-                sel = np.flatnonzero(mb & core)
-                a = np.minimum(d.ravel()[sel] / float(dilate_px + 1), 1.0)[:, None]
-                # Written flat into the frame: the crop view is not contiguous, so a reshape
-                # of it would write to a copy.
-                dec = dec_lut[filled.reshape(-1, 3)[sel]]
-                tile_px = tile.reshape(-1, 3)[sel]
-                ry, rx = np.divmod(sel, ax1 - ax0)
-                out.reshape(-1, 3)[(y0 + ay0 + ry) * w + (x0 + ax0 + rx)] = tile_px * (1.0 - a) + dec * a
+    # Each component fills in its padded box, tiled with a halo; a neighbour reaching into the
+    # box stays unknown, or it becomes clone source and its dust is filled back in.
+    out = negpy_core.hair_fill(
+        src,
+        m,
+        (float(radius), dilate_px, _HAIR_INPAINT_PAD, _HAIR_TILE_PX, _HAIR_TILE_HALO, _HAIR_RANGE_SAMPLE_PX, _HAIR_INPAINT_GAMMA),
+    )
     # Navier-Stokes propagates a smooth field, so the fill lands grainless. See
     # apply_score_repair, which fills the same kind of hole by a different route.
     negpy_core.add_clean_grain(out, np.ascontiguousarray(src, dtype=np.float32), m == 0, max(1.0, factor))
