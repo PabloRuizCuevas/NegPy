@@ -126,7 +126,37 @@ fn canny<'py>(
     Ok(out)
 }
 
+/// `cv2.medianBlur(src, ksize)` for a single-channel uint8 image.
+#[pyfunction]
+fn median_blur<'py>(
+    py: Python<'py>,
+    src: PyReadonlyArrayDyn<'py, u8>,
+    ksize: usize,
+) -> PyResult<Bound<'py, PyArrayDyn<u8>>> {
+    let shape = src.shape().to_vec();
+    let (h, w) = match shape.as_slice() {
+        [h, w] | [h, w, 1] => (*h, *w),
+        _ => {
+            return Err(PyValueError::new_err(
+                "median_blur needs a single-channel array",
+            ));
+        }
+    };
+    let data = contiguous(&src)?;
+    let out = empty_u8(py, &shape)?;
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        py.detach(|| crate::median::median_blur_u8(data, dst, h, w, ksize))
+            .ok_or_else(|| PyValueError::new_err("ksize must be odd"))?;
+    }
+    Ok(out)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(median_blur, m)?)?;
     m.add_function(wrap_pyfunction!(bgr_to_gray, m)?)?;
     m.add_function(wrap_pyfunction!(gaussian_blur_u8, m)?)?;
     m.add_function(wrap_pyfunction!(threshold_otsu, m)?)?;

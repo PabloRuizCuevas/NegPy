@@ -7,6 +7,7 @@ pub mod detect;
 pub mod filter;
 pub mod gray;
 pub mod histogram;
+pub mod median;
 pub mod meter;
 pub mod morph;
 pub mod resize;

@@ -66,3 +66,16 @@ def test_threshold_otsu_matches_cv2(shape, invert):
 def test_canny_matches_cv2(shape, low, high):
     img = _gray(shape)
     assert np.array_equal(negpy_core.canny(img, low, high), cv2.Canny(img, low, high))
+
+
+@pytest.mark.parametrize("shape", [(1, 1), (1, 30), (30, 1), (5, 5), (37, 53), (130, 140)])
+@pytest.mark.parametrize("ksize", [1, 3, 5, 7, 9, 25, 33])
+@pytest.mark.parametrize("kind", ["noise", "smooth", "levels"])
+def test_median_blur_matches_cv2(shape, ksize, kind):
+    rng = np.random.default_rng(ksize * 7 + shape[0])
+    img = rng.integers(0, 256, shape, dtype=np.uint8)
+    if kind == "smooth":
+        img = cv2.GaussianBlur(img, (5, 5), 0)
+    elif kind == "levels":
+        img = (img // 64 * 64).astype(np.uint8)
+    assert negpy_core.median_blur(img, ksize).tobytes() == cv2.medianBlur(img, ksize).tobytes()
