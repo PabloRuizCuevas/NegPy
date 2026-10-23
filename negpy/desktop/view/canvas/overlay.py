@@ -770,6 +770,11 @@ class CanvasOverlay(QWidget):
             self._keystone_draw_p2 = None
             self.update()
             return True
+        # Esc goes on to revert the whole session, so a held drag must not write after it.
+        if self._tool_mode == ToolMode.CROP_MANUAL:
+            self._end_crop_drag()
+        elif self._tool_mode == ToolMode.ANALYSIS_DRAW:
+            self._end_analysis_drag()
         return False
 
     def update_buffer(
@@ -1391,8 +1396,9 @@ class CanvasOverlay(QWidget):
         knob = QRectF(centre.x() - _SPLIT_HANDLE_PX, centre.y() - _SPLIT_HANDLE_PX, 2 * _SPLIT_HANDLE_PX, 2 * _SPLIT_HANDLE_PX)
         painter.drawText(knob, Qt.AlignmentFlag.AlignCenter, "◂▸")
 
-        if x - target.left() > 92:
-            draw_view_badge(painter, tr("BEFORE"), target.left() + THEME.space_xl, target.top() + THEME.space_xl)
+        before_text = self.state.compare_reference_label or tr("BEFORE")
+        if x - target.left() > max(92.0, view_badge_width(painter, before_text) + 2 * THEME.space_xl):
+            draw_view_badge(painter, before_text, target.left() + THEME.space_xl, target.top() + THEME.space_xl)
         if target.right() - x > 92:
             after = tr("AFTER")
             draw_view_badge(
@@ -3630,6 +3636,9 @@ class CanvasOverlay(QWidget):
         elif self._tool_mode == ToolMode.CROP_MANUAL:
             self._end_crop_drag()
             self.crop_confirmed.emit()
+        elif self._tool_mode == ToolMode.ANALYSIS_DRAW:
+            self._end_analysis_drag()
+            self.analysis_confirmed.emit()
         elif self._tool_mode == ToolMode.ZONE_PLACE and self.state.zone_pins:
             self.zone_placement_confirmed.emit()
 

@@ -115,7 +115,9 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "toggle_cursor_probe": ShortcutEntry("Shift+I", tr("Probe at cursor (zone, print density and ΔD beside the pointer)"), tr("Tools")),
     "toggle_soft_proof": ShortcutEntry("Shift+P", tr("Soft proof the print on screen"), tr("Tools")),
     "cancel_tool": ShortcutEntry(
-        "Esc", tr("Leave the current view (peek, split, strip, zone overlay) or cancel the active tool"), tr("Tools")
+        "Esc",
+        tr("Leave the current view (peek, split, strip, zone overlay) or cancel the active tool; Crop and Draw Region undo their changes"),
+        tr("Tools"),
     ),
     "cyan_dec": ShortcutEntry("", tr("Cyan down"), tr("Exposure")),
     "cyan_inc": ShortcutEntry("", tr("Cyan up"), tr("Exposure")),
@@ -173,6 +175,7 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "scan_as_roll": ShortcutEntry("", tr("Toggle Scan as Roll"), tr("Process")),
     "scan_folder_as_roll": ShortcutEntry("", tr("Toggle Folder as Roll"), tr("Process")),
     "scan_new_roll": ShortcutEntry("", tr("Start the next scan roll"), tr("Process")),
+    "scanlight_light": ShortcutEntry("", tr("Turn the Scanlight on or off"), tr("Process")),
     "scanlight_keep_light_on": ShortcutEntry("", tr("Toggle Keep Light On (Scanlight)"), tr("Process")),
     "scanlight_infrared": ShortcutEntry("", tr("Toggle Infrared: an infrared exposure after every frame (Scanlight)"), tr("Process")),
     "mode_color_negative": ShortcutEntry("", tr("Mode: Color Negative"), tr("Process")),
@@ -316,6 +319,7 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "toggle_tab_cards": ShortcutEntry("", tr("Expand or collapse this tab's cards"), tr("Actions")),
     "roll_batch_analysis": ShortcutEntry("", tr("Roll Analysis (measure the roll's baseline)"), tr("Actions")),
     "analyze_all_scenes": ShortcutEntry("", tr("Analyze every scene of the roll"), tr("Actions")),
+    "detect_scenes": ShortcutEntry("", tr("Detect Scenes (find groups of frames under another light)"), tr("Actions")),
     "roll_settings": ShortcutEntry("", tr("Open Roll Settings"), tr("Actions")),
     "save_as_roll": ShortcutEntry("", tr("Save the loaded frames as a roll"), tr("Actions")),
     "import_roll": ShortcutEntry("", tr("Import a folder as a roll"), tr("Actions")),
