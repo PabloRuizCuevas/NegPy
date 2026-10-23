@@ -350,7 +350,7 @@ def merge_providers(
         raise ValueError("no frames to merge")
 
     ref = to_float(providers[reference]())
-    ref_gray = ref.mean(axis=2)
+    ref_gray = negpy_core.mean_channels(np.ascontiguousarray(ref, dtype=np.float32))
     max_shift = max(16.0, 0.02 * ref.shape[1])
     num = np.zeros_like(ref)
     den = np.zeros_like(ref)
@@ -384,7 +384,7 @@ def _align(ref_gray: np.ndarray, mov: np.ndarray, max_shift: float) -> np.ndarra
     """Register `mov` to the reference by sub-pixel translation; no-op on an implausible
     estimate. Translation only: the camera does not move between bracket frames, so a
     richer model would only fit noise."""
-    dx, dy = estimate_shift(ref_gray, mov.mean(axis=2))
+    dx, dy = estimate_shift(ref_gray, negpy_core.mean_channels(np.ascontiguousarray(mov, dtype=np.float32)))
     if max(abs(dx), abs(dy)) > max_shift:
         return mov
     h, w = mov.shape[:2]

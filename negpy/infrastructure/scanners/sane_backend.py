@@ -5,6 +5,7 @@ import threading
 from typing import Callable
 
 import cv2
+import negpy_core
 import numpy as np
 
 from negpy.kernel.system.text import count_of
@@ -688,7 +689,7 @@ def _align_ir_to_rgb(rgb: np.ndarray, ir: np.ndarray) -> np.ndarray:
         return ir
     ref = rgb.astype(np.float32)
     if ref.ndim == 3:
-        ref = ref.mean(axis=2)
+        ref = negpy_core.mean_channels(ref) if ref.shape[2] == 3 else ref.mean(axis=2)
     mov = ir.astype(np.float32)
     if mov.ndim == 3:
         mov = mov[:, :, 0]
@@ -696,12 +697,11 @@ def _align_ir_to_rgb(rgb: np.ndarray, ir: np.ndarray) -> np.ndarray:
     scale = max(1.0, w / _IR_ALIGN_PROBE_WIDTH)
     if scale > 1.0:
         sz = (_IR_ALIGN_PROBE_WIDTH, max(1, round(h / scale)))
-        r = cv2.resize(ref, sz, interpolation=cv2.INTER_AREA)
-        m = cv2.resize(mov, sz, interpolation=cv2.INTER_AREA)
+        r = negpy_core.resize_area(np.ascontiguousarray(ref), sz)
+        m = negpy_core.resize_area(np.ascontiguousarray(mov), sz)
     else:
         r, m = ref, mov
-    win = cv2.createHanningWindow((r.shape[1], r.shape[0]), cv2.CV_32F)
-    (dx, dy), _resp = cv2.phaseCorrelate(np.ascontiguousarray(r), np.ascontiguousarray(m), win)
+    (dx, dy), _resp = negpy_core.phase_correlate(np.ascontiguousarray(r), np.ascontiguousarray(m))
     dx, dy = dx * scale, dy * scale
     if max(abs(dx), abs(dy)) > max(16.0, _IR_ALIGN_MAX_SHIFT_FRAC * w):
         return ir

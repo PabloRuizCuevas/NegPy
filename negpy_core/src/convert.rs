@@ -133,6 +133,37 @@ pub fn multiply(a: &[f32], b: &[f32], dst: &mut [f32]) {
         });
 }
 
+/// `img.mean(axis=2)` of an HxWx3 float32 image: ((r + g) + b) / 3 in float32, NumPy's order.
+pub fn mean_channels(src: &[f32], dst: &mut [f32]) {
+    crate::par_zip(dst, src.as_chunks::<3>().0, |d, p| {
+        *d = ((p[0] + p[1]) + p[2]) / 3.0;
+    });
+}
+
+/// Channel `c` of each pixel of every source into an HxWx3 image, one source per channel.
+pub fn pick_channels<T: Copy + Send + Sync>(sources: [&[T]; 3], dst: &mut [T]) {
+    dst.par_chunks_mut(3 * BLOCK)
+        .enumerate()
+        .for_each(|(i, d)| {
+            let o = i * 3 * BLOCK;
+            for (j, p) in d.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+                let k = o + 3 * j;
+                *p = [sources[0][k], sources[1][k + 1], sources[2][k + 2]];
+            }
+        });
+}
+
+/// Channel `c` of an image with `cn` channels, as a plane.
+pub fn extract_channel(src: &[f32], cn: usize, c: usize, dst: &mut [f32]) {
+    dst.par_chunks_mut(BLOCK)
+        .zip(src.par_chunks(cn * BLOCK))
+        .for_each(|(d, s)| {
+            for (d, p) in d.iter_mut().zip(s.chunks_exact(cn)) {
+                *d = p[c];
+            }
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

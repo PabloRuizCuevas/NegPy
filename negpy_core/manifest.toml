@@ -1732,7 +1732,7 @@ depends = []
 ["features/hdr/logic.py::_align"]
 phase = 5
 status = "ported"
-calls = ["negpy_core.warp_affine"]
+calls = ["negpy_core.mean_channels", "negpy_core.warp_affine"]
 depends = []
 
 ["features/hdr/logic.py::_count_clipped_rows"]
@@ -1749,9 +1749,10 @@ depends = ["output_scale"]
 
 ["features/hdr/logic.py::clipped_fraction"]
 phase = 5
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_count_clipped_rows"]
+note = "negpy_core.count_clipped_rows"
 
 ["features/hdr/logic.py::measure_exposure"]
 phase = 5
@@ -1761,27 +1762,31 @@ depends = ["clipped_fraction"]
 
 ["features/hdr/logic.py::merge_bracket"]
 phase = 5
-status = "todo"
+status = "stays"
 calls = []
 depends = ["apply_render_exposure", "merge_providers"]
+note = "orchestration or bracket-size math"
 
 ["features/hdr/logic.py::merge_frames"]
 phase = 5
-status = "todo"
+status = "stays"
 calls = []
 depends = ["apply_render_exposure", "merge_providers"]
+note = "orchestration or bracket-size math"
 
 ["features/hdr/logic.py::merge_providers"]
 phase = 5
-status = "todo"
-calls = ["negpy_core.finish_merge"]
+status = "ported"
+calls = ["negpy_core.finish_merge", "negpy_core.mean_channels"]
 depends = ["_accumulate", "_align"]
+note = "negpy_core mean_channels, hdr_accumulate, finish_merge"
 
 ["features/hdr/logic.py::output_scale"]
 phase = 5
-status = "todo"
+status = "stays"
 calls = ["np.median"]
 depends = []
+note = "orchestration or bracket-size math"
 
 ["features/hdr/logic.py::pair_ratio"]
 phase = 5
@@ -1791,63 +1796,80 @@ depends = []
 
 ["features/hdr/logic.py::probe_exposures"]
 phase = 5
-status = "todo"
+status = "stays"
 calls = []
 depends = ["measure_exposure"]
+note = "orchestration or bracket-size math"
 
 ["features/hdr/logic.py::seed_shadow_density"]
 phase = 5
-status = "todo"
+status = "stays"
 calls = []
 depends = ["shadow_reach_stops"]
+note = "orchestration or bracket-size math"
 
 ["features/hdr/logic.py::shadow_reach_stops"]
 phase = 5
-status = "todo"
+status = "stays"
 calls = []
 depends = ["output_scale"]
+note = "orchestration or bracket-size math"
 
 ["features/hdr/logic.py::solve_ratios"]
 phase = 5
-status = "todo"
+status = "stays"
 calls = []
 depends = ["measure_exposure", "pair_ratio", "step"]
+note = "orchestration or bracket-size math"
 
 ["features/hdr/logic.py::solve_ratios.step"]
 phase = 5
-status = "todo"
+status = "stays"
 calls = []
 depends = ["pair_ratio"]
+note = "orchestration or bracket-size math"
 
 ["features/rgbscan/logic.py::_align_to"]
 phase = 5
-status = "todo"
+status = "ported"
 calls = ["negpy_core.warp_affine"]
 depends = ["estimate_shift"]
+note = "negpy_core phase_correlate, warp_affine"
+
+["features/rgbscan/logic.py::_channel_means"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.channel_means"]
+depends = []
+note = "negpy_core::rgbscan::channel_means"
 
 ["features/rgbscan/logic.py::assemble_rgb"]
 phase = 5
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.extract_channel", "negpy_core.pick_channels"]
 depends = ["_align_to"]
+note = "negpy_core pick_channels, extract_channel"
 
 ["features/rgbscan/logic.py::merge_rgb_triplet"]
 phase = 5
-status = "todo"
+status = "stays"
 calls = []
 depends = ["assemble_rgb"]
+note = "orchestration"
 
 ["features/rgbscan/logic.py::probe_channel_means"]
 phase = 5
-status = "todo"
+status = "stays"
 calls = []
 depends = ["probe_frame"]
+note = "orchestration"
 
 ["features/rgbscan/logic.py::probe_frame"]
 phase = 5
-status = "todo"
+status = "ported"
 calls = ["np.mean"]
-depends = []
+depends = ["_channel_means"]
+note = "negpy_core::rgbscan::channel_means"
 
 ["features/stitch/logic.py::_seam_weight"]
 phase = 5
@@ -1859,15 +1881,17 @@ note = "negpy_core::stitch::seam_weight, inside seam_blend"
 
 ["features/stitch/logic.py::blend_ir"]
 phase = 5
-status = "todo"
-calls = []
+status = "ported"
+calls = ["negpy_core.ir_blend_into", "negpy_core.ir_finish"]
 depends = ["warp_into_canvas"]
+note = "negpy_core::stitch"
 
 ["features/stitch/logic.py::build_proxy"]
 phase = 5
-status = "todo"
-calls = ["negpy_core.resize_area", "np.percentile"]
+status = "ported"
+calls = ["negpy_core.proxy_stretch", "negpy_core.resize_area"]
 depends = []
+note = "negpy_core::stitch"
 
 ["features/stitch/logic.py::feather_blend"]
 phase = 5
@@ -1878,9 +1902,10 @@ depends = []
 
 ["features/stitch/logic.py::gain_compensate"]
 phase = 5
-status = "todo"
-calls = ["negpy_core.compensation_gains"]
+status = "ported"
+calls = ["negpy_core.compensation_gains", "negpy_core.scale_channels"]
 depends = []
+note = "negpy_core::stitch"
 
 ["features/stitch/logic.py::register_parts"]
 phase = 5
@@ -1899,10 +1924,11 @@ depends = []
 
 ["features/stitch/logic.py::stitch_composite"]
 phase = 5
-status = "todo"
+status = "ported"
 compare = "abs=1e-4"
-calls = []
+calls = ["negpy_core.clip_unit", "negpy_core.mask_overlap"]
 depends = ["blend_ir", "feather_blend", "find_seams", "gain_compensate", "seam_blend", "warp_into_canvas"]
+note = "negpy_core::stitch"
 
 ["features/stitch/logic.py::warp_into_canvas"]
 phase = 5
@@ -2587,9 +2613,11 @@ depends = []
 
 ["features/rgbscan/logic.py::estimate_shift"]
 phase = 9
-status = "todo"
-calls = ["cv2.createHanningWindow", "cv2.phaseCorrelate", "negpy_core.resize_area"]
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.phase_correlate", "negpy_core.resize_area"]
 depends = []
+note = "negpy_core::phase::phase_correlate"
 
 ["features/stitch/logic.py::find_seams"]
 phase = 9
@@ -2620,9 +2648,11 @@ depends = ["_plateau_clip_fraction"]
 
 ["infrastructure/scanners/sane_backend.py::_align_ir_to_rgb"]
 phase = 9
-status = "todo"
-calls = ["cv2.createHanningWindow", "cv2.phaseCorrelate", "cv2.resize"]
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.mean_channels", "negpy_core.phase_correlate", "negpy_core.resize_area"]
 depends = []
+note = "negpy_core phase_correlate, mean_channels"
 
 ["infrastructure/scanners/sane_backend.py::_resample_rows_to_dpi"]
 phase = 9

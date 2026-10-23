@@ -37,9 +37,7 @@ def build_proxy(rgb: np.ndarray) -> Tuple[np.ndarray, float]:
     if scale < 1.0:
         size = (max(1, round(gray.shape[1] * scale)), max(1, round(gray.shape[0] * scale)))
         gray = negpy_core.resize_area(np.ascontiguousarray(gray, dtype=np.float32), size)
-    lo, hi = np.percentile(gray, (1.0, 99.0))
-    gray = np.clip((gray - lo) / max(hi - lo, 1e-9), 0.0, 1.0)
-    return (gray ** (1.0 / 2.2) * 255.0).astype(np.uint8), scale
+    return negpy_core.proxy_stretch(np.ascontiguousarray(gray, dtype=np.float32)), scale
 
 
 def register_pair(ref_proxy: np.ndarray, mov_proxy: np.ndarray, min_inliers: int = MIN_INLIERS) -> Tuple[np.ndarray, int]:
@@ -162,7 +160,7 @@ def gain_compensate(ref: np.ndarray, ref_mask: np.ndarray, mov: np.ndarray, mov_
         _MIN_OVERLAP_PX,
     )
     if gains is not None:
-        mov *= np.array(gains, dtype=np.float32)
+        negpy_core.scale_channels(mov, gains)
     return mov
 
 
@@ -270,12 +268,9 @@ def blend_ir(
     acc = np.full((h, w), -1.0, np.float32)
     for i, (ir, transform) in enumerate(zip(irs, transforms)):
         warped, mask = warp_into_canvas(ir, transform, canvas_wh, interpolation="linear")
-        if seams is not None:
-            owned = seams[i]
-            acc[owned] = warped[owned]
-        else:
-            acc[mask] = np.maximum(acc[mask], warped[mask])
-    acc[acc < 0.0] = 1.0
+        sel = mask if seams is None else seams[i]
+        negpy_core.ir_blend_into(acc, np.ascontiguousarray(warped, dtype=np.float32), np.ascontiguousarray(sel, dtype=bool), seams is None)
+    negpy_core.ir_finish(acc)
     return acc
 
 
@@ -296,7 +291,7 @@ def stitch_composite(
         img, mask = warp_into_canvas(parts[i], transforms[i], canvas)
         parts[i] = None  # type: ignore[call-overload]
         for j in range(len(warped)):
-            if (masks[j] & mask).sum() >= _MIN_OVERLAP_PX:
+            if negpy_core.mask_overlap(masks[j], mask) >= _MIN_OVERLAP_PX:
                 gain_compensate(warped[j], masks[j], img, mask)
                 break
         warped.append(img)
@@ -307,7 +302,8 @@ def stitch_composite(
     else:
         decoded_scale = canvas[0] / max(config.stitch_canvas[0], 1)
         blended = seam_blend(warped, masks, seams, _SEAM_FEATHER_PX * decoded_scale)
-    rgb = np.clip(blended, 0.0, 1.0)
+    rgb = np.ascontiguousarray(blended, dtype=np.float32)
+    negpy_core.clip_unit(rgb)
     ir = None
     if irs and all(x is not None for x in irs):
         ir = blend_ir(irs, transforms, canvas, seams)  # type: ignore[arg-type]

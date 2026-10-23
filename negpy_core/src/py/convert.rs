@@ -193,7 +193,88 @@ fn multiply<'py>(
     filled(py, a.shape(), "float32", |d| convert::multiply(sa, sb, d))
 }
 
+/// `img.mean(axis=2)` of an HxWx3 float32 image.
+#[pyfunction]
+fn mean_channels<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let [h, w, 3] = img.shape()[..] else {
+        return Err(PyValueError::new_err("mean_channels needs an HxWx3 array"));
+    };
+    let src = contiguous(&img)?;
+    filled(py, &[h, w], "float32", |d| convert::mean_channels(src, d))
+}
+
+fn pick<'py, T: numpy::Element + Copy + Send + Sync>(
+    py: Python<'py>,
+    src: [&Bound<'py, PyAny>; 3],
+    dtype: &str,
+) -> PyResult<Bound<'py, PyAny>> {
+    let arrays: Vec<PyReadonlyArrayDyn<'py, T>> =
+        src.iter().map(|a| a.extract()).collect::<PyResult<_>>()?;
+    let shape = arrays[0].shape().to_vec();
+    let [_, _, 3] = shape[..] else {
+        return Err(PyValueError::new_err("pick_channels needs HxWx3 arrays"));
+    };
+    if arrays.iter().any(|a| a.shape() != shape.as_slice()) {
+        return Err(PyValueError::new_err("needs arrays of one shape"));
+    }
+    let s = [
+        contiguous(&arrays[0])?,
+        contiguous(&arrays[1])?,
+        contiguous(&arrays[2])?,
+    ];
+    Ok(filled(py, &shape, dtype, |d| convert::pick_channels(s, d))?.into_any())
+}
+
+/// An HxWx3 uint8, uint16 or float32 image whose channel c is channel c of the c-th source.
+#[pyfunction]
+fn pick_channels<'py>(
+    py: Python<'py>,
+    r: &Bound<'py, PyAny>,
+    g: &Bound<'py, PyAny>,
+    b: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let src = [r, g, b];
+    if r.extract::<PyReadonlyArrayDyn<f32>>().is_ok() {
+        pick::<f32>(py, src, "float32")
+    } else if r.extract::<PyReadonlyArrayDyn<u16>>().is_ok() {
+        pick::<u16>(py, src, "uint16")
+    } else if r.extract::<PyReadonlyArrayDyn<u8>>().is_ok() {
+        pick::<u8>(py, src, "uint8")
+    } else {
+        Err(pyo3::exceptions::PyTypeError::new_err(
+            "pick_channels needs uint8, uint16 or float32 arrays",
+        ))
+    }
+}
+
+/// Channel `c` of an HxWxC float32 image as a new HxW array.
+#[pyfunction]
+fn extract_channel<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    c: usize,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let [h, w, cn] = img.shape()[..] else {
+        return Err(PyValueError::new_err(
+            "extract_channel needs an HxWxC array",
+        ));
+    };
+    if c >= cn {
+        return Err(PyValueError::new_err("channel out of range"));
+    }
+    let src = contiguous(&img)?;
+    filled(py, &[h, w], "float32", |d| {
+        convert::extract_channel(src, cn, c, d)
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(mean_channels, m)?)?;
+    m.add_function(wrap_pyfunction!(pick_channels, m)?)?;
+    m.add_function(wrap_pyfunction!(extract_channel, m)?)?;
     m.add_function(wrap_pyfunction!(multiply, m)?)?;
     m.add_function(wrap_pyfunction!(to_uint8, m)?)?;
     m.add_function(wrap_pyfunction!(to_uint16, m)?)?;

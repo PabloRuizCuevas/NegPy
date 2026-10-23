@@ -120,7 +120,104 @@ fn seam_blend<'py>(
     out.into_pyarray(py).reshape(vec![h, w, 3])
 }
 
+fn rw<'a, T: numpy::Element>(
+    a: &'a mut numpy::PyReadwriteArrayDyn<'_, T>,
+) -> PyResult<&'a mut [T]> {
+    a.as_slice_mut()
+        .map_err(|_| PyValueError::new_err("needs a contiguous array"))
+}
+
+/// `build_proxy`'s uint8 stretch of a float32 plane.
+#[pyfunction]
+fn proxy_stretch<'py>(
+    py: Python<'py>,
+    gray: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<Bound<'py, numpy::PyArrayDyn<u8>>> {
+    use numpy::{IntoPyArray, PyArrayMethods};
+    let shape = gray.shape().to_vec();
+    let src = gray
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous array"))?;
+    let out = super::detach(py, src.len(), || {
+        let mut d = vec![0u8; src.len()];
+        stitch::proxy_stretch(src, &mut d);
+        d
+    });
+    out.into_pyarray(py).reshape(shape)
+}
+
+/// One part of `blend_ir` into `acc` in place: where `sel`, the part's value, or the larger
+/// value with `take_max`.
+#[pyfunction]
+fn ir_blend_into(
+    py: Python<'_>,
+    mut acc: numpy::PyReadwriteArrayDyn<'_, f32>,
+    warped: PyReadonlyArrayDyn<'_, f32>,
+    sel: PyReadonlyArrayDyn<'_, bool>,
+    take_max: bool,
+) -> PyResult<()> {
+    let n = acc.len();
+    let w = slices(std::slice::from_ref(&warped), n)?[0];
+    let s = slices(std::slice::from_ref(&sel), n)?[0];
+    let a = rw(&mut acc)?;
+    super::detach(py, n, || stitch::ir_blend_into(a, w, s, take_max));
+    Ok(())
+}
+
+/// `blend_ir`'s fill of uncovered canvas pixels (below 0) with 1.0, in place.
+#[pyfunction]
+fn ir_finish(py: Python<'_>, mut acc: numpy::PyReadwriteArrayDyn<'_, f32>) -> PyResult<()> {
+    let a = rw(&mut acc)?;
+    super::detach(py, a.len(), || stitch::ir_finish(a));
+    Ok(())
+}
+
+/// `(a & b).sum()` of two same-shape bool masks.
+#[pyfunction]
+fn mask_overlap(
+    py: Python<'_>,
+    a: PyReadonlyArrayDyn<'_, bool>,
+    b: PyReadonlyArrayDyn<'_, bool>,
+) -> PyResult<usize> {
+    let n = a.len();
+    if b.shape() != a.shape() {
+        return Err(PyValueError::new_err("masks differ in shape"));
+    }
+    let masks = [a, b];
+    let m = slices(&masks, n)?;
+    Ok(super::detach(py, n, || stitch::mask_overlap(m[0], m[1])))
+}
+
+/// `img *= gains` per channel of an HxWx3 float32 image, in place.
+#[pyfunction]
+fn scale_channels(
+    py: Python<'_>,
+    mut img: numpy::PyReadwriteArrayDyn<'_, f32>,
+    gains: [f32; 3],
+) -> PyResult<()> {
+    let [_, _, 3] = img.shape()[..] else {
+        return Err(PyValueError::new_err("scale_channels needs an HxWx3 array"));
+    };
+    let d = rw(&mut img)?;
+    super::detach(py, d.len(), || stitch::scale_channels(d, gains));
+    Ok(())
+}
+
+/// `np.clip(img, 0, 1, out=img)` of a float32 array.
+#[pyfunction]
+fn clip_unit(py: Python<'_>, mut img: numpy::PyReadwriteArrayDyn<'_, f32>) -> PyResult<()> {
+    let d = rw(&mut img)?;
+    super::detach(py, d.len(), || stitch::clip_unit(d));
+    Ok(())
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(proxy_stretch, m)?)?;
+    m.add_function(wrap_pyfunction!(ir_blend_into, m)?)?;
+    m.add_function(wrap_pyfunction!(ir_finish, m)?)?;
+    m.add_function(wrap_pyfunction!(mask_overlap, m)?)?;
+    m.add_function(wrap_pyfunction!(scale_channels, m)?)?;
+    m.add_function(wrap_pyfunction!(clip_unit, m)?)?;
     m.add_function(wrap_pyfunction!(feather_blend, m)?)?;
     m.add_function(wrap_pyfunction!(seam_blend, m)?)?;
     m.add_function(wrap_pyfunction!(dp_seams, m)?)?;

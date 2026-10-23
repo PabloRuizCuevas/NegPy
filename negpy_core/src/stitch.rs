@@ -1,5 +1,7 @@
 //! The panorama gain compensation of negpy/features/stitch/logic.py.
 
+use rayon::prelude::*;
+
 /// `gain_compensate`'s per-channel gains: the float64 mean of `reference` over the overlap
 /// over that of `moving`, rows added in order. `None` under `min_overlap` pixels or for a
 /// mean under 1e-6, where the part stays as it is.
@@ -133,4 +135,70 @@ pub fn seam_blend(
     weighted_mean(images, h * w, |i| {
         seam_weight(seams[i], masks[i], (h, w), feather)
     })
+}
+
+/// `build_proxy`'s stretch of a float32 plane: its 1st and 99th percentiles (float64, as for a
+/// sequence of q) onto 0..1, clipped, raised to 1 / 2.2 and scaled to uint8 by truncation.
+pub fn proxy_stretch(gray: &[f32], dst: &mut [u8]) {
+    let p = crate::stats::np_percentiles_f64(gray, &[1.0, 99.0]);
+    let (lo, hi) = (p[0], p[1]);
+    let span = (hi - lo).max(1e-9);
+    crate::par_zip(dst, gray, move |d, &v| {
+        let t = ((v as f64 - lo) / span).clamp(0.0, 1.0);
+        // NaN casts to 0, as NumPy's float to uint8 cast does on x86.
+        *d = (libm::pow(t, 1.0 / 2.2) * 255.0) as u8;
+    });
+}
+
+/// One part of `blend_ir`: where `sel` is set, the canvas takes the part's value, or the larger
+/// of the two with `take_max`.
+pub fn ir_blend_into(acc: &mut [f32], warped: &[f32], sel: &[bool], take_max: bool) {
+    acc.par_chunks_mut(1 << 14)
+        .zip(warped.par_chunks(1 << 14).zip(sel.par_chunks(1 << 14)))
+        .for_each(|(a, (w, s))| {
+            for ((a, &w), &s) in a.iter_mut().zip(w).zip(s) {
+                if s {
+                    *a = if take_max { a.max(w) } else { w };
+                }
+            }
+        });
+}
+
+/// `blend_ir`'s last step: every canvas pixel no part reached (below 0) becomes 1.0.
+pub fn ir_finish(acc: &mut [f32]) {
+    acc.par_chunks_mut(1 << 14).for_each(|a| {
+        for v in a {
+            if *v < 0.0 {
+                *v = 1.0;
+            }
+        }
+    });
+}
+
+/// `(a & b).sum()` of two masks.
+pub fn mask_overlap(a: &[bool], b: &[bool]) -> usize {
+    a.par_chunks(1 << 16)
+        .zip(b.par_chunks(1 << 16))
+        .map(|(a, b)| a.iter().zip(b).filter(|(x, y)| **x & **y).count())
+        .sum()
+}
+
+/// `img *= gains` per channel of an HxWx3 float32 image, in place.
+pub fn scale_channels(img: &mut [f32], gains: [f32; 3]) {
+    img.par_chunks_mut(3 << 14).for_each(|c| {
+        for p in c.as_chunks_mut::<3>().0 {
+            for k in 0..3 {
+                p[k] *= gains[k];
+            }
+        }
+    });
+}
+
+/// `np.clip(img, 0, 1)` in place; NaN stays.
+pub fn clip_unit(img: &mut [f32]) {
+    img.par_chunks_mut(1 << 14).for_each(|c| {
+        for v in c {
+            *v = v.clamp(0.0, 1.0);
+        }
+    });
 }

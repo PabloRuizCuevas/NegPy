@@ -2,7 +2,6 @@ import os
 from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -63,12 +62,10 @@ def classify_channel(means: Sequence[float]) -> int:
 
 
 def _channel_means(mosaic: np.ndarray, colors: np.ndarray, black: float) -> Tuple[float, float, float]:
-    def mean_of(*idx: int) -> float:
-        mask = np.isin(colors, idx)
-        return float(mosaic[mask].mean()) - black if mask.any() else 0.0
-
     # color_desc is RGBG: 0=R, 1=G, 2=B, 3=second green.
-    return mean_of(0), mean_of(1, 3), mean_of(2)
+    return negpy_core.channel_means(
+        np.ascontiguousarray(mosaic, dtype=np.float32), np.ascontiguousarray(colors, dtype=np.uint8), float(black)
+    )
 
 
 def _scene_signature(mosaic: np.ndarray, black: float) -> np.ndarray:
@@ -274,8 +271,7 @@ def estimate_shift(ref_gray: np.ndarray, mov_gray: np.ndarray) -> Tuple[float, f
         m = negpy_core.resize_area(np.ascontiguousarray(mov_gray, dtype=np.float32), sz)
     r = np.ascontiguousarray(r, dtype=np.float32)
     m = np.ascontiguousarray(m, dtype=np.float32)
-    win = cv2.createHanningWindow((r.shape[1], r.shape[0]), cv2.CV_32F)
-    (dx, dy), _resp = cv2.phaseCorrelate(r, m, win)
+    (dx, dy), _resp = negpy_core.phase_correlate(r, m)
     return dx * scale, dy * scale
 
 
@@ -298,16 +294,12 @@ def assemble_rgb(r: np.ndarray, g: np.ndarray, b: np.ndarray, align: bool = True
     """
     if not (r.shape == g.shape == b.shape):
         raise ValueError(f"RGB-scan exposures differ in shape: {r.shape}, {g.shape}, {b.shape}")
-    out = np.empty_like(r)
-    out[..., RED] = r[..., RED]
     if align:
-        ref = r[..., RED].astype(np.float32)
+        ref = negpy_core.extract_channel(np.ascontiguousarray(r, dtype=np.float32), RED)
         max_shift = max(16.0, 0.02 * r.shape[1])
         g = _align_to(ref, g, GREEN, max_shift)
         b = _align_to(ref, b, BLUE, max_shift)
-    out[..., GREEN] = g[..., GREEN]
-    out[..., BLUE] = b[..., BLUE]
-    return out
+    return negpy_core.pick_channels(*(np.ascontiguousarray(x, dtype=r.dtype) for x in (r, g, b)))
 
 
 def merge_rgb_triplet(
