@@ -8,7 +8,6 @@ buffers decoded the same way.
 import math
 from typing import Callable, List, Optional, Sequence, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 
