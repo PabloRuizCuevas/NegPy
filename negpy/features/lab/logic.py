@@ -7,6 +7,7 @@ import numpy as np
 
 from negpy.domain.types import ImageBuffer
 from negpy.kernel.image.logic import (
+    WORKING_INV_GAMMA,
     WORKING_LAB,
     gamut_aware_chroma_scale,
     lab_to_rgb_working,
@@ -324,33 +325,13 @@ def apply_glow_and_halation(
     if glow_amount == 0.0 and halation_strength == 0.0:
         return img
 
-    result = img.copy().astype(np.float32)
-
+    glow = halation = None
     if glow_amount > 0.0:
         # Highlight mask in the display domain (keeps the 0.5 threshold); bloom is linear.
-        enc = working_oetf_encode(img)
-        luma = enc[:, :, 0] * np.float32(LUM_R) + enc[:, :, 1] * np.float32(LUM_G) + enc[:, :, 2] * np.float32(LUM_B)
-        threshold = 0.5
-        glow_mask = np.clip((luma - threshold) / (1.0 - threshold), 0.0, 1.0)
         base_r = max(3, int(15 * scale_factor))
-        k = min((base_r * 2 + 1) | 1, 201)
-        sigma = base_r * 0.5
-        highlights = (img * glow_mask[:, :, np.newaxis]).astype(np.float32)
-        glow_blur = cv2.GaussianBlur(highlights, (k, k), sigma)
-        result = result + glow_blur * glow_amount
-
+        glow = (np.float32(glow_amount), min((base_r * 2 + 1) | 1, 201), base_r * 0.5, 0.5)
     if halation_strength > 0.0:
-        lin_luma = img[:, :, 0] * np.float32(LUM_R) + img[:, :, 1] * np.float32(LUM_G) + img[:, :, 2] * np.float32(LUM_B)
-        t = HALATION_THRESHOLD_LINEAR
-        hal_mask = np.clip((lin_luma - t) / (1.0 - t), 0.0, 1.0)
         base_r = max(5, int(25 * scale_factor))
-        k = min((base_r * 2 + 1) | 1, 301)
-        sigma = base_r * 0.5
-        red_hl = np.zeros_like(img, dtype=np.float32)
-        red_hl[:, :, 0] = img[:, :, 0] * hal_mask
-        red_hl[:, :, 1] = img[:, :, 0] * hal_mask * 0.3
-        red_hl[:, :, 2] = img[:, :, 0] * hal_mask * 0.05
-        hal_blur = cv2.GaussianBlur(red_hl, (k, k), sigma)
-        result = result + hal_blur * halation_strength
-
-    return ensure_image(np.clip(result, 0.0, 1.0))
+        halation = (np.float32(halation_strength), min((base_r * 2 + 1) | 1, 301), base_r * 0.5, HALATION_THRESHOLD_LINEAR)
+    lum = (np.float32(LUM_R), np.float32(LUM_G), np.float32(LUM_B))
+    return negpy_core.glow_and_halation(np.ascontiguousarray(img, dtype=np.float32), glow, halation, lum, WORKING_INV_GAMMA)

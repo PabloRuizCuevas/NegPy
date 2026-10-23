@@ -2091,8 +2091,8 @@ depends = ["_clahe_cdfs"]
 
 ["features/lab/logic.py::apply_glow_and_halation"]
 phase = 6
-status = "todo"
-calls = ["cv2.GaussianBlur"]
+status = "ported"
+calls = ["negpy_core.glow_and_halation"]
 depends = []
 
 ["features/lab/logic.py::apply_resize_sharpening"]

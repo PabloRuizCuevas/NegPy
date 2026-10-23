@@ -5,7 +5,8 @@ import pytest
 from core_oracle import cv2_oracle
 
 from negpy.features.lab.logic import _smoothstep, gaussian_kernel_1d, sharpen_shadow_gain
-from negpy.kernel.image.logic import WORKING_LAB, lab_to_rgb_working, rgb_to_lab_working
+from negpy.features.lab.logic import LUM_B, LUM_G, LUM_R, apply_glow_and_halation
+from negpy.kernel.image.logic import WORKING_LAB, lab_to_rgb_working, rgb_to_lab_working, working_oetf_encode
 
 pytestmark = cv2_oracle
 
@@ -66,3 +67,29 @@ def test_chroma_denoise_matches_numpy_and_cv2(shape, sigma):
     want = _chroma_reference(img, sigma)
     got = negpy_core.chroma_denoise(img, sigma, gaussian_kernel_1d(sigma), *WORKING_LAB)
     assert got.tobytes() == want.tobytes()
+
+
+def _glow_reference(img, glow_amount, halation_strength, scale_factor):
+    """The NumPy and OpenCV bloom that negpy_core.glow_and_halation replaces."""
+    lum = (np.float32(LUM_R), np.float32(LUM_G), np.float32(LUM_B))
+    result = img.copy()
+    if glow_amount > 0.0:
+        enc = working_oetf_encode(img)
+        mask = np.clip((enc[:, :, 0] * lum[0] + enc[:, :, 1] * lum[1] + enc[:, :, 2] * lum[2] - 0.5) / 0.5, 0.0, 1.0)
+        r = max(3, int(15 * scale_factor))
+        result = result + cv2.GaussianBlur(img * mask[:, :, None], (min((r * 2 + 1) | 1, 201),) * 2, r * 0.5) * glow_amount
+    if halation_strength > 0.0:
+        mask = np.clip((img[:, :, 0] * lum[0] + img[:, :, 1] * lum[1] + img[:, :, 2] * lum[2] - 0.65) / (1.0 - 0.65), 0.0, 1.0)
+        red = img[:, :, 0] * mask
+        r = max(5, int(25 * scale_factor))
+        hl = np.stack([red, red * 0.3, red * 0.05], axis=-1)
+        result = result + cv2.GaussianBlur(hl, (min((r * 2 + 1) | 1, 301),) * 2, r * 0.5) * halation_strength
+    return np.clip(result, 0.0, 1.0)
+
+
+@pytest.mark.parametrize("shape", [(97, 131), (5, 7)])
+@pytest.mark.parametrize("glow, halation, scale", [(0.3, 0.0, 1.0), (0.0, 0.5, 1.0), (0.4, 0.2, 0.5), (1.0, 1.0, 2.0)])
+def test_glow_and_halation_matches_numpy_and_cv2(shape, glow, halation, scale):
+    img = _RNG.random((*shape, 3), dtype=np.float32)
+    want = _glow_reference(img, glow, halation, scale)
+    assert apply_glow_and_halation(img, glow, halation, scale).tobytes() == want.tobytes()

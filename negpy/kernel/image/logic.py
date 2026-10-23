@@ -74,10 +74,13 @@ def _oetf_decode_flat(flat: np.ndarray, gamma: float) -> np.ndarray:
     return negpy_core.oetf_decode(np.ascontiguousarray(flat, dtype=np.float32), gamma)
 
 
+WORKING_INV_GAMMA = np.float32(1.0 / _WORKING_GAMMA)
+
+
 def working_oetf_encode(img: np.ndarray) -> np.ndarray:
     """Scene-linear -> display-encoded code values [0,1] (Adobe RGB TRC)."""
     flat = np.ascontiguousarray(img, dtype=np.float32).reshape(-1)
-    return _oetf_encode_flat(flat, np.float32(1.0 / _WORKING_GAMMA)).reshape(img.shape)
+    return _oetf_encode_flat(flat, WORKING_INV_GAMMA).reshape(img.shape)
 
 
 def working_oetf_decode(img: np.ndarray) -> np.ndarray:

@@ -177,3 +177,69 @@ pub fn chroma_denoise(
     dst.par_iter_mut().for_each(|v| *v = clip(*v, 0.0, 1.0));
     Some(())
 }
+
+/// One Gaussian bloom of `apply_glow_and_halation`: the highlights above `threshold` (a Python
+/// float) of luma, blurred by (ksize, sigma) and added at `amount`.
+pub struct Bloom {
+    pub amount: f32,
+    pub ksize: usize,
+    pub sigma: f64,
+    pub threshold: f64,
+}
+
+/// `apply_glow_and_halation`: glow masks highlights on the display-encoded luma (`inv_gamma`
+/// TRC), halation the red channel on linear luma, each blurred and added, then clipped. `lum`
+/// is the luminance row.
+pub fn glow_and_halation(
+    src: &[f32],
+    (h, w): (usize, usize),
+    (glow, halation): (Option<Bloom>, Option<Bloom>),
+    (lum, inv_gamma): ([f32; 3], f32),
+    dst: &mut [f32],
+) -> Option<()> {
+    let n = h * w;
+    dst.copy_from_slice(src);
+    let luma = |p: &[f32]| p[0] * lum[0] + p[1] * lum[1] + p[2] * lum[2];
+    let ramp = |v: f32, t: f64| clip((v - t as f32) / (1.0 - t) as f32, 0.0, 1.0);
+    let mut light = vec![0f32; n * 3];
+    let mut blur = vec![0f32; n * 3];
+    let mut add = |light: &[f32], b: &Bloom, dst: &mut [f32]| -> Option<()> {
+        filter::gaussian_blur(
+            light,
+            &mut blur,
+            (h, w, 3),
+            (b.ksize, b.ksize),
+            (b.sigma, 0.0),
+            Border::Reflect101,
+        )?;
+        dst.par_iter_mut()
+            .zip(blur.par_iter())
+            .for_each(|(d, &v)| *d += v * b.amount);
+        Some(())
+    };
+    if let Some(b) = &glow {
+        let mut enc = vec![0f32; n * 3];
+        color::oetf_encode(src, &mut enc, inv_gamma);
+        light
+            .par_chunks_mut(3)
+            .zip(src.par_chunks(3))
+            .zip(enc.par_chunks(3))
+            .for_each(|((o, p), e)| {
+                let m = ramp(luma(e), b.threshold);
+                o.copy_from_slice(&[p[0] * m, p[1] * m, p[2] * m]);
+            });
+        add(&light, b, dst)?;
+    }
+    if let Some(b) = &halation {
+        light
+            .par_chunks_mut(3)
+            .zip(src.par_chunks(3))
+            .for_each(|(o, p)| {
+                let r = p[0] * ramp(luma(p), b.threshold);
+                o.copy_from_slice(&[r, r * 0.3, r * 0.05]);
+            });
+        add(&light, b, dst)?;
+    }
+    dst.par_iter_mut().for_each(|v| *v = clip(*v, 0.0, 1.0));
+    Some(())
+}
