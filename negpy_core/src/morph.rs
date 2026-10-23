@@ -222,9 +222,14 @@ pub fn morphology<T: Pixel>(
     {
         return None;
     }
-    let ed = |s: &[T], d: &mut [T], erode: bool| {
+    compose(src, dst, op, |s: &[T], d: &mut [T], erode: bool| {
         erode_dilate(s, d, dims, ksize, iterations, erode, border)
-    };
+    });
+    Some(())
+}
+
+/// An operation built from erode (`true`) and dilate passes.
+fn compose<T: Pixel>(src: &[T], dst: &mut [T], op: Op, ed: impl Fn(&[T], &mut [T], bool)) {
     let mut tmp = vec![src[0]; src.len()];
     match op {
         Op::Erode => ed(src, dst, true),
@@ -253,6 +258,130 @@ pub fn morphology<T: Pixel>(
             crate::par_zip(dst, src, move |d, &s| *d = d.sub(s));
         }
     }
+}
+
+/// One erode or dilate pass with an arbitrary `kw` x `kh` kernel mask (nonzero = in), anchor at
+/// the center: each kernel row splits into runs, a run is a sliding extreme along the row, and
+/// the output takes the extreme over the runs.
+fn mask_pass<T: Pixel, const ERODE: bool>(
+    src: &[T],
+    dst: &mut [T],
+    (h, w, cn): (usize, usize, usize),
+    mask: &[u8],
+    (kw, kh): (usize, usize),
+    border: Border,
+) {
+    let (ax, ay) = (kw / 2, kh / 2);
+    let identity = if ERODE { T::HIGH } else { T::LOW };
+    let n = w * cn;
+    let pw = (w + kw - 1) * cn;
+    // (kernel row, run start, run length)
+    let mut runs: Vec<(usize, usize, usize)> = Vec::new();
+    for j in 0..kh {
+        let mut x = 0;
+        while x < kw {
+            if mask[j * kw + x] != 0 {
+                let start = x;
+                while x < kw && mask[j * kw + x] != 0 {
+                    x += 1;
+                }
+                runs.push((j, start, x - start));
+            } else {
+                x += 1;
+            }
+        }
+    }
+    if runs.is_empty() {
+        dst.fill(identity);
+        return;
+    }
+    let mut lengths: Vec<usize> = runs.iter().map(|r| r.2).collect();
+    lengths.sort_unstable();
+    lengths.dedup();
+    let xmap: Vec<Option<usize>> = (0..w + kw - 1)
+        .map(|px| border_interpolate(px as isize - ax as isize, w, border))
+        .collect();
+    // Per padded source row and run length: the sliding extreme of that length.
+    let padded_rows = h + kh - 1;
+    let mut slides: Vec<Vec<T>> = vec![vec![identity; padded_rows * pw]; lengths.len()];
+    let row_of = |r: usize| border_interpolate(r as isize - ay as isize, h, border);
+    for (li, &len) in lengths.iter().enumerate() {
+        slides[li].par_chunks_mut(pw).enumerate().for_each_init(
+            || (Vec::new(), Vec::new()),
+            |(padded, scratch): &mut (Vec<T>, Vec<T>), (r, out)| {
+                let Some(sy) = row_of(r) else { return };
+                let row = &src[sy * n..(sy + 1) * n];
+                padded.clear();
+                padded.resize(pw, identity);
+                for (px, m) in xmap.iter().enumerate() {
+                    if let Some(sx) = m {
+                        padded[px * cn..(px + 1) * cn]
+                            .copy_from_slice(&row[sx * cn..(sx + 1) * cn]);
+                    }
+                }
+                let valid = pw - (len - 1) * cn;
+                window::<T, ERODE>(padded, scratch, &mut out[..valid], len, cn);
+            },
+        );
+    }
+    dst.par_chunks_mut(n).enumerate().for_each(|(y, out)| {
+        out.fill(identity);
+        for &(j, start, len) in &runs {
+            let li = lengths.binary_search(&len).unwrap_or(0);
+            let line = &slides[li][(y + j) * pw + start * cn..(y + j) * pw + start * cn + n];
+            for (o, &v) in out.iter_mut().zip(line) {
+                *o = pick::<T, ERODE>(*o, v);
+            }
+        }
+    });
+}
+
+/// A structuring element: `h` rows of `w` cells, nonzero = in.
+#[derive(Clone, Copy)]
+pub struct Kernel<'a> {
+    pub mask: &'a [u8],
+    pub w: usize,
+    pub h: usize,
+}
+
+/// `cv2.morphologyEx(src, op, kernel, iterations=..., borderType=...)` for an arbitrary kernel,
+/// OpenCV's default anchor and border value. Iterations repeat the pass, as OpenCV does for a
+/// kernel that is not a full rectangle.
+pub fn morphology_mask<T: Pixel>(
+    src: &[T],
+    dst: &mut [T],
+    dims: (usize, usize, usize),
+    op: Op,
+    kernel: Kernel,
+    iterations: usize,
+    border: Border,
+) -> Option<()> {
+    let (h, w, cn) = dims;
+    let (mask, kw, kh) = (kernel.mask, kernel.w, kernel.h);
+    let ksize = (kw, kh);
+    if h == 0
+        || w == 0
+        || cn == 0
+        || kw == 0
+        || kh == 0
+        || mask.len() != kw * kh
+        || src.len() != h * w * cn
+        || dst.len() != src.len()
+    {
+        return None;
+    }
+    compose(src, dst, op, |s: &[T], d: &mut [T], erode: bool| {
+        d.copy_from_slice(s);
+        let mut cur = s.to_vec();
+        for _ in 0..iterations {
+            if erode {
+                mask_pass::<T, true>(&cur, d, dims, mask, ksize, border);
+            } else {
+                mask_pass::<T, false>(&cur, d, dims, mask, ksize, border);
+            }
+            cur.copy_from_slice(d);
+        }
+    });
     Some(())
 }
 

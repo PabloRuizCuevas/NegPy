@@ -12,7 +12,7 @@ fn run<'py, T: Pixel + Element>(
     py: Python<'py>,
     src: &Bound<'py, PyAny>,
     op: Op,
-    ksize: (usize, usize),
+    kernel: morph::Kernel,
     iterations: usize,
     border: Border,
     dtype: &str,
@@ -37,14 +37,21 @@ fn run<'py, T: Pixel + Element>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        py.detach(|| morph::morphology(data, dst, dims, op, ksize, iterations, border))
-            .ok_or_else(|| PyValueError::new_err("invalid morphology input"))?;
+        py.detach(|| {
+            if kernel.mask.iter().all(|&v| v != 0) {
+                let ksize = (kernel.w, kernel.h);
+                morph::morphology(data, dst, dims, op, ksize, iterations, border)
+            } else {
+                morph::morphology_mask(data, dst, dims, op, kernel, iterations, border)
+            }
+        })
+        .ok_or_else(|| PyValueError::new_err("invalid morphology input"))?;
     }
     Ok(out.into_any())
 }
 
 /// `cv2.morphologyEx(src, op, kernel, iterations=..., borderType=...)` for a uint8 or float32
-/// image and a kernel of all ones, with OpenCV's default anchor and border value.
+/// image and any kernel, with OpenCV's default anchor and border value.
 #[pyfunction]
 #[pyo3(signature = (src, op, kernel, iterations=1, border_type=0))]
 fn morphology_ex<'py>(
@@ -60,16 +67,16 @@ fn morphology_ex<'py>(
     let border = Border::from_cv(border_type)
         .ok_or_else(|| PyValueError::new_err(format!("unsupported border type {border_type}")))?;
     let k = kernel.as_array();
-    if k.iter().any(|&v| v == 0) {
-        return Err(PyValueError::new_err(
-            "negpy_core morphology covers rectangular kernels only",
-        ));
-    }
-    let ksize = (k.ncols(), k.nrows());
+    let cells: Vec<u8> = k.iter().copied().collect();
+    let kernel = morph::Kernel {
+        mask: &cells,
+        w: k.ncols(),
+        h: k.nrows(),
+    };
     if src.extract::<PyReadonlyArrayDyn<u8>>().is_ok() {
-        run::<u8>(py, src, op, ksize, iterations, border, "uint8")
+        run::<u8>(py, src, op, kernel, iterations, border, "uint8")
     } else if src.extract::<PyReadonlyArrayDyn<f32>>().is_ok() {
-        run::<f32>(py, src, op, ksize, iterations, border, "float32")
+        run::<f32>(py, src, op, kernel, iterations, border, "float32")
     } else {
         Err(PyTypeError::new_err(
             "morphology needs a uint8 or float32 array",
