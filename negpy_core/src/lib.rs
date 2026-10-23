@@ -16,6 +16,7 @@ pub mod hdr;
 pub mod histogram;
 pub mod lab;
 pub mod lens;
+pub mod lsd;
 pub mod mathf;
 pub mod median;
 pub mod meter;

@@ -2479,8 +2479,9 @@ depends = []
 
 ["features/geometry/skew.py::_coarse_angles"]
 phase = 9
-status = "todo"
-calls = ["cv2.createLineSegmentDetector", "negpy_core.gaussian_blur", "np.histogram", "np.percentile"]
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.coarse_angles"]
 depends = []
 
 ["features/retouch/logic.py::apply_hair_inpaint"]
