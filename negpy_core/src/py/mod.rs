@@ -18,6 +18,7 @@ pub mod lens;
 pub mod meter;
 pub mod morph;
 pub mod print_curve;
+pub mod register;
 pub mod resize;
 pub mod retouch;
 pub mod sensor;

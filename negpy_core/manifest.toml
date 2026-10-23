@@ -2550,9 +2550,11 @@ depends = []
 
 ["features/stitch/logic.py::register_pair"]
 phase = 9
-status = "todo"
-calls = ["cv2.BFMatcher", "cv2.SIFT_create", "cv2.estimateAffinePartial2D"]
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.register_pair"]
 depends = []
+note = "negpy_core::register::register_pair, SIFT in negpy_core::sift"
 
 ["infrastructure/capture/raw_demosaic.py::_plateau_clip_fraction"]
 phase = 9

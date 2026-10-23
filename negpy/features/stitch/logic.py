@@ -48,24 +48,13 @@ def register_pair(ref_proxy: np.ndarray, mov_proxy: np.ndarray, min_inliers: int
     SIFT + ratio test + RANSAC; ORB and phase correlation both fail on film
     negatives (feature-poor orange-mask content, sub-degree rotations).
     """
-    sift = cv2.SIFT_create(nfeatures=6000)
-    ref_kp, ref_desc = sift.detectAndCompute(ref_proxy, None)
-    mov_kp, mov_desc = sift.detectAndCompute(mov_proxy, None)
-    if ref_desc is None or mov_desc is None or len(ref_kp) < 2 or len(mov_kp) < 2:
+    found = negpy_core.register_pair(
+        np.ascontiguousarray(ref_proxy, dtype=np.uint8), np.ascontiguousarray(mov_proxy, dtype=np.uint8), min_inliers
+    )
+    if found is None:
         raise StitchError(_NO_OVERLAP_MSG)
-
-    pairs = cv2.BFMatcher().knnMatch(mov_desc, ref_desc, k=2)
-    good = [m for m, n in (p for p in pairs if len(p) == 2) if m.distance < 0.75 * n.distance]
-    if len(good) < min_inliers:
-        raise StitchError(_NO_OVERLAP_MSG)
-
-    mov_pts = np.float32([mov_kp[m.queryIdx].pt for m in good])
-    ref_pts = np.float32([ref_kp[m.trainIdx].pt for m in good])
-    matrix, inlier_mask = cv2.estimateAffinePartial2D(mov_pts, ref_pts, method=cv2.RANSAC, ransacReprojThreshold=3.0)
-    inliers = int(inlier_mask.sum()) if inlier_mask is not None else 0
-    if matrix is None or inliers < min_inliers:
-        raise StitchError(_NO_OVERLAP_MSG)
-    return matrix.astype(np.float64), inliers
+    matrix, inliers = found
+    return np.array(matrix, np.float64).reshape(2, 3), inliers
 
 
 def scale_affine(matrix: np.ndarray, ref_scale: float, mov_scale: float) -> np.ndarray:
