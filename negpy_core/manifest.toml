@@ -991,14 +991,8 @@ depends = []
 
 ["kernel/image/logic.py::_gamut_aware_chroma_scale_kernel"]
 phase = 3
-status = "todo"
-calls = ["numba"]
-depends = ["_in_gamut_lab"]
-
-["kernel/image/logic.py::_in_gamut_lab"]
-phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.gamut_aware_chroma_scale"]
 depends = []
 
 ["kernel/image/logic.py::_lab_to_rgb_kernel"]
@@ -1010,8 +1004,8 @@ depends = []
 
 ["kernel/image/logic.py::_matmul_3x3_kernel"]
 phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.matmul_3x3"]
 depends = []
 
 ["kernel/image/logic.py::_oetf_decode_flat"]
@@ -1060,7 +1054,7 @@ depends = []
 
 ["kernel/image/logic.py::apply_primaries_transform"]
 phase = 3
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_matmul_3x3_kernel", "working_oetf_decode", "working_oetf_encode"]
 
@@ -1084,7 +1078,7 @@ depends = []
 
 ["kernel/image/logic.py::gamut_aware_chroma_scale"]
 phase = 3
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_gamut_aware_chroma_scale_kernel"]
 

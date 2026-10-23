@@ -39,6 +39,10 @@ _CASES = {
         _LAB, _M.T.copy(), np.array([0.95047, 1.0, 1.08883], np.float32), np.float32(0.008856), np.float32(7.787)
     ),
     "skin_chroma_rein": lambda: negpy_core.skin_chroma_rein(_LAB, np.float32(0.6)),
+    "matmul_3x3": lambda: negpy_core.matmul_3x3(_IMG3, _M),
+    "gamut_aware_chroma_scale": lambda: negpy_core.gamut_aware_chroma_scale(
+        _LAB, np.float32(1.8), _M.T.copy(), np.array([0.95047, 1.0, 1.08883], np.float32), np.float32(0.008856), np.float32(7.787), 10
+    ),
 }
 
 _HASHES = {
@@ -60,6 +64,8 @@ _HASHES = {
     "rgb_to_lab": "02c583bf1f5fe9723e2cb0a3e1f34759d6b0778d3644e8e2cff2251e756b68f2",
     "lab_to_rgb": "34016e7f9aebcfdf780b67b96b128041c6ba1ac2a427f4e87b5413dcc7345eef",
     "skin_chroma_rein": "6def89b9f456f16abf406c351745bbb791f15bc69e5b03f2e478ed7391839b01",
+    "matmul_3x3": "d80c524d23c1bc6b7d9592b638a5fb84d4b51691efac9b71b40fbf529e67c019",
+    "gamut_aware_chroma_scale": "ef1a9474817c0bca19e3c847a4667ba47ba75829722a1c7939a77e135d8b7da4",
 }
 
 

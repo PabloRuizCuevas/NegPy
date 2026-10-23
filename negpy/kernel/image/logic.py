@@ -3,8 +3,6 @@ import os
 from typing import Any, Optional, Sequence
 import negpy_core
 import numpy as np
-from numba import njit, prange  # type: ignore
-from negpy.kernel.system.parallel import parallel_njit
 from negpy.domain.types import LUMA_R, LUMA_G, LUMA_B
 from negpy.kernel.system.logging import get_logger
 
@@ -111,17 +109,9 @@ _LAB_EPS = 0.008856
 _LAB_KAPPA = 7.787
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _matmul_3x3_kernel(px: np.ndarray, m: np.ndarray) -> np.ndarray:
-    """Row-parallel 3x3 matrix multiply over an (N, 3) pixel array."""
-    n = px.shape[0]
-    out = np.empty((n, 3), dtype=np.float32)
-    for i in prange(n):
-        r, g, b = px[i, 0], px[i, 1], px[i, 2]
-        out[i, 0] = m[0, 0] * r + m[0, 1] * g + m[0, 2] * b
-        out[i, 1] = m[1, 0] * r + m[1, 1] * g + m[1, 2] * b
-        out[i, 2] = m[2, 0] * r + m[2, 1] * g + m[2, 2] * b
-    return out
+    """3x3 matrix multiply over an (N, 3) pixel array."""
+    return negpy_core.matmul_3x3(np.ascontiguousarray(px, dtype=np.float32), m)
 
 
 def apply_primaries_transform(img: np.ndarray, src_to_xyz: np.ndarray) -> np.ndarray:
@@ -150,26 +140,6 @@ def _rgb_to_lab_kernel(px: np.ndarray, m: np.ndarray, white: np.ndarray, eps: fl
 def _lab_to_rgb_kernel(lab: np.ndarray, m: np.ndarray, white: np.ndarray, eps: float, kappa: float) -> np.ndarray:
     """Inverse: CIELAB (D65) -> linear working RGB over an (N, 3) pixel list."""
     return negpy_core.lab_to_rgb(np.ascontiguousarray(lab, dtype=np.float32), m, white, eps, kappa)
-
-
-@njit(inline="always")
-def _in_gamut_lab(l_val: float, a: float, b: float, m: np.ndarray, white: np.ndarray, eps: float, kappa: float, c: float) -> bool:
-    """Whether (L, a, b) decodes to linear working RGB within [0,1] on all channels."""
-    fy = (l_val + 16.0) / 116.0
-    fx = a / 500.0 + fy
-    fz = fy - b / 200.0
-    fx3 = fx * fx * fx
-    fy3 = fy * fy * fy
-    fz3 = fz * fz * fz
-    xr = (fx3 if fx3 > eps else (fx - c) / kappa) * white[0]
-    yr = (fy3 if fy3 > eps else (fy - c) / kappa) * white[1]
-    zr = (fz3 if fz3 > eps else (fz - c) / kappa) * white[2]
-    r = m[0, 0] * xr + m[0, 1] * yr + m[0, 2] * zr
-    g = m[1, 0] * xr + m[1, 1] * yr + m[1, 2] * zr
-    bl = m[2, 0] * xr + m[2, 1] * yr + m[2, 2] * zr
-    tol = np.float32(1e-4)
-    one = np.float32(1.0)
-    return r >= -tol and r <= one + tol and g >= -tol and g <= one + tol and bl >= -tol and bl <= one + tol
 
 
 def _skin_weight(l_val: float, a: float, b: float) -> float:
@@ -205,7 +175,6 @@ def skin_chroma_rein(lab: np.ndarray, strength: float) -> np.ndarray:
     return out.reshape(arr.shape)
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _gamut_aware_chroma_scale_kernel(
     lab: np.ndarray, saturation: float, m: np.ndarray, white: np.ndarray, eps: float, kappa: float, iters: int
 ) -> np.ndarray:
@@ -225,44 +194,7 @@ def _gamut_aware_chroma_scale_kernel(
     changes the R:G:B ratio the eye actually sees. This sidesteps that by
     never overshooting in the first place.
     """
-    n = lab.shape[0]
-    out = np.empty((n, 3), dtype=np.float32)
-    c = np.float32(16.0 / 116.0)
-    one = np.float32(1.0)
-    for i in prange(n):
-        l_val = lab[i, 0]
-        a = lab[i, 1]
-        b = lab[i, 2]
-        if saturation <= one:
-            # Desaturation never overshoots the gamut: moving toward the achromatic axis
-            # cannot push a channel further out of range.
-            eff = saturation
-        else:
-            if _in_gamut_lab(l_val, a * saturation, b * saturation, m, white, eps, kappa, c):
-                # The full push already lands in gamut, so use it directly. Without this,
-                # bisecting within [1, saturation] converges lo toward saturation itself, which
-                # is the search's own upper bound and not a real constraint, and the knee
-                # formula below then throttles pixels that were never going to clip.
-                eff = saturation
-            else:
-                lo = one
-                hi = saturation
-                still_ok = _in_gamut_lab(l_val, a, b, m, white, eps, kappa, c)
-                for _ in range(iters):
-                    mid = (lo + hi) / np.float32(2.0)
-                    if still_ok and _in_gamut_lab(l_val, a * mid, b * mid, m, white, eps, kappa, c):
-                        lo = mid
-                    else:
-                        hi = mid
-                s_max = lo
-                if s_max < one + np.float32(1e-4):
-                    s_max = one + np.float32(1e-4)
-                knee = s_max - one
-                eff = one + knee * (one - np.exp(-(saturation - one) / knee))
-        out[i, 0] = l_val
-        out[i, 1] = a * eff
-        out[i, 2] = b * eff
-    return out
+    return negpy_core.gamut_aware_chroma_scale(np.ascontiguousarray(lab, dtype=np.float32), saturation, m, white, eps, kappa, iters)
 
 
 def gamut_aware_chroma_scale(lab: np.ndarray, saturation: float, iters: int = 10) -> np.ndarray:

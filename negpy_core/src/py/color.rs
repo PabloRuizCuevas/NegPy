@@ -121,11 +121,49 @@ fn skin_weight(l: f32, a: f32, b: f32) -> f64 {
     color::skin_weight_of(l, a, b)
 }
 
+/// `_matmul_3x3_kernel` of an (..., 3) float32 array.
+#[pyfunction]
+fn matmul_3x3<'py>(
+    py: Python<'py>,
+    px: PyReadonlyArrayDyn<'py, f32>,
+    m: PyReadonlyArray2<'py, f32>,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    triplets(&px)?;
+    let m = m.as_array();
+    if m.shape() != [3, 3] {
+        return Err(PyValueError::new_err("needs a 3x3 matrix"));
+    }
+    let m = std::array::from_fn(|r| std::array::from_fn(|c| m[[r, c]]));
+    filled(py, &px, |src, d| color::matmul_3x3(src, d, m))
+}
+
+/// `_gamut_aware_chroma_scale_kernel` of an (..., 3) float32 Lab array.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn gamut_aware_chroma_scale<'py>(
+    py: Python<'py>,
+    lab: PyReadonlyArrayDyn<'py, f32>,
+    saturation: f32,
+    m: PyReadonlyArray2<'py, f32>,
+    white: PyReadonlyArray1<'py, f32>,
+    eps: f32,
+    kappa: f32,
+    iters: usize,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    triplets(&lab)?;
+    let s = space(&m, &white, eps, kappa)?;
+    filled(py, &lab, |src, d| {
+        color::gamut_aware_chroma_scale(src, d, saturation, iters, s)
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(oetf_encode, m)?)?;
     m.add_function(wrap_pyfunction!(oetf_decode, m)?)?;
     m.add_function(wrap_pyfunction!(rgb_to_lab, m)?)?;
     m.add_function(wrap_pyfunction!(lab_to_rgb, m)?)?;
     m.add_function(wrap_pyfunction!(skin_chroma_rein, m)?)?;
-    m.add_function(wrap_pyfunction!(skin_weight, m)?)
+    m.add_function(wrap_pyfunction!(skin_weight, m)?)?;
+    m.add_function(wrap_pyfunction!(matmul_3x3, m)?)?;
+    m.add_function(wrap_pyfunction!(gamut_aware_chroma_scale, m)?)
 }

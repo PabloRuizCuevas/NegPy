@@ -55,6 +55,7 @@ pub struct LabSpace {
     pub white: [f64; 3],
     pub eps: f64,
     pub kappa: f64,
+    pub inv_kappa: f64,
 }
 
 impl LabSpace {
@@ -64,6 +65,7 @@ impl LabSpace {
             white: white.map(|v| v as f64),
             eps: eps as f64,
             kappa: kappa as f64,
+            inv_kappa: 1.0 / kappa as f64,
         }
     }
 }
@@ -140,40 +142,46 @@ pub fn lab_to_rgb(src: &[f32], dst: &mut [f32], s: LabSpace) {
     "aarch64+neon"
 ))]
 fn lab_to_rgb_block(src: &[f32], dst: &mut [f32], s: LabSpace) {
-    let inv_kappa = 1.0 / s.kappa;
-    let fy_gap = 16.0 / 116.0 - C;
-    for (d, p) in dst
+    for (d, &[l, a, b]) in dst
         .as_chunks_mut::<3>()
         .0
         .iter_mut()
         .zip(src.as_chunks::<3>().0)
     {
-        let [l, a, b] = p.map(|v| v as f64);
-        let fy_l = l * (1.0 / 116.0);
-        let fy = fy_l + 16.0 / 116.0;
-        let fx = a.mul_add(0.002, fy);
-        let fz = (-b).mul_add(0.005, fy);
-        let (fx3, fy3, fz3) = (fx * fx * fx, fy * fy * fy, fz * fz * fz);
-        let xr = if fx3 > s.eps {
-            fx3 * s.white[0]
-        } else {
-            ((fx - C) * s.white[0]) * inv_kappa
-        };
-        let yr = if fy3 > s.eps {
-            fy3
-        } else {
-            (fy_l + fy_gap) * inv_kappa
-        } * s.white[1];
-        let zr = if fz3 > s.eps {
-            fz3
-        } else {
-            (fz - C) * inv_kappa
-        } * s.white[2];
+        let [xr, yr, zr] = lab_to_xyz(l, a, b, &s);
         *d = std::array::from_fn(|c| {
             let v = row(s.m[c], xr, yr, zr);
             if v > 0.0 { v as f32 } else { 0.0 }
         });
     }
+}
+
+/// XYZ of one Lab triplet in float64, in the Numba build's order.
+#[inline(always)]
+fn lab_to_xyz(l: f32, a: f32, b: f32, s: &LabSpace) -> [f64; 3] {
+    let inv_kappa = s.inv_kappa;
+    let (l, a, b) = (l as f64, a as f64, b as f64);
+    let fy_l = l * (1.0 / 116.0);
+    let fy = fy_l + 16.0 / 116.0;
+    let fx = a.mul_add(0.002, fy);
+    let fz = (-b).mul_add(0.005, fy);
+    let (fx3, fy3, fz3) = (fx * fx * fx, fy * fy * fy, fz * fz * fz);
+    let xr = if fx3 > s.eps {
+        fx3 * s.white[0]
+    } else {
+        ((fx - C) * s.white[0]) * inv_kappa
+    };
+    let yr = if fy3 > s.eps {
+        fy3
+    } else {
+        (fy_l + (16.0 / 116.0 - C)) * inv_kappa
+    } * s.white[1];
+    let zr = if fz3 > s.eps {
+        fz3
+    } else {
+        (fz - C) * inv_kappa
+    } * s.white[2];
+    [xr, yr, zr]
 }
 
 // Skin-tone mask: an axis-aligned reduction of the CIELAB skin locus. Hue stays put across the
@@ -283,4 +291,113 @@ fn skin_weight(l: f32, a: f32, b: f32, chroma: f32) -> f64 {
     let rise = (w_hue * w_chroma) * ((t_lo * t_lo) * (-t_lo).mul_add(2.0, 3.0));
     let fall = (t_hi * t_hi) * (-t_hi).mul_add(2.0, 3.0);
     (-fall).mul_add(rise, rise)
+}
+
+/// `_matmul_3x3_kernel` over N x 3 float32 pixels, contracted as Numba does.
+pub fn matmul_3x3(src: &[f32], dst: &mut [f32], m: [[f32; 3]; 3]) {
+    dst.par_chunks_mut(BLOCK * 3)
+        .zip(src.par_chunks(BLOCK * 3))
+        .for_each(|(d, p)| matmul_block(p, d, m));
+}
+
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2+fma",
+    "aarch64+neon"
+))]
+fn matmul_block(src: &[f32], dst: &mut [f32], m: [[f32; 3]; 3]) {
+    for (d, &[r, g, b]) in dst
+        .as_chunks_mut::<3>()
+        .0
+        .iter_mut()
+        .zip(src.as_chunks::<3>().0)
+    {
+        *d = m.map(|row| b.mul_add(row[2], g.mul_add(row[1], row[0] * r)));
+    }
+}
+
+/// `_in_gamut_lab`: (L, a, b) decodes to linear RGB within 0..1, 1e-4 either side; the bounds
+/// are float32 sums, compared in float64.
+#[inline(always)]
+fn in_gamut(l: f32, a: f32, b: f32, s: &LabSpace) -> bool {
+    let [xr, yr, zr] = lab_to_xyz(l, a, b, s);
+    let (lo, hi) = (-1e-4f32 as f64, (1.0f32 + 1e-4f32) as f64);
+    s.m.iter().fold(true, |ok, &m| {
+        let v = row(m, xr, yr, zr);
+        ok & (v >= lo) & (v <= hi)
+    })
+}
+
+/// `_gamut_aware_chroma_scale_kernel` over N x 3 Lab: the flat `saturation` where its full push
+/// stays in gamut, else a softplus knee toward the pixel's own headroom, found by bisection.
+pub fn gamut_aware_chroma_scale(
+    src: &[f32],
+    dst: &mut [f32],
+    saturation: f32,
+    iters: usize,
+    s: LabSpace,
+) {
+    dst.par_chunks_mut(BLOCK * 3)
+        .zip(src.par_chunks(BLOCK * 3))
+        .for_each(|(d, p)| gamut_block(p, d, saturation, iters, &s));
+}
+
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2+fma",
+    "aarch64+neon"
+))]
+fn gamut_block(src: &[f32], dst: &mut [f32], saturation: f32, iters: usize, s: &LabSpace) {
+    if saturation <= 1.0 {
+        // L times 1 is exact; a flat pattern of 48 lanes vectorizes where triplets do not.
+        let pattern: [f32; 48] = std::array::from_fn(|i| if i % 3 == 0 { 1.0 } else { saturation });
+        for (d, p) in dst.chunks_mut(48).zip(src.chunks(48)) {
+            for ((d, &p), &k) in d.iter_mut().zip(p).zip(&pattern) {
+                *d = p * k;
+            }
+        }
+        return;
+    }
+    // Pixels whose full push clips are gathered per run and bisected in lockstep, so each step
+    // vectorizes across them.
+    const RUN: usize = 512;
+    let mut idx = [0usize; RUN];
+    let mut cand = [[0f32; 3]; RUN];
+    let mut ok = [false; RUN];
+    let mut full = [false; RUN];
+    let (mut lo, mut hi) = ([1f32; RUN], [saturation; RUN]);
+    for (d, sp) in dst.chunks_mut(3 * RUN).zip(src.chunks(3 * RUN)) {
+        let (px, src_px) = (d.as_chunks_mut::<3>().0, sp.as_chunks::<3>().0);
+        for (f, &[l, a, b]) in full.iter_mut().zip(src_px) {
+            *f = in_gamut(l, a * saturation, b * saturation, s);
+        }
+        let mut n = 0;
+        for (i, ((p, &q), &f)) in px.iter_mut().zip(src_px).zip(&full).enumerate() {
+            idx[n] = i;
+            cand[n] = q;
+            n += !f as usize;
+            *p = [q[0], q[1] * saturation, q[2] * saturation];
+        }
+        for (k, &[l, a, b]) in ok[..n].iter_mut().zip(&cand[..n]) {
+            *k = in_gamut(l, a, b, s);
+        }
+        lo[..n].fill(1.0);
+        hi[..n].fill(saturation);
+        for _ in 0..iters {
+            for j in 0..n {
+                let [l, a, b] = cand[j];
+                let mid = (lo[j] + hi[j]) / 2.0;
+                let fits = ok[j] & in_gamut(l, a * mid, b * mid, s);
+                lo[j] = if fits { mid } else { lo[j] };
+                hi[j] = if fits { hi[j] } else { mid };
+            }
+        }
+        for j in 0..n {
+            let [l, a, b] = cand[j];
+            let knee = lo[j].max(1.0f32 + 1e-4f32) - 1.0;
+            let e = crate::mathf::exp_f64(((1.0 - saturation) / knee) as f64) as f32;
+            let eff = (1.0 - e).mul_add(knee, 1.0);
+            px[idx[j]] = [l, a * eff, b * eff];
+        }
+    }
 }
