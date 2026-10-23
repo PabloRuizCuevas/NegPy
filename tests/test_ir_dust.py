@@ -1043,14 +1043,14 @@ def test_downsample_ir_bounds_large_rgb_work_blocks(monkeypatch):
     plane[100:104, 40:320] = 0.2
     source_bytes = plane.nbytes
     seen = []
-    erode = cv2.erode
+    morphology = logic.negpy_core.morphology_ex
 
-    def tracked(source, kernel):
+    def tracked(source, op, kernel, *args):
         seen.append(source.nbytes)
-        return erode(source, kernel)
+        return morphology(source, op, kernel, *args)
 
     monkeypatch.setattr(logic, "_IR_DOWNSAMPLE_WORK_BYTES", 32 * 1024)
-    monkeypatch.setattr(logic.cv2, "erode", tracked)
+    monkeypatch.setattr(logic.negpy_core, "morphology_ex", tracked)
     result = logic.downsample_ir(plane, 90)
 
     assert result.shape == (60, 90, 3)

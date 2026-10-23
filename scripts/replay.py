@@ -30,6 +30,11 @@ if len(sys.argv) > 1 and sys.argv[1] in ("record", "bench"):
 
 import numpy as np  # noqa: E402
 
+if len(sys.argv) > 1 and sys.argv[1] in ("record", "bench"):
+    import cv2  # noqa: E402
+
+    cv2.setNumThreads(1)
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from core_manifest import load as load_manifest  # noqa: E402

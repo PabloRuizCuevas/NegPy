@@ -1,6 +1,7 @@
 //! OpenCV's erode, dilate and morphologyEx for rectangular kernels. A min or max has no
 //! rounding, so a separable row-then-column pass gives OpenCV's bits.
 
+use multiversion::multiversion;
 use rayon::prelude::*;
 
 use crate::filter::{Border, border_interpolate};
@@ -73,6 +74,39 @@ impl Op {
 #[inline(always)]
 fn pick<T: Pixel, const ERODE: bool>(a: T, b: T) -> T {
     if ERODE { a.lo(b) } else { a.hi(b) }
+}
+
+/// `out[i] = extreme(out[i], line[i])`; AVX2 doubles the lanes of the baseline build.
+#[multiversion(targets("x86_64+avx2", "aarch64+neon"))]
+fn extreme_into<T: Pixel, const ERODE: bool>(out: &mut [T], line: &[T]) {
+    for (o, &v) in out.iter_mut().zip(line) {
+        *o = pick::<T, ERODE>(*o, v);
+    }
+}
+
+/// `out[i]` = the extreme of `out[i]` and every `line[i]`, a register-sized chunk at a time
+/// so the accumulator never leaves the registers between taps.
+#[multiversion(targets("x86_64+avx2", "aarch64+neon"))]
+fn taps_into<T: Pixel, const ERODE: bool>(out: &mut [T], lines: &[&[T]]) {
+    const CHUNK: usize = 64;
+    let n = out.len();
+    let mut x = 0;
+    while x + CHUNK <= n {
+        let mut acc: [T; CHUNK] = std::array::from_fn(|i| out[x + i]);
+        for line in lines {
+            let l = &line[x..x + CHUNK];
+            for i in 0..CHUNK {
+                acc[i] = pick::<T, ERODE>(acc[i], l[i]);
+            }
+        }
+        out[x..x + CHUNK].copy_from_slice(&acc);
+        x += CHUNK;
+    }
+    for line in lines {
+        for (o, &v) in out[x..].iter_mut().zip(&line[x..]) {
+            *o = pick::<T, ERODE>(*o, v);
+        }
+    }
 }
 
 /// `out[i] = min (or max) of src[i + j * stride]` for `j < len`, from overlapping power-of-two
@@ -230,10 +264,14 @@ pub fn morphology<T: Pixel>(
 
 /// An operation built from erode (`true`) and dilate passes.
 fn compose<T: Pixel>(src: &[T], dst: &mut [T], op: Op, ed: impl Fn(&[T], &mut [T], bool)) {
+    match op {
+        Op::Erode => return ed(src, dst, true),
+        Op::Dilate => return ed(src, dst, false),
+        _ => {}
+    }
     let mut tmp = vec![src[0]; src.len()];
     match op {
-        Op::Erode => ed(src, dst, true),
-        Op::Dilate => ed(src, dst, false),
+        Op::Erode | Op::Dilate => {}
         Op::Open => {
             ed(src, &mut tmp, true);
             ed(&tmp, dst, false);
@@ -295,45 +333,88 @@ fn mask_pass<T: Pixel, const ERODE: bool>(
         dst.fill(identity);
         return;
     }
-    let mut lengths: Vec<usize> = runs.iter().map(|r| r.2).collect();
-    lengths.sort_unstable();
-    lengths.dedup();
     let xmap: Vec<Option<usize>> = (0..w + kw - 1)
         .map(|px| border_interpolate(px as isize - ax as isize, w, border))
         .collect();
-    // Per padded source row and run length: the sliding extreme of that length.
-    let padded_rows = h + kh - 1;
-    let mut slides: Vec<Vec<T>> = vec![vec![identity; padded_rows * pw]; lengths.len()];
-    let row_of = |r: usize| border_interpolate(r as isize - ay as isize, h, border);
-    for (li, &len) in lengths.iter().enumerate() {
-        slides[li].par_chunks_mut(pw).enumerate().for_each_init(
-            || (Vec::new(), Vec::new()),
-            |(padded, scratch): &mut (Vec<T>, Vec<T>), (r, out)| {
-                let Some(sy) = row_of(r) else { return };
-                let row = &src[sy * n..(sy + 1) * n];
-                padded.clear();
-                padded.resize(pw, identity);
-                for (px, m) in xmap.iter().enumerate() {
-                    if let Some(sx) = m {
-                        padded[px * cn..(px + 1) * cn]
-                            .copy_from_slice(&row[sx * cn..(sx + 1) * cn]);
-                    }
-                }
-                let valid = pw - (len - 1) * cn;
-                window::<T, ERODE>(padded, scratch, &mut out[..valid], len, cn);
-            },
-        );
-    }
-    dst.par_chunks_mut(n).enumerate().for_each(|(y, out)| {
-        out.fill(identity);
-        for &(j, start, len) in &runs {
-            let li = lengths.binary_search(&len).unwrap_or(0);
-            let line = &slides[li][(y + j) * pw + start * cn..(y + j) * pw + start * cn + n];
-            for (o, &v) in out.iter_mut().zip(line) {
-                *o = pick::<T, ERODE>(*o, v);
+    let pad_row = |row: &[T], padded: &mut [T]| {
+        padded[ax * cn..ax * cn + n].copy_from_slice(row);
+        for px in (0..ax).chain(ax + w..w + kw - 1) {
+            if let Some(sx) = xmap[px] {
+                padded[px * cn..(px + 1) * cn].copy_from_slice(&row[sx * cn..(sx + 1) * cn]);
             }
         }
-    });
+    };
+    let cells: usize = runs.iter().map(|r| r.2).sum();
+    if cells <= 64 {
+        // Small kernels: one vector min or max per kernel cell, as OpenCV. Interior columns
+        // read the source rows directly; the few columns whose taps cross the border go
+        // through the border map.
+        let taps: Vec<(usize, usize)> = runs
+            .iter()
+            .flat_map(|&(j, start, len)| (start..start + len).map(move |x| (j, x)))
+            .collect();
+        let (left, right) = (ax.min(w), (kw - 1 - ax).min(w - ax.min(w)));
+        dst.par_chunks_mut(n).enumerate().for_each(|(y, out)| {
+            out.fill(identity);
+            let rows: Vec<Option<usize>> = (0..kh)
+                .map(|j| border_interpolate((y + j) as isize - ay as isize, h, border))
+                .collect();
+            let inner = left * cn..n - right * cn;
+            if inner.start < inner.end {
+                let lines: Vec<&[T]> = taps
+                    .iter()
+                    .filter_map(|&(j, x)| {
+                        rows[j].map(|sy| {
+                            let at = sy * n + inner.start + x * cn - ax * cn;
+                            &src[at..at + inner.len()]
+                        })
+                    })
+                    .collect();
+                taps_into::<T, ERODE>(&mut out[inner.clone()], &lines);
+            }
+            for px in (0..left).chain(w - right..w) {
+                for &(j, x) in &taps {
+                    let (Some(sy), Some(sx)) = (rows[j], xmap[px + x]) else {
+                        continue;
+                    };
+                    for c in 0..cn {
+                        let o = &mut out[px * cn + c];
+                        *o = pick::<T, ERODE>(*o, src[sy * n + sx * cn + c]);
+                    }
+                }
+            }
+        });
+        return;
+    }
+    // Large kernels: each output row recomputes its runs' sliding extremes from the padded
+    // source rows, a log-time window per run and no full-image intermediate.
+    dst.par_chunks_mut(n).enumerate().for_each_init(
+        || (Vec::new(), Vec::new(), Vec::new(), Vec::new(), usize::MAX),
+        |(padded, cur, scratch, slid, padded_row): &mut (Vec<T>, Vec<T>, Vec<T>, Vec<T>, usize),
+         (y, out)| {
+            out.fill(identity);
+            for &(j, start, len) in &runs {
+                let Some(sy) = border_interpolate((y + j) as isize - ay as isize, h, border) else {
+                    // A constant border row holds the identity, which changes nothing.
+                    continue;
+                };
+                if *padded_row != sy {
+                    padded.clear();
+                    padded.resize(pw, identity);
+                    pad_row(&src[sy * n..(sy + 1) * n], padded);
+                    *padded_row = sy;
+                }
+                cur.clear();
+                cur.extend_from_slice(&padded[start * cn..start * cn + n + (len - 1) * cn]);
+                slid.clear();
+                slid.resize(n, identity);
+                window::<T, ERODE>(cur, scratch, slid, len, cn);
+                for (o, &v) in out.iter_mut().zip(slid.iter()) {
+                    *o = pick::<T, ERODE>(*o, v);
+                }
+            }
+        },
+    );
 }
 
 /// A structuring element: `h` rows of `w` cells, nonzero = in.
@@ -371,15 +452,24 @@ pub fn morphology_mask<T: Pixel>(
         return None;
     }
     compose(src, dst, op, |s: &[T], d: &mut [T], erode: bool| {
-        d.copy_from_slice(s);
-        let mut cur = s.to_vec();
-        for _ in 0..iterations {
+        let pass = |from: &[T], to: &mut [T]| {
             if erode {
-                mask_pass::<T, true>(&cur, d, dims, mask, ksize, border);
+                mask_pass::<T, true>(from, to, dims, mask, ksize, border);
             } else {
-                mask_pass::<T, false>(&cur, d, dims, mask, ksize, border);
+                mask_pass::<T, false>(from, to, dims, mask, ksize, border);
             }
-            cur.copy_from_slice(d);
+        };
+        if iterations == 0 {
+            d.copy_from_slice(s);
+            return;
+        }
+        pass(s, d);
+        if iterations > 1 {
+            let mut cur = d.to_vec();
+            for _ in 1..iterations {
+                pass(&cur, d);
+                cur.copy_from_slice(d);
+            }
         }
     });
     Some(())

@@ -1453,8 +1453,8 @@ depends = []
 
 ["features/retouch/logic.py::_erode_resize_bounded"]
 phase = 4
-status = "todo"
-calls = ["cv2.erode", "cv2.resize", "np.sum"]
+status = "ported"
+calls = ["negpy_core.morphology_ex", "negpy_core.resize_area", "np.sum"]
 depends = []
 
 ["features/retouch/logic.py::_fill_rung"]
@@ -1567,8 +1567,8 @@ depends = ["_box_mean_std", "_is_hair", "_mask_to_score", "compute_dust_stats", 
 
 ["features/retouch/logic.py::downsample_ir"]
 phase = 4
-status = "todo"
-calls = ["cv2.erode", "cv2.getStructuringElement", "cv2.resize"]
+status = "ported"
+calls = ["cv2.getStructuringElement", "negpy_core.morphology_ex", "negpy_core.resize_area"]
 depends = ["_erode_resize_bounded"]
 
 ["features/retouch/logic.py::drop_exclusions"]

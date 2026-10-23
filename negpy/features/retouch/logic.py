@@ -3,6 +3,7 @@ import math
 from typing import List, Optional, Tuple
 
 import cv2
+import negpy_core
 import numpy as np
 from numba import prange  # type: ignore
 
@@ -798,9 +799,9 @@ def _erode_resize_bounded(plane: np.ndarray, dims: Tuple[int, int], kernel: np.n
         read_top = max(0, source_top - radius)
         read_bottom = min(h, source_bottom + radius)
         source = np.ascontiguousarray(plane[read_top:read_bottom], dtype=np.float32)
-        eroded = cv2.erode(source, kernel)
-        core = eroded[source_top - read_top : source_bottom - read_top]
-        horizontal = cv2.resize(core, (dw, len(core)), interpolation=cv2.INTER_AREA)
+        eroded = negpy_core.morphology_ex(source, cv2.MORPH_ERODE, kernel)
+        core = np.ascontiguousarray(eroded[source_top - read_top : source_bottom - read_top])
+        horizontal = negpy_core.resize_area(core, (dw, len(core)))
         # Keep the full-image sampling grid across fractional block boundaries.
         for row in range(top, bottom):
             start = row * scale_y
@@ -837,14 +838,17 @@ def downsample_ir(plane: np.ndarray, target_long_edge: int, dims: Optional[Tuple
         dims = (max(1, int(round(w * s))), max(1, int(round(h * s))))
     if dims == (w, h):
         return np.ascontiguousarray(plane)
+    # cv2 read an HxWx1 plane as single-channel and returned HxW; keep that shape.
+    if plane.ndim == 3 and plane.shape[2] == 1:
+        plane = plane[:, :, 0]
     # Erode by the resample footprint: a 1.25x downsample must not fatten by a 4.5x kernel.
     k = max(1, int(round(long_edge / max(dims))) | 1)
     if k > 1:
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
         if plane.nbytes > _IR_DOWNSAMPLE_WORK_BYTES:
             return _erode_resize_bounded(plane, dims, kernel)
-        plane = cv2.erode(np.ascontiguousarray(plane), kernel)
-    return cv2.resize(plane, dims, interpolation=cv2.INTER_AREA).astype(np.float32)
+        plane = negpy_core.morphology_ex(np.ascontiguousarray(plane), cv2.MORPH_ERODE, kernel)
+    return negpy_core.resize_area(np.ascontiguousarray(plane), dims)
 
 
 def normalize_ir(plane: np.ndarray, glare: Optional[np.ndarray] = None) -> np.ndarray:
