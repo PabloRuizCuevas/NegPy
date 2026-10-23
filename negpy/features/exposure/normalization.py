@@ -205,33 +205,6 @@ def to_log_density(image: ImageBuffer) -> ImageBuffer:
     return negpy_core.to_log_density(np.ascontiguousarray(image, dtype=np.float32))
 
 
-def _rms_chroma(triplets: np.ndarray) -> np.ndarray:
-    """Distance from the neutral axis in normalized-density space (pairwise RMS):
-    rotation-symmetric around grey, so the near-neutral ranking is hue-uniform
-    (max-min scores an opposed R/B split double a same-side deviation)."""
-    r, g, b = triplets[..., 0], triplets[..., 1], triplets[..., 2]
-    return np.sqrt(((r - g) ** 2 + (g - b) ** 2 + (r - b) ** 2) / 3.0)
-
-
-def _subject_cells(norm_f: np.ndarray) -> np.ndarray:
-    """Cells in the foliage or the sky sector. In a frame with no grays the lowest-chroma cells are
-    desaturated leaves or pale sky, and neutralizing them prints magenta or yellow (a printer's
-    subject failure)."""
-    from negpy.features.exposure.models import EXPOSURE_CONSTANTS
-
-    c = EXPOSURE_CONSTANTS
-    dr = norm_f[:, 0] - norm_f[:, 1]
-    db = norm_f[:, 2] - norm_f[:, 1]
-    t, s = (dr + db) / 2.0, (dr - db) / 2.0
-    hue = np.degrees(np.arctan2(-s, t))
-    chroma = np.hypot(t, s)
-    cells = np.zeros(chroma.shape, dtype=bool)
-    for name in ("foliage", "sky"):
-        lo, hi = c[f"neutral_axis_{name}_hue"]
-        cells |= (chroma > float(c[f"neutral_axis_{name}_chroma"])) & (hue > float(lo)) & (hue < float(hi))
-    return cells
-
-
 def measure_neutral_axis_from_log(
     img_log: ImageBuffer,
     bounds: "LogNegativeBounds",
@@ -253,97 +226,25 @@ def measure_neutral_axis_from_log(
     if analysis_buffer > 0:
         img_log = get_analysis_crop(img_log, analysis_buffer)
 
-    img_log = _block_median_grid(img_log)
-    norm = normalize_log_image(img_log, bounds)
-    luma = LUMA_R * norm[:, :, 0] + LUMA_G * norm[:, :, 1] + LUMA_B * norm[:, :, 2]
-
-    flat_log = img_log.reshape(-1, 3)
-    norm_f = norm.reshape(-1, 3)
-    luma_f = luma.reshape(-1)
-    if exclude_subjects:
-        keep = ~_subject_cells(norm_f)
-        flat_log, norm_f, luma_f = flat_log[keep], norm_f[keep], luma_f[keep]
-    chroma_f = _rms_chroma(norm_f)
-
     c = EXPOSURE_CONSTANTS
-    q = float(c["neutral_axis_chroma_quantile"])
-    cap = float(c["neutral_axis_chroma_cap"])
-    pass1_cap = float(c["neutral_axis_first_pass_cap"])
-    min_px = int(c["neutral_axis_min_pixels"])
-    epsilon = 1e-6
-
-    def _band_refs(
-        lo: float, hi: float, chroma_vals: np.ndarray, cap_val: float
-    ) -> Optional[Tuple[Tuple[float, float, float], float, int, float]]:
-        band = (luma_f >= lo) & (luma_f <= hi)
-        if int(band.sum()) < min_px:
-            return None
-        band_chroma = chroma_vals[band]
-        thr = float(np.quantile(band_chroma, q))
-        keep = band_chroma <= thr
-        idx = np.nonzero(band)[0][keep]
-        near_neutral_chroma = float(np.median(band_chroma[keep])) if idx.size else cap_val
-        if idx.size < min_px or near_neutral_chroma > cap_val:
-            return None
-        # One gather for all three channels: the per-channel fancy index is the cost here.
-        sel = flat_log[idx]
-        # R and B are green plus the set's median offset from green. Independent channel
-        # medians can each fall in a different cluster of a set that holds two colors.
-        green = float(np.median(sel[:, 1]))
-        refs = (green + float(np.median(sel[:, 0] - sel[:, 1])), green, green + float(np.median(sel[:, 2] - sel[:, 1])))
-        offsets = (norm_f[idx][:, (0, 2)] - norm_f[idx][:, 1:2]).astype(np.float64)
-        p10, p90 = np.percentile(offsets, (10.0, 90.0), axis=0)
-        return (refs, near_neutral_chroma, int(idx.size), float(np.max(p90 - p10)))
-
-    def _norm_ref(refs: Tuple[float, float, float]) -> Tuple[float, float, float]:
-        out = []
-        for ch in range(3):
-            denom = bounds.ceils[ch] - bounds.floors[ch]
-            if abs(denom) < epsilon:
-                denom = epsilon if denom >= 0 else -epsilon
-            out.append((refs[ch] - bounds.floors[ch]) / denom)
-        return (out[0], out[1], out[2])
-
-    hb = c["neutral_axis_highlight_band"]
-    mb = c["neutral_axis_mid_band"]
-    sb = c["neutral_axis_shadow_band"]
-    mid1 = _band_refs(float(mb[0]), float(mb[1]), chroma_f, pass1_cap)
-    sh1 = _band_refs(float(sb[0]), float(sb[1]), chroma_f, pass1_cap)
-    if mid1 is None or sh1 is None:
-        return None
-
-    nm, ns = _norm_ref(mid1[0]), _norm_ref(sh1[0])
-    corrected = norm_f.copy()
-    for ch in (0, 2):
-        du = nm[ch] - ns[ch]
-        if abs(du) < epsilon:
-            a, b = 1.0, nm[1] - nm[ch]
-        else:
-            a = (nm[1] - ns[1]) / du
-            b = nm[1] - a * nm[ch]
-        corrected[:, ch] = a * norm_f[:, ch] + b
-    chroma2_f = _rms_chroma(corrected)
-
-    mid = _band_refs(float(mb[0]), float(mb[1]), chroma2_f, cap)
-    shadow = _band_refs(float(sb[0]), float(sb[1]), chroma2_f, cap)
-    if mid is None or shadow is None:
-        return None
-    highlight = _band_refs(float(hb[0]), float(hb[1]), chroma2_f, cap)
-
-    # Confidence: the corrected tightness of the grey sets, times the midtone sample size,
-    # times the mid/shadow deviation agreement, where a dead zone passes plausible crossover.
-    n0 = float(c["neutral_axis_confidence_n0"])
-    dead = float(c["neutral_axis_agreement_deadzone"])
-    scale = float(c["neutral_axis_agreement_scale"])
-    tight = float(np.clip(1.0 - max(mid[1], shadow[1]) / cap, 0.0, 1.0))
-    size_term = mid[2] / (mid[2] + n0)
-    dm, ds = _norm_ref(mid[0]), _norm_ref(shadow[0])
-    spread = max(abs((dm[ch] - dm[1]) - (ds[ch] - ds[1])) for ch in (0, 2))
-    agree = 1.0 - min(max(spread - dead, 0.0) / scale, 1.0)
-    width = max(mid[3], shadow[3])
-    single = 1.0 - min(max(width - float(c["neutral_axis_width_deadzone"]), 0.0) / float(c["neutral_axis_width_scale"]), 1.0)
-    confidence = float(np.clip(tight * size_term * agree * single, 0.0, 1.0))
-    return (mid[0], shadow[0], highlight[0] if highlight is not None else None, confidence)
+    consts = (
+        float(c["neutral_axis_chroma_quantile"]),
+        float(c["neutral_axis_chroma_cap"]),
+        float(c["neutral_axis_first_pass_cap"]),
+        int(c["neutral_axis_min_pixels"]),
+        tuple(float(v) for v in c["neutral_axis_highlight_band"]),
+        tuple(float(v) for v in c["neutral_axis_mid_band"]),
+        tuple(float(v) for v in c["neutral_axis_shadow_band"]),
+        (float(c["neutral_axis_foliage_chroma"]), *(float(v) for v in c["neutral_axis_foliage_hue"])),
+        (float(c["neutral_axis_sky_chroma"]), *(float(v) for v in c["neutral_axis_sky_hue"])),
+        float(c["neutral_axis_confidence_n0"]),
+        (float(c["neutral_axis_agreement_deadzone"]), float(c["neutral_axis_agreement_scale"])),
+        (float(c["neutral_axis_width_deadzone"]), float(c["neutral_axis_width_scale"])),
+    )
+    grid = np.ascontiguousarray(_block_median_grid(img_log), dtype=np.float32)
+    floors = tuple(float(v) for v in bounds.floors)
+    ceils = tuple(float(v) for v in bounds.ceils)
+    return negpy_core.neutral_axis(grid, floors, ceils, exclude_subjects, consts)
 
 
 def measure_neutral_axis(

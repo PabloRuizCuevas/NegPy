@@ -249,6 +249,29 @@ pub fn pairwise_sum_f32(a: &[f32]) -> f32 {
     pairwise_sum_f32(&a[..n2]) + pairwise_sum_f32(&a[n2..])
 }
 
+/// `np.quantile(values, q)` for a Python-number q in 0..1: the virtual rank is `(n - 1) * q`,
+/// not `percentile`'s `(n - 1) * (q / 100)`. NaN when any value is NaN; `None` when empty.
+pub fn np_quantile(values: &[f32], q: f64) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    if values.iter().any(|v| v.is_nan()) {
+        return Some(f32::NAN);
+    }
+    let n = values.len();
+    let virtual_index = (n - 1) as f64 * q;
+    let lo = (virtual_index.floor().max(0.0) as usize).min(n - 1);
+    let hi = (lo + 1).min(n - 1);
+    let mut ranks = vec![lo, hi];
+    ranks.dedup();
+    let picked = select_ranks(values, &ranks);
+    Some(interpolate(
+        picked[0],
+        picked[ranks.len() - 1],
+        virtual_index - lo as f64,
+    ))
+}
+
 /// `np.percentile` itself, which is NaN for every q when any value is NaN; `percentiles`
 /// matches NegPy's partition helper, which callers feed only finite values.
 pub fn np_percentiles(values: &[f32], qs: &[f64]) -> Option<Vec<f32>> {
@@ -280,6 +303,20 @@ mod tests {
                 ((x >> 40) as f32 / (1u64 << 24) as f32) * 4.0 - 1.0
             })
             .collect()
+    }
+
+    #[test]
+    fn quantile_ranks_at_n_minus_one_times_q() {
+        for n in [1, 2, 7, 64, 1000, 70_000] {
+            let v = lcg(n, n as u64);
+            let mut s = v.clone();
+            s.sort_by(f32::total_cmp);
+            let vi = (n - 1) as f64 * 0.3;
+            let lo = vi.floor() as usize;
+            let want = interpolate(s[lo], s[(lo + 1).min(n - 1)], vi - lo as f64);
+            assert_eq!(np_quantile(&v, 0.3), Some(want), "{n}");
+        }
+        assert_eq!(np_quantile(&[], 0.3), None);
     }
 
     #[test]

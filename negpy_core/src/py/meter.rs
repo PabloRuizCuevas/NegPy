@@ -2,7 +2,7 @@ use numpy::{PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::meter::{self, Activity, ChannelNorm};
+use crate::meter::{self, Activity, ChannelNorm, NeutralConsts};
 
 /// Per channel (floor, floor is float64, span, span is float64), as the caller's types decide.
 type Norm = [(f64, bool, f64, bool); 3];
@@ -80,8 +80,93 @@ fn textured_range(
     Ok(py.detach(|| meter::textural_range(&textured(g, None, a), clip)))
 }
 
+type Band = (f32, f32);
+type Sector = (f32, f32, f32);
+type Triplet = (f64, f64, f64);
+/// quantile, cap, first-pass cap, min pixels, highlight/mid/shadow bands, foliage and sky
+/// sectors, n0, agreement (dead zone, scale), width (dead zone, scale).
+type Consts = (
+    f64,
+    f64,
+    f64,
+    usize,
+    Band,
+    Band,
+    Band,
+    Sector,
+    Sector,
+    f64,
+    (f64, f64),
+    (f64, f64),
+);
+
+fn triplet(r: [f64; 3]) -> Triplet {
+    (r[0], r[1], r[2])
+}
+
+/// `measure_neutral_axis_from_log` of a cropped block-median grid: (midtone, shadow,
+/// highlight or None, confidence), or None.
+#[pyfunction]
+fn neutral_axis(
+    py: Python<'_>,
+    grid: PyReadonlyArrayDyn<'_, f32>,
+    floors: Triplet,
+    ceils: Triplet,
+    exclude_subjects: bool,
+    consts: Consts,
+) -> PyResult<Option<(Triplet, Triplet, Option<Triplet>, f64)>> {
+    let (data, _, _) = grid_of(&grid)?;
+    let (
+        quantile,
+        cap,
+        first_pass_cap,
+        min_pixels,
+        highlight,
+        mid,
+        shadow,
+        foliage,
+        sky,
+        n0,
+        agreement,
+        width,
+    ) = consts;
+    let c = NeutralConsts {
+        quantile,
+        cap,
+        first_pass_cap,
+        min_pixels,
+        highlight,
+        mid,
+        shadow,
+        subjects: [foliage, sky],
+        n0,
+        agreement,
+        width,
+    };
+    let f = [floors.0, floors.1, floors.2];
+    let e = [ceils.0, ceils.1, ceils.2];
+    let axis = py.detach(|| {
+        meter::neutral_axis(
+            data,
+            (f.map(|v| v as f32), e.map(|v| v as f32)),
+            (f, e),
+            exclude_subjects,
+            &c,
+        )
+    });
+    Ok(axis.map(|a| {
+        (
+            triplet(a.mid),
+            triplet(a.shadow),
+            a.highlight.map(triplet),
+            a.confidence,
+        )
+    }))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(textured_percentile, m)?)?;
     m.add_function(wrap_pyfunction!(textured_anchor, m)?)?;
-    m.add_function(wrap_pyfunction!(textured_range, m)?)
+    m.add_function(wrap_pyfunction!(textured_range, m)?)?;
+    m.add_function(wrap_pyfunction!(neutral_axis, m)?)
 }

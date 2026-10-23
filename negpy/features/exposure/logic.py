@@ -394,7 +394,7 @@ def _apply_print_curve_kernel(
                 # Chroma-selective dye separation, in place of the frame-wide saturation
                 # matrix, which then carries the paper's coupling only and keeps
                 # compose_density_matrices' separation-outermost order. Chroma mirrors
-                # _rms_chroma in normalization.py.
+                # rms_chroma in negpy_core/src/meter.rs.
                 s0 = dens[0] - d_min_rgb[0]
                 s1 = dens[1] - d_min_rgb[1]
                 s2 = dens[2] - d_min_rgb[2]

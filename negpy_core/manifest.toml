@@ -313,13 +313,13 @@ depends = ["measure_neutral_axis_from_log", "to_log_density"]
 
 ["features/exposure/normalization.py::measure_neutral_axis_from_log"]
 phase = 2
-status = "todo"
-calls = ["np.median", "np.percentile", "np.quantile"]
-depends = ["_band_refs", "_block_median_grid", "normalize_log_image"]
+status = "ported"
+calls = ["negpy_core.neutral_axis"]
+depends = ["_block_median_grid"]
 
 ["features/exposure/normalization.py::measure_neutral_axis_from_log._band_refs"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["np.median", "np.percentile", "np.quantile"]
 depends = []
 
