@@ -468,8 +468,8 @@ class CharacteristicCurve:
         self.d_min = float(d_min)
         self.v_star = _reference_linear_value(d_min, paper)
         self.gamma_width = float(c["paper_gamma_width"])
-        self.zone_sh_center = float(c["anchor_target_density"]) + float(c["zone_density_shadow_offset"])
-        self.zone_hi_center = float(c["anchor_target_density"]) + float(c["zone_density_highlight_offset"])
+        self.zone_sh_center = float(c["reference_print_density"]) + float(c["zone_density_shadow_offset"])
+        self.zone_hi_center = float(c["reference_print_density"]) + float(c["zone_density_highlight_offset"])
         self.zone_k = float(c["zone_density_sharpness"])
         self.shadow_density = float(shadow_density)
         self.highlight_density = float(highlight_density)
@@ -834,13 +834,13 @@ def apply_characteristic_curve(
         width_ref=float(c["toeshoulder_width_ref"]),
         toe_height=float(c["toe_height"]),
         sh_height=float(c["shoulder_height"]),
-        zone_center=float(c["anchor_target_density"]),
+        zone_center=float(c["reference_print_density"]),
         shadow_density=float(shadow_density),
         highlight_density=float(highlight_density),
         shadow_grade=np.array(shadow_grade_deltas, dtype=np.float64),
         highlight_grade=np.array(highlight_grade_deltas, dtype=np.float64),
-        zone_sh_center=float(c["anchor_target_density"]) + float(c["zone_density_shadow_offset"]),
-        zone_hi_center=float(c["anchor_target_density"]) + float(c["zone_density_highlight_offset"]),
+        zone_sh_center=float(c["reference_print_density"]) + float(c["zone_density_shadow_offset"]),
+        zone_hi_center=float(c["reference_print_density"]) + float(c["zone_density_highlight_offset"]),
         zone_k=float(c["zone_density_sharpness"]),
         v_star=float(v_star),
         midtone_gamma=np.array([float(midtone_gamma) + snap_trims[ch] for ch in range(3)], dtype=np.float64),
@@ -1108,12 +1108,12 @@ def effective_grade_range(
 def _reference_linear_value(d_min: float = 0.0, paper: Optional[PaperProfile] = None, target: Optional[float] = None) -> float:
     """
     Straight-line density value v* that the base shoulder+toe bounds map onto `target`
-    (default anchor_target_density). The reference tone is placed here so it
+    (default reference_print_density). The reference tone is placed here so it
     prints at target, and the paper S-curve is centred here so the anchor is
     preserved. Closed form via inverse softplus at the base toe/shoulder sharpness.
     """
     c = effective_constants(paper)
-    t = float(c["anchor_target_density"]) if target is None else float(target)
+    t = float(c["reference_print_density"]) if target is None else float(target)
     d_max = float(c["d_max"])
     a_hl = float(c["shoulder_sharpness_base"])  # highlight (lower) bound
     a_sh = float(c["toe_sharpness_base"])  # shadow (upper) bound
@@ -1152,6 +1152,16 @@ def _straight_line_target(
     return 0.5 * (lo + hi)
 
 
+def _anchor_linear_value(
+    d_min: float = 0.0, paper: Optional[PaperProfile] = None, metered: bool = False, midtone_gamma: Optional[float] = None
+) -> float:
+    """Straight-line value the anchor prints from: a metered anchor lands on
+    anchor_target_density through the midtone gamma, an unmetered one on v*."""
+    if not metered:
+        return _reference_linear_value(d_min, paper)
+    return _straight_line_target(d_min, paper, float(effective_constants(paper)["anchor_target_density"]), midtone_gamma)
+
+
 def preflash_params(
     grade: float, d_min: float = 0.0, paper: Optional[PaperProfile] = None, midtone_gamma: Optional[float] = None
 ) -> Tuple[float, float]:
@@ -1180,6 +1190,7 @@ def shadow_reach_slope(
     d_min: float = 0.0,
     paper: Optional[PaperProfile] = None,
     midtone_gamma: Optional[float] = None,
+    metered: bool = False,
 ) -> float:
     """
     Auto Grade floor on the slope: the textured dark tail at `shadow_point` must print
@@ -1192,7 +1203,7 @@ def shadow_reach_slope(
     if span <= 1e-6:
         return slope
     v_black = _straight_line_target(d_min, paper, float(c["shadow_reach_density"]), midtone_gamma)
-    needed = (v_black - _reference_linear_value(d_min, paper)) / span
+    needed = (v_black - _anchor_linear_value(d_min, paper, metered, midtone_gamma)) / span
     return float(min(max(slope, needed), float(c["slope_max"])))
 
 
@@ -1225,7 +1236,7 @@ def highlight_hold_offset(
     v_hold = _reference_linear_value(d_min, paper, target=target)
     if v >= v_hold:
         return 0.0
-    z_hi = float(c["anchor_target_density"]) + float(c["zone_density_highlight_offset"])
+    z_hi = float(c["reference_print_density"]) + float(c["zone_density_highlight_offset"])
     w = 1.0 - _fast_sigmoid_cached(float(c["zone_density_sharpness"]) * (v - z_hi))
     return float(min((v_hold - v) / max(w, 1e-6), float(c["highlight_hold_max"])))
 
@@ -1290,20 +1301,24 @@ def auto_highlight_from_metrics(exposure: Any, process_mode: Optional[str], metr
 
 
 def compute_pivot(
-    slope: float, density: float, d_min: float = 0.0, anchor: Optional[float] = None, paper: Optional[PaperProfile] = None
+    slope: float,
+    density: float,
+    d_min: float = 0.0,
+    anchor: Optional[float] = None,
+    paper: Optional[PaperProfile] = None,
+    midtone_gamma: Optional[float] = None,
 ) -> float:
     """
     Fixed calibrated exposure: solve the curve pivot so the reference tone
-    prints at anchor_target_density for the current effective slope — grade
-    changes rotate around that reference tone instead of shifting brightness.
-    The density slider offsets exposure around it. The reference tone defaults
-    to assumed_anchor (a typical negative's normalized median); pass `anchor`
-    to use a per-frame metered median (auto-exposure) instead.
+    (assumed_anchor) prints at reference_print_density for the current effective
+    slope, so grade changes rotate around it instead of shifting brightness.
+    The density slider offsets exposure around it. A metered `anchor` (Auto
+    Density) prints at anchor_target_density instead.
     """
     c = effective_constants(paper)
     ref = c["assumed_anchor"] if anchor is None else anchor
-    v_star = _reference_linear_value(d_min, paper)
-    base = ref - v_star / slope
+    v = _anchor_linear_value(d_min, paper, anchor is not None, midtone_gamma)
+    base = ref - v / slope
     return base + (1.0 - density) * c["density_multiplier"]
 
 
@@ -1370,7 +1385,9 @@ def auto_base_slope(
     if auto_normalize_contrast and shadow_point is not None:
         c = effective_constants(paper)
         ref = float(c["assumed_anchor"]) if anchor is None else float(anchor)
-        slope = shadow_reach_slope(slope, ref, shadow_point, d_min=d_min, paper=paper, midtone_gamma=midtone_gamma)
+        slope = shadow_reach_slope(
+            slope, ref, shadow_point, d_min=d_min, paper=paper, midtone_gamma=midtone_gamma, metered=anchor is not None
+        )
     return slope
 
 
@@ -1427,7 +1444,7 @@ def per_channel_curve_params(
         curv_lim = float(c["neutral_axis_curv_max_ratio"])
         m_g, s_g = float(mid_norm[1]), float(sh_norm[1])
         slope_g = min(max(base_slope * cg[1], slope_min), slope_max)
-        pivot_g = compute_pivot(slope_g, density, d_min=d_min, anchor=anchor, paper=paper)
+        pivot_g = compute_pivot(slope_g, density, d_min=d_min, anchor=anchor, paper=paper, midtone_gamma=midtone_gamma)
         target = lambda g: slope_g * (g - pivot_g)  # noqa: E731  green's core at a green ref
         t_m, t_s = target(m_g), target(s_g)
         h_g = float(hl_norm[1]) if hl_norm is not None else None
@@ -1470,9 +1487,9 @@ def per_channel_curve_params(
     s0 = min(max(base_slope * cg[0], slope_min), slope_max)
     s1 = min(max(base_slope * cg[1], slope_min), slope_max)
     s2 = min(max(base_slope * cg[2], slope_min), slope_max)
-    p0 = compute_pivot(s0, density, d_min=d_min, anchor=anchor, paper=paper)
-    p1 = compute_pivot(s1, density, d_min=d_min, anchor=anchor, paper=paper)
-    p2 = compute_pivot(s2, density, d_min=d_min, anchor=anchor, paper=paper)
+    p0 = compute_pivot(s0, density, d_min=d_min, anchor=anchor, paper=paper, midtone_gamma=midtone_gamma)
+    p1 = compute_pivot(s1, density, d_min=d_min, anchor=anchor, paper=paper, midtone_gamma=midtone_gamma)
+    p2 = compute_pivot(s2, density, d_min=d_min, anchor=anchor, paper=paper, midtone_gamma=midtone_gamma)
     return (s0, s1, s2), (p0, p1, p2), (0.0, 0.0, 0.0)
 
 

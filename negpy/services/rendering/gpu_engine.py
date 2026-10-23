@@ -2188,7 +2188,7 @@ class GPUEngine:
                 sep_damping,
                 pc["toe_height"],
                 pc["shoulder_height"],
-                pc["anchor_target_density"],
+                pc["reference_print_density"],
                 _sw3[1],
                 # Separation Damping's per-layer k, red (ex-surround_gamma slot). Green and
                 # blue ride the split_sh/split_hi w-lanes.

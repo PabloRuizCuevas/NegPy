@@ -16,7 +16,7 @@ fixed constants, never metered — metering is what makes a bracketed set conver
 
 The paper H&D curve cannot serve this role. Its print character is structural, not
 parametric — `d_max` floors the blacks whatever the toe slider says,
-`anchor_target_density` places mid-grey at a print's mid-tone, and the midtone snap
+`reference_print_density` places mid-grey at a print's mid-tone, and the midtone snap
 and paper-white reference stay live at neutral settings. Neutralizing it is not
 reachable from a paper profile, so a positive gets its own curve.
 
@@ -108,7 +108,7 @@ def zone_geometry() -> Tuple[float, float, float]:
     c = EXPOSURE_CONSTANTS
     d_min, d_max = float(c["d_min"]), float(c["d_max"])
     span = d_max - d_min
-    anchor = float(c["anchor_target_density"])
+    anchor = float(c["reference_print_density"])
     shadow = (anchor + float(c["zone_density_shadow_offset"]) - d_min) / span
     highlight = (anchor + float(c["zone_density_highlight_offset"]) - d_min) / span
     return (
@@ -129,7 +129,7 @@ def wb_split_geometry() -> Tuple[float, float]:
     c = EXPOSURE_CONSTANTS
     d_min, d_max = float(c["d_min"]), float(c["d_max"])
     span = d_max - d_min
-    anchor = float(c["anchor_target_density"])
+    anchor = float(c["reference_print_density"])
     centre = (anchor - d_min) / span * TRANSFER_DENSITY_RANGE
     sharpness = 3.0 * span / TRANSFER_DENSITY_RANGE
     return centre, sharpness
