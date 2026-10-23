@@ -2,6 +2,7 @@ pub mod altprocess;
 pub mod analysis;
 pub mod autocrop;
 pub mod bounds;
+pub mod capture;
 pub mod color;
 pub mod components;
 pub mod contours;
@@ -67,6 +68,7 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::process::register(m)?;
     py::phase::register(m)?;
     py::rgbscan::register(m)?;
+    py::capture::register(m)?;
     py::print_curve::register(m)?;
     py::gray::register(m)?;
     py::contours::register(m)?;

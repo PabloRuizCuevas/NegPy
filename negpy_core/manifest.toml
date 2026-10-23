@@ -2463,9 +2463,10 @@ note = "negpy_core.contour_outlines"
 
 ["desktop/view/sidebar/files.py::FileBrowser._measure_rebate"]
 phase = 7
-status = "todo"
+status = "stays"
 calls = ["np.mean"]
 depends = ["print_dmax"]
+note = "per-frame tone list"
 
 ["desktop/view/sidebar/files.py::print_dmax"]
 phase = 7
@@ -2488,33 +2489,38 @@ note = "calls negpy_core"
 
 ["desktop/view/widgets/charts.py::VectorscopeWidget._trace_image"]
 phase = 7
-status = "todo"
+status = "stays"
 calls = ["np.percentile"]
 depends = []
+note = "scope bin grid"
 
 ["desktop/view/widgets/charts.py::WaveformWidget._trace_images"]
 phase = 7
-status = "todo"
+status = "stays"
 calls = ["np.percentile"]
 depends = []
+note = "scope bin grid"
 
 ["desktop/view/widgets/prescan_dialog.py::_preview_u8"]
 phase = 7
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.stretch_preview"]
 depends = []
+note = "negpy_core.stretch_preview"
 
 ["desktop/view/widgets/scan_preview_common.py::preview_positive"]
 phase = 7
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.stretch_preview"]
 depends = []
+note = "negpy_core.stretch_preview"
 
 ["desktop/view/widgets/sensor_calibration_dialog.py::SensorCalibrationDialog._compute_and_save"]
 phase = 7
-status = "todo"
-calls = ["np.mean"]
+status = "ported"
+calls = ["negpy_core.any_channel_at_least"]
 depends = []
+note = "negpy_core.any_channel_at_least"
 
 ["desktop/workers/chart_fit.py::ChartFitWorker.__init__"]
 phase = 7
@@ -2582,9 +2588,10 @@ depends = []
 
 ["services/assets/semantic_model.py::rank_by_similarity"]
 phase = 7
-status = "todo"
+status = "stays"
 calls = ["np.argsort"]
 depends = []
+note = "embedding vectors"
 
 ["services/assets/thumbnails.py::preview_positive"]
 phase = 7
@@ -2594,27 +2601,31 @@ depends = []
 
 ["services/capture/calibration.py::_ladder_stops"]
 phase = 7
-status = "todo"
+status = "stays"
 calls = ["np.median"]
 depends = []
+note = "shutter ladder values"
 
 ["services/capture/calibration.py::clip_fraction"]
 phase = 7
-status = "todo"
-calls = ["np.mean"]
+status = "ported"
+calls = ["negpy_core.patch_level_stats"]
 depends = []
+note = "negpy_core.patch_level_stats"
 
 ["services/capture/calibration.py::meter_base"]
 phase = 7
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.patch_level_stats"]
 depends = []
+note = "negpy_core.patch_level_stats"
 
 ["services/capture/focus_meter.py::sharpness"]
 phase = 7
-status = "todo"
-calls = ["np.mean"]
+status = "ported"
+calls = ["negpy_core.sharpness"]
 depends = []
+note = "negpy_core.sharpness"
 
 ["services/capture/meter.py::framing_mismatch"]
 phase = 7
@@ -2659,9 +2670,10 @@ note = "negpy_core resize_area, resize_kernel"
 
 ["services/scanning/writer.py::_to_grey"]
 phase = 7
-status = "todo"
-calls = ["np.sum"]
+status = "ported"
+calls = ["negpy_core.to_grey"]
 depends = []
+note = "negpy_core.to_grey"
 
 ["services/view/coordinate_mapping.py::CoordinateMapping._grid_homography"]
 phase = 7

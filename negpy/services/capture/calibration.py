@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Callable, Optional
 
+import negpy_core
 import numpy as np
 
 from negpy.features.process.sensor import build_sensor_matrix
@@ -345,7 +346,7 @@ def meter_base(plane: np.ndarray, roi: Roi) -> float:
     patch = plane[y0:y1, x0:x1]
     if patch.size == 0:
         return 0.0
-    return float(np.percentile(patch, 99.9))
+    return negpy_core.patch_level_stats(np.ascontiguousarray(patch), 0.0, 99.9)[1]
 
 
 def clip_fraction(plane: np.ndarray, roi: Roi, saturation: float = SATURATION_VALUE) -> float:
@@ -359,7 +360,7 @@ def clip_fraction(plane: np.ndarray, roi: Roi, saturation: float = SATURATION_VA
     patch = plane[y0:y1, x0:x1]
     if patch.size == 0:
         return 0.0
-    return float(np.mean(patch >= saturation))
+    return negpy_core.patch_level_stats(np.ascontiguousarray(patch), float(saturation), 50.0)[0]
 
 
 def nearest_shutter(label: str, candidates: tuple[str, ...]) -> str:
