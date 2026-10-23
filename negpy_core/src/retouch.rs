@@ -1100,12 +1100,15 @@ pub struct LumaDetect<'a> {
     pub score_floor: f64,
 }
 
-/// `detect_luma_score` from its stats planes: (score, hair mask), each `None` when empty.
+/// A fill score for specks and an inpaint mask for hairs, each `None` when empty.
+pub type Detection = (Option<Vec<f32>>, Option<Vec<u8>>);
+
+/// `detect_luma_score` from its stats planes: (score, hair mask).
 pub fn detect_luma_score(
     stats: [&[f32]; 4],
     (h, w): (usize, usize),
     c: &LumaDetect,
-) -> Option<(Option<Vec<f32>>, Option<Vec<u8>>)> {
+) -> Option<Detection> {
     let [proxy, background, z, texture] = stats;
     let n = h * w;
     let seed_bar = c.hi.min(c.hi_hair) as f32;
