@@ -5,6 +5,7 @@ EXIF-oriented and flat-fielded — transforms estimated here are only valid on
 buffers decoded the same way.
 """
 
+import math
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import cv2
@@ -76,8 +77,9 @@ def compute_canvas(sizes: Sequence[Tuple[int, int]], transforms: Sequence[np.nda
     """Union bounding box of the warped parts. Returns ((W, H), transforms shifted to it)."""
     corners = []
     for (w, h), matrix in zip(sizes, transforms):
-        box = np.array([[[0, 0], [w, 0], [w, h], [0, h]]], np.float64)
-        corners.append(cv2.transform(box, matrix)[0])
+        # cv2.transform's order: its dispatched build fuses the first product.
+        m = matrix.tolist()
+        corners.append([[math.fma(r[0], x, r[1] * y) + r[2] for r in m] for x, y in ((0, 0), (w, 0), (w, h), (0, h))])
     points = np.vstack(corners)
     lo = np.floor(points.min(axis=0))
     hi = np.ceil(points.max(axis=0))

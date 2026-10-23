@@ -1820,12 +1820,6 @@ status = "todo"
 calls = ["negpy_core.resize_area", "np.percentile"]
 depends = []
 
-["features/stitch/logic.py::compute_canvas"]
-phase = 5
-status = "todo"
-calls = ["cv2.transform"]
-depends = []
-
 ["features/stitch/logic.py::feather_blend"]
 phase = 5
 status = "todo"
@@ -1840,9 +1834,11 @@ depends = []
 
 ["features/stitch/logic.py::register_parts"]
 phase = 5
-status = "todo"
+status = "stays"
+compare = "abs=0.01"
 calls = []
-depends = ["build_proxy", "compute_canvas", "register_pair"]
+depends = ["build_proxy", "register_pair"]
+note = "orchestration of negpy_core kernels"
 
 ["features/stitch/logic.py::seam_blend"]
 phase = 5
