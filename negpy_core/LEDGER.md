@@ -18,3 +18,4 @@ tolerance listed for each entry.
 | `kernel/image/logic.py::_lab_to_rgb_kernel` (and `lab_to_rgb_working`) | One value in the corpus rounds the other way; the float64 operation order copies Numba's fastmath build. | ulp=1 |
 | `kernel/image/logic.py::_skin_chroma_rein_kernel` (and `skin_chroma_rein`) | `atan2f` and `exp` are `mathf`'s, not glibc's; Numba's own serial and parallel builds of the kernel already differ in the last bit. | ulp=1 |
 | `features/exposure/analysis.py::vectorscope_histogram` | atan2 and log1p are `mathf`'s, not SVML's; a sample on a bin edge can change bin (none did in 39 recorded frames). | abs=2 |
+| `features/exposure/logic.py::apply_characteristic_curve` (the print curve) | `exp`, `log1p`, `tanh` and 10^x are `mathf`'s, not glibc's; 2 of 205 M recorded values round the other way. Every feature branch (masks, flash, diffusion, dye mix, separation damping, the print LUTs) matched the Numba kernel bit for bit on test frames. | ulp=1 |

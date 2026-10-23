@@ -3,7 +3,6 @@ import importlib
 import pytest
 
 _KERNELS = [
-    ("negpy.features.exposure.logic", "_apply_print_curve_kernel"),
     ("negpy.infrastructure.display.icc_lut", "_apply_lut_u16_jit"),
     ("negpy.infrastructure.display.icc_lut", "_apply_lut_f32_jit"),
     ("negpy.infrastructure.display.icc_lut", "_matrix_trc_u8_jit"),

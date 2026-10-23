@@ -29,13 +29,11 @@ def _double(arr):
 def test_serial_and_parallel_variants_never_share_a_cache_file():
     # Numba's disk cache keys on qualname and source line, so the serial variant takes its own
     # qualname: a shared one could load the parallel binary and defeat the failsafe.
-    from negpy.features.exposure.logic import _apply_print_curve_kernel
     from negpy.infrastructure.display.icc_lut import _apply_lut_f32_jit
 
-    for kernel in (_apply_print_curve_kernel, _apply_lut_f32_jit):
-        serial, parallel = kernel.serial._cache, kernel.parallel._cache
-        assert type(serial).__name__ == type(parallel).__name__ == "FunctionCache"
-        assert serial._cache_file._index_name != parallel._cache_file._index_name
+    serial, parallel = _apply_lut_f32_jit.serial._cache, _apply_lut_f32_jit.parallel._cache
+    assert type(serial).__name__ == type(parallel).__name__ == "FunctionCache"
+    assert serial._cache_file._index_name != parallel._cache_file._index_name
     assert type(_double.serial._cache).__name__ == "NullCache"  # no cache=True, no disk cache
 
 

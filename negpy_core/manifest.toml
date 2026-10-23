@@ -1844,33 +1844,28 @@ depends = []
 
 ["features/exposure/logic.py::_apply_print_curve_kernel"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = ["numba"]
 depends = ["_black_hold", "_fast_sigmoid", "_softplus", "plane_taps", "quadratic_core", "separation_damping_gain", "tone_key_weight"]
 
 ["features/exposure/logic.py::_black_hold"]
 phase = 6
-status = "todo"
-calls = ["numba"]
-depends = []
-
-["features/exposure/logic.py::_fast_sigmoid"]
-phase = 6
-status = "todo"
+status = "ported"
 calls = ["numba"]
 depends = []
 
 ["features/exposure/logic.py::_softplus"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = ["numba"]
 depends = []
 
 ["features/exposure/logic.py::apply_characteristic_curve"]
 phase = 6
-status = "todo"
-calls = []
-depends = ["_apply_print_curve_kernel"]
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.apply_print_curve"]
+depends = []
 
 ["features/exposure/logic.py::contrast_mask_ev"]
 phase = 6
@@ -1886,7 +1881,7 @@ depends = []
 
 ["features/exposure/logic.py::plane_taps"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = ["numba"]
 depends = []
 
@@ -1898,19 +1893,13 @@ depends = []
 
 ["features/exposure/logic.py::quadratic_core"]
 phase = 6
-status = "todo"
-calls = ["numba"]
-depends = []
-
-["features/exposure/logic.py::separation_damping_gain"]
-phase = 6
-status = "todo"
+status = "ported"
 calls = ["numba"]
 depends = []
 
 ["features/exposure/logic.py::tone_key_weight"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = ["numba"]
 depends = []
 
@@ -1992,10 +1981,16 @@ status = "todo"
 calls = []
 depends = ["_solve_density", "_solve_grade_and_density", "_solve_with_knee", "predicted_zone"]
 
-["features/exposure/print_lut.py::tetra_lookup"]
+["features/exposure/print_lut.py::lut_black_luminance"]
 phase = 6
 status = "todo"
-calls = ["numba"]
+calls = []
+depends = ["tetra_lookup"]
+
+["features/exposure/print_lut.py::tetra_lookup"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.tetra_lookup"]
 depends = []
 
 ["features/exposure/processor.py::NormalizationProcessor.process"]
@@ -2174,13 +2169,13 @@ depends = []
 
 ["features/toning/logic.py::_apply_chemical_toning_jit"]
 phase = 6
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.apply_chemical_toning"]
 depends = []
 
 ["features/toning/logic.py::apply_chemical_toning"]
 phase = 6
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_apply_chemical_toning_jit"]
 
@@ -2191,24 +2186,6 @@ calls = []
 depends = []
 
 ["features/toning/processor.py::ToningProcessor.process"]
-phase = 6
-status = "todo"
-calls = []
-depends = []
-
-["features/transparency/logic.py::apply_transfer_curve"]
-phase = 6
-status = "todo"
-calls = []
-depends = ["shape"]
-
-["features/transparency/logic.py::apply_transfer_curve.shape"]
-phase = 6
-status = "todo"
-calls = []
-depends = []
-
-["features/transparency/processor.py::TransferProcessor.process"]
 phase = 6
 status = "todo"
 calls = []

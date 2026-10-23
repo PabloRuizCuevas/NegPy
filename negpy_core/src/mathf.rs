@@ -113,6 +113,48 @@ pub fn exp_f64(t: f64) -> f64 {
     y * f64::from_bits((k + (1023.0 + 4_503_599_627_370_496.0)).to_bits() << 52)
 }
 
+/// ln(1 + u) for u > -1, accurate for small u: ln(w) * u / (w - 1) with w = 1 + u cancels the
+/// rounding of w (Goldberg).
+#[inline(always)]
+pub fn log1p_f64(u: f64) -> f64 {
+    let w = 1.0 + u;
+    let l = ln_f64(w) * (u / (w - 1.0));
+    if w == 1.0 { u } else { l }
+}
+
+/// e^x - 1, accurate for small x: (w - 1) * x / ln(w) with w = e^x (Kahan).
+#[inline(always)]
+pub fn expm1_f64(x: f64) -> f64 {
+    let w = exp_f64(x);
+    let m = (w - 1.0) * (x / ln_f64(w));
+    if w == 1.0 {
+        x
+    } else if x < -30.0 {
+        -1.0
+    } else {
+        m
+    }
+}
+
+/// tanh(t) = expm1(2t) / (expm1(2t) + 2), with |t| capped where it is +-1 in f64.
+#[inline(always)]
+pub fn tanh_f64(t: f64) -> f64 {
+    let e = expm1_f64(2.0 * t.clamp(-20.0, 20.0));
+    e / (e + 2.0)
+}
+
+/// log10 of a positive normal f64.
+#[inline(always)]
+pub fn log10_f64(x: f64) -> f64 {
+    ln_f64(x) * std::f64::consts::LOG10_E
+}
+
+/// 10^x.
+#[inline(always)]
+pub fn exp10_f64(x: f64) -> f64 {
+    exp_f64(x * std::f64::consts::LN_10)
+}
+
 /// x^y for x >= 0 (or NaN) and y > 0: e^(y ln x), 0 at x = 0. The relative error grows with
 /// |y ln x|, so the result is for rounding to f32, where it is almost always correct.
 #[inline(always)]
@@ -215,6 +257,38 @@ mod pow_tests {
         assert_eq!(pow_f64(0.0, 2.2), 0.0);
         assert!(pow_f64(f64::NAN, 2.2).is_nan());
         assert_eq!(pow_f64(1.0, 2.2), 1.0);
+    }
+}
+
+#[cfg(test)]
+mod f64_tests {
+    use super::*;
+
+    fn rel(a: f64, b: f64) -> f64 {
+        if a == b { 0.0 } else { ((a - b) / b).abs() }
+    }
+
+    #[test]
+    fn float64_helpers_match_libm() {
+        let mut worst = [0f64; 5];
+        let mut x = -12.0f64;
+        while x < 12.0 {
+            worst[0] = worst[0].max(rel(
+                log1p_f64(x.exp() * 0.999),
+                libm::log1p(x.exp() * 0.999),
+            ));
+            worst[1] = worst[1].max(rel(expm1_f64(x * 0.05), libm::expm1(x * 0.05)));
+            worst[2] = worst[2].max(rel(tanh_f64(x * 0.3), libm::tanh(x * 0.3)));
+            worst[3] = worst[3].max(rel(log10_f64(x.exp()), libm::log10(x.exp())));
+            worst[4] = worst[4].max(rel(exp10_f64(x * 0.25), libm::exp10(x * 0.25)));
+            x += 0.000_37;
+        }
+        for (i, w) in worst.iter().enumerate() {
+            assert!(*w < 1e-14, "{i}: {w:e}");
+        }
+        assert_eq!(log1p_f64(1e-300), 1e-300);
+        assert_eq!(expm1_f64(1e-300), 1e-300);
+        assert_eq!(tanh_f64(1e5), 1.0);
     }
 }
 

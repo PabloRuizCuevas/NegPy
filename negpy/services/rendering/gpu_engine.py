@@ -2169,7 +2169,7 @@ class GPUEngine:
                 exp.highlight_yellow * cmy_m,
                 _sh3[2],
             )
-            # Asymmetric H&D print-curve scalars; mirrors _apply_print_curve_kernel.
+            # Asymmetric H&D print-curve scalars; mirrors negpy_core print_curve.rs.
             # Per-channel knee widths occupy the dead scalar toe/shoulder/
             # midtone_gamma slots and the former flare pad (see exposure.wgsl).
             + struct.pack(

@@ -13,10 +13,12 @@ pub mod mathf;
 pub mod median;
 pub mod meter;
 pub mod morph;
+pub mod print_curve;
 pub mod resize;
 pub mod retouch;
 pub mod shapes;
 pub mod stats;
+pub mod toning;
 
 /// `f(dst[i], src[i])` for every i, in parallel blocks: a rayon task per element costs more than
 /// the work. Pass a `move` closure: a capture read through a reference may alias `dst`, so the
@@ -39,6 +41,7 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::resize::register(m)?;
     py::filter::register(m)?;
     py::morph::register(m)?;
+    py::print_curve::register(m)?;
     py::gray::register(m)?;
     py::contours::register(m)?;
     py::components::register(m)?;
@@ -48,5 +51,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::retouch::register(m)?;
     py::bounds::register(m)?;
     py::color::register(m)?;
+    py::toning::register(m)?;
     py::analysis::register(m)
 }

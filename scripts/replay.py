@@ -107,7 +107,10 @@ class Recorder:
         def wrapper(*args, **kwargs):
             if not self.active or self.per_frame.get(key, 0) >= CALLS_PER_FRAME or self.saved[key] >= CALLS_PER_FUNCTION:
                 return fn(*args, **kwargs)
-            inputs = copy.deepcopy((args, kwargs))
+            try:
+                inputs = copy.deepcopy((args, kwargs))
+            except (TypeError, AttributeError):
+                return fn(*args, **kwargs)  # a lock or a device handle in the arguments: not replayable
             result = fn(*args, **kwargs)
             self.per_frame[key] = self.per_frame.get(key, 0) + 1
             self.active = False
@@ -121,7 +124,7 @@ class Recorder:
                     (folder / f"{self.saved[key]:04d}.pkl").write_bytes(pickle.dumps(record, protocol=5))
                     self.saved[key] += 1
             except (pickle.PicklingError, TypeError, AttributeError):
-                pass  # a GPU texture or a lock in the arguments: not replayable
+                pass  # a result that does not pickle: not replayable
             finally:
                 self.active = True
             return result
