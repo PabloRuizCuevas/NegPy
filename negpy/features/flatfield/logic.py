@@ -1,7 +1,6 @@
 import hashlib
 from typing import Callable, Dict, NamedTuple, Optional, Tuple
 
-import cv2
 import negpy_core
 import numpy as np
 
@@ -45,6 +44,7 @@ UNEVEN_LIMIT = 0.06
 # pixels at _CLIP_LEVEL in some channel means the reference clipped.
 _CLIP_LEVEL = 0.98
 _CLIP_FRACTION = 0.001
+_LIT = (_LIT_PERCENTILE, _LIT_FRACTION, _MIN_LIT_FRACTION)
 
 
 class GainEntry(NamedTuple):
@@ -88,19 +88,12 @@ def _resolve(profile_id: str) -> Optional[GainEntry]:
 
 def compute_gain(reference: ImageBuffer) -> np.ndarray:
     """Per-channel gain = mean(blur) / blur over the lit area, on a downsampled copy."""
-    ref = work_copy(reference)
+    ref = np.ascontiguousarray(work_copy(reference), dtype=np.float32)
     sigma = max(ref.shape[:2]) / _BLUR_DIVISOR
-    eps = 1e-4
-    lit = _lit_mask(ref)
-    # Normalized convolution: a dark carrier edge in the reference would otherwise bleed into
-    # the blur and overcorrect the frame next to it.
-    num = cv2.GaussianBlur(ref * lit[..., None], (0, 0), sigmaX=sigma, sigmaY=sigma)
-    den = cv2.GaussianBlur(lit, (0, 0), sigmaX=sigma, sigmaY=sigma)
-    blur = np.clip(num / np.clip(den, eps, None)[..., None], eps, None)
-    blur = _fill_from_nearest(blur, den >= _MIN_LIT_WEIGHT)
-    means = (blur * lit[..., None]).sum(axis=(0, 1)) / lit.sum()
-    gain = means[None, None, :] / blur
-    return np.clip(gain, _GAIN_MIN, _GAIN_MAX).astype(np.float32)
+    gain, dark = negpy_core.compute_gain(ref, _LIT, sigma, 1e-4, _MIN_LIT_WEIGHT, (_GAIN_MIN, _GAIN_MAX))
+    if dark:
+        _warn_dark()
+    return gain
 
 
 def work_copy(reference: ImageBuffer, long_edge: int = _GAIN_WORK_SIZE) -> np.ndarray:
@@ -120,26 +113,20 @@ def check_copy(reference: ImageBuffer) -> np.ndarray:
 
 def _lit_mask(ref: np.ndarray) -> np.ndarray:
     """1 where the reference sees the light source, 0 on carrier or mask edges in frame."""
-    lum = ref.mean(axis=2)
-    lit = (lum > _LIT_FRACTION * np.percentile(lum, _LIT_PERCENTILE)).astype(np.uint8)
-    # Drop the soft transition at the carrier edge: a holder's shadow edge spans about two pixels
-    # here above the fraction. Outside the image counts as dark, so a partly lit carrier lip on the
-    # outermost rows or columns goes too.
-    lit = cv2.erode(lit, np.ones((5, 5), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0)
-    if lit.sum() < _MIN_LIT_FRACTION * lit.size:
-        logger.warning("Flat-field: reference is almost all dark; computing the gain over the whole frame")
-        return np.ones(lum.shape, np.float32)
+    lit = negpy_core.lit_mask(np.ascontiguousarray(ref, dtype=np.float32), _LIT)
+    if lit is None:
+        _warn_dark()
+        return np.ones(ref.shape[:2], np.float32)
     return lit.astype(np.float32)
+
+
+def _warn_dark() -> None:
+    logger.warning("Flat-field: reference is almost all dark; computing the gain over the whole frame")
 
 
 def _fill_from_nearest(values: np.ndarray, valid: np.ndarray) -> np.ndarray:
     """Replace each invalid pixel with the value of the nearest valid one."""
-    if valid.all() or not valid.any():
-        return values
-    _, labels = cv2.distanceTransformWithLabels((~valid).astype(np.uint8), cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
-    source = np.zeros(labels.max() + 1, np.int64)
-    source[labels[valid]] = np.flatnonzero(valid)
-    return values.reshape(-1, values.shape[2])[source[labels]].reshape(values.shape)
+    return negpy_core.fill_from_nearest(np.ascontiguousarray(values, dtype=np.float32), np.ascontiguousarray(valid, dtype=bool))
 
 
 class Evenness(NamedTuple):
@@ -185,21 +172,17 @@ def self_corrected(reference: np.ndarray, gain: np.ndarray) -> np.ndarray:
 
 
 def _is_clipped(image: np.ndarray) -> bool:
-    lit = _lit_mask(image).astype(bool)
-    return float((image[lit] >= _CLIP_LEVEL).any(axis=1).mean()) > _CLIP_FRACTION
+    fraction, dark = negpy_core.clipped_fraction(np.ascontiguousarray(image, dtype=np.float32), _LIT, _CLIP_LEVEL)
+    if dark:
+        _warn_dark()
+    return fraction > _CLIP_FRACTION
 
 
 def _evenness(image: ImageBuffer) -> Tuple[np.ndarray, Evenness]:
-    img = image.astype(np.float32)
-    lit = _lit_mask(img).astype(bool)
-    median = np.clip(np.median(img[lit], axis=0), 1e-6, None)
-    ratio = img / median
-    ratio[~lit] = 0.0
-    lum = ratio[lit].mean(axis=1)
-    low, high = np.percentile(lum - 1.0, [1.0, 99.0])
-    chroma = np.percentile(ratio[lit] / np.clip(lum, 1e-6, None)[:, None] - 1.0, [1.0, 99.0], axis=0)
-    clipped = float((img[lit] >= _CLIP_LEVEL).any(axis=1).mean()) > _CLIP_FRACTION
-    return ratio, Evenness(float(low), float(high), float(np.abs(chroma).max()), clipped)
+    ratio, (low, high, color, clipped, dark) = negpy_core.evenness(np.ascontiguousarray(image, dtype=np.float32), _LIT, _CLIP_LEVEL)
+    if dark:
+        _warn_dark()
+    return ratio, Evenness(low, high, color, clipped > _CLIP_FRACTION)
 
 
 def gain_token(gain: np.ndarray) -> str:

@@ -1136,26 +1136,26 @@ depends = ["_oetf_encode_flat"]
 
 ["features/flatfield/logic.py::_evenness"]
 phase = 4
-status = "todo"
-calls = ["np.median", "np.percentile"]
-depends = ["_lit_mask"]
+status = "ported"
+calls = ["negpy_core.evenness"]
+depends = []
 
 ["features/flatfield/logic.py::_fill_from_nearest"]
 phase = 4
-status = "todo"
-calls = ["cv2.distanceTransformWithLabels"]
+status = "ported"
+calls = ["negpy_core.fill_from_nearest"]
 depends = []
 
 ["features/flatfield/logic.py::_is_clipped"]
 phase = 4
-status = "todo"
-calls = []
-depends = ["_lit_mask"]
+status = "ported"
+calls = ["negpy_core.clipped_fraction"]
+depends = []
 
 ["features/flatfield/logic.py::_lit_mask"]
 phase = 4
-status = "todo"
-calls = ["cv2.erode", "np.percentile"]
+status = "ported"
+calls = ["negpy_core.lit_mask"]
 depends = []
 
 ["features/flatfield/logic.py::apply_flatfield"]
@@ -1166,25 +1166,26 @@ depends = []
 
 ["features/flatfield/logic.py::check_copy"]
 phase = 4
-status = "todo"
+status = "ported"
 calls = []
 depends = ["work_copy"]
 
 ["features/flatfield/logic.py::check_reference"]
 phase = 4
-status = "todo"
+status = "ported"
+compare = "abs=1e-6"
 calls = []
 depends = ["_is_clipped", "check_copy", "evenness", "self_corrected"]
 
 ["features/flatfield/logic.py::compute_gain"]
 phase = 4
-status = "todo"
-calls = ["cv2.GaussianBlur"]
-depends = ["_fill_from_nearest", "_lit_mask", "work_copy"]
+status = "ported"
+calls = ["negpy_core.compute_gain"]
+depends = ["work_copy"]
 
 ["features/flatfield/logic.py::evenness"]
 phase = 4
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_evenness"]
 
@@ -1197,12 +1198,13 @@ depends = ["_evenness"]
 ["features/flatfield/logic.py::self_corrected"]
 phase = 4
 status = "todo"
+compare = "ulp=4"
 calls = ["negpy_core.resize_linear"]
 depends = []
 
 ["features/flatfield/logic.py::work_copy"]
 phase = 4
-status = "todo"
+status = "ported"
 calls = ["negpy_core.resize_area"]
 depends = []
 

@@ -8,6 +8,7 @@ pub mod convert;
 pub mod display;
 pub mod filter;
 pub mod finish;
+pub mod flatfield;
 pub mod gray;
 pub mod hdr;
 pub mod histogram;

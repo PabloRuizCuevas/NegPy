@@ -10,6 +10,7 @@ pub mod display;
 pub mod distance;
 pub mod filter;
 pub mod finish;
+pub mod flatfield;
 pub mod gray;
 pub mod hdr;
 pub mod histogram;
@@ -68,5 +69,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::lab::register(m)?;
     py::altprocess::register(m)?;
     py::finish::register(m)?;
+    py::flatfield::register(m)?;
     py::skew::register(m)
 }
