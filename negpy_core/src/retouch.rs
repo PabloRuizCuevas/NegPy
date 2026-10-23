@@ -880,3 +880,346 @@ pub fn ir_attenuate(img: &[f32], gain: &[f32], dst: &mut [f32]) {
             }
         });
 }
+
+/// `_box_mean_std(plane, win)`: the box mean and the standard deviation over `win` x `win`,
+/// `sqrt(max(blur(p * p) - mean * mean, 0))` in float32.
+pub fn box_mean_std(
+    plane: &[f32],
+    (h, w): (usize, usize),
+    win: usize,
+    mean: &mut [f32],
+    std: &mut [f32],
+) -> Option<()> {
+    use crate::filter::{Border, box_filter};
+    let mut sq = vec![0f32; h * w];
+    crate::par_zip(&mut sq, plane, |s, &p| *s = p * p);
+    box_filter(plane, mean, (h, w, 1), (win, win), true, Border::Reflect101)?;
+    box_filter(&sq, std, (h, w, 1), (win, win), true, Border::Reflect101)?;
+    crate::par_zip(std, mean, |s, &m| {
+        let v = *s - m * m;
+        *s = (if v.is_nan() || v > 0.0 { v } else { 0.0 }).sqrt();
+    });
+    Some(())
+}
+
+/// `_u8(plane * gain)`: clipped to 0..1, scaled to 8 bits and rounded half up, in float32.
+fn to_u8(plane: &[f32], gain: f32) -> Vec<u8> {
+    plane
+        .par_iter()
+        .map(move |&p| {
+            let v = p * gain;
+            let v = if v.is_nan() || v > 0.0 { v } else { 0.0 };
+            let v = if v.is_nan() || v < 1.0 { v } else { 1.0 };
+            (v * 255.0 + 0.5) as u8
+        })
+        .collect()
+}
+
+/// The scalars of `compute_dust_stats`.
+pub struct DustStats<'a> {
+    /// Median and texture windows.
+    pub v_win: usize,
+    pub w_win: usize,
+    pub disk: crate::morph::Kernel<'a>,
+    pub min_spread: f64,
+    pub avg_px: usize,
+    pub mad_gain: f32,
+    pub sigma_min: f32,
+}
+
+/// `compute_dust_stats` from the density plane: (proxy, background, z, texture).
+pub fn dust_stats(dens: &[f32], (h, w): (usize, usize), c: &DustStats) -> Option<[Vec<f32>; 4]> {
+    use crate::filter::{Border, box_filter};
+    let n = h * w;
+    let q = crate::stats::np_percentiles_f64(dens, &[0.5, 99.5]);
+    let spread = q[1] - q[0];
+    let spread = if c.min_spread > spread {
+        c.min_spread
+    } else {
+        spread
+    };
+    let (lo, spread) = (q[0] as f32, spread as f32);
+    let mut proxy = vec![0f32; n];
+    crate::par_zip(&mut proxy, dens, move |p, &d| {
+        let v = (d - lo) / spread;
+        let v = if v.is_nan() || v > 0.0 { v } else { 0.0 };
+        *p = if v.is_nan() || v < 1.0 { v } else { 1.0 };
+    });
+    let mut med = vec![0u8; n];
+    crate::median::median_blur_u8(&to_u8(&proxy, 1.0), &mut med, h, w, c.v_win)?;
+    let mut background = vec![0f32; n];
+    crate::morph::morphology_mask(
+        &proxy,
+        &mut background,
+        (h, w, 1),
+        crate::morph::Op::Open,
+        crate::morph::Kernel { ..c.disk },
+        1,
+        Border::Constant,
+    )?;
+    background
+        .par_chunks_mut(BLOCK)
+        .zip(med.par_chunks(BLOCK))
+        .for_each(|(b, m)| {
+            for (b, &m) in b.iter_mut().zip(m) {
+                let a = m as f32 / 255.0;
+                *b = if a.is_nan() || b.is_nan() {
+                    f32::NAN
+                } else if a > *b {
+                    a
+                } else {
+                    *b
+                };
+            }
+        });
+    let mut diff = vec![0f32; n];
+    diff.par_chunks_mut(BLOCK)
+        .zip(proxy.par_chunks(BLOCK).zip(background.par_chunks(BLOCK)))
+        .for_each(|(d, (p, b))| {
+            for ((d, &p), &b) in d.iter_mut().zip(p).zip(b) {
+                *d = p - b;
+            }
+        });
+    let mut z = vec![0f32; n];
+    box_filter(
+        &diff,
+        &mut z,
+        (h, w, 1),
+        (c.avg_px, c.avg_px),
+        true,
+        Border::Reflect101,
+    )?;
+    let excess_u8: Vec<u8> = {
+        let abs: Vec<f32> = z.par_iter().map(|v| v.abs()).collect();
+        to_u8(&abs, c.mad_gain)
+    };
+    crate::median::median_blur_u8(&excess_u8, &mut med, h, w, c.w_win)?;
+    let (div, floor) = (255.0 * c.mad_gain, c.sigma_min);
+    z.par_chunks_mut(BLOCK)
+        .zip(med.par_chunks(BLOCK))
+        .for_each(|(z, m)| {
+            for (z, &m) in z.iter_mut().zip(m) {
+                let sigma = (m as f32 / div) / 0.6745;
+                let sigma = if sigma.is_nan() || sigma > floor {
+                    sigma
+                } else {
+                    floor
+                };
+                *z /= sigma;
+            }
+        });
+    let (mut mean, mut texture) = (vec![0f32; n], vec![0f32; n]);
+    box_mean_std(&proxy, (h, w), c.w_win, &mut mean, &mut texture)?;
+    Some([proxy, background, z, texture])
+}
+
+/// `_is_hair`: thin rather than a speck. Twice the largest L2 (5x5) distance from the edge of
+/// the padded component is its thickness; area over thickness squared reads as length over
+/// thickness for a ribbon, bent or straight.
+fn is_hair(
+    own: &[u8],
+    (bh, bw): (usize, usize),
+    area: usize,
+    (min_area, min_elong): (usize, f64),
+) -> bool {
+    use crate::distance::{Metric, distance_transform};
+    if area < min_area {
+        return false;
+    }
+    let (ph, pw) = (bh + 2, bw + 2);
+    let mut padded = vec![0u8; ph * pw];
+    for y in 0..bh {
+        padded[(y + 1) * pw + 1..(y + 1) * pw + 1 + bw].copy_from_slice(&own[y * bw..(y + 1) * bw]);
+    }
+    let d = distance_transform(&padded, ph, pw, Metric::L2Mask5);
+    let thickness = 2.0 * d.iter().fold(0f32, |m, &v| m.max(v)) as f64;
+    let sq = thickness * thickness;
+    area as f64 / if 1e-6 > sq { 1e-6 } else { sq } >= min_elong
+}
+
+/// Component `i` of `labels` in its bounding box, 1 on its pixels.
+fn component_crop(
+    labels: &[i32],
+    w: usize,
+    i: usize,
+    s: [i32; 5],
+) -> (Vec<u8>, (usize, usize, usize, usize)) {
+    let [bx, by, bw, bh, _] = s.map(|v| v as usize);
+    let mut own = vec![0u8; bw * bh];
+    for y in 0..bh {
+        for x in 0..bw {
+            own[y * bw + x] = (labels[(by + y) * w + bx + x] == i as i32) as u8;
+        }
+    }
+    (own, (bx, by, bw, bh))
+}
+
+/// `split_hairs(mask)`: (compact, hairs), hairs `None` when no component is thin enough.
+pub fn split_hairs(
+    mask: &[u8],
+    (h, w): (usize, usize),
+    hair: (usize, f64),
+) -> (Vec<u8>, Option<Vec<u8>>) {
+    let cc = crate::components::connected_components(mask, h, w, 8);
+    let classes: Vec<bool> = (1..cc.count)
+        .into_par_iter()
+        .map(|i| {
+            let (own, (_, _, bw, bh)) = component_crop(&cc.labels, w, i, cc.stats[i]);
+            is_hair(&own, (bh, bw), cc.stats[i][4] as usize, hair)
+        })
+        .collect();
+    let (mut compact, mut hairs) = (vec![0u8; h * w], vec![0u8; h * w]);
+    let mut any_hair = false;
+    for (p, &l) in cc.labels.iter().enumerate() {
+        if l > 0 {
+            if classes[l as usize - 1] {
+                hairs[p] = 1;
+                any_hair = true;
+            } else {
+                compact[p] = 1;
+            }
+        }
+    }
+    (compact, any_hair.then_some(hairs))
+}
+
+/// The scalars of `detect_luma_score`, as Python floats unless noted.
+pub struct LumaDetect<'a> {
+    pub hi: f64,
+    pub hi_hair: f64,
+    pub lo: f64,
+    pub proxy_min: f32,
+    pub reach_disk: crate::morph::Kernel<'a>,
+    pub texture_knee: f32,
+    pub texture_gain: f32,
+    pub hair: (usize, f64),
+    pub hair_fill_gain: f32,
+    pub hair_texture: (f64, f64),
+    pub texture_win: usize,
+    pub pad_px: f64,
+    pub score_floor: f64,
+}
+
+/// `detect_luma_score` from its stats planes: (score, hair mask), each `None` when empty.
+pub fn detect_luma_score(
+    stats: [&[f32]; 4],
+    (h, w): (usize, usize),
+    c: &LumaDetect,
+) -> Option<(Option<Vec<f32>>, Option<Vec<u8>>)> {
+    let [proxy, background, z, texture] = stats;
+    let n = h * w;
+    let seed_bar = c.hi.min(c.hi_hair) as f32;
+    let (pmin, lo) = (c.proxy_min, c.lo as f32);
+    let seeds: Vec<u8> = z
+        .par_iter()
+        .zip(proxy)
+        .map(move |(&z, &p)| (z >= seed_bar && p > pmin) as u8)
+        .collect();
+    if !seeds.par_iter().any(|&s| s != 0) {
+        return Some((None, None));
+    }
+    let mut near = vec![0u8; n];
+    crate::morph::morphology_mask(
+        &seeds,
+        &mut near,
+        (h, w, 1),
+        crate::morph::Op::Dilate,
+        crate::morph::Kernel { ..c.reach_disk },
+        1,
+        crate::filter::Border::Constant,
+    )?;
+    let grow: Vec<u8> = near
+        .par_iter()
+        .zip(z)
+        .map(move |(&nv, &z)| (nv != 0 && z >= lo) as u8)
+        .collect();
+    let cc = crate::components::connected_components(&grow, h, w, 8);
+    let lab = &cc.labels;
+    let (hi32, knee, gain) = (c.hi as f32, c.texture_knee, c.texture_gain);
+    let mut strong = vec![false; cc.count];
+    let mut peak = vec![0f32; cc.count];
+    for p in 0..n {
+        if seeds[p] == 0 {
+            continue;
+        }
+        let l = lab[p] as usize;
+        let t = texture[p] - knee;
+        let bar = hi32 * (1.0 + gain * if t.is_nan() || t > 0.0 { t } else { 0.0 });
+        if z[p] >= bar {
+            strong[l] = true;
+        }
+        if z[p] > peak[l] || z[p].is_nan() {
+            peak[l] = if peak[l].is_nan() { peak[l] } else { z[p] };
+        }
+    }
+    let candidates: Vec<usize> = (1..cc.count).filter(|&i| peak[i] > 0.0).collect();
+    let hairy: Vec<bool> = candidates
+        .par_iter()
+        .map(|&i| {
+            let (own, (_, _, bw, bh)) = component_crop(lab, w, i, cc.stats[i]);
+            is_hair(&own, (bh, bw), cc.stats[i][4] as usize, c.hair)
+        })
+        .collect();
+    let mut keep = vec![false; cc.count];
+    let mut is_hair_label = vec![false; cc.count];
+    for (&i, &hr) in candidates.iter().zip(&hairy) {
+        if hr {
+            is_hair_label[i] = true;
+        } else {
+            keep[i] = strong[i];
+        }
+    }
+    if is_hair_label.iter().any(|&b| b) {
+        let filled_src: Vec<f32> = (0..n)
+            .into_par_iter()
+            .map(|p| {
+                if is_hair_label[lab[p] as usize] {
+                    background[p]
+                } else {
+                    proxy[p]
+                }
+            })
+            .collect();
+        let (mut mean, mut filled) = (vec![0f32; n], vec![0f32; n]);
+        box_mean_std(&filled_src, (h, w), c.texture_win, &mut mean, &mut filled)?;
+        let fill_gain = c.hair_fill_gain;
+        let hair_tex: Vec<f32> = texture
+            .par_iter()
+            .zip(&filled)
+            .map(move |(&t, &f)| {
+                let g = fill_gain * f;
+                if t.is_nan() || g.is_nan() {
+                    f32::NAN
+                } else if g < t {
+                    g
+                } else {
+                    t
+                }
+            })
+            .collect();
+        let (hknee, hgain) = c.hair_texture;
+        for (&i, _) in candidates.iter().zip(&hairy).filter(|(_, h)| **h) {
+            let [bx, by, bw, bh, _] = cc.stats[i].map(|v| v as usize);
+            let vals: Vec<f32> = (by..by + bh)
+                .flat_map(|y| (bx..bx + bw).map(move |x| y * w + x))
+                .filter(|&p| lab[p] == i as i32)
+                .map(|p| hair_tex[p])
+                .collect();
+            let tex = crate::stats::median(&vals) as f64;
+            let over = tex - hknee;
+            // Python's max keeps a NaN first argument.
+            let bar = c.hi_hair * (1.0 + hgain * if 0.0 > over { 0.0 } else { over });
+            keep[i] = peak[i] >= bar as f32;
+        }
+    }
+    if !keep.iter().any(|&k| k) {
+        return Some((None, None));
+    }
+    let hit: Vec<u8> = lab.par_iter().map(|&l| keep[l as usize] as u8).collect();
+    let (compact, hairs) = split_hairs(&hit, (h, w), c.hair);
+    let score = compact
+        .par_iter()
+        .any(|&v| v != 0)
+        .then(|| crate::distance::mask_to_score(&compact, h, w, c.pad_px, c.score_floor));
+    Some((score, hairs))
+}

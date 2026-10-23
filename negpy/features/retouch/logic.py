@@ -43,7 +43,7 @@ _DETECT_GROW_REACH = 2  # times dust_size, px
 # defect raises its own bar. Clean film of any grain sits under the knee.
 _DETECT_TEXTURE_KNEE = 0.02
 _DETECT_TEXTURE_GAIN = 40.0  # bar multiplier per unit of σ over the knee
-# A hair-shaped component (_is_hair) tests its median σ against a higher, steeper knee: a hair across
+# A hair-shaped component (negpy_core's is_hair) tests its median σ against a higher, steeper knee: a hair across
 # busy film stays under it, a seed grown along a tonal edge does not.
 _DETECT_HAIR_TEXTURE_KNEE = 0.075
 _DETECT_HAIR_TEXTURE_GAIN = 150.0
@@ -206,7 +206,7 @@ _REPAIR_MAX_COMPONENTS = 256
 
 # Strong hairs and scratches route to structure-following inpaint instead of the weighted
 # fill: a long twist crosses varied background, and averaging across it smears the structure
-# the inpaint follows. Detection-scale px. See _is_hair.
+# the inpaint follows. Detection-scale px. See is_hair in negpy_core/src/retouch.rs.
 _HAIR_MIN_AREA = 20
 _HAIR_MIN_ELONG = 8.0  # area/thickness² ≈ length/thickness; round specks measure 1–3
 # cv2.inpaint fill: the dilate covers the PSF skirt at 1:1 (apply_hair_inpaint widens it to
@@ -221,37 +221,6 @@ _HAIR_RANGE_SAMPLE_PX = 1 << 20  # clean pixels sampled for a crop's encode rang
 _HAIR_TILE_PX = 1024  # inpaint tile; the solver walks whatever image it is handed
 _HAIR_TILE_HALO = 32  # px of neighbourhood a tile's core fill can see
 _HAIR_INPAINT_PAD = 16
-
-
-def _proxy_norm(img: ImageBuffer) -> Tuple[float, float]:
-    """(lo, spread) percentile normalization of the detection proxy."""
-    dens = -np.log10(np.clip(get_luminance(img), 1e-6, None))
-    lo, hi = np.percentile(dens, (0.5, 99.5))
-    return float(lo), max(float(hi - lo), _PROXY_MIN_SPREAD)
-
-
-def _is_hair(labels_sub: np.ndarray, area: int) -> bool:
-    """Hair/scratch (thin) rather than speck: ``2*max(distanceTransform)`` is the widest
-    the defect ever gets, so ``area/thickness²`` reads as length/thickness for a ribbon.
-
-    Thin, not straight — bending moves no interior pixel further from its edge, so a
-    twist scores like a straight hair, where PCA extent/width (the obvious measure)
-    calls it compact. The real hair on samples/ir/18.tiff: PCA aspect 2.45 = "speck",
-    thinness 26.3 = hair.
-    """
-    if area < _HAIR_MIN_AREA:
-        return False
-    # Pad, or a component touching the sub-image border reads as thin along that edge.
-    dist = negpy_core.distance_transform(np.pad(labels_sub.astype(np.uint8), 1), cv2.DIST_L2, 5)
-    thickness = 2.0 * float(dist.max())
-    return area / max(thickness * thickness, 1e-6) >= _HAIR_MIN_ELONG
-
-
-def _box_mean_std(plane: np.ndarray, win: int) -> Tuple[np.ndarray, np.ndarray]:
-    """Local mean and standard deviation of ``plane`` over a ``win``×``win`` box."""
-    mean = cv2.blur(plane, (win, win))
-    var = cv2.blur(plane * plane, (win, win)) - mean * mean
-    return mean, np.sqrt(np.clip(var, 0.0, None))
 
 
 def _density(img: ImageBuffer) -> np.ndarray:
@@ -271,20 +240,7 @@ def split_hairs(mask: np.ndarray) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """Defect mask → ``(compact, hairs)``. Compact defects go to the weighted fill; long
     twisted ones to structure-following inpaint, which keeps detail the fill would average
     across. ``hairs`` is None when nothing is thin enough."""
-    n_lbl, labels, stats, _ = negpy_core.connected_components_with_stats(np.ascontiguousarray(mask, dtype=np.uint8), 8)
-    compact = np.zeros(mask.shape[:2], dtype=np.uint8)
-    hairs: Optional[np.ndarray] = None
-    for i in range(1, n_lbl):
-        x0, y0 = int(stats[i, cv2.CC_STAT_LEFT]), int(stats[i, cv2.CC_STAT_TOP])
-        bw, bh = int(stats[i, cv2.CC_STAT_WIDTH]), int(stats[i, cv2.CC_STAT_HEIGHT])
-        labels_sub = labels[y0 : y0 + bh, x0 : x0 + bw] == i
-        if _is_hair(labels_sub, int(stats[i, cv2.CC_STAT_AREA])):
-            if hairs is None:
-                hairs = np.zeros(mask.shape[:2], dtype=np.uint8)
-            hairs[y0 : y0 + bh, x0 : x0 + bw][labels_sub] = 1
-        else:
-            compact[y0 : y0 + bh, x0 : x0 + bw][labels_sub] = 1
-    return compact, hairs
+    return negpy_core.split_hairs(np.ascontiguousarray(mask, dtype=np.uint8), (_HAIR_MIN_AREA, _HAIR_MIN_ELONG))
 
 
 def _u8(plane: np.ndarray) -> np.ndarray:
@@ -300,22 +256,16 @@ def compute_dust_stats(img: ImageBuffer, dust_size: int) -> Tuple[np.ndarray, ..
     expensive part of a detection pass, cacheable across threshold changes. ``z`` is the
     3x3-averaged density excess over the median background in units of its own local MAD σ;
     ``texture`` the wide-window σ of the density."""
-    lo, spread = _proxy_norm(img)
-    proxy = np.clip((_density(img) - lo) / spread, 0.0, 1.0).astype(np.float32)
+    shape = img.shape[:2]
     # Size is film footprint at _IR_DETECT_REF; the windows follow the plane (see _ir_win).
-    base_size = max(1.0, float(dust_size)) * film_scale(proxy.shape)
+    base_size = max(1.0, float(dust_size)) * film_scale(shape)
     v_win = int(max(3, base_size * 3.0)) * 2 + 1
-    w_win = _texture_win(proxy.shape, dust_size)
     # Median: the level of the film around a defect narrower than half the window. Opening:
     # identity on the soft ramp of a tonal edge and on anything wider than a speck, both of
     # which the median alone calls dense. Whichever is higher is the background.
     disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * int(round(base_size)) + 1,) * 2)
-    background = np.maximum(cv2.medianBlur(_u8(proxy), v_win).astype(np.float32) / 255.0, cv2.morphologyEx(proxy, cv2.MORPH_OPEN, disk))
-    excess = cv2.blur(proxy - background, (_DETECT_AVG_PX, _DETECT_AVG_PX))
-    mad = cv2.medianBlur(_u8(np.abs(excess) * _DETECT_MAD_GAIN), w_win).astype(np.float32) / (255.0 * _DETECT_MAD_GAIN)
-    z = excess / np.maximum(mad / 0.6745, _DETECT_SIGMA_MIN)
-    _, texture = _box_mean_std(proxy, w_win)
-    return tuple(np.ascontiguousarray(a.astype(np.float32)) for a in (proxy, background, z, texture))
+    constants = (_PROXY_MIN_SPREAD, _DETECT_AVG_PX, _DETECT_MAD_GAIN, _DETECT_SIGMA_MIN)
+    return negpy_core.dust_stats(_density(img), v_win, _texture_win(shape, dust_size), disk, constants)
 
 
 def detect_bar(slider: float) -> float:
@@ -344,45 +294,21 @@ def detect_luma_score(
     proxy, background, z, texture = stats[:4]
     hi = detect_bar(dust_threshold)
     hi_hair = hi if hair_threshold is None else detect_bar(hair_threshold)
-    seeds = (z >= min(hi, hi_hair)) & (proxy > _DETECT_PROXY_MIN)
-    if not np.any(seeds):
-        return None, None
     scale = film_scale(proxy.shape)
     lo = max(_DETECT_Z_GROW, min(hi, hi_hair) * _DETECT_Z_GROW_FRAC)
     reach = int(round(_DETECT_GROW_REACH * max(1, dust_size) * scale))
     disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1,) * 2)
-    near = negpy_core.morphology_ex(seeds.astype(np.uint8), cv2.MORPH_DILATE, disk) > 0
-    n_lbl, lab, stats_cc, _ = negpy_core.connected_components_with_stats((near & (z >= lo)).astype(np.uint8), 8)
-    bar = hi * (1.0 + _DETECT_TEXTURE_GAIN * np.maximum(texture - _DETECT_TEXTURE_KNEE, 0.0))
-    strong = np.zeros(n_lbl, dtype=bool)
-    strong[np.unique(lab[seeds & (z >= bar)])] = True
-    peak = np.zeros(n_lbl, dtype=np.float32)
-    np.maximum.at(peak, lab[seeds], z[seeds])
-    keep = np.zeros(n_lbl, dtype=bool)
-    hairs = []
-    for i in np.flatnonzero(peak[1:] > 0) + 1:
-        x0, y0 = int(stats_cc[i, cv2.CC_STAT_LEFT]), int(stats_cc[i, cv2.CC_STAT_TOP])
-        bw, bh = int(stats_cc[i, cv2.CC_STAT_WIDTH]), int(stats_cc[i, cv2.CC_STAT_HEIGHT])
-        if _is_hair(lab[y0 : y0 + bh, x0 : x0 + bw] == i, int(stats_cc[i, cv2.CC_STAT_AREA])):
-            hairs.append(i)
-        else:
-            keep[i] = strong[i]
-    if hairs:
-        is_hair = np.zeros(n_lbl, dtype=bool)
-        is_hair[hairs] = True
-        _, filled = _box_mean_std(np.where(is_hair[lab], background, proxy), _texture_win(proxy.shape, dust_size))
-        hair_tex = np.minimum(texture, _DETECT_HAIR_FILL_GAIN * filled)
-        for i in hairs:
-            x0, y0 = int(stats_cc[i, cv2.CC_STAT_LEFT]), int(stats_cc[i, cv2.CC_STAT_TOP])
-            bw, bh = int(stats_cc[i, cv2.CC_STAT_WIDTH]), int(stats_cc[i, cv2.CC_STAT_HEIGHT])
-            tex = float(np.median(hair_tex[y0 : y0 + bh, x0 : x0 + bw][lab[y0 : y0 + bh, x0 : x0 + bw] == i]))
-            keep[i] = peak[i] >= hi_hair * (1.0 + _DETECT_HAIR_TEXTURE_GAIN * max(tex - _DETECT_HAIR_TEXTURE_KNEE, 0.0))
-    if not keep.any():
-        return None, None
-    hit = keep[lab].astype(np.uint8)
-    compact, hair_mask = split_hairs(hit)
-    score = _mask_to_score(compact, _DETECT_PAD_PX * scale) if compact.any() else None
-    return score, hair_mask
+    planes = tuple(np.ascontiguousarray(a, dtype=np.float32) for a in (proxy, background, z, texture))
+    return negpy_core.detect_luma_score(
+        planes,
+        (hi, hi_hair, lo),
+        disk,
+        (_DETECT_PROXY_MIN, _DETECT_TEXTURE_KNEE, _DETECT_TEXTURE_GAIN),
+        (_HAIR_MIN_AREA, _HAIR_MIN_ELONG),
+        (_DETECT_HAIR_TEXTURE_KNEE, _DETECT_HAIR_TEXTURE_GAIN, _DETECT_HAIR_FILL_GAIN),
+        _texture_win(proxy.shape, dust_size),
+        (_DETECT_PAD_PX * scale, _IR_SCORE_FLOOR),
+    )
 
 
 def exclusion_cover(strokes: List[Tuple], shape: Tuple[int, int]) -> np.ndarray:

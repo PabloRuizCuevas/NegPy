@@ -158,3 +158,41 @@ def test_fit_refraction_gammas_matches_numpy():
     vl = vis_log.reshape(-1, 3)[fit]
     want = tuple(float(np.clip(np.median(vl[:, c] / xb), L._IR_GAMMA_LO, L._IR_GAMMA_HI)) for c in range(3))
     assert L._fit_refraction_gammas(ratio, vis_log, img) == want
+
+
+def _dust_stats_cv2(img, dust_size):
+    dens = L._density(img)
+    lo, hi = np.percentile(dens, (0.5, 99.5))
+    lo, spread = float(lo), max(float(hi - lo), L._PROXY_MIN_SPREAD)
+    proxy = np.clip((dens - lo) / spread, 0.0, 1.0).astype(np.float32)
+    base_size = max(1.0, float(dust_size)) * L.film_scale(proxy.shape)
+    v_win = int(max(3, base_size * 3.0)) * 2 + 1
+    w_win = L._texture_win(proxy.shape, dust_size)
+    disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * int(round(base_size)) + 1,) * 2)
+    background = np.maximum(cv2.medianBlur(L._u8(proxy), v_win).astype(np.float32) / 255.0, cv2.morphologyEx(proxy, cv2.MORPH_OPEN, disk))
+    excess = cv2.blur(proxy - background, (L._DETECT_AVG_PX, L._DETECT_AVG_PX))
+    mad = cv2.medianBlur(L._u8(np.abs(excess) * L._DETECT_MAD_GAIN), w_win).astype(np.float32) / (255.0 * L._DETECT_MAD_GAIN)
+    z = excess / np.maximum(mad / 0.6745, L._DETECT_SIGMA_MIN)
+    mean = cv2.blur(proxy, (w_win, w_win))
+    texture = np.sqrt(np.clip(cv2.blur(proxy * proxy, (w_win, w_win)) - mean * mean, 0.0, None))
+    return proxy, background, z, texture
+
+
+def test_compute_dust_stats_matches_cv2():
+    rng = np.random.default_rng(8)
+    img = (0.3 + 0.2 * rng.random((140, 180, 3))).astype(np.float32)
+    img[40:43, 50:53] *= 0.2  # a speck
+    for got, want in zip(L.compute_dust_stats(img, 2), _dust_stats_cv2(img, 2)):
+        assert got.tobytes() == want.tobytes()
+
+
+def test_split_hairs_matches_components():
+    mask = np.zeros((80, 80), dtype=np.uint8)
+    mask[10:12, 5:70] = 1  # a hair
+    mask[40:45, 40:45] = 1  # a speck
+    compact, hairs = L.split_hairs(mask)
+    want_hair = np.zeros_like(mask)
+    want_hair[10:12, 5:70] = 1
+    np.testing.assert_array_equal(hairs, want_hair)
+    np.testing.assert_array_equal(compact, mask - want_hair)
+    assert L.split_hairs(mask - want_hair)[1] is None

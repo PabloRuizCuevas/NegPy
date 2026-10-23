@@ -1424,7 +1424,7 @@ depends = []
 
 ["features/retouch/logic.py::_box_mean_std"]
 phase = 4
-status = "todo"
+status = "ported"
 calls = ["cv2.blur"]
 depends = []
 
@@ -1500,12 +1500,6 @@ status = "ported"
 calls = ["negpy_core.mask_to_score"]
 depends = []
 
-["features/retouch/logic.py::_proxy_norm"]
-phase = 4
-status = "todo"
-calls = ["np.percentile"]
-depends = []
-
 ["features/retouch/logic.py::_scratch_ridge"]
 phase = 4
 status = "todo"
@@ -1538,15 +1532,15 @@ depends = []
 
 ["features/retouch/logic.py::compute_dust_stats"]
 phase = 4
-status = "todo"
-calls = ["cv2.blur", "cv2.getStructuringElement", "cv2.medianBlur", "cv2.morphologyEx"]
-depends = ["_box_mean_std", "_density", "_proxy_norm"]
+status = "ported"
+calls = ["cv2.getStructuringElement", "negpy_core.dust_stats"]
+depends = ["_density"]
 
 ["features/retouch/logic.py::detect_luma_score"]
 phase = 4
-status = "todo"
-calls = ["cv2.getStructuringElement", "negpy_core.connected_components_with_stats", "negpy_core.morphology_ex", "np.median", "np.unique"]
-depends = ["_box_mean_std", "_is_hair", "_mask_to_score", "compute_dust_stats", "split_hairs"]
+status = "ported"
+calls = ["cv2.getStructuringElement", "negpy_core.detect_luma_score"]
+depends = ["compute_dust_stats"]
 
 ["features/retouch/logic.py::downsample_ir"]
 phase = 4
@@ -1610,9 +1604,9 @@ depends = ["_fill_rung"]
 
 ["features/retouch/logic.py::split_hairs"]
 phase = 4
-status = "todo"
-calls = ["negpy_core.connected_components_with_stats"]
-depends = ["_is_hair"]
+status = "ported"
+calls = ["negpy_core.split_hairs"]
+depends = []
 
 ["features/retouch/logic.py::strokes_to_score"]
 phase = 4

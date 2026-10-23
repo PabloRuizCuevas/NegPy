@@ -448,7 +448,147 @@ fn ir_attenuate<'py>(
     })
 }
 
+type Plane<'py> = Bound<'py, numpy::PyArray2<f32>>;
+
+fn plane_array<'py>(py: Python<'py>, v: Vec<f32>, (h, w): (usize, usize)) -> PyResult<Plane<'py>> {
+    use numpy::{IntoPyArray, PyArrayMethods};
+    v.into_pyarray(py).reshape([h, w])
+}
+
+/// `compute_dust_stats` from the density plane, with the median and texture windows, the
+/// opening disk and (minimum spread, averaging window, MAD gain, sigma floor).
+#[pyfunction]
+fn dust_stats<'py>(
+    py: Python<'py>,
+    dens: PyReadonlyArrayDyn<'py, f32>,
+    v_win: usize,
+    w_win: usize,
+    disk: numpy::PyReadonlyArray2<'py, u8>,
+    constants: (f64, usize, f32, f32),
+) -> PyResult<(Plane<'py>, Plane<'py>, Plane<'py>, Plane<'py>)> {
+    let (d, dims) = plane2(&dens)?;
+    let k = disk.as_array();
+    let cells: Vec<u8> = k.iter().copied().collect();
+    let (min_spread, avg_px, mad_gain, sigma_min) = constants;
+    let c = retouch::DustStats {
+        v_win,
+        w_win,
+        disk: crate::morph::Kernel {
+            mask: &cells,
+            w: k.ncols(),
+            h: k.nrows(),
+        },
+        min_spread,
+        avg_px,
+        mad_gain,
+        sigma_min,
+    };
+    let [p, b, z, t] = super::detach(py, d.len(), || retouch::dust_stats(d, dims, &c))
+        .ok_or_else(|| PyValueError::new_err("invalid dust stats input"))?;
+    Ok((
+        plane_array(py, p, dims)?,
+        plane_array(py, b, dims)?,
+        plane_array(py, z, dims)?,
+        plane_array(py, t, dims)?,
+    ))
+}
+
+fn u8_array<'py>(
+    py: Python<'py>,
+    v: Vec<u8>,
+    (h, w): (usize, usize),
+) -> PyResult<Bound<'py, numpy::PyArray2<u8>>> {
+    use numpy::{IntoPyArray, PyArrayMethods};
+    v.into_pyarray(py).reshape([h, w])
+}
+
+type SplitHairs<'py> = (
+    Bound<'py, numpy::PyArray2<u8>>,
+    Option<Bound<'py, numpy::PyArray2<u8>>>,
+);
+
+/// `split_hairs(mask)` of a uint8 mask with (minimum hair area, minimum elongation).
+#[pyfunction]
+fn split_hairs<'py>(
+    py: Python<'py>,
+    mask: numpy::PyReadonlyArray2<'py, u8>,
+    hair: (usize, f64),
+) -> PyResult<SplitHairs<'py>> {
+    let dims = (mask.shape()[0], mask.shape()[1]);
+    let m = mask
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous mask"))?;
+    let (compact, hairs) = super::detach(py, m.len(), || retouch::split_hairs(m, dims, hair));
+    Ok((
+        u8_array(py, compact, dims)?,
+        hairs.map(|h| u8_array(py, h, dims)).transpose()?,
+    ))
+}
+
+type LumaScore<'py> = (Option<Plane<'py>>, Option<Bound<'py, numpy::PyArray2<u8>>>);
+
+/// `detect_luma_score` from (proxy, background, z, texture) with (hi, hi_hair, lo), the
+/// reach disk, and the constants it reads, in the order of `retouch::LumaDetect`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn detect_luma_score<'py>(
+    py: Python<'py>,
+    stats: (
+        PyReadonlyArrayDyn<'py, f32>,
+        PyReadonlyArrayDyn<'py, f32>,
+        PyReadonlyArrayDyn<'py, f32>,
+        PyReadonlyArrayDyn<'py, f32>,
+    ),
+    bars: (f64, f64, f64),
+    reach_disk: numpy::PyReadonlyArray2<'py, u8>,
+    texture: (f32, f32, f32),
+    hair: (usize, f64),
+    hair_texture: (f64, f64, f32),
+    texture_win: usize,
+    pad: (f64, f64),
+) -> PyResult<LumaScore<'py>> {
+    let (proxy, dims) = plane2(&stats.0)?;
+    let n = proxy.len();
+    let (background, z, tex) = (
+        plane(&stats.1, n)?,
+        plane(&stats.2, n)?,
+        plane(&stats.3, n)?,
+    );
+    let k = reach_disk.as_array();
+    let cells: Vec<u8> = k.iter().copied().collect();
+    let c = retouch::LumaDetect {
+        hi: bars.0,
+        hi_hair: bars.1,
+        lo: bars.2,
+        proxy_min: texture.0,
+        reach_disk: crate::morph::Kernel {
+            mask: &cells,
+            w: k.ncols(),
+            h: k.nrows(),
+        },
+        texture_knee: texture.1,
+        texture_gain: texture.2,
+        hair,
+        hair_fill_gain: hair_texture.2,
+        hair_texture: (hair_texture.0, hair_texture.1),
+        texture_win,
+        pad_px: pad.0,
+        score_floor: pad.1,
+    };
+    let (score, hairs) = super::detach(py, n, || {
+        retouch::detect_luma_score([proxy, background, z, tex], dims, &c)
+    })
+    .ok_or_else(|| PyValueError::new_err("invalid detection input"))?;
+    Ok((
+        score.map(|s| plane_array(py, s, dims)).transpose()?,
+        hairs.map(|h| u8_array(py, h, dims)).transpose()?,
+    ))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(split_hairs, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_luma_score, m)?)?;
+    m.add_function(wrap_pyfunction!(dust_stats, m)?)?;
     m.add_function(wrap_pyfunction!(ir_defect_score, m)?)?;
     m.add_function(wrap_pyfunction!(ir_attenuate, m)?)?;
     m.add_function(wrap_pyfunction!(fit_refraction_gammas, m)?)?;
