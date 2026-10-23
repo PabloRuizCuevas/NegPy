@@ -35,7 +35,6 @@ from negpy.kernel.system.logging import get_logger, setup_logging
 from negpy.kernel.system.override import apply as apply_override
 from negpy.kernel.system.override import apply_stored as apply_stored_override
 from negpy.kernel.system.override import load_or_create as load_override
-from negpy.kernel.system.parallel import configure_cpu_parallel, resolve_cpu_parallel
 from negpy.kernel.system.paths import get_resource_path
 
 logger = get_logger(__name__)
@@ -264,10 +263,6 @@ def main() -> None:
         # skips bool values (see its docstring).
         if override_cfg.low_vram_export_tiling is None:
             APP_CONFIG.low_vram_export_tiling = bool(repo.get_global_setting("low_vram_export_tiling", False))
-
-        # Multi-core CPU rendering: override.toml, then the saved setting, then the default (on).
-        stored_parallel = repo.get_global_setting("cpu_parallel", None)
-        configure_cpu_parallel(resolve_cpu_parallel(APP_CONFIG.cpu_parallel, None if stored_parallel is None else bool(stored_parallel)))
 
         # Resolve flat-field gains by profile id from the on-disk store, which keeps the numpy
         # logic layer free of any storage dependency, then migrate any legacy DB-backed profiles

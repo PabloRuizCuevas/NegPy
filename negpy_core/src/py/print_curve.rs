@@ -230,7 +230,7 @@ fn apply_print_curve<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || print_curve::apply_print_curve(src, w, &p, dst));
+        py.detach(|| print_curve::apply_print_curve(src, w, &p, dst));
     }
     Ok(out)
 }

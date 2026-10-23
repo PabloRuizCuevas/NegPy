@@ -28,9 +28,7 @@ fn skew_sample<'py>(
     if st.len() != ce.len() {
         return Err(PyValueError::new_err("needs one center per station"));
     }
-    let (xs, ys) = super::detach(py, || {
-        skew::sample(img, (h, w), horizontal, (st, ce), half, nearest)
-    });
+    let (xs, ys) = py.detach(|| skew::sample(img, (h, w), horizontal, (st, ce), half, nearest));
     Ok((xs.into_pyarray(py), ys.into_pyarray(py)))
 }
 

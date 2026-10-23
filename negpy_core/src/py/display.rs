@@ -40,7 +40,7 @@ fn filled<'py, T: numpy::Element>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || fill(dst));
+        py.detach(|| fill(dst));
     }
     Ok(out)
 }

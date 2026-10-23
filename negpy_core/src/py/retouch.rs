@@ -37,9 +37,7 @@ fn fill_rung(
     let fill = fill
         .as_slice_mut()
         .map_err(|_| PyValueError::new_err("needs contiguous arrays"))?;
-    super::detach(py, || {
-        retouch::fill_rung(num, den, fill, first, reject_floor_mass, constants)
-    });
+    py.detach(|| retouch::fill_rung(num, den, fill, first, reject_floor_mass, constants));
     Ok(())
 }
 
@@ -64,7 +62,7 @@ fn blend_fill(
     if a_out.len() != n {
         return Err(PyValueError::new_err("array sizes disagree"));
     }
-    super::detach(py, || retouch::blend_fill(src, score, fill, a_out, ramp));
+    py.detach(|| retouch::blend_fill(src, score, fill, a_out, ramp));
     Ok(())
 }
 
@@ -86,7 +84,7 @@ fn add_floor_deficit(
     let out = out
         .as_slice_mut()
         .map_err(|_| PyValueError::new_err("needs contiguous arrays"))?;
-    super::detach(py, || retouch::add_floor_deficit(out, a, bs, bo));
+    py.detach(|| retouch::add_floor_deficit(out, a, bs, bo));
     Ok(())
 }
 
@@ -117,9 +115,7 @@ fn hair_encode(
     let dst = out
         .as_slice_mut()
         .map_err(|_| pyo3::exceptions::PyValueError::new_err("needs a contiguous out"))?;
-    super::detach(py, || {
-        crate::retouch::hair_encode(src, cn, lo, inv_span, inv_gamma, dst)
-    });
+    py.detach(|| crate::retouch::hair_encode(src, cn, lo, inv_span, inv_gamma, dst));
     Ok(())
 }
 

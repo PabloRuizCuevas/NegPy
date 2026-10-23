@@ -2,11 +2,11 @@
 
   record FILE...   run each frame through the preview load, the CPU pipeline, Square Before Crop and
                    the Auto-crop All Frames evidence, then resolve the files as one roll; save every
-                   call of a recorded function: inputs, result and its time on all cores and on one,
-                   called alone.
+                   call of a recorded function: inputs, result and its time on all cores, called
+                   alone.
   replay           call the current code with each saved input and compare the result bit for bit.
-  bench            time the current code on all cores against the saved time (one core against one
-                   for a recording that has no all-core time).
+  bench            time the current code on all cores against the saved time (older recordings
+                   saved a one-core time).
 
 Record on main just before a group is ported, so the corpus holds the behavior users have now.
 The corpus lives in $NEGPY_CORPUS (default ~/negpy-corpus), on a local disk that every worktree reads.
@@ -62,17 +62,11 @@ def _targets(phases: list[int] | None, statuses: tuple[str, ...]) -> list[str]:
     return sorted(k for k, v in manifest.items() if v["status"] in statuses and (not phases or v["phase"] in phases))
 
 
-def _threads(all_cores: bool) -> None:
-    """Every core, as users run the app, or one, for the per-core figure."""
+def _time(fn, args, kwargs) -> float:
+    """Best of a few runs on every core, as the app runs."""
     import cv2
-    import negpy_core
 
-    cv2.setNumThreads(-1 if all_cores else 1)
-    negpy_core.set_parallel(all_cores)
-
-
-def _time(fn, args, kwargs, all_cores: bool = True) -> float:
-    _threads(all_cores)
+    cv2.setNumThreads(-1)
     best = float("inf")
     for _ in range(TIMING_REPEATS):
         a, kw = copy.deepcopy((args, kwargs))
@@ -121,8 +115,6 @@ class Recorder:
                 if len(payload) <= MAX_CALL_BYTES:
                     record = pickle.loads(payload)
                     record["seconds_all"] = _time(fn, inputs[0], inputs[1])
-                    record["seconds"] = _time(fn, inputs[0], inputs[1], all_cores=False)
-                    _threads(True)
                     folder = _folder(key)
                     folder.mkdir(parents=True, exist_ok=True)
                     (folder / f"{self.saved[key]:04d}.pkl").write_bytes(pickle.dumps(record, protocol=5))
@@ -296,10 +288,9 @@ def bench(phases: list[int] | None) -> int:
             ratios = []
             for f in files:
                 rec = pickle.loads(f.read_bytes())
-                # The gate is all cores, as users run the app; older recordings timed one.
-                all_cores = "seconds_all" in rec
-                saved = rec["seconds_all"] if all_cores else rec["seconds"]
-                ratios.append(_time(fn, rec["args"], rec["kwargs"], all_cores) / max(saved, 1e-9))
+                # Older recordings saved a one-core time only.
+                saved = rec.get("seconds_all", rec.get("seconds"))
+                ratios.append(_time(fn, rec["args"], rec["kwargs"]) / max(saved, 1e-9))
             ratio = statistics.median(ratios)
             slower += ratio > 1.0
             print(f"{'SLOWER' if ratio > 1.0 else 'ok':6s} {ratio:6.3f}x  {key}")

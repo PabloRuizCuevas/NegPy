@@ -38,7 +38,7 @@ fn luminance<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || analysis::luminance(data, dst));
+        py.detach(|| analysis::luminance(data, dst));
     }
     Ok(out)
 }
@@ -57,7 +57,7 @@ fn to_log_density<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || analysis::to_log_density(data, dst));
+        py.detach(|| analysis::to_log_density(data, dst));
     }
     Ok(out)
 }
@@ -76,7 +76,7 @@ fn normalize_to_uint8<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || analysis::normalize_to_uint8(data, dst));
+        py.detach(|| analysis::normalize_to_uint8(data, dst));
     }
     Ok(out)
 }
@@ -95,9 +95,10 @@ fn detection_luma<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || analysis::detection_luma(data, dst)).ok_or_else(|| {
-            pyo3::exceptions::PyIndexError::new_err("percentiles of an empty array")
-        })?;
+        py.detach(|| analysis::detection_luma(data, dst))
+            .ok_or_else(|| {
+                pyo3::exceptions::PyIndexError::new_err("percentiles of an empty array")
+            })?;
     }
     Ok(out)
 }
@@ -125,7 +126,7 @@ fn base_blocks<'py>(
         .iter()
         .map(|&v| v as u8)
         .collect();
-    let found = super::detach(py, || analysis::base_blocks(data, &mask, h, w));
+    let found = py.detach(|| analysis::base_blocks(data, &mask, h, w));
     found
         .map(|rows| {
             let flat: Vec<Vec<f32>> = rows.iter().map(|r| r.to_vec()).collect();
@@ -147,9 +148,7 @@ fn find_rebate_level(
         return Err(PyValueError::new_err("find_rebate_level needs a 2-D array"));
     };
     let data = slice(&lum)?;
-    Ok(super::detach(py, || {
-        analysis::find_rebate_level(data, h, w, film_roi, bed)
-    }))
+    Ok(py.detach(|| analysis::find_rebate_level(data, h, w, film_roi, bed)))
 }
 
 /// `_walk_border_depth(lines, limit, bridge, relative_step)` for an L x N float32 array.
@@ -165,10 +164,9 @@ fn walk_border_depth<'py>(
         return Err(PyValueError::new_err("walk_border_depth needs a 2-D array"));
     };
     let data = slice(&lines)?;
-    let out = super::detach(py, || {
-        analysis::walk_border_depth(data, rows, n, limit, bridge, relative_step)
-    })
-    .ok_or_else(|| PyValueError::new_err("walk_border_depth needs at least limit + 3 rows"))?;
+    let out = py
+        .detach(|| analysis::walk_border_depth(data, rows, n, limit, bridge, relative_step))
+        .ok_or_else(|| PyValueError::new_err("walk_border_depth needs at least limit + 3 rows"))?;
     Ok(numpy::PyArray1::from_vec(py, out))
 }
 
@@ -185,7 +183,7 @@ fn measure_film_edges(
         ));
     };
     let data = slice(&lum)?;
-    let [t, b, l, r] = super::detach(py, || analysis::measure_film_edges(data, h, w, film_roi));
+    let [t, b, l, r] = py.detach(|| analysis::measure_film_edges(data, h, w, film_roi));
     Ok((t, b, l, r))
 }
 
@@ -200,9 +198,7 @@ fn trim_film_edges(
         return Err(PyValueError::new_err("trim_film_edges needs a 2-D array"));
     };
     let data = slice(&lum)?;
-    Ok(super::detach(py, || {
-        analysis::trim_film_edges(data, h, w, film_roi)
-    }))
+    Ok(py.detach(|| analysis::trim_film_edges(data, h, w, film_roi)))
 }
 
 /// `measure_film_border(lum, film_roi)`: (top, bottom, left, right) border fractions.
@@ -218,7 +214,7 @@ fn measure_film_border(
         ));
     };
     let data = slice(&lum)?;
-    let [t, b, l, r] = super::detach(py, || analysis::measure_film_border(data, h, w, film_roi));
+    let [t, b, l, r] = py.detach(|| analysis::measure_film_border(data, h, w, film_roi));
     Ok((t, b, l, r))
 }
 
@@ -235,9 +231,7 @@ fn roi_from_measured_border(
         ));
     };
     let data = slice(&lum)?;
-    Ok(super::detach(py, || {
-        analysis::roi_from_measured_border(data, h, w, film_roi)
-    }))
+    Ok(py.detach(|| analysis::roi_from_measured_border(data, h, w, film_roi)))
 }
 
 /// `_smooth_signal(signal, window)` for a 1-D float32 signal.
@@ -248,11 +242,13 @@ fn smooth_signal<'py>(
     window: usize,
 ) -> PyResult<Bound<'py, numpy::PyArray1<f32>>> {
     let data = slice(&signal)?.to_vec();
-    let out = super::detach(py, || analysis::smooth_signal(&data, window)).ok_or_else(|| {
-        PyValueError::new_err(
-            "smooth_signal covers a window of at most 31, no longer than the signal",
-        )
-    })?;
+    let out = py
+        .detach(|| analysis::smooth_signal(&data, window))
+        .ok_or_else(|| {
+            PyValueError::new_err(
+                "smooth_signal covers a window of at most 31, no longer than the signal",
+            )
+        })?;
     Ok(numpy::PyArray1::from_vec(py, out))
 }
 
@@ -276,9 +272,7 @@ fn snap_edge_to_gradient(
         min_dominance,
         min_window_px,
     };
-    Ok(super::detach(py, || {
-        analysis::snap_edge_to_gradient(data, idx, is_start, snap)
-    }))
+    Ok(py.detach(|| analysis::snap_edge_to_gradient(data, idx, is_start, snap)))
 }
 
 type Refined<'py> = (
@@ -300,9 +294,7 @@ fn refine_film_roi_by_tiers<'py>(
         ));
     };
     let data = slice(&lum)?;
-    let found = super::detach(py, || {
-        analysis::refine_film_roi_by_tiers(data, h, w, film_roi)
-    });
+    let found = py.detach(|| analysis::refine_film_roi_by_tiers(data, h, w, film_roi));
     Ok(found.map(|r| {
         (
             r.roi,
@@ -328,9 +320,10 @@ fn refine_frame_bounds(
         }
     };
     let data = slice(&image)?;
-    super::detach(py, || analysis::refine_frame_bounds(data, h, w, cn)).ok_or_else(|| {
-        PyValueError::new_err("refine_frame_bounds needs an image at least 31 px on each side")
-    })
+    py.detach(|| analysis::refine_frame_bounds(data, h, w, cn))
+        .ok_or_else(|| {
+            PyValueError::new_err("refine_frame_bounds needs an image at least 31 px on each side")
+        })
 }
 
 type Gated<'py> = (
@@ -357,12 +350,11 @@ fn refine_roi_to_image<'py>(
         }
     };
     let data = slice(&img)?;
-    let (roi, tiers) = super::detach(py, || {
-        analysis::refine_roi_to_image(data, h, w, cn, film_roi)
-    })
-    .ok_or_else(|| {
-        PyValueError::new_err("refine_roi_to_image: image too small for the Sobel path")
-    })?;
+    let (roi, tiers) = py
+        .detach(|| analysis::refine_roi_to_image(data, h, w, cn, film_roi))
+        .ok_or_else(|| {
+            PyValueError::new_err("refine_roi_to_image: image too small for the Sobel path")
+        })?;
     Ok(match tiers {
         Some(t) => (
             roi,
@@ -396,7 +388,7 @@ fn detect_film_bounds<'py>(
         }
     };
     let data = slice(&img)?;
-    let d = super::detach(py, || crate::detect::detect_film_bounds(data, h, w, cn));
+    let d = py.detach(|| crate::detect::detect_film_bounds(data, h, w, cn));
     Ok((
         d.consensus.map(consensus_fields),
         numpy::PyArray1::from_vec(py, d.profile),
@@ -425,9 +417,7 @@ fn normalize_log_image<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || {
-            analysis::normalize_log_image(data, floors, ceils, dst)
-        });
+        py.detach(|| analysis::normalize_log_image(data, floors, ceils, dst));
     }
     Ok(out)
 }
@@ -448,7 +438,7 @@ fn block_median_grid<'py>(
         return Err(PyValueError::new_err("block size must be positive"));
     }
     let data = slice(&img)?;
-    let grid = super::detach(py, || analysis::block_median_grid(data, (h, w, c), b));
+    let grid = py.detach(|| analysis::block_median_grid(data, (h, w, c), b));
     numpy::PyArray1::from_vec(py, grid).reshape(vec![h / b, w / b, c])
 }
 
@@ -463,9 +453,7 @@ fn threshold_box(
         return Err(PyValueError::new_err("threshold_box needs a 2-D array"));
     };
     let data = slice(&lum)?;
-    Ok(super::detach(py, || {
-        analysis::threshold_box(data, h, w, threshold)
-    }))
+    Ok(py.detach(|| analysis::threshold_box(data, h, w, threshold)))
 }
 
 /// Batch autocrop's `_vertical_edge_profile` of an HxW or HxWxC (C >= 3) float32 image:
@@ -485,7 +473,7 @@ fn batch_edge_profile<'py>(
         }
     };
     let data = slice(&img)?;
-    let (profile, contrast) = super::detach(py, || analysis::batch_edge_profile(data, h, w, cn));
+    let (profile, contrast) = py.detach(|| analysis::batch_edge_profile(data, h, w, cn));
     Ok((numpy::PyArray1::from_vec(py, profile), contrast))
 }
 
@@ -505,9 +493,10 @@ fn film_and_picture(
 ) -> PyResult<(Option<analysis::Roi>, analysis::Roi)> {
     let (h, w) = det_dims(&det)?;
     let data = slice(&det)?;
-    super::detach(py, || analysis::film_and_picture(data, h, w)).ok_or_else(|| {
-        PyValueError::new_err("film_and_picture: image too small for the Sobel path")
-    })
+    py.detach(|| analysis::film_and_picture(data, h, w))
+        .ok_or_else(|| {
+            PyValueError::new_err("film_and_picture: image too small for the Sobel path")
+        })
 }
 
 /// `measure_base_log` of an HxWx3 float32 detection image: (r, g, b) log10 or None.
@@ -518,7 +507,7 @@ fn measure_base_log(
 ) -> PyResult<Option<[f64; 3]>> {
     let (h, w) = det_dims(&det)?;
     let data = slice(&det)?;
-    Ok(super::detach(py, || analysis::measure_base_log(data, h, w)))
+    Ok(py.detach(|| analysis::measure_base_log(data, h, w)))
 }
 
 type ConsensusFields = (

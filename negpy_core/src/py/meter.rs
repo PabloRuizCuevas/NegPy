@@ -52,9 +52,7 @@ fn textured_percentile(
     q: f64,
 ) -> PyResult<f32> {
     let (g, a) = (grid_of(&grid)?, activity(gate)?);
-    Ok(super::detach(py, || {
-        meter::percentile(&textured(g, Some(norm), a), q)
-    }))
+    Ok(py.detach(|| meter::percentile(&textured(g, Some(norm), a), q)))
 }
 
 /// The anchor meter's measurement over the grid's textured normalized luma.
@@ -67,9 +65,7 @@ fn textured_anchor(
     clip: f64,
 ) -> PyResult<f64> {
     let (g, a) = (grid_of(&grid)?, activity(gate)?);
-    Ok(super::detach(py, || {
-        meter::anchor_measure(&textured(g, Some(norm), a), clip)
-    }))
+    Ok(py.detach(|| meter::anchor_measure(&textured(g, Some(norm), a), clip)))
 }
 
 /// The textural range of the grid's textured raw-log luma.
@@ -81,9 +77,7 @@ fn textured_range(
     clip: f64,
 ) -> PyResult<f64> {
     let (g, a) = (grid_of(&grid)?, activity(gate)?);
-    Ok(super::detach(py, || {
-        meter::textural_range(&textured(g, None, a), clip)
-    }))
+    Ok(py.detach(|| meter::textural_range(&textured(g, None, a), clip)))
 }
 
 type Band = (f32, f32);
@@ -153,7 +147,7 @@ fn neutral_axis(
     };
     let f = [floors.0, floors.1, floors.2];
     let e = [ceils.0, ceils.1, ceils.2];
-    let axis = super::detach(py, || {
+    let axis = py.detach(|| {
         meter::neutral_axis(
             data,
             (f.map(|v| v as f32), e.map(|v| v as f32)),

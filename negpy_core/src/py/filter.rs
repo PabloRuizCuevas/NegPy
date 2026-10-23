@@ -48,7 +48,7 @@ fn filled<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || fill(dst))
+        py.detach(|| fill(dst))
             .ok_or_else(|| PyValueError::new_err("kernel shape not covered by negpy_core"))?;
     }
     Ok(out)

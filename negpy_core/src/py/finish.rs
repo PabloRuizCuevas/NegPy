@@ -47,7 +47,7 @@ fn apply_carrier<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || finish::apply_carrier(src, (h, w), &c, dst));
+        py.detach(|| finish::apply_carrier(src, (h, w), &c, dst));
     }
     Ok(out)
 }

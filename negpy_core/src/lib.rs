@@ -45,7 +45,6 @@ mod py;
 #[cfg(feature = "python")]
 #[pyo3::pymodule]
 fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> {
-    py::register(m)?;
     py::stats::register(m)?;
     py::resize::register(m)?;
     py::filter::register(m)?;

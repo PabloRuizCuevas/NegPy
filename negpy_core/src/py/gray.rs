@@ -35,7 +35,7 @@ fn bgr_to_gray<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || gray::bgr_to_gray(data, dst));
+        py.detach(|| gray::bgr_to_gray(data, dst));
     }
     Ok(out)
 }
@@ -66,10 +66,8 @@ fn gaussian_blur_u8<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || {
-            gray::gaussian_blur_u8(data, dst, dims, ksize, (sigma_x, sigma_y), border)
-        })
-        .ok_or_else(|| PyValueError::new_err("invalid kernel size"))?;
+        py.detach(|| gray::gaussian_blur_u8(data, dst, dims, ksize, (sigma_x, sigma_y), border))
+            .ok_or_else(|| PyValueError::new_err("invalid kernel size"))?;
     }
     Ok(out)
 }
@@ -94,7 +92,7 @@ fn threshold_otsu<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || {
+        py.detach(|| {
             let t = gray::otsu_threshold(data);
             gray::threshold_binary(data, dst, t, maxval, invert);
             t
@@ -122,7 +120,7 @@ fn canny<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || gray::canny(data, dst, h, w, low, high))
+        py.detach(|| gray::canny(data, dst, h, w, low, high))
             .ok_or_else(|| PyValueError::new_err("invalid canny input"))?;
     }
     Ok(out)
@@ -151,7 +149,7 @@ fn median_blur<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || crate::median::median_blur_u8(data, dst, h, w, ksize))
+        py.detach(|| crate::median::median_blur_u8(data, dst, h, w, ksize))
             .ok_or_else(|| PyValueError::new_err("ksize must be odd"))?;
     }
     Ok(out)

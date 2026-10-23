@@ -27,7 +27,7 @@ fn count_clipped_rows(
     let dst = out
         .as_slice_mut()
         .map_err(|_| PyValueError::new_err("needs a contiguous out"))?;
-    super::detach(py, || hdr::count_clipped_rows(v, (w, cn), saturation, dst));
+    py.detach(|| hdr::count_clipped_rows(v, (w, cn), saturation, dst));
     Ok(())
 }
 
@@ -54,9 +54,7 @@ fn hdr_accumulate(
     let d = den
         .as_slice_mut()
         .map_err(|_| PyValueError::new_err("needs contiguous sums"))?;
-    super::detach(py, || {
-        hdr::accumulate(n, d, v, ratio, (saturation, rolloff_start))
-    });
+    py.detach(|| hdr::accumulate(n, d, v, ratio, (saturation, rolloff_start)));
     Ok(())
 }
 

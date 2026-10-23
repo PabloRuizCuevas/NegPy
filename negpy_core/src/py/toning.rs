@@ -79,7 +79,7 @@ fn apply_chemical_toning<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || toning::apply_chemical_toning(src, dst, &t));
+        py.detach(|| toning::apply_chemical_toning(src, dst, &t));
     }
     Ok(out)
 }

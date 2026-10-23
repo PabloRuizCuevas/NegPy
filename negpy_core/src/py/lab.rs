@@ -40,10 +40,8 @@ fn usm_sharpen<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || {
-            lab::usm_sharpen(src, (h, w), (gain, masking), k, spaces, dst)
-        })
-        .ok_or_else(|| PyValueError::new_err("the image is too small for the blur"))?;
+        py.detach(|| lab::usm_sharpen(src, (h, w), (gain, masking), k, spaces, dst))
+            .ok_or_else(|| PyValueError::new_err("the image is too small for the blur"))?;
     }
     Ok(out)
 }
@@ -79,10 +77,8 @@ fn chroma_denoise<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || {
-            lab::chroma_denoise(src, (h, w), sigma, k, spaces, dst)
-        })
-        .ok_or_else(|| PyValueError::new_err("the image is too small for the blur"))?;
+        py.detach(|| lab::chroma_denoise(src, (h, w), sigma, k, spaces, dst))
+            .ok_or_else(|| PyValueError::new_err("the image is too small for the blur"))?;
     }
     Ok(out)
 }
@@ -121,7 +117,7 @@ fn glow_and_halation<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || {
+        py.detach(|| {
             lab::glow_and_halation(src, (h, w), (glow, halation), (lum.into(), inv_gamma), dst)
         })
         .ok_or_else(|| PyValueError::new_err("a bloom needs an odd kernel size"))?;
@@ -159,7 +155,7 @@ fn clahe<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || lab::clahe(src, (h, w), strength, spaces, dst));
+        py.detach(|| lab::clahe(src, (h, w), strength, spaces, dst));
     }
     Ok(out)
 }
@@ -197,7 +193,7 @@ fn rl_sharpen<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || lab::rl_sharpen(src, (h, w), &params, k, dst))
+        py.detach(|| lab::rl_sharpen(src, (h, w), &params, k, dst))
             .ok_or_else(|| PyValueError::new_err("the image is too small for the blur"))?;
     }
     Ok(out)
@@ -235,7 +231,7 @@ fn split_toning<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || lab::split_toning(src, tints, spaces, dst));
+        py.detach(|| lab::split_toning(src, tints, spaces, dst));
     }
     Ok(out)
 }

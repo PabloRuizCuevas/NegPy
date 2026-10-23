@@ -27,7 +27,7 @@ fn run<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        super::detach(py, || f(src, (h, w), dst))
+        py.detach(|| f(src, (h, w), dst))
             .ok_or_else(|| PyValueError::new_err("the image is too small for the blur"))?;
     }
     Ok(out)
