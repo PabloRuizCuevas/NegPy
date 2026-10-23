@@ -751,7 +751,71 @@ fn ir_gain<'py>(
     })
 }
 
+/// `cv2.inpaint(img, mask, radius, cv2.INPAINT_NS)` of an HxWx3 uint8 image.
+#[pyfunction]
+fn inpaint_ns<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, u8>,
+    mask: PyReadonlyArrayDyn<'py, u8>,
+    radius: f64,
+) -> PyResult<Bound<'py, numpy::PyArrayDyn<u8>>> {
+    use numpy::{IntoPyArray, PyArrayMethods};
+    let [h, w, 3] = img.shape()[..] else {
+        return Err(PyValueError::new_err("needs an HxWx3 image"));
+    };
+    if mask.shape() != [h, w] {
+        return Err(PyValueError::new_err("needs an HxW mask"));
+    }
+    let (src, m) = match (img.as_slice(), mask.as_slice()) {
+        (Ok(s), Ok(m)) => (s, m),
+        _ => return Err(PyValueError::new_err("needs contiguous arrays")),
+    };
+    let out = super::detach(py, src.len(), || {
+        let mut out = src.to_vec();
+        crate::inpaint::inpaint_ns(&mut out, m, (h, w), radius);
+        out
+    });
+    out.into_pyarray(py).reshape(vec![h, w, 3])
+}
+
+/// `apply_hair_inpaint` of an HxWx3 image and its dilated hair mask, before the clean grain, with
+/// (radius, dilate px, pad, tile, halo, range sample px, gamma).
+#[pyfunction]
+fn hair_fill<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    mask: PyReadonlyArrayDyn<'py, u8>,
+    constants: (f64, usize, usize, usize, usize, usize, f64),
+) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
+    let (src, dims) = image3(&img)?;
+    let m = mask
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous mask"))?;
+    let (radius, dilate_px, pad, tile, halo, sample_px, gamma) = constants;
+    if m.len() != dims.0 * dims.1 || tile == 0 || sample_px == 0 {
+        return Err(PyValueError::new_err(
+            "needs an HxW mask and nonzero tile and sample",
+        ));
+    }
+    let c = crate::inpaint::HairFill {
+        radius,
+        dilate_px,
+        pad,
+        tile,
+        halo,
+        sample_px,
+        gamma,
+    };
+    new_image(py, img.shape(), |dst| {
+        dst.copy_from_slice(src);
+        crate::inpaint::hair_fill(src, dims, m, &c, dst);
+        Some(())
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(inpaint_ns, m)?)?;
+    m.add_function(wrap_pyfunction!(hair_fill, m)?)?;
     m.add_function(wrap_pyfunction!(ir_vis_log, m)?)?;
     m.add_function(wrap_pyfunction!(ir_gain, m)?)?;
     m.add_function(wrap_pyfunction!(release_score, m)?)?;

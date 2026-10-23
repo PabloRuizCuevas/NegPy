@@ -70,7 +70,9 @@ negpy_core/Cargo.lock lists the exact versions.
 negpy_core/src/resize.rs and negpy_core/src/filter.rs port OpenCV's float32 area
 resize, separable filter engine and bit-exact Gaussian kernel (including its
 softfloat exp table) so their results match cv2 bit for bit. negpy_core/src/lsd.rs
-ports OpenCV's line segment detector (`modules/imgproc/src/lsd.cpp`). OpenCV, Apache
+ports OpenCV's line segment detector (`modules/imgproc/src/lsd.cpp`),
+negpy_core/src/inpaint.rs its Navier-Stokes inpaint, and
+negpy_core/src/seam.rs its dynamic-programming seam finder. OpenCV, Apache
 License 2.0. https://github.com/opencv/opencv
 
 negpy_core/src/sift.rs and negpy_core/src/register.rs port OpenCV 4.13's SIFT
