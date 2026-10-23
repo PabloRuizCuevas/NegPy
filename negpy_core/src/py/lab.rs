@@ -129,7 +129,43 @@ fn glow_and_halation<'py>(
     Ok(out)
 }
 
+/// `apply_clahe(img, strength)` of an HxWx3 float32 image for strength > 0, then the working
+/// Lab constants.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn clahe<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+    strength: f64,
+    to_xyz: PyReadonlyArray2<'py, f32>,
+    to_rgb: PyReadonlyArray2<'py, f32>,
+    white: PyReadonlyArray1<'py, f32>,
+    eps: f32,
+    kappa: f32,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let [h, w, 3] = img.shape()[..] else {
+        return Err(PyValueError::new_err("needs an HxWx3 image"));
+    };
+    let spaces = (
+        space(&to_xyz, &white, eps, kappa)?,
+        space(&to_rgb, &white, eps, kappa)?,
+    );
+    let src = img
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous image"))?;
+    let out = PyArrayDyn::<f32>::zeros(py, img.shape(), false);
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        super::detach(py, || lab::clahe(src, (h, w), strength, spaces, dst));
+    }
+    Ok(out)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(clahe, m)?)?;
     m.add_function(wrap_pyfunction!(glow_and_halation, m)?)?;
     m.add_function(wrap_pyfunction!(usm_sharpen, m)?)?;
     m.add_function(wrap_pyfunction!(chroma_denoise, m)?)

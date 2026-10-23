@@ -5,7 +5,7 @@ import pytest
 from core_oracle import cv2_oracle
 
 from negpy.features.lab.logic import _smoothstep, gaussian_kernel_1d, sharpen_shadow_gain
-from negpy.features.lab.logic import LUM_B, LUM_G, LUM_R, apply_glow_and_halation
+from negpy.features.lab.logic import LUM_B, LUM_G, LUM_R, apply_clahe, apply_glow_and_halation
 from negpy.kernel.image.logic import WORKING_LAB, lab_to_rgb_working, rgb_to_lab_working, working_oetf_encode
 
 pytestmark = cv2_oracle
@@ -93,3 +93,54 @@ def test_glow_and_halation_matches_numpy_and_cv2(shape, glow, halation, scale):
     img = _RNG.random((*shape, 3), dtype=np.float32)
     want = _glow_reference(img, glow, halation, scale)
     assert apply_glow_and_halation(img, glow, halation, scale).tobytes() == want.tobytes()
+
+
+def _clahe_cdfs(bins, clip_limit):
+    """Per-tile clipped CDFs, (64, 256): integer counts, a float32-truncated limit, the excess
+    spread evenly with the remainder to the first bins, as clahe_hist.wgsl and clahe_cdf.wgsl."""
+    h, w = bins.shape
+    tsy, tsx = -(-h // 8), -(-w // 8)
+    comb = ((np.arange(h) // tsy)[:, None] * 8 + (np.arange(w) // tsx)[None, :]) * 256 + bins
+    hist = np.bincount(comb.ravel(), minlength=64 * 256).reshape(64, 256)
+    total = hist.sum(axis=1)
+    limit = np.maximum(1, (np.float32(clip_limit) * total.astype(np.float32) / np.float32(256)).astype(np.int64))
+    clipped = np.minimum(hist, limit[:, None])
+    excess = (hist - clipped).sum(axis=1)
+    counts = clipped + (excess // 256)[:, None] + (np.arange(256)[None, :] < (excess % 256)[:, None])
+    return np.cumsum(counts, axis=1).astype(np.float32) / np.maximum(total, 1)[:, None].astype(np.float32)
+
+
+def _clahe_axis(n):
+    tp = np.arange(n, dtype=np.float32) / np.float32(n) * np.float32(8) - np.float32(0.5)
+    tf = np.floor(tp)
+    rf = tp - tf
+    return np.maximum(tf.astype(np.int32), 0), np.minimum(tf.astype(np.int32) + 1, 7), rf * rf * (np.float32(3.0) - np.float32(2.0) * rf)
+
+
+def _clahe_reference(img, strength):
+    """The NumPy CLAHE that negpy_core.clahe replaces."""
+    lab = rgb_to_lab_working(img)
+    l_chan = lab[..., 0]
+    bins = np.clip(l_chan / np.float32(100.0) * np.float32(255.0), 0.0, 255.0).astype(np.int32)
+    cdfs = _clahe_cdfs(bins, strength * 2.5).reshape(-1)
+    (y0, y1, fy), (x0, x1, fx) = _clahe_axis(img.shape[0]), _clahe_axis(img.shape[1])
+    v = [cdfs[(ty[:, None] * 8 + tx[None, :]) * 256 + bins] for ty, tx in ((y0, x0), (y0, x1), (y1, x0), (y1, x1))]
+    top = v[0] + (v[1] - v[0]) * fx[None, :]
+    bot = v[2] + (v[3] - v[2]) * fx[None, :]
+    cdf_l = top + (bot - top) * fy[:, None]
+    lab[..., 0] = l_chan + (cdf_l * np.float32(100.0) - l_chan) * np.float32(strength)
+    return np.clip(lab_to_rgb_working(lab), 0.0, 1.0)
+
+
+def test_clahe_cdfs_are_monotone_and_end_at_one():
+    cdfs = _clahe_cdfs(np.random.default_rng(7).integers(0, 256, (128, 128)).astype(np.int32), 2.5)
+    assert cdfs.shape == (64, 256)
+    assert np.all(np.diff(cdfs, axis=1) >= 0)
+    assert np.all(cdfs[:, -1] == 1.0)
+
+
+@pytest.mark.parametrize("shape", [(97, 131), (5, 7), (1, 1), (300, 200)])
+@pytest.mark.parametrize("strength", [0.1, 0.5, 1.0, 3.0])
+def test_clahe_matches_numpy(shape, strength):
+    img = _RNG.random((*shape, 3), dtype=np.float32)
+    assert apply_clahe(img, strength).tobytes() == _clahe_reference(img, strength).tobytes()

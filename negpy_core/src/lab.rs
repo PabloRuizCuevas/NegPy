@@ -243,3 +243,106 @@ pub fn glow_and_halation(
     dst.par_iter_mut().for_each(|v| *v = clip(*v, 0.0, 1.0));
     Some(())
 }
+
+const CLAHE_GRID: usize = 8;
+const CLAHE_BINS: usize = 256;
+
+/// `_clahe_cdfs`: per tile of the 8x8 grid, the clipped CDF of the bins. The limit is the
+/// float32 product truncated, at least 1; the excess spreads evenly, the remainder to the
+/// first bins.
+fn clahe_cdfs(bins: &[u8], (h, w): (usize, usize), clip_limit: f32) -> Vec<[f32; CLAHE_BINS]> {
+    let (tsy, tsx) = (h.div_ceil(CLAHE_GRID), w.div_ceil(CLAHE_GRID));
+    let tiles = CLAHE_GRID * CLAHE_GRID;
+    let hist = bins
+        .par_chunks(w)
+        .enumerate()
+        .fold(
+            || vec![0i64; tiles * CLAHE_BINS],
+            |mut acc, (y, row)| {
+                let base = (y / tsy) * CLAHE_GRID;
+                for (x, &b) in row.iter().enumerate() {
+                    acc[(base + x / tsx) * CLAHE_BINS + b as usize] += 1;
+                }
+                acc
+            },
+        )
+        .reduce(
+            || vec![0i64; tiles * CLAHE_BINS],
+            |mut a, b| {
+                a.iter_mut().zip(b).for_each(|(a, b)| *a += b);
+                a
+            },
+        );
+    hist.as_chunks::<CLAHE_BINS>()
+        .0
+        .iter()
+        .map(|t| {
+            let total: i64 = t.iter().sum();
+            let limit = ((clip_limit * total as f32 / CLAHE_BINS as f32) as i64).max(1);
+            let excess: i64 = t.iter().map(|&c| c - c.min(limit)).sum();
+            let (inc, rem) = (excess / CLAHE_BINS as i64, excess % CLAHE_BINS as i64);
+            let denom = total.max(1) as f32;
+            let mut run = 0i64;
+            std::array::from_fn(|b| {
+                run += t[b].min(limit) + inc + ((b as i64) < rem) as i64;
+                run as f32 / denom
+            })
+        })
+        .collect()
+}
+
+/// `_clahe_axis(n)`: per position the two tile indices and the smoothstep fraction, from
+/// tile_pos = pos / n * 8 - 0.5 in float32.
+fn clahe_axis(n: usize) -> Vec<(usize, usize, f32)> {
+    (0..n)
+        .map(|i| {
+            let tp = i as f32 / n as f32 * CLAHE_GRID as f32 - 0.5;
+            let tf = tp.floor();
+            let rf = tp - tf;
+            let t = tf as i32;
+            let (lo, hi) = (
+                t.max(0) as usize,
+                (t + 1).min(CLAHE_GRID as i32 - 1) as usize,
+            );
+            (lo, hi, rf * rf * (3.0 - 2.0 * rf))
+        })
+        .collect()
+}
+
+/// `apply_clahe(img, strength)` for strength > 0: the L* channel equalized per tile of a
+/// fixed 8x8 grid, blended between tiles, and mixed back by `strength`; clahe_*.wgsl mirror it.
+pub fn clahe(
+    src: &[f32],
+    (h, w): (usize, usize),
+    strength: f64,
+    (to_lab, to_rgb): (LabSpace, LabSpace),
+    dst: &mut [f32],
+) {
+    let n = h * w;
+    let mut lab = vec![0f32; n * 3];
+    color::rgb_to_lab(src, &mut lab, to_lab);
+    // np.clip(...).astype(int32) truncates; a NaN lands in bin 0 here.
+    let bins: Vec<u8> = lab
+        .par_chunks(3)
+        .map(|p| clip(p[0] / 100.0 * 255.0, 0.0, 255.0) as u8)
+        .collect();
+    let cdfs = clahe_cdfs(&bins, (h, w), (strength * 2.5) as f32);
+    let (ys, xs) = (clahe_axis(h), clahe_axis(w));
+    let s = strength as f32;
+    lab.par_chunks_mut(w * 3).enumerate().for_each(|(y, out)| {
+        let (y0, y1, fy) = ys[y];
+        for (x, p) in out.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+            let (x0, x1, fx) = xs[x];
+            let b = bins[y * w + x] as usize;
+            let v = |ty: usize, tx: usize| cdfs[ty * CLAHE_GRID + tx][b];
+            let (v00, v10, v01, v11) = (v(y0, x0), v(y0, x1), v(y1, x0), v(y1, x1));
+            let top = v00 + (v10 - v00) * fx;
+            let bot = v01 + (v11 - v01) * fx;
+            let cdf = top + (bot - top) * fy;
+            let l = p[0];
+            p[0] = l + (cdf * 100.0 - l) * s;
+        }
+    });
+    color::lab_to_rgb(&lab, dst, to_rgb);
+    dst.par_iter_mut().for_each(|v| *v = clip(*v, 0.0, 1.0));
+}

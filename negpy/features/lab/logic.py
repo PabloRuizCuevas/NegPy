@@ -19,44 +19,6 @@ from negpy.kernel.image.logic import (
 from negpy.kernel.image.validation import ensure_image
 
 
-CLAHE_GRID = 8
-CLAHE_BINS = 256
-
-
-def _clahe_cdfs(bins: np.ndarray, clip_limit: float) -> np.ndarray:
-    """
-    Per-tile clipped CDFs, (64, 256) float32. Mirrors clahe_hist.wgsl /
-    clahe_cdf.wgsl exactly (integer counts, f32-truncated limit, excess
-    redistributed evenly with the remainder going to the first bins).
-    """
-    h, w = bins.shape
-    tsy, tsx = (h + CLAHE_GRID - 1) // CLAHE_GRID, (w + CLAHE_GRID - 1) // CLAHE_GRID
-    ty = (np.arange(h) // tsy).astype(np.int32)
-    tx = (np.arange(w) // tsx).astype(np.int32)
-    comb = (ty[:, None] * CLAHE_GRID + tx[None, :]) * CLAHE_BINS + bins
-    hist = np.bincount(comb.ravel(), minlength=CLAHE_GRID * CLAHE_GRID * CLAHE_BINS)
-    hist = hist.reshape(CLAHE_GRID * CLAHE_GRID, CLAHE_BINS)
-
-    total = hist.sum(axis=1)
-    limit = np.maximum(1, (np.float32(clip_limit) * total.astype(np.float32) / np.float32(CLAHE_BINS)).astype(np.int64))
-    clipped = np.minimum(hist, limit[:, None])
-    excess = (hist - clipped).sum(axis=1)
-    inc, rem = excess // CLAHE_BINS, excess % CLAHE_BINS
-    counts = clipped + inc[:, None] + (np.arange(CLAHE_BINS)[None, :] < rem[:, None])
-    return np.cumsum(counts, axis=1).astype(np.float32) / np.maximum(total, 1)[:, None].astype(np.float32)
-
-
-def _clahe_axis(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    # tile_pos = pos/dims*8 - 0.5, smoothstep frac; true floor (can be -1), clamp 0..7.
-    tp = np.arange(n, dtype=np.float32) / np.float32(n) * np.float32(CLAHE_GRID) - np.float32(0.5)
-    tf = np.floor(tp)
-    rf = tp - tf
-    fr = rf * rf * (np.float32(3.0) - np.float32(2.0) * rf)
-    lo = np.maximum(tf.astype(np.int32), 0)
-    hi = np.minimum(tf.astype(np.int32) + 1, CLAHE_GRID - 1)
-    return lo, hi, fr
-
-
 def apply_clahe(img: ImageBuffer, strength: float) -> ImageBuffer:
     """
     L-channel Contrast Limited Adaptive Histogram Equalization.
@@ -65,25 +27,7 @@ def apply_clahe(img: ImageBuffer, strength: float) -> ImageBuffer:
     """
     if strength <= 0:
         return img
-
-    lab = rgb_to_lab_working(img)
-    l_chan = lab[..., 0]
-    h, w = l_chan.shape
-    bins = np.clip(l_chan / np.float32(100.0) * np.float32(255.0), 0.0, 255.0).astype(np.int32)
-    cdfs = _clahe_cdfs(bins, strength * 2.5).reshape(-1)
-
-    y0, y1, fy = _clahe_axis(h)
-    x0, x1, fx = _clahe_axis(w)
-    v00 = cdfs[(y0[:, None] * CLAHE_GRID + x0[None, :]) * CLAHE_BINS + bins]
-    v10 = cdfs[(y0[:, None] * CLAHE_GRID + x1[None, :]) * CLAHE_BINS + bins]
-    v01 = cdfs[(y1[:, None] * CLAHE_GRID + x0[None, :]) * CLAHE_BINS + bins]
-    v11 = cdfs[(y1[:, None] * CLAHE_GRID + x1[None, :]) * CLAHE_BINS + bins]
-    top = v00 + (v10 - v00) * fx[None, :]
-    bot = v01 + (v11 - v01) * fx[None, :]
-    cdf_l = top + (bot - top) * fy[:, None]
-
-    lab[..., 0] = l_chan + (cdf_l * np.float32(100.0) - l_chan) * np.float32(strength)
-    return ensure_image(np.clip(lab_to_rgb_working(lab), 0.0, 1.0))
+    return negpy_core.clahe(np.ascontiguousarray(img, dtype=np.float32), strength, *WORKING_LAB)
 
 
 # Sharpen constants, mirrored as WGSL consts in shaders/lab.wgsl; the USM gate and overshoot

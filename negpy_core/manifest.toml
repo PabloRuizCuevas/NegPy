@@ -2053,12 +2053,6 @@ status = "todo"
 calls = []
 depends = []
 
-["features/lab/logic.py::_clahe_cdfs"]
-phase = 6
-status = "todo"
-calls = ["np.bincount", "np.cumsum"]
-depends = []
-
 ["features/lab/logic.py::_edge_mask"]
 phase = 6
 status = "todo"
@@ -2085,9 +2079,9 @@ depends = []
 
 ["features/lab/logic.py::apply_clahe"]
 phase = 6
-status = "todo"
-calls = []
-depends = ["_clahe_cdfs"]
+status = "ported"
+calls = ["negpy_core.clahe"]
+depends = []
 
 ["features/lab/logic.py::apply_glow_and_halation"]
 phase = 6
