@@ -1,5 +1,6 @@
 use numpy::{
-    PyArrayDyn, PyArrayMethods, PyReadonlyArray2, PyReadonlyArrayDyn, PyUntypedArrayMethods,
+    PyArray2, PyArrayDyn, PyArrayMethods, PyReadonlyArray2, PyReadonlyArrayDyn,
+    PyUntypedArrayMethods,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -154,7 +155,43 @@ fn warp_perspective<'py>(
     })
 }
 
+/// `cv2.getRotationMatrix2D(center, angle, scale)` as a 2x3 float64 array.
+#[pyfunction]
+fn rotation_matrix<'py>(
+    py: Python<'py>,
+    center: (f32, f32),
+    angle: f64,
+    scale: f64,
+) -> Bound<'py, PyArray2<f64>> {
+    let m = warp::rotation_matrix(center, angle, scale);
+    PyArray2::from_vec2(py, &[m[..3].to_vec(), m[3..].to_vec()]).expect("two rows of three")
+}
+
+/// `cv2.getPerspectiveTransform(src, dst)` for two 4x2 float32 point arrays, as 3x3 float64.
+#[pyfunction]
+fn perspective_transform<'py>(
+    py: Python<'py>,
+    src: PyReadonlyArray2<'py, f32>,
+    dst: PyReadonlyArray2<'py, f32>,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    let quad = |p: &PyReadonlyArray2<'_, f32>| -> PyResult<[[f32; 2]; 4]> {
+        let a = p.as_array();
+        if a.shape() != [4, 2] {
+            return Err(PyValueError::new_err("needs 4x2 points"));
+        }
+        Ok(std::array::from_fn(|i| [a[[i, 0]], a[[i, 1]]]))
+    };
+    let m = warp::perspective_transform(&quad(&src)?, &quad(&dst)?)
+        .ok_or_else(|| PyValueError::new_err("the points do not define a perspective transform"))?;
+    Ok(
+        PyArray2::from_vec2(py, &[m[..3].to_vec(), m[3..6].to_vec(), m[6..].to_vec()])
+            .expect("3x3"),
+    )
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(rotation_matrix, m)?)?;
+    m.add_function(wrap_pyfunction!(perspective_transform, m)?)?;
     m.add_function(wrap_pyfunction!(remap, m)?)?;
     m.add_function(wrap_pyfunction!(remap_radial, m)?)?;
     m.add_function(wrap_pyfunction!(warp_affine, m)?)?;

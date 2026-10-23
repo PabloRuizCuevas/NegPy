@@ -1,5 +1,6 @@
 pub mod altprocess;
 pub mod analysis;
+pub mod autocrop;
 pub mod bounds;
 pub mod color;
 pub mod components;

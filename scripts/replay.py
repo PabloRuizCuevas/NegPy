@@ -270,7 +270,7 @@ def _calls(keys: list[str]):
 def replay(phases: list[int] | None) -> int:
     failed = 0
     manifest = load_manifest()
-    for key, fn, files in _calls(_targets(phases, ("todo", "ported"))):
+    for key, fn, files in _calls(_targets(phases, ("todo", "ported", "stays"))):
         compare = manifest[key].get("compare", "exact")
         bad = []
         for f in files:
@@ -280,7 +280,9 @@ def replay(phases: list[int] | None) -> int:
             if compare != "quality" and not same(result, rec["result"], compare):
                 bad.append(f"{f.name} ({rec['frame']})")
         failed += bool(bad)
-        print(f"{'DIFF' if bad else 'qual' if compare == 'quality' else 'same'}{len(files) - len(bad):3d}/{len(files):<3d} {key}  {' '.join(bad[:5])}")
+        print(
+            f"{'DIFF' if bad else 'qual' if compare == 'quality' else 'same'}{len(files) - len(bad):3d}/{len(files):<3d} {key}  {' '.join(bad[:5])}"
+        )
     return 1 if failed else 0
 
 

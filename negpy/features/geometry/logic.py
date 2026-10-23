@@ -379,7 +379,7 @@ def apply_fine_rotation(img: ImageBuffer, angle: float) -> ImageBuffer:
         return img
 
     h, w = img.shape[:2]
-    m_mat = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), angle, 1.0)
+    m_mat = negpy_core.rotation_matrix((w / 2.0, h / 2.0), angle, 1.0)
     return negpy_core.warp_affine(np.ascontiguousarray(img, dtype=np.float32), m_mat, (w, h))
 
 
@@ -498,7 +498,7 @@ def keystone_matrix_normalized(converge_v: float, converge_h: float) -> np.ndarr
     """
     src = keystone_quad(converge_v, converge_h)
     dst = np.float32([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
-    return cv2.getPerspectiveTransform(src, dst).astype(np.float64)
+    return negpy_core.perspective_transform(src, dst).astype(np.float64)
 
 
 def _norm_to_index(w: int, h: int) -> np.ndarray:
@@ -561,7 +561,7 @@ def compute_geometry_crop_rect(
         return 0.0, 0.0, 1.0, 1.0
 
     cx, cy = w / 2.0, h / 2.0
-    rot = cv2.getRotationMatrix2D((cx, cy), fine_rotation, 1.0)
+    rot = negpy_core.rotation_matrix((cx, cy), fine_rotation, 1.0)
     m_rot = np.vstack([rot, [0.0, 0.0, 1.0]])
     m_combined = keystone_matrix(converge_v, converge_h, w, h) @ m_rot
     m_inv = np.linalg.inv(m_combined)
@@ -713,21 +713,9 @@ def _place_window_by_occupancy(start: int, end: int, target_len: float, occupanc
     centered position, so uniform occupancy reproduces plain centering.
     Returns the new window start in input coords.
     """
-    d_start = max(0, int(round(start * scale)))
-    d_end = min(occupancy.size, int(round(end * scale)))
-    d_len = max(1, int(round(target_len * scale)))
-    if d_len >= d_end - d_start:
-        return start
-
-    cs = np.concatenate(([0.0], np.cumsum(occupancy[d_start:d_end], dtype=np.float64)))
-    n_pos = (d_end - d_start) - d_len + 1
-    scores = cs[d_len : d_len + n_pos] - cs[:n_pos]
-    candidates = np.where(scores >= float(np.max(scores)) - 1e-9)[0]
-    centered = ((d_end - d_start) - d_len) / 2.0
-    k = int(candidates[np.argmin(np.abs(candidates - centered))])
-
-    new_start = round((d_start + k) / scale)
-    return int(min(max(start, new_start), end - target_len))
+    return negpy_core.place_window_by_occupancy(
+        int(start), int(end), float(target_len), np.ascontiguousarray(occupancy, dtype=np.float32), float(scale)
+    )
 
 
 def _enforce_ratio_by_occupancy(
@@ -987,7 +975,7 @@ def _pre_keystone_point(
 
     if fine_rotation != 0.0:
         center = (w / 2.0, h / 2.0)
-        m_mat = cv2.getRotationMatrix2D(center, fine_rotation, 1.0)
+        m_mat = negpy_core.rotation_matrix(center, fine_rotation, 1.0)
         pt = np.array([px, py, 1.0])
         res_pt = m_mat @ pt
         px, py = float(res_pt[0]), float(res_pt[1])

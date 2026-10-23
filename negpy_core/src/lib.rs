@@ -1,5 +1,6 @@
 pub mod altprocess;
 pub mod analysis;
+pub mod autocrop;
 pub mod bounds;
 pub mod color;
 pub mod components;
@@ -74,5 +75,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::finish::register(m)?;
     py::flatfield::register(m)?;
     py::stitch::register(m)?;
-    py::skew::register(m)
+    py::skew::register(m)?;
+    py::autocrop::register(m)
 }

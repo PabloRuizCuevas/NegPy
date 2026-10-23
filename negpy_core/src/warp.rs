@@ -446,6 +446,86 @@ fn persp_coords(start: [f64; 3], step: [f64; 3], xs: &mut [i32], ys: &mut [i32])
     }
 }
 
+/// `cv2.getRotationMatrix2D(center, angle, scale)`: the 2x3 matrix that turns about `center`
+/// by `angle` degrees counter-clockwise. OpenCV takes the center as float32.
+pub fn rotation_matrix((cx, cy): (f32, f32), angle: f64, scale: f64) -> [f64; 6] {
+    let angle = angle * (std::f64::consts::PI / 180.0);
+    let alpha = angle.cos() * scale;
+    let beta = angle.sin() * scale;
+    let (cx, cy) = (cx as f64, cy as f64);
+    [
+        alpha,
+        beta,
+        (1.0 - alpha) * cx - beta * cy,
+        -beta,
+        alpha,
+        beta * cx + (1.0 - alpha) * cy,
+    ]
+}
+
+/// `cv2.getPerspectiveTransform(src, dst)`: the 3x3 matrix mapping four float32 points onto
+/// four, solved with c22 = 1 by OpenCV's LU with partial pivoting. None for a degenerate quad.
+pub fn perspective_transform(src: &[[f32; 2]; 4], dst: &[[f32; 2]; 4]) -> Option<[f64; 9]> {
+    let mut a = [[0f64; 8]; 8];
+    let mut b = [0f64; 8];
+    for i in 0..4 {
+        let ([x, y], [u, v]) = (src[i], dst[i]);
+        a[i][0] = x as f64;
+        a[i + 4][3] = x as f64;
+        a[i][1] = y as f64;
+        a[i + 4][4] = y as f64;
+        a[i][2] = 1.0;
+        a[i + 4][5] = 1.0;
+        // float32 products, as OpenCV multiplies two Point2f fields.
+        a[i][6] = (-x * u) as f64;
+        a[i][7] = (-y * u) as f64;
+        a[i + 4][6] = (-x * v) as f64;
+        a[i + 4][7] = (-y * v) as f64;
+        b[i] = u as f64;
+        b[i + 4] = v as f64;
+    }
+    let (a0, b0) = (a, b);
+    for i in 0..8 {
+        let mut k = i;
+        for j in i + 1..8 {
+            if a[j][i].abs() > a[k][i].abs() {
+                k = j;
+            }
+        }
+        if a[k][i].abs() < f64::EPSILON * 100.0 {
+            return None;
+        }
+        if k != i {
+            a.swap(i, k);
+            b.swap(i, k);
+        }
+        let d = -1.0 / a[i][i];
+        for j in i + 1..8 {
+            let alpha = a[j][i] * d;
+            let pivot = a[i];
+            for (v, p) in a[j][i + 1..].iter_mut().zip(&pivot[i + 1..]) {
+                *v += alpha * p;
+            }
+            b[j] += alpha * b[i];
+        }
+    }
+    for i in (0..8).rev() {
+        let mut s = b[i];
+        for k in i + 1..8 {
+            s -= a[i][k] * b[k];
+        }
+        b[i] = s / a[i][i];
+    }
+    let residual = (0..8)
+        .map(|r| {
+            let e = (0..8).map(|c| a0[r][c] * b[c]).sum::<f64>() - b0[r];
+            e * e
+        })
+        .sum::<f64>()
+        .sqrt();
+    (residual < 1e-8).then(|| [b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], 1.0])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

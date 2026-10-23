@@ -392,68 +392,84 @@ depends = []
 
 ["features/geometry/batch_autocrop.py::_border_without_a_film_box"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_bright_side_border", "_side_border"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/batch_autocrop.py::_bright_side_border"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/batch_autocrop.py::_edge_fit"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = []
 depends = []
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/batch_autocrop.py::_mad"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = ["np.median"]
 depends = []
+note = "scalar or roll-size math"
 
 ["features/geometry/batch_autocrop.py::_map_rect_between_rotations"]
 phase = 2
-status = "todo"
-calls = ["cv2.getRotationMatrix2D"]
+status = "stays"
+compare = "abs=1e-6"
+calls = ["negpy_core.rotation_matrix"]
 depends = []
+note = "scalar or roll-size math"
 
 ["features/geometry/batch_autocrop.py::_no_box_evidence"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = []
 depends = ["_border_without_a_film_box"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/batch_autocrop.py::_rect_from_edge_profile"]
 phase = 2
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+calls = ["negpy_core.rect_from_edge_profile"]
 depends = []
 
 ["features/geometry/batch_autocrop.py::_roll_border"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = ["np.median"]
 depends = []
+note = "scalar or roll-size math"
 
 ["features/geometry/batch_autocrop.py::_side_border"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/batch_autocrop.py::_threshold_fallback_frames"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = ["np.median"]
 depends = []
+note = "scalar or roll-size math"
 
 ["features/geometry/batch_autocrop.py::_top_edge_slope"]
 phase = 2
-status = "todo"
-calls = ["negpy_core.gaussian_blur", "negpy_core.sobel", "np.median", "np.quantile"]
+status = "ported"
+compare = "abs=1e-9"
+calls = ["negpy_core.top_edge_slope"]
 depends = []
 
 ["features/geometry/batch_autocrop.py::_vertical_edge_profile"]
@@ -464,21 +480,27 @@ depends = []
 
 ["features/geometry/batch_autocrop.py::build_roll_template"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = ["np.median", "np.percentile"]
 depends = ["_mad", "_roll_border", "_threshold_fallback_frames"]
+note = "scalar or roll-size math"
 
 ["features/geometry/batch_autocrop.py::detect_crop_candidate"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = []
 depends = ["_bright_side_border", "_edge_fit", "_no_box_evidence", "_side_border", "_top_edge_slope", "_vertical_edge_profile"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/batch_autocrop.py::resolve_roll_crops"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = []
 depends = ["_map_rect_between_rotations", "_rect_from_edge_profile", "build_roll_template"]
+note = "scalar or roll-size math"
 
 ["features/geometry/logic.py::_adaptive_threshold_levels"]
 phase = 2
@@ -520,9 +542,10 @@ note = "negpy_core::analysis::dark_region_bounds (Python deleted)"
 
 ["features/geometry/logic.py::_detect_film_bounds"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["detect_film_bounds_with_confidence"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/logic.py::_detection_luma"]
 phase = 2
@@ -540,9 +563,10 @@ note = "negpy_core::analysis::edge_border_depth (Python deleted)"
 
 ["features/geometry/logic.py::_enforce_ratio_by_occupancy"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_place_window_by_occupancy"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/logic.py::_estimate_tier_levels"]
 phase = 2
@@ -559,9 +583,10 @@ depends = []
 
 ["features/geometry/logic.py::_find_autocrop_roi_from_contours"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_detect_film_bounds", "_refine_roi_to_image"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/logic.py::_find_rebate_level"]
 phase = 2
@@ -596,9 +621,10 @@ depends = []
 
 ["features/geometry/logic.py::_normalize_detection_input"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = ["negpy_core.resize_area"]
 depends = []
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/logic.py::_normalize_to_uint8"]
 phase = 2
@@ -615,8 +641,8 @@ depends = ["_polygon_values"]
 
 ["features/geometry/logic.py::_place_window_by_occupancy"]
 phase = 2
-status = "todo"
-calls = ["np.cumsum"]
+status = "ported"
+calls = ["negpy_core.place_window_by_occupancy"]
 depends = []
 
 ["features/geometry/logic.py::_polygon_values"]
@@ -634,9 +660,10 @@ note = "negpy_core::analysis::pool_border_depth (Python deleted)"
 
 ["features/geometry/logic.py::_pre_keystone_point"]
 phase = 2
-status = "todo"
-calls = ["cv2.getRotationMatrix2D"]
+status = "stays"
+calls = ["negpy_core.rotation_matrix"]
 depends = []
+note = "scalar or roll-size math"
 
 ["features/geometry/logic.py::_refine_film_roi_by_tiers"]
 phase = 2
@@ -680,7 +707,7 @@ depends = ["_weighted_median"]
 
 ["features/geometry/logic.py::_smooth_signal"]
 phase = 2
-status = "todo"
+status = "ported"
 calls = ["negpy_core.smooth_signal"]
 depends = []
 
@@ -732,7 +759,7 @@ depends = []
 ["features/geometry/logic.py::apply_fine_rotation"]
 phase = 2
 status = "ported"
-calls = ["cv2.getRotationMatrix2D", "negpy_core.warp_affine"]
+calls = ["negpy_core.rotation_matrix", "negpy_core.warp_affine"]
 depends = []
 
 ["features/geometry/logic.py::apply_keystone"]
@@ -749,15 +776,17 @@ depends = []
 
 ["features/geometry/logic.py::compute_geometry_crop_rect"]
 phase = 2
-status = "todo"
-calls = ["cv2.getRotationMatrix2D"]
+status = "stays"
+calls = ["negpy_core.rotation_matrix"]
 depends = ["keystone_matrix"]
+note = "scalar or roll-size math"
 
 ["features/geometry/logic.py::detect_closest_aspect_ratio"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_find_autocrop_roi_from_contours", "_get_threshold_autocrop_coords", "_normalize_detection_input"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/logic.py::detect_film_bounds_with_confidence"]
 phase = 2
@@ -773,39 +802,45 @@ depends = []
 
 ["features/geometry/logic.py::get_autocrop_coords"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_detect_film_bounds", "_detection_luma", "_enforce_ratio_by_occupancy", "_get_threshold_autocrop_coords", "_normalize_detection_input", "_refine_roi_to_image", "_trim_film_edges"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/logic.py::keystone_inverse_normalized"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["keystone_matrix_normalized"]
+note = "scalar or roll-size math"
 
 ["features/geometry/logic.py::keystone_matrix"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["keystone_matrix_normalized"]
+note = "scalar or roll-size math"
 
 ["features/geometry/logic.py::keystone_matrix_normalized"]
 phase = 2
-status = "todo"
-calls = ["cv2.getPerspectiveTransform"]
+status = "stays"
+calls = ["negpy_core.perspective_transform"]
 depends = []
+note = "scalar or roll-size math; the perspective solve is negpy_core's"
 
 ["features/geometry/logic.py::map_coords_to_geometry"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_pre_keystone_point", "map_point_keystone"]
+note = "scalar or roll-size math"
 
 ["features/geometry/logic.py::map_point_keystone"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["keystone_matrix"]
+note = "scalar or roll-size math"
 
 ["features/geometry/logic.py::measure_film_border"]
 phase = 2
@@ -823,129 +858,140 @@ note = "negpy_core::analysis::measure_film_edges"
 
 ["features/geometry/logic.py::resolve_autocrop_rect"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_detect_film_bounds", "_normalize_detection_input", "apply_fine_rotation", "apply_keystone", "apply_radial_distortion", "get_autocrop_coords"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/logic.py::resolve_meter_rect"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["resolve_autocrop_rect"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/logic.py::solve_keystone_from_edges"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_pre_keystone_point", "map_point_keystone", "residuals", "slope_h", "slope_v"]
+note = "scalar or roll-size math"
 
 ["features/geometry/logic.py::solve_keystone_from_edges.residuals"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["slope_h", "slope_v"]
+note = "scalar or roll-size math"
 
 ["features/geometry/logic.py::solve_keystone_from_edges.slope_h"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["map_point_keystone"]
+note = "scalar or roll-size math"
 
 ["features/geometry/logic.py::solve_keystone_from_edges.slope_v"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["map_point_keystone"]
+note = "scalar or roll-size math"
 
 ["features/geometry/processor.py::GeometryProcessor.process"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = []
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/skew.py::_at_canvas_edges"]
 phase = 2
-status = "todo"
-calls = ["np.median"]
+status = "ported"
+calls = ["negpy_core.skew_at_canvas_edges"]
 depends = []
 
 ["features/geometry/skew.py::_fit_side"]
 phase = 2
-status = "todo"
-calls = ["negpy_core.skew_sample", "np.mean", "np.median"]
-depends = ["_ransac_line", "sample"]
-
-["features/geometry/skew.py::_fit_side.sample"]
-phase = 2
-status = "todo"
-calls = ["negpy_core.skew_sample"]
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.skew_fit_side"]
 depends = []
 
 ["features/geometry/skew.py::_frame_lines"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = []
 depends = ["_fit_side"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/skew.py::_line_angles"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_map"]
+note = "scalar line geometry; the rotation matrix is negpy_core's"
 
 ["features/geometry/skew.py::_map"]
 phase = 2
-status = "todo"
-calls = ["cv2.getRotationMatrix2D"]
+status = "stays"
+calls = ["negpy_core.rotation_matrix"]
 depends = []
+note = "scalar line geometry; the rotation matrix is negpy_core's"
 
 ["features/geometry/skew.py::_measure_from"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = ["np.mean"]
 depends = ["_at_canvas_edges", "_frame_lines", "_profile_lines", "_solve", "_unrotate"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/skew.py::_profile_lines"]
 phase = 2
-status = "todo"
-calls = ["negpy_core.morphology_ex", "negpy_core.sobel", "np.percentile"]
-depends = ["_fit_side"]
-
-["features/geometry/skew.py::_ransac_line"]
-phase = 2
-status = "todo"
-calls = ["np.unique"]
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.skew_profile_lines"]
 depends = []
 
 ["features/geometry/skew.py::_solve"]
 phase = 2
-status = "todo"
+status = "stays"
 calls = []
 depends = ["_line_angles"]
+note = "scalar line geometry; the rotation matrix is negpy_core's"
 
 ["features/geometry/skew.py::_unrotate"]
 phase = 2
-status = "todo"
-calls = ["cv2.getRotationMatrix2D"]
+status = "stays"
+calls = ["negpy_core.rotation_matrix"]
 depends = []
+note = "scalar line geometry; the rotation matrix is negpy_core's"
 
 ["features/geometry/skew.py::measure_frame_skew"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = []
 depends = ["_coarse_angles", "_measure_from"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/skew.py::squared_geometry"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = []
 depends = ["trusted_frame_skew"]
+note = "orchestration of negpy_core kernels"
 
 ["features/geometry/skew.py::trusted_frame_skew"]
 phase = 2
-status = "todo"
+status = "stays"
+compare = "abs=1e-6"
 calls = []
 depends = ["measure_frame_skew"]
+note = "orchestration of negpy_core kernels"
 
 ["infrastructure/loaders/logluv.py::normalize_linear"]
 phase = 3
@@ -2468,13 +2514,13 @@ depends = []
 ["services/view/coordinate_mapping.py::CoordinateMapping._grid_homography"]
 phase = 7
 status = "todo"
-calls = ["cv2.getPerspectiveTransform"]
+calls = ["negpy_core.perspective_transform"]
 depends = []
 
 ["services/view/coordinate_mapping.py::CoordinateMapping.create_uv_grid"]
 phase = 7
 status = "todo"
-calls = ["cv2.getRotationMatrix2D", "cv2.invertAffineTransform"]
+calls = ["negpy_core.rotation_matrix"]
 depends = []
 
 ["features/geometry/skew.py::_coarse_angles"]
