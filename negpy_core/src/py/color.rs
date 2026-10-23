@@ -46,6 +46,15 @@ fn oetf_decode<'py>(
     filled(py, &img, |s, d| color::oetf_decode(s, d, gamma))
 }
 
+/// `srgb_to_linear` of a float32 array, any shape.
+#[pyfunction]
+fn srgb_to_linear<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, f32>,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    filled(py, &img, color::srgb_to_linear)
+}
+
 pub(crate) fn space(
     m: &PyReadonlyArray2<'_, f32>,
     white: &PyReadonlyArray1<'_, f32>,
@@ -165,5 +174,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(skin_chroma_rein, m)?)?;
     m.add_function(wrap_pyfunction!(skin_weight, m)?)?;
     m.add_function(wrap_pyfunction!(matmul_3x3, m)?)?;
+    m.add_function(wrap_pyfunction!(srgb_to_linear, m)?)?;
     m.add_function(wrap_pyfunction!(gamut_aware_chroma_scale, m)?)
 }

@@ -10,6 +10,7 @@ import os
 import tempfile
 import threading
 
+import negpy_core
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 from negpy.domain.models import (
@@ -178,12 +179,12 @@ def _looks_border_crushed(buffer, task: "ExportTask") -> bool:
     if task.params.geometry.crop_rect is not None:
         return False
     arr = buffer[:: max(1, buffer.shape[0] // 512), :: max(1, buffer.shape[1] // 512)]
-    arr = arr if arr.ndim == 2 else arr[..., :3].mean(axis=2)
+    arr = np.ascontiguousarray(arr, dtype=np.float32)
+    arr = arr if arr.ndim == 2 else negpy_core.mean_channels(np.ascontiguousarray(arr[..., :3]))
     h, w = arr.shape[:2]
     m = max(2, int(0.04 * min(h, w)))
-    ring = np.concatenate([arr[:m].ravel(), arr[-m:].ravel(), arr[:, :m].ravel(), arr[:, -m:].ravel()])
-    inner = arr[h // 4 : 3 * h // 4, w // 4 : 3 * w // 4]
-    return float(np.median(ring)) < 0.02 and float(np.median(inner)) < 0.12
+    ring, inner = negpy_core.ring_inner_medians(arr, m)
+    return float(ring) < 0.02 and float(inner) < 0.12
 
 
 def _companion_source_paths(task: "ExportTask") -> tuple:

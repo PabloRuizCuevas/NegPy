@@ -55,7 +55,7 @@ def uint16_to_float32(img: np.ndarray) -> np.ndarray:
 
 def srgb_to_linear(img: np.ndarray) -> np.ndarray:
     """Convert sRGB gamma-encoded float32 image to linear light (IEC 61966-2-1)."""
-    return np.where(img <= 0.04045, img / 12.92, ((img + 0.055) / 1.055) ** 2.4).astype(np.float32)
+    return negpy_core.srgb_to_linear(np.ascontiguousarray(img, dtype=np.float32))
 
 
 # Working-space output transform: the Adobe RGB (1998) TRC, a pure 563/256 power with no

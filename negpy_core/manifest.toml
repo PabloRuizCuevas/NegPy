@@ -1183,6 +1183,14 @@ compare = "ulp=1"
 calls = []
 depends = ["_skin_chroma_rein_kernel"]
 
+["kernel/image/logic.py::srgb_to_linear"]
+phase = 3
+status = "ported"
+compare = "ulp=4"
+calls = ["negpy_core.srgb_to_linear"]
+depends = []
+note = "negpy_core::color::srgb_to_linear"
+
 ["kernel/image/logic.py::uint16_to_float32"]
 phase = 3
 status = "ported"
@@ -2470,15 +2478,17 @@ note = "per-frame tone list"
 
 ["desktop/view/sidebar/files.py::print_dmax"]
 phase = 7
-status = "todo"
-calls = ["np.quantile"]
+status = "ported"
+calls = ["negpy_core.print_dmax"]
 depends = []
+note = "negpy_core.print_dmax"
 
 ["desktop/view/sidebar/scanlight.py::ScanlightSidebar._current_raw_clip"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["np.mean"]
 depends = []
+note = "negpy_core.mean_channels"
 
 ["desktop/view/sidebar/scanlight.py::_RawClip.at"]
 phase = 7
@@ -2531,9 +2541,10 @@ note = "negpy_core.resize_area"
 
 ["desktop/workers/export.py::_looks_border_crushed"]
 phase = 7
-status = "todo"
-calls = ["np.median"]
+status = "ported"
+calls = ["negpy_core.mean_channels", "negpy_core.ring_inner_medians"]
 depends = []
+note = "negpy_core mean_channels, ring_inner_medians"
 
 ["infrastructure/display/icc_lut.py::_apply_lut_f32_jit"]
 phase = 7
@@ -2576,15 +2587,24 @@ note = "calls negpy_core"
 
 ["services/assets/half_frame.py::_edge_band"]
 phase = 7
-status = "todo"
+status = "stays"
 calls = ["np.median"]
 depends = []
+note = "1-D edge profile"
 
 ["services/assets/half_frame.py::_gutter_scan"]
 phase = 7
-status = "todo"
-calls = ["np.median"]
+status = "ported"
+calls = ["negpy_core.column_means", "np.median"]
 depends = []
+note = "negpy_core.column_means"
+
+["services/assets/half_frame.py::_luma"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.mean_channels"]
+depends = []
+note = "negpy_core.mean_channels"
 
 ["services/assets/semantic_model.py::rank_by_similarity"]
 phase = 7
@@ -2595,9 +2615,11 @@ note = "embedding vectors"
 
 ["services/assets/thumbnails.py::preview_positive"]
 phase = 7
-status = "todo"
-calls = ["np.percentile"]
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.log_stretch_u8"]
 depends = []
+note = "negpy_core srgb_to_linear, log_stretch_u8"
 
 ["services/capture/calibration.py::_ladder_stops"]
 phase = 7
@@ -2627,23 +2649,40 @@ calls = ["negpy_core.sharpness"]
 depends = []
 note = "negpy_core.sharpness"
 
+["services/capture/meter.py::_peak_map"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.peak_map"]
+depends = []
+note = "negpy_core.peak_map"
+
 ["services/capture/meter.py::framing_mismatch"]
 phase = 7
-status = "todo"
+status = "ported"
 calls = ["np.mean"]
-depends = ["ranked_thumb"]
+depends = ["gray_of", "ranked_thumb"]
+note = "negpy_core.mean_channels"
+
+["services/capture/meter.py::gray_of"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.mean_channels"]
+depends = []
+note = "negpy_core.mean_channels"
 
 ["services/capture/meter.py::meter_frame"]
 phase = 7
-status = "todo"
-calls = ["np.mean", "np.median", "np.percentile"]
-depends = ["ranked_thumb"]
+status = "ported"
+calls = ["negpy_core.meter_picture", "negpy_core.normalized", "np.median"]
+depends = ["_peak_map", "gray_of", "ranked_thumb"]
+note = "negpy_core normalized, meter_picture, peak_map"
 
 ["services/capture/meter.py::ranked_thumb"]
 phase = 7
-status = "todo"
+status = "stays"
 calls = ["negpy_core.resize_area", "np.argsort"]
 depends = []
+note = "2752-value rank on a Rust resize"
 
 ["services/export/contact_sheet.py::_place_tile"]
 phase = 7
@@ -2726,17 +2765,12 @@ calls = ["negpy_core.register_pair"]
 depends = []
 note = "negpy_core::register::register_pair, SIFT in negpy_core::sift"
 
-["infrastructure/capture/raw_demosaic.py::_plateau_clip_fraction"]
-phase = 9
-status = "todo"
-calls = ["np.bincount"]
-depends = []
-
 ["infrastructure/capture/raw_demosaic.py::raw_channel_clip_fraction"]
 phase = 9
-status = "todo"
-calls = ["np.mean"]
-depends = ["_plateau_clip_fraction"]
+status = "ported"
+calls = ["negpy_core.raw_clip_fractions"]
+depends = []
+note = "negpy_core.raw_clip_fractions"
 
 ["infrastructure/scanners/sane_backend.py::_align_ir_to_rgb"]
 phase = 9

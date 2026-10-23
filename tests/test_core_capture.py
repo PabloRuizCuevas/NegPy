@@ -82,3 +82,101 @@ def test_level_stats_of_float64_match_numpy():
     patch = np.random.default_rng(7).uniform(0, 65535, (37, 29))
     frac, p = negpy_core.patch_level_stats(patch, 60000.0, 99.9)
     assert (frac, p) == (float(np.mean(patch >= 60000.0)), float(np.percentile(patch, 99.9)))
+
+
+def test_meter_picture_matches_numpy():
+    rng = np.random.default_rng(8)
+    linear = np.clip(rng.uniform(0.2, 1.05, (90, 120, 3)).astype(np.float32), 0, 1)
+    sat, roi = np.float32(0.998), (10, 80, 15, 110)
+    picture = linear[10:80, 15:110].reshape(-1, 3)
+    saturated = picture.max(axis=1) >= sat
+    film = picture if saturated.mean() >= 0.02 or saturated.all() else picture[~saturated]
+    clipped, blown, thin = negpy_core.meter_picture(linear, roi, float(sat), 0.02)
+    assert clipped == float(np.mean(saturated)) and blown == bool(saturated.mean() >= 0.02)
+    np.testing.assert_array_equal(np.array(thin, np.float32), np.percentile(film, 99.9, axis=0))
+
+
+def _plateau_clip_fraction(values, guard, R):
+    top = int(values.max())
+    if guard > 0 and top * 2 < guard:
+        return 0.0
+    lo = max(0, top - R._PLATEAU_WINDOW)
+    counts = np.bincount(values[values >= lo] - lo, minlength=R._PLATEAU_WINDOW + 1)
+    populated = np.flatnonzero(counts)
+    peak_at = int(np.argmax(counts[populated]))
+    peak_bin = int(populated[peak_at])
+    peak = int(counts[peak_bin])
+    if peak < R._MIN_PLATEAU_SITES:
+        return 0.0
+    neighbors = counts[populated[peak_at + 1 : peak_at + 1 + R._PLATEAU_NEIGHBOR_BINS]]
+    density = float(neighbors.max()) if neighbors.size else 0.0
+    if peak < R._PLATEAU_DENSITY_RATIO * max(density, 1.0):
+        return 0.0
+    return float(np.count_nonzero(values >= lo + peak_bin)) / values.size
+
+
+@pytest.mark.parametrize("plateau", [None, 15500, 15790])
+def test_raw_clip_fractions_match_numpy(plateau):
+    from negpy.infrastructure.capture import raw_demosaic as R
+
+    rng = np.random.default_rng(9)
+    img = rng.integers(14000, 15800, (60, 80)).astype(np.uint16)
+    if plateau is not None:
+        img[rng.uniform(0, 1, img.shape) < 0.3] = plateau
+    colors = np.tile(np.array([[0, 1], [3, 2]], np.uint8), (30, 40))
+    values = img[np.isin(colors, [1, 3])]
+    want = (float(np.mean(values >= 15000)), _plateau_clip_fraction(values, 16383, R))
+    got = negpy_core.raw_clip_fractions(
+        img, colors, [1, 3], 15000, 16383, R._PLATEAU_WINDOW, R._MIN_PLATEAU_SITES, R._PLATEAU_NEIGHBOR_BINS, R._PLATEAU_DENSITY_RATIO
+    )
+    assert got == want
+
+
+def test_column_means_ring_medians_and_dmax_match_numpy():
+    rng = np.random.default_rng(10)
+    a = rng.uniform(0, 1, (700, 300)).astype(np.float32)
+    peak = float(a.max())
+    np.testing.assert_array_equal(negpy_core.column_means(a, 2, peak), (a[::2] / peak).mean(axis=0))
+    arr = rng.uniform(0, 0.2, (256, 190)).astype(np.float32)
+    m, (h, w) = 10, arr.shape
+    ring = np.concatenate([arr[:m].ravel(), arr[-m:].ravel(), arr[:, :m].ravel(), arr[:, -m:].ravel()])
+    inner = arr[h // 4 : 3 * h // 4, w // 4 : 3 * w // 4]
+    assert negpy_core.ring_inner_medians(arr, m) == (np.median(ring), np.median(inner))
+    px = rng.integers(0, 256, (80, 60, 3)).astype(np.uint8)
+    pixels = px.reshape(-1, 3).astype(np.float32)
+    luma = pixels @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    darkest = pixels[luma <= np.quantile(luma, 0.01)]
+    assert negpy_core.print_dmax(px, 0.01) == tuple(int(round(v)) for v in darkest.mean(axis=0))
+
+
+def _srgb_numpy(img):
+    return np.where(img <= 0.04045, img / 12.92, ((img + 0.055) / 1.055) ** 2.4).astype(np.float32)
+
+
+def test_srgb_to_linear_stays_within_an_ulp():
+    from negpy.kernel.image.logic import srgb_to_linear
+
+    img = np.linspace(0, 1, 70001, dtype=np.float32)
+    base = ((img + np.float32(0.055)) / np.float32(1.055)).astype(np.float64)
+    exact = np.where(img <= 0.04045, img / np.float32(12.92), (base**2.4).astype(np.float32)).astype(np.float32)
+    got = srgb_to_linear(img)
+    assert np.max(np.abs(got.view(np.int32) - exact.view(np.int32))) <= 1
+    assert np.max(np.abs(got.view(np.int32) - _srgb_numpy(img).view(np.int32))) <= 4
+
+
+def test_thumbnail_log_stretch_matches_numpy_within_a_level():
+    rng = np.random.default_rng(12)
+    linear = _srgb_numpy((rng.integers(0, 256, (90, 130, 3)) / 255).astype(np.float32))
+    linear[..., 2] *= 0.01  # a near-empty channel borrows the strongest
+    peaks = np.percentile(linear, 99.0, axis=(0, 1))
+    strongest = int(np.argmax(peaks))
+    empty = peaks < peaks[strongest] * 0.05
+    work = linear.copy()
+    work[:, :, empty] = work[:, :, strongest : strongest + 1]
+    density = -np.log10(np.clip(work, 1e-4, None))
+    lo, hi = np.percentile(density, 1.0, axis=(0, 1)), np.percentile(density, 99.0, axis=(0, 1))
+    positive = np.clip((density - lo) / np.maximum(hi - lo, 1e-6), 0.0, 1.0)
+    want = (positive.astype(np.float64) * 255 + 0.5).astype(np.uint8)
+    got = negpy_core.log_stretch_u8(linear)
+    assert np.max(np.abs(got.astype(int) - want)) <= 1
+    assert np.mean(got != want) < 0.01

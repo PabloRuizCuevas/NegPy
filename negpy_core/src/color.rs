@@ -48,6 +48,27 @@ fn decode_block(src: &[f32], dst: &mut [f32], y: f64) {
     }
 }
 
+/// `srgb_to_linear`: v / 12.92 up to 0.04045, else ((v + 0.055) / 1.055)^2.4, the power by
+/// `mathf::pow_f64` rounded to float32.
+pub fn srgb_to_linear(src: &[f32], dst: &mut [f32]) {
+    dst.par_chunks_mut(BLOCK)
+        .zip(src.par_chunks(BLOCK))
+        .for_each(|(d, s)| srgb_block(s, d));
+}
+
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2+fma",
+    "aarch64+neon"
+))]
+fn srgb_block(src: &[f32], dst: &mut [f32]) {
+    for (d, &v) in dst.iter_mut().zip(src) {
+        let curve = pow_f64(((v + 0.055) / 1.055) as f64, 2.4) as f32;
+        // np.where picks the linear branch for v <= 0.04045, NaN included in neither.
+        *d = if v <= 0.04045 { v / 12.92 } else { curve };
+    }
+}
+
 /// The constants of the Lab kernels, as float64.
 #[derive(Clone, Copy)]
 pub struct LabSpace {
