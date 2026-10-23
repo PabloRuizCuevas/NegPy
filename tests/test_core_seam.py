@@ -1,3 +1,4 @@
+import functools
 import pickle
 from pathlib import Path
 
@@ -15,6 +16,7 @@ _RNG = np.random.default_rng(31)
 _CORPUS = Path("~/negpy-corpus-p5/features__stitch__logic.py--seam_blend").expanduser()
 
 
+@functools.cache
 def _recorded():
     """(warped, masks, seams, feather) of the recorded panorama blends; empty without the corpus."""
     return [pickle.loads(p.read_bytes())["args"] for p in sorted(_CORPUS.glob("*.pkl"))]
@@ -97,3 +99,54 @@ def test_find_seams_partitions_the_coverage():
     assert seams is not None
     covered = np.any([m > 0 for m in masks], 0)
     assert np.array_equal(np.sum(seams, 0) >= 1, covered)
+
+
+def _seam_weight_cv2(seam, valid, feather_px):
+    span = 2.0 * feather_px
+    owned = seam.astype(np.uint8)
+    weight = cv2.distanceTransform(owned, cv2.DIST_L2, 3) / np.float32(span) + np.float32(0.5)
+    beyond = np.float32(0.5) - cv2.distanceTransform(1 - owned, cv2.DIST_L2, 3) / np.float32(span)
+    weight = np.where(seam, np.clip(weight, 0.0, 1.0), np.clip(beyond, 0.0, 1.0))
+    edge = np.clip(cv2.distanceTransform(valid.astype(np.uint8), cv2.DIST_L2, 3) / np.float32(feather_px), 0.0, 1.0)
+    return weight * edge
+
+
+def _mean_cv2(warped, weights):
+    acc = np.zeros_like(warped[0])
+    weight_sum = np.zeros(warped[0].shape[:2], np.float32)
+    for img, weight in zip(warped, weights):
+        acc += img * weight[..., None]
+        weight_sum += weight
+    return acc / np.maximum(weight_sum, 1e-6)[..., None]
+
+
+@functools.cache
+def _blend_cases():
+    cases = [(w, m, s, f) for w, m, s, f in _recorded()]
+    for n, size in ((2, (120, 160, 70)), (3, (200, 260, 150)), (4, (64, 90, 40))):
+        imgs, masks = _parts(*size, n, 3.0)
+        seams = [c > 0 for c in negpy_core.dp_seams(imgs, masks)]
+        cases.append((imgs, [m > 0 for m in masks], seams, 12.0))
+    return cases
+
+
+def test_distance_transform_stays_near_cv2():
+    masks = [m for _, ms, ss, _ in _blend_cases() for m in (*ms, *ss)]
+    masks += [_RNG.random((1500, 1600)) > 0.0005, np.pad(np.ones((1400, 1500), bool), 50)]
+    for m in masks:
+        for src in (m.astype(np.uint8), (~m).astype(np.uint8)):
+            want = cv2.distanceTransform(src, cv2.DIST_L2, 3)
+            assert np.abs(negpy_core.distance_transform(src, cv2.DIST_L2, 3) - want).max() <= 0.005
+
+
+def test_seam_blend_matches_cv2_version():
+    for warped, masks, seams, feather in _blend_cases():
+        f = max(feather, 1.0)
+        want = _mean_cv2(warped, [_seam_weight_cv2(s, m, f) for s, m in zip(seams, masks)])
+        assert np.abs(logic.seam_blend(warped, masks, seams, feather) - want).max() <= 1e-4
+
+
+def test_feather_blend_matches_cv2_version():
+    for warped, masks, _, _ in _blend_cases():
+        want = _mean_cv2(warped, [cv2.distanceTransform(m.astype(np.uint8), cv2.DIST_L2, 3) for m in masks])
+        assert np.abs(logic.feather_blend(warped, masks) - want).max() <= 1e-4

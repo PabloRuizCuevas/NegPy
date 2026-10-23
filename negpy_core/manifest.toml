@@ -1758,9 +1758,11 @@ depends = []
 
 ["features/stitch/logic.py::_seam_weight"]
 phase = 5
-status = "todo"
-calls = ["cv2.distanceTransform"]
+status = "ported"
+compare = "quality"
+calls = []
 depends = []
+note = "negpy_core::stitch::seam_weight, inside seam_blend"
 
 ["features/stitch/logic.py::blend_ir"]
 phase = 5
@@ -1782,8 +1784,9 @@ depends = []
 
 ["features/stitch/logic.py::feather_blend"]
 phase = 5
-status = "todo"
-calls = ["cv2.distanceTransform"]
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.feather_blend"]
 depends = []
 
 ["features/stitch/logic.py::gain_compensate"]
@@ -1800,13 +1803,15 @@ depends = ["build_proxy", "compute_canvas", "register_pair"]
 
 ["features/stitch/logic.py::seam_blend"]
 phase = 5
-status = "todo"
-calls = []
-depends = ["_seam_weight"]
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.seam_blend"]
+depends = []
 
 ["features/stitch/logic.py::stitch_composite"]
 phase = 5
 status = "todo"
+compare = "abs=1e-4"
 calls = []
 depends = ["blend_ir", "feather_blend", "find_seams", "gain_compensate", "seam_blend", "warp_into_canvas"]
 

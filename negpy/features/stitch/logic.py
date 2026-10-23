@@ -182,13 +182,11 @@ def feather_blend(warped: Sequence[np.ndarray], masks: Sequence[np.ndarray]) -> 
     Averaging draws misregistered detail twice, so this is the fallback for when a
     seam cannot be cut, not the normal path. See ``seam_blend``.
     """
-    acc = np.zeros_like(warped[0])
-    weight_sum = np.zeros(warped[0].shape[:2], np.float32)
-    for img, mask in zip(warped, masks):
-        weight = cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 3)
-        acc += img * weight[..., None]
-        weight_sum += weight
-    return acc / np.maximum(weight_sum, 1e-6)[..., None]
+    return negpy_core.feather_blend(_contiguous(warped, np.float32), _contiguous(masks, bool))
+
+
+def _contiguous(arrays: Sequence[np.ndarray], dtype) -> List[np.ndarray]:
+    return [np.ascontiguousarray(a, dtype=dtype) for a in arrays]
 
 
 _SEAM_MAX_EDGE = 1024
@@ -256,44 +254,11 @@ def seam_blend(
     Weight ramps on the *signed* distance to the cut, so it reaches across into the
     neighbour's side and the two parts actually mix there. A weight that only ramped
     inside a part's own side would leave the halves disjoint and the cut hard.
+
+    Each part's weight is damped to zero at its own coverage edge, so an overlap narrower
+    than the band does not end on a step in the weight sum.
     """
-    acc = np.zeros_like(warped[0])
-    weight_sum = np.zeros(warped[0].shape[:2], np.float32)
-    for img, seam, valid in zip(warped, seams, masks):
-        weight = _seam_weight(seam, valid, max(feather_px, 1.0))
-        acc += img * weight[..., None]
-        weight_sum += weight
-    return acc / np.maximum(weight_sum, 1e-6)[..., None]
-
-
-def _seam_weight(seam: np.ndarray, valid: np.ndarray, feather_px: float) -> np.ndarray:
-    """Cross-fade weight for one part: a ramp across the cut, damped to zero at the
-    part's own coverage edge.
-
-    The damping is what keeps an overlap narrower than the band from ending on a step:
-    truncating the ramp at the coverage edge instead leaves the two parts' weights
-    summing to a discontinuity there. Each distance transform is released before the
-    next is taken, because at export these are full-canvas float32 planes.
-    """
-    span = 2.0 * feather_px
-    owned = seam.astype(np.uint8)
-    weight = cv2.distanceTransform(owned, cv2.DIST_L2, 3)
-    weight /= span
-    weight += 0.5
-    np.clip(weight, 0.0, 1.0, out=weight)
-
-    beyond = cv2.distanceTransform(1 - owned, cv2.DIST_L2, 3)
-    beyond /= span
-    np.subtract(0.5, beyond, out=beyond)
-    np.clip(beyond, 0.0, 1.0, out=beyond)
-    np.copyto(weight, beyond, where=~seam)
-    del beyond
-
-    edge = cv2.distanceTransform(valid.astype(np.uint8), cv2.DIST_L2, 3)
-    edge /= feather_px
-    np.clip(edge, 0.0, 1.0, out=edge)
-    weight *= edge
-    return weight
+    return negpy_core.seam_blend(_contiguous(warped, np.float32), _contiguous(masks, bool), _contiguous(seams, bool), max(feather_px, 1.0))
 
 
 def blend_ir(
