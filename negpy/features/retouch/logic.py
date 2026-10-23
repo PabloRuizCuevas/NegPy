@@ -950,31 +950,16 @@ def repair_components(
         score = negpy_core.resize_linear(np.ascontiguousarray(score_det, dtype=np.float32), (w, h))
         if dirty is not None and dirty.shape[:2] != (h, w):
             dirty = negpy_core.resize_nearest(dirty.astype(np.uint8), (w, h)) > 0
-    m = (score < 1.0).astype(np.uint8)
-    if not m.any():
-        return img
-    n_lbl, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
-    # Past this many, cropping costs more than the whole-frame convolutions it avoids —
-    # and more than reusing base_out row by row, so this path stays non-incremental.
-    if n_lbl - 1 > _REPAIR_MAX_COMPONENTS:
-        return apply_score_repair(img, score, floor=floor, factor=factor)
     src = np.ascontiguousarray(img, dtype=np.float32)
     out = np.ascontiguousarray(base_out, dtype=np.float32).copy() if base_out is not None else src.copy()
-    # Reach of the coarsest support, so every crop holds the clean film the fill averages.
-    pad = max(_fill_supports(max(h, w), factor))
-    for i in range(1, n_lbl):
-        bx, by = int(stats[i, cv2.CC_STAT_LEFT]), int(stats[i, cv2.CC_STAT_TOP])
-        cw, ch = int(stats[i, cv2.CC_STAT_WIDTH]), int(stats[i, cv2.CC_STAT_HEIGHT])
-        if dirty is not None and not dirty[by : by + ch, bx : bx + cw][labels[by : by + ch, bx : bx + cw] == i].any():
-            continue  # untouched since base_out was made: its fill there is already correct
-        x0, y0 = max(0, bx - pad), max(0, by - pad)
-        x1 = min(w, bx + cw + pad)
-        y1 = min(h, by + ch + pad)
-        sub = apply_score_repair(src[y0:y1, x0:x1], score[y0:y1, x0:x1], floor=floor, long_edge=max(h, w), factor=factor)
-        # This component only: a neighbour clipped by the crop repairs badly here and gets
-        # its own padded crop anyway.
-        mb = labels[y0:y1, x0:x1] == i
-        out[y0:y1, x0:x1][mb] = np.asarray(sub)[mb]
+    supports = _fill_supports(max(h, w), factor)
+    constants = (_IR_SCORE_FLOOR, _IR_FILL_TAU, _IR_WRITE_HI, _IR_WRITE_HI - _IR_WRITE_LO)
+    # Past the cap, cropping costs more than the whole-frame convolutions it avoids. The pad is
+    # the coarsest support's reach, so every crop holds the clean film the fill averages.
+    dirty_mask = None if dirty is None else np.ascontiguousarray(dirty, dtype=bool)
+    args = (list(supports), bool(floor), max(1.0, factor), constants, max(supports), _REPAIR_MAX_COMPONENTS)
+    if not negpy_core.repair_components(src, score, out, *args, dirty_mask):
+        return img
     return ensure_image(out)
 
 

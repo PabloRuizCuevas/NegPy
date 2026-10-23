@@ -1592,9 +1592,9 @@ depends = []
 
 ["features/retouch/logic.py::repair_components"]
 phase = 4
-status = "todo"
-calls = ["cv2.connectedComponentsWithStats", "negpy_core.resize_linear", "negpy_core.resize_nearest"]
-depends = ["apply_score_repair"]
+status = "ported"
+calls = ["negpy_core.repair_components", "negpy_core.resize_linear", "negpy_core.resize_nearest"]
+depends = []
 
 ["features/retouch/logic.py::route_wide_defects"]
 phase = 4

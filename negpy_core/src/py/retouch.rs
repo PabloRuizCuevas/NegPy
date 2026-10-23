@@ -293,7 +293,62 @@ fn apply_score_repair<'py>(
     })
 }
 
+/// `repair_components` into `out`, which holds the base, with the supports, the floor rule,
+/// the grain sigma, (score floor, tau, write hi, write hi - write lo), the crop pad and the
+/// component cap; returns False, leaving `out`, when the score holds no defect.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (img, score, out, supports, floor, sigma, constants, pad, max_components, dirty=None))]
+fn repair_components(
+    py: Python<'_>,
+    img: PyReadonlyArrayDyn<'_, f32>,
+    score: PyReadonlyArrayDyn<'_, f32>,
+    mut out: PyReadwriteArrayDyn<'_, f32>,
+    supports: Vec<usize>,
+    floor: bool,
+    sigma: f64,
+    constants: (f32, f32, f32, f32),
+    pad: usize,
+    max_components: usize,
+    dirty: Option<PyReadonlyArrayDyn<'_, bool>>,
+) -> PyResult<bool> {
+    let (src, dims) = image3(&img)?;
+    let n = dims.0 * dims.1;
+    let sc = plane(&score, n)?;
+    let dirty = dirty.as_ref().map(|d| mask(d, n)).transpose()?;
+    if out.shape() != img.shape() {
+        return Err(PyValueError::new_err("needs a matching out"));
+    }
+    let o = out
+        .as_slice_mut()
+        .map_err(|_| PyValueError::new_err("needs a contiguous out"))?;
+    let (score_floor, tau, write_hi, write_span) = constants;
+    let c = retouch::ScoreRepair {
+        score_floor,
+        tau,
+        write_hi,
+        write_span,
+    };
+    super::detach(py, src.len(), || {
+        retouch::repair_components(
+            src,
+            sc,
+            dims,
+            &supports,
+            floor,
+            sigma,
+            &c,
+            pad,
+            max_components,
+            dirty,
+            o,
+        )
+    })
+    .ok_or_else(|| PyValueError::new_err("invalid repair input"))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(repair_components, m)?)?;
     m.add_function(wrap_pyfunction!(add_clean_grain, m)?)?;
     m.add_function(wrap_pyfunction!(apply_score_repair, m)?)?;
     m.add_function(wrap_pyfunction!(ir_ghost_divide, m)?)?;

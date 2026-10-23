@@ -27,66 +27,82 @@ fn union(parent: &mut [u32], a: u32, b: u32) -> u32 {
     lo
 }
 
-/// Components of the nonzero pixels of an `h` x `w` mask, `connectivity` 4 or 8.
-pub fn connected_components(mask: &[u8], h: usize, w: usize, connectivity: u8) -> Components {
-    let mut prov = vec![0u32; h * w];
-    let mut parent: Vec<u32> = vec![0];
-    for y in 0..h {
-        for x in 0..w {
-            if mask[y * w + x] == 0 {
-                continue;
-            }
-            let mut neighbours = [0u32; 4];
-            let mut k = 0;
-            let mut push = |l: u32| {
-                if l != 0 {
-                    neighbours[k] = l;
-                    k += 1;
-                }
-            };
-            if x > 0 {
-                push(prov[y * w + x - 1]);
-            }
-            if y > 0 {
-                push(prov[(y - 1) * w + x]);
-                if connectivity == 8 {
-                    if x > 0 {
-                        push(prov[(y - 1) * w + x - 1]);
-                    }
-                    if x + 1 < w {
-                        push(prov[(y - 1) * w + x + 1]);
-                    }
-                }
-            }
-            prov[y * w + x] = if k == 0 {
-                parent.push(parent.len() as u32);
-                (parent.len() - 1) as u32
-            } else {
-                let mut l = neighbours[0];
-                for &n in &neighbours[1..k] {
-                    l = union(&mut parent, l, n);
-                }
-                find(&mut parent, l)
-            };
+/// The `[x0, x1)` runs of nonzero bytes in a row; zero words of eight are skipped whole.
+fn row_runs(row: &[u8]) -> Vec<(usize, usize)> {
+    let mut runs = Vec::new();
+    let mut x = 0;
+    let w = row.len();
+    while x < w {
+        if x + 8 <= w && row[x..x + 8].iter().all(|&v| v == 0) {
+            x += 8;
+            continue;
         }
+        if row[x] == 0 {
+            x += 1;
+            continue;
+        }
+        let start = x;
+        while x < w && row[x] != 0 {
+            x += 1;
+        }
+        runs.push((start, x));
+    }
+    runs
+}
+
+/// Components of the nonzero pixels of an `h` x `w` mask, `connectivity` 4 or 8, labelled
+/// over runs of each row so that only foreground pixels cost work.
+pub fn connected_components(mask: &[u8], h: usize, w: usize, connectivity: u8) -> Components {
+    use rayon::prelude::*;
+    let rows: Vec<Vec<(usize, usize)>> = mask.par_chunks(w.max(1)).map(row_runs).collect();
+    // An 8-connected run touches runs above that reach one column past either end.
+    let reach = usize::from(connectivity == 8);
+    let mut parent: Vec<u32> = vec![0];
+    let mut run_label: Vec<Vec<u32>> = Vec::with_capacity(h);
+    for y in 0..h {
+        let mut labels = Vec::with_capacity(rows[y].len());
+        let above = if y > 0 { &rows[y - 1][..] } else { &[] };
+        let above_labels = if y > 0 { &run_label[y - 1][..] } else { &[] };
+        let mut j = 0;
+        for &(x0, x1) in &rows[y] {
+            let lo = x0.saturating_sub(reach);
+            let hi = x1 + reach;
+            while j < above.len() && above[j].1 <= lo {
+                j += 1;
+            }
+            let mut l = 0u32;
+            let mut k = j;
+            while k < above.len() && above[k].0 < hi {
+                let a = above_labels[k];
+                l = if l == 0 {
+                    find(&mut parent, a)
+                } else {
+                    union(&mut parent, l, a)
+                };
+                k += 1;
+            }
+            if l == 0 {
+                parent.push(parent.len() as u32);
+                l = (parent.len() - 1) as u32;
+            }
+            labels.push(l);
+        }
+        run_label.push(labels);
     }
 
     // Number the roots by the first pixel (4-connected) or 2x2 block (8-connected) of their
-    // component in raster order.
+    // component in raster order; a run's first pixel is its smallest key.
     let blocks_w = w.div_ceil(2);
     let mut first = vec![usize::MAX; parent.len()];
     for y in 0..h {
-        for x in 0..w {
-            let l = prov[y * w + x];
-            if l != 0 {
-                let root = find(&mut parent, l) as usize;
-                let key = if connectivity == 8 {
-                    (y / 2) * blocks_w + x / 2
-                } else {
-                    y * w + x
-                };
-                first[root] = first[root].min(key);
-            }
+        for (&(x0, _), &l) in rows[y].iter().zip(&run_label[y]) {
+            let root = find(&mut parent, l) as usize;
+            let key = if connectivity == 8 {
+                (y / 2) * blocks_w + x0 / 2
+            } else {
+                y * w + x0
+            };
+            first[root] = first[root].min(key);
         }
     }
     let mut roots: Vec<usize> = (1..parent.len())
@@ -102,24 +118,39 @@ pub fn connected_components(mask: &[u8], h: usize, w: usize, connectivity: u8) -
     let mut labels = vec![0i32; h * w];
     let mut lo = vec![[i32::MAX, i32::MAX, i32::MIN, i32::MIN, 0i32]; count];
     let mut integrals = vec![[0u64; 2]; count];
+    let sum_to = |n: usize| (n as u64) * (n as u64).saturating_sub(1) / 2;
     for y in 0..h {
-        for x in 0..w {
-            let p = prov[y * w + x];
-            let l = if p == 0 {
-                0
-            } else {
-                final_label[find(&mut parent, p) as usize]
-            };
-            labels[y * w + x] = l;
+        // The background between this row's runs.
+        let mut gaps = Vec::with_capacity(rows[y].len() + 1);
+        let mut x = 0;
+        for &(x0, x1) in &rows[y] {
+            if x0 > x {
+                gaps.push((x, x0));
+            }
+            x = x1;
+        }
+        if x < w {
+            gaps.push((x, w));
+        }
+        let fg = rows[y].iter().zip(&run_label[y]).map(|(&r, &l)| {
+            let root = find(&mut parent, l) as usize;
+            (r, final_label[root])
+        });
+        let spans: Vec<((usize, usize), i32)> =
+            fg.chain(gaps.into_iter().map(|g| (g, 0))).collect();
+        for ((x0, x1), l) in spans {
+            if l != 0 {
+                labels[y * w + x0..y * w + x1].fill(l);
+            }
             let s = &mut lo[l as usize];
-            let (xi, yi) = (x as i32, y as i32);
-            s[0] = s[0].min(xi);
+            let yi = y as i32;
+            s[0] = s[0].min(x0 as i32);
             s[1] = s[1].min(yi);
-            s[2] = s[2].max(xi);
+            s[2] = s[2].max(x1 as i32 - 1);
             s[3] = s[3].max(yi);
-            s[4] += 1;
-            integrals[l as usize][0] += x as u64;
-            integrals[l as usize][1] += y as u64;
+            s[4] += (x1 - x0) as i32;
+            integrals[l as usize][0] += sum_to(x1) - sum_to(x0);
+            integrals[l as usize][1] += (y * (x1 - x0)) as u64;
         }
     }
     let mut stats = Vec::with_capacity(count);

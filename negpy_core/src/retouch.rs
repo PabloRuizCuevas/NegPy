@@ -590,3 +590,87 @@ pub fn apply_score_repair(
     }
     Some(())
 }
+
+/// Repaired pixels of one defect: flat index and value.
+type Patch = Vec<(usize, [f32; 3])>;
+
+/// `repair_components`: `apply_score_repair` per 8-connected defect (score < 1), each in its
+/// own crop padded by `pad`, written back on that defect's pixels only. `out` holds the base
+/// to write into. With `dirty`, a defect holding no dirty pixel keeps `out` as it is. Past
+/// `max_components` the whole frame is repaired at once and `dirty` is ignored. Returns false,
+/// with `out` untouched, when the score holds no defect.
+#[allow(clippy::too_many_arguments)]
+pub fn repair_components(
+    src: &[f32],
+    score: &[f32],
+    (h, w): (usize, usize),
+    supports: &[usize],
+    floor: bool,
+    sigma: f64,
+    c: &ScoreRepair,
+    pad: usize,
+    max_components: usize,
+    dirty: Option<&[bool]>,
+    out: &mut [f32],
+) -> Option<bool> {
+    let m: Vec<u8> = score.par_iter().map(|&s| (s < 1.0) as u8).collect();
+    if !m.par_iter().any(|&v| v != 0) {
+        return Some(false);
+    }
+    let cc = crate::components::connected_components(&m, h, w, 8);
+    if cc.count - 1 > max_components {
+        apply_score_repair(src, score, (h, w), supports, floor, sigma, c, out)?;
+        return Some(true);
+    }
+    let labels = &cc.labels;
+    let fixes: Vec<Patch> = (1..cc.count)
+        .into_par_iter()
+        .map(|i| {
+            let [bx, by, bw, bh, _] = cc.stats[i].map(|v| v as usize);
+            let own = |y: usize, x: usize| labels[y * w + x] == i as i32;
+            if let Some(d) = dirty {
+                let touched =
+                    (by..by + bh).any(|y| (bx..bx + bw).any(|x| own(y, x) && d[y * w + x]));
+                if !touched {
+                    return Some(Vec::new());
+                }
+            }
+            let (x0, y0) = (bx.saturating_sub(pad), by.saturating_sub(pad));
+            let (x1, y1) = ((bx + bw + pad).min(w), (by + bh + pad).min(h));
+            let (cw, ch) = (x1 - x0, y1 - y0);
+            let mut crop = Vec::with_capacity(3 * cw * ch);
+            let mut crop_score = Vec::with_capacity(cw * ch);
+            for y in y0..y1 {
+                crop.extend_from_slice(&src[3 * (y * w + x0)..3 * (y * w + x1)]);
+                crop_score.extend_from_slice(&score[y * w + x0..y * w + x1]);
+            }
+            let mut sub = vec![0f32; crop.len()];
+            apply_score_repair(
+                &crop,
+                &crop_score,
+                (ch, cw),
+                supports,
+                floor,
+                sigma,
+                c,
+                &mut sub,
+            )?;
+            let mut px = Vec::new();
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    if own(y, x) {
+                        let k = 3 * ((y - y0) * cw + x - x0);
+                        px.push((y * w + x, [sub[k], sub[k + 1], sub[k + 2]]));
+                    }
+                }
+            }
+            Some(px)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    for px in fixes {
+        for (p, v) in px {
+            out[3 * p..3 * p + 3].copy_from_slice(&v);
+        }
+    }
+    Some(true)
+}
