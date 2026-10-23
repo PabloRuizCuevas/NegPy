@@ -67,6 +67,59 @@ pub fn atan2f(y: f32, x: f32) -> f32 {
     (a as f32).copysign(y)
 }
 
+/// ln of a positive normal f64 to about 1 ULP: x = m * 2^e with m in [sqrt(1/2), sqrt(2)),
+/// ln(m) from the atanh series.
+#[inline(always)]
+fn ln_f64(x: f64) -> f64 {
+    let bits = x.to_bits();
+    let e = (bits.wrapping_sub(0x3fe6_a09e_667f_3bcd) as i64) >> 52;
+    let m = f64::from_bits(bits.wrapping_sub((e as u64) << 52));
+    let s = (m - 1.0) / (m + 1.0);
+    let s2 = s * s;
+    // 2 s (1 + s^2/3 + ... + s^20/21), |s| <= 0.1716: the next term is under 2^-56 of the sum.
+    let mut p = 1.0 / 21.0;
+    for k in (0..10).rev() {
+        p = 1.0 / (2 * k + 1) as f64 + s2 * p;
+    }
+    const LN2_HI: f64 = 0.693_147_180_369_123_8;
+    const LN2_LO: f64 = std::f64::consts::LN_2 - LN2_HI;
+    let e = e as f64;
+    e * LN2_HI + (e * LN2_LO + 2.0 * s * p)
+}
+
+/// e^t for t in -700..700 to about 1 ULP: t = k ln2 + r with |r| <= ln2/2, e^r by its Taylor
+/// series, times 2^k through the exponent bits.
+#[inline(always)]
+fn exp_f64(t: f64) -> f64 {
+    const LN2_HI: f64 = 0.693_147_180_369_123_8;
+    const LN2_LO: f64 = std::f64::consts::LN_2 - LN2_HI;
+    let k = (t * std::f64::consts::LOG2_E).round_ties_even();
+    let r = (t - k * LN2_HI) - k * LN2_LO;
+    // 1/n! to n = 13: the next term is under 2^-57 at |r| = ln2/2.
+    let mut p = 1.0 / 6_227_020_800.0;
+    let mut f = 6_227_020_800.0;
+    for n in (1..13).rev() {
+        f /= (n + 1) as f64;
+        p = 1.0 / f + r * p;
+    }
+    let y = 1.0 + r * p;
+    y * f64::from_bits(((k as i64 + 1023) as u64) << 52)
+}
+
+/// x^y for x >= 0 (or NaN) and y > 0: e^(y ln x), 0 at x = 0. The relative error grows with
+/// |y ln x|, so the result is for rounding to f32, where it is almost always correct.
+#[inline(always)]
+pub fn pow_f64(x: f64, y: f64) -> f64 {
+    let v = exp_f64(y * ln_f64(x));
+    if x == 0.0 {
+        0.0
+    } else if x.is_nan() || x == f64::INFINITY {
+        x
+    } else {
+        v
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,6 +181,33 @@ mod atan2_tests {
         ] {
             assert_eq!(atan2f(y, x).to_bits(), want.to_bits(), "{y} {x}");
         }
+    }
+}
+
+#[cfg(test)]
+mod pow_tests {
+    use super::pow_f64;
+
+    #[test]
+    fn pow_f64_rounds_to_the_same_f32() {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut off = 0;
+        for _ in 0..1_000_000 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let x = f32::from_bits((state >> 33) as u32 % 0x3f80_0001) as f64;
+            for y in [563.0 / 256.0, 256.0 / 563.0, 1.0 / 3.0] {
+                let (got, want) = (pow_f64(x, y) as f32, libm::pow(x, y) as f32);
+                let ulp = (got.to_bits() as i64 - want.to_bits() as i64).abs();
+                assert!(ulp <= 1, "{x} {y}");
+                off += ulp as usize;
+            }
+        }
+        assert!(off <= 3, "{off}");
+        assert_eq!(pow_f64(0.0, 2.2), 0.0);
+        assert!(pow_f64(f64::NAN, 2.2).is_nan());
+        assert_eq!(pow_f64(1.0, 2.2), 1.0);
     }
 }
 

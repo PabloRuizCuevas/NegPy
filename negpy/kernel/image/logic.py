@@ -66,32 +66,14 @@ def srgb_to_linear(img: np.ndarray) -> np.ndarray:
 _WORKING_GAMMA = 563.0 / 256.0  # 2.19921875
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _oetf_encode_flat(flat: np.ndarray, inv_gamma: float) -> np.ndarray:
-    """Row-parallel working-space encode over a flattened buffer (shape-agnostic)."""
-    n = flat.shape[0]
-    out = np.empty(n, dtype=np.float32)
-    for i in prange(n):
-        x = flat[i]
-        if x < 0.0:
-            x = 0.0
-        elif x > 1.0:
-            x = 1.0
-        out[i] = x**inv_gamma
-    return out
+    """Working-space encode of a flat buffer: clamped to 0..1, raised to `inv_gamma`."""
+    return negpy_core.oetf_encode(np.ascontiguousarray(flat, dtype=np.float32), inv_gamma)
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _oetf_decode_flat(flat: np.ndarray, gamma: float) -> np.ndarray:
     """Inverse of _oetf_encode_flat."""
-    n = flat.shape[0]
-    out = np.empty(n, dtype=np.float32)
-    for i in prange(n):
-        e = flat[i]
-        if e < 0.0:
-            e = 0.0
-        out[i] = e**gamma
-    return out
+    return negpy_core.oetf_decode(np.ascontiguousarray(flat, dtype=np.float32), gamma)
 
 
 def working_oetf_encode(img: np.ndarray) -> np.ndarray:
@@ -160,57 +142,14 @@ def apply_primaries_transform(img: np.ndarray, src_to_xyz: np.ndarray) -> np.nda
     return working_oetf_encode(out)
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _rgb_to_lab_kernel(px: np.ndarray, m: np.ndarray, white: np.ndarray, eps: float, kappa: float) -> np.ndarray:
-    """Row-parallel linear working RGB -> CIELAB (D65) over an (N, 3) pixel list."""
-    n = px.shape[0]
-    out = np.empty((n, 3), dtype=np.float32)
-    c = np.float32(16.0 / 116.0)
-    for i in prange(n):
-        r = px[i, 0]
-        g = px[i, 1]
-        b = px[i, 2]
-        if r < 0.0:
-            r = 0.0
-        if g < 0.0:
-            g = 0.0
-        if b < 0.0:
-            b = 0.0
-        xr = (m[0, 0] * r + m[0, 1] * g + m[0, 2] * b) / white[0]
-        yr = (m[1, 0] * r + m[1, 1] * g + m[1, 2] * b) / white[1]
-        zr = (m[2, 0] * r + m[2, 1] * g + m[2, 2] * b) / white[2]
-        fx = xr ** (1.0 / 3.0) if xr > eps else kappa * xr + c
-        fy = yr ** (1.0 / 3.0) if yr > eps else kappa * yr + c
-        fz = zr ** (1.0 / 3.0) if zr > eps else kappa * zr + c
-        out[i, 0] = 116.0 * fy - 16.0
-        out[i, 1] = 500.0 * (fx - fy)
-        out[i, 2] = 200.0 * (fy - fz)
-    return out
+    """Linear working RGB -> CIELAB (D65) over an (N, 3) pixel list."""
+    return negpy_core.rgb_to_lab(np.ascontiguousarray(px, dtype=np.float32), m, white, eps, kappa)
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _lab_to_rgb_kernel(lab: np.ndarray, m: np.ndarray, white: np.ndarray, eps: float, kappa: float) -> np.ndarray:
-    """Row-parallel inverse: CIELAB (D65) -> linear working RGB over an (N, 3) pixel list."""
-    n = lab.shape[0]
-    out = np.empty((n, 3), dtype=np.float32)
-    c = np.float32(16.0 / 116.0)
-    for i in prange(n):
-        fy = (lab[i, 0] + 16.0) / 116.0
-        fx = lab[i, 1] / 500.0 + fy
-        fz = fy - lab[i, 2] / 200.0
-        fx3 = fx * fx * fx
-        fy3 = fy * fy * fy
-        fz3 = fz * fz * fz
-        xr = (fx3 if fx3 > eps else (fx - c) / kappa) * white[0]
-        yr = (fy3 if fy3 > eps else (fy - c) / kappa) * white[1]
-        zr = (fz3 if fz3 > eps else (fz - c) / kappa) * white[2]
-        r = m[0, 0] * xr + m[0, 1] * yr + m[0, 2] * zr
-        g = m[1, 0] * xr + m[1, 1] * yr + m[1, 2] * zr
-        b = m[2, 0] * xr + m[2, 1] * yr + m[2, 2] * zr
-        out[i, 0] = r if r > 0.0 else 0.0
-        out[i, 1] = g if g > 0.0 else 0.0
-        out[i, 2] = b if b > 0.0 else 0.0
-    return out
+    """Inverse: CIELAB (D65) -> linear working RGB over an (N, 3) pixel list."""
+    return negpy_core.lab_to_rgb(np.ascontiguousarray(lab, dtype=np.float32), m, white, eps, kappa)
 
 
 @njit(inline="always")

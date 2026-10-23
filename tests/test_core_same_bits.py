@@ -11,6 +11,8 @@ _RNG = np.random.default_rng(2026)
 _IMG3 = _RNG.random((97, 131, 3), dtype=np.float32)
 _IMG1 = (_RNG.random((83, 61), dtype=np.float32) - 0.4) * 5
 _GRAY = negpy_core.bgr_to_gray((_IMG3 * 255).astype(np.uint8))
+_M = np.array([[0.58, 0.19, 0.19], [0.30, 0.63, 0.08], [0.03, 0.07, 0.99]], np.float32)
+_LAB = (_IMG3 * np.array([100.0, 160.0, 160.0], np.float32) - np.array([0.0, 80.0, 80.0], np.float32)).astype(np.float32)
 
 _CASES = {
     "percentiles": lambda: np.array(negpy_core.percentiles(_IMG1.ravel(), [0.5, 1.0, 37.0, 50.0, 99.0]), np.float32),
@@ -29,6 +31,13 @@ _CASES = {
     ),
     "morph_close_u8": lambda: negpy_core.morphology_ex((_IMG1 > 0.5).astype(np.uint8) * 255, 3, np.ones((9, 7), np.uint8), 2),
     "to_log_density": lambda: negpy_core.to_log_density(np.ascontiguousarray(_IMG1 * _IMG1)),
+    "oetf_encode": lambda: negpy_core.oetf_encode(_IMG3, np.float32(256.0 / 563.0)),
+    "rgb_to_lab": lambda: negpy_core.rgb_to_lab(
+        _IMG3, _M, np.array([0.95047, 1.0, 1.08883], np.float32), np.float32(0.008856), np.float32(7.787)
+    ),
+    "lab_to_rgb": lambda: negpy_core.lab_to_rgb(
+        _LAB, _M.T.copy(), np.array([0.95047, 1.0, 1.08883], np.float32), np.float32(0.008856), np.float32(7.787)
+    ),
 }
 
 _HASHES = {
@@ -46,6 +55,9 @@ _HASHES = {
     "find_external_contours": "ebb4302dd2bc7226a7ed24fbb5e16e14f407d5693ce47128a649cee9e4a098be",
     "morph_close_u8": "4be9a2976881ff83eb0b92a8ec484e048c61612324afbde73b6e0c89aa92865e",
     "to_log_density": "cc4d2086edf051826619f024a4f5d28c80d28528291d9df4610c1d3854144038",
+    "oetf_encode": "44508d28673c678fc0ec7b5262a06d0053ea6b4bed4bead7bc49556bc60eb070",
+    "rgb_to_lab": "02c583bf1f5fe9723e2cb0a3e1f34759d6b0778d3644e8e2cff2251e756b68f2",
+    "lab_to_rgb": "34016e7f9aebcfdf780b67b96b128041c6ba1ac2a427f4e87b5413dcc7345eef",
 }
 
 

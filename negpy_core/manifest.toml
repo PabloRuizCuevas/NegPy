@@ -1003,8 +1003,9 @@ depends = []
 
 ["kernel/image/logic.py::_lab_to_rgb_kernel"]
 phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.lab_to_rgb"]
 depends = []
 
 ["kernel/image/logic.py::_matmul_3x3_kernel"]
@@ -1015,20 +1016,21 @@ depends = []
 
 ["kernel/image/logic.py::_oetf_decode_flat"]
 phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.oetf_decode"]
 depends = []
 
 ["kernel/image/logic.py::_oetf_encode_flat"]
 phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.oetf_encode"]
 depends = []
 
 ["kernel/image/logic.py::_rgb_to_lab_kernel"]
 phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.rgb_to_lab"]
 depends = []
 
 ["kernel/image/logic.py::_skin_chroma_rein_kernel"]
@@ -1100,13 +1102,15 @@ note = "negpy_core::analysis::luminance"
 
 ["kernel/image/logic.py::lab_to_rgb_working"]
 phase = 3
-status = "todo"
+status = "ported"
+compare = "ulp=1"
 calls = []
 depends = ["_lab_to_rgb_kernel"]
 
 ["kernel/image/logic.py::rgb_to_lab_working"]
 phase = 3
-status = "todo"
+status = "ported"
+compare = "abs=1e-6"
 calls = []
 depends = ["_rgb_to_lab_kernel"]
 
@@ -1142,13 +1146,13 @@ depends = []
 
 ["kernel/image/logic.py::working_oetf_decode"]
 phase = 3
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_oetf_decode_flat"]
 
 ["kernel/image/logic.py::working_oetf_encode"]
 phase = 3
-status = "todo"
+status = "ported"
 calls = []
 depends = ["_oetf_encode_flat"]
 

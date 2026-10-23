@@ -220,7 +220,8 @@ def _ulps(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 def same(a, b, compare: str = "exact") -> bool:
     """Equality for replay. "exact": bit for bit, NaN payloads and the sign of zero included.
-    "rows": a 2-D array's rows in any order. "ulp=N": floats within N units in the last place."""
+    "rows": a 2-D array's rows in any order. "ulp=N": floats within N units in the last place.
+    "abs=X": floats within X of each other."""
     if type(a) is not type(b):
         return False
     if isinstance(a, np.ndarray):
@@ -233,9 +234,12 @@ def same(a, b, compare: str = "exact") -> bool:
         if compare.startswith("ulp=") and a.dtype.kind == "f":
             nan = np.isnan(a)
             return bool(np.array_equal(nan, np.isnan(b)) and np.all(_ulps(a[~nan], b[~nan]) <= int(compare[4:])))
+        if compare.startswith("abs=") and a.dtype.kind == "f":
+            nan = np.isnan(a)
+            return bool(np.array_equal(nan, np.isnan(b)) and np.all(np.abs(a[~nan] - b[~nan]) <= float(compare[4:])))
         return np.ascontiguousarray(a).tobytes() == np.ascontiguousarray(b).tobytes()
     if isinstance(a, (np.generic, float)):
-        if compare.startswith("ulp="):
+        if compare.startswith(("ulp=", "abs=")):
             return same(np.atleast_1d(np.asarray(a)), np.atleast_1d(np.asarray(b)), compare)
         return np.asarray(a).tobytes() == np.asarray(b).tobytes()
     if isinstance(a, (list, tuple)):

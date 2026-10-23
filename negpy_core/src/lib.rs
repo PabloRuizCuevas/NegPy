@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod bounds;
+pub mod color;
 pub mod components;
 pub mod contours;
 pub mod convert;
@@ -46,5 +47,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::meter::register(m)?;
     py::retouch::register(m)?;
     py::bounds::register(m)?;
+    py::color::register(m)?;
     py::analysis::register(m)
 }
