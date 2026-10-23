@@ -87,12 +87,13 @@ fn ln_f64(x: f64) -> f64 {
     e * LN2_HI + (e * LN2_LO + 2.0 * s * p)
 }
 
-/// e^t for t in -700..700 to about 1 ULP: t = k ln2 + r with |r| <= ln2/2, e^r by its Taylor
+/// e^t to about 1 ULP for t in -708..709 (clamped there): t = k ln2 + r with |r| <= ln2/2, e^r by its Taylor
 /// series, times 2^k through the exponent bits.
 #[inline(always)]
-fn exp_f64(t: f64) -> f64 {
+pub fn exp_f64(t: f64) -> f64 {
     const LN2_HI: f64 = 0.693_147_180_369_123_8;
     const LN2_LO: f64 = std::f64::consts::LN_2 - LN2_HI;
+    let t = t.clamp(-708.0, 709.0);
     let k = (t * std::f64::consts::LOG2_E).round_ties_even();
     let r = (t - k * LN2_HI) - k * LN2_LO;
     // 1/n! to n = 13: the next term is under 2^-57 at |r| = ln2/2.
@@ -103,7 +104,8 @@ fn exp_f64(t: f64) -> f64 {
         p = 1.0 / f + r * p;
     }
     let y = 1.0 + r * p;
-    y * f64::from_bits(((k as i64 + 1023) as u64) << 52)
+    // 2^k from the low bits of k + 1023 + 2^52: an `as` cast saturates and keeps the loop scalar.
+    y * f64::from_bits((k + (1023.0 + 4_503_599_627_370_496.0)).to_bits() << 52)
 }
 
 /// x^y for x >= 0 (or NaN) and y > 0: e^(y ln x), 0 at x = 0. The relative error grows with

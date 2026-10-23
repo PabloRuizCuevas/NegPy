@@ -172,83 +172,14 @@ def _in_gamut_lab(l_val: float, a: float, b: float, m: np.ndarray, white: np.nda
     return r >= -tol and r <= one + tol and g >= -tol and g <= one + tol and bl >= -tol and bl <= one + tol
 
 
-# Skin-tone mask for skin_chroma_rein: an axis-aligned reduction of the CIELAB skin locus.
-# Hue is the axis that stays put across the whole tonal range, chroma is bounded, and
-# lightness is free apart from the two ends where the hue angle turns to noise.
-#
-# The chroma window is the discriminator, and it is the measured skin locus, not a gamut
-# bound: sunset, terracotta and brick all sit inside the hue band. It cuts both ways. Skin
-# above the window keeps only partial weight, and warm objects at skin's own chroma (wood,
-# tan leather, sand) are the same color as skin. Neither is separable per pixel.
-_SKIN_HUE_CENTER_DEG = np.float32(52.0)
-_SKIN_HUE_WIDTH_DEG = np.float32(20.0)
-_SKIN_CHROMA_FULL = np.float32(35.0)
-_SKIN_CHROMA_ZERO = np.float32(60.0)
-_SKIN_L_LO = np.float32(15.0)
-_SKIN_L_HI = np.float32(95.0)
-
-# Chroma ceiling the rein pulls toward: _SKIN_CEIL_AT_FULL / strength, so the ceiling runs
-# past any reachable chroma as strength approaches 0 and the control fades out continuously.
-# A lerp to a finite "off" ceiling would step the moment the slider left 0. The knee starts
-# at a fraction of the ceiling, so ordinary skin below it passes through untouched.
-_SKIN_CEIL_AT_FULL = np.float32(22.0)
-_SKIN_KNEE_START_FRAC = np.float32(0.6)
-
-
-@njit(inline="always")
-def _smoothstep_scalar(e0: float, e1: float, x: float) -> float:
-    t = (x - e0) / (e1 - e0)
-    if t < 0.0:
-        t = 0.0
-    elif t > 1.0:
-        t = 1.0
-    return float(t * t * (np.float32(3.0) - np.float32(2.0) * t))
-
-
-@njit(inline="always")
 def _skin_weight(l_val: float, a: float, b: float) -> float:
-    """0 (not skin) to 1 (dead centre of the skin locus). Near-neutral pixels
-    have an undefined hue angle, so gate on chroma before trusting atan2."""
-    chroma = np.sqrt(a * a + b * b)
-    if chroma < np.float32(2.0):
-        return 0.0
-    hue_deg = np.degrees(np.arctan2(b, a))
-    dist = hue_deg - _SKIN_HUE_CENTER_DEG
-    # Wrap to [-180, 180], so 179 against -179 reads as 2 degrees apart, not 358.
-    dist = dist - np.float32(360.0) * np.round(dist / np.float32(360.0))
-    x = dist / _SKIN_HUE_WIDTH_DEG
-    w_hue = np.exp(np.float32(-0.5) * x * x)
-    w_chroma = np.float32(1.0) - _smoothstep_scalar(_SKIN_CHROMA_FULL, _SKIN_CHROMA_ZERO, chroma)
-    w_light = _smoothstep_scalar(np.float32(0.0), _SKIN_L_LO, l_val) * (
-        np.float32(1.0) - _smoothstep_scalar(_SKIN_L_HI, np.float32(100.0), l_val)
-    )
-    return float(w_hue * w_chroma * w_light)
+    """0 (not skin) to 1 (dead centre of the skin locus); 0 below a chroma of 2, where the hue is noise."""
+    return negpy_core.skin_weight(l_val, a, b)
 
 
-@parallel_njit(cache=True, fastmath=True)
 def _skin_chroma_rein_kernel(lab: np.ndarray, strength: float) -> np.ndarray:
-    """Soft chroma ceiling inside the skin mask -- see skin_chroma_rein."""
-    n = lab.shape[0]
-    out = np.empty((n, 3), dtype=np.float32)
-    one = np.float32(1.0)
-    ceiling = _SKIN_CEIL_AT_FULL / strength
-    start = _SKIN_KNEE_START_FRAC * ceiling
-    span = ceiling - start
-    for i in prange(n):
-        l_val = lab[i, 0]
-        a = lab[i, 1]
-        b = lab[i, 2]
-        chroma = np.sqrt(a * a + b * b)
-        scale = one
-        if chroma > start:
-            w = _skin_weight(l_val, a, b)
-            if w > 0.0:
-                knee = start + span * (one - np.exp(-(chroma - start) / span))
-                scale = (chroma + w * (knee - chroma)) / chroma
-        out[i, 0] = l_val
-        out[i, 1] = a * scale
-        out[i, 2] = b * scale
-    return out
+    """Soft chroma ceiling inside the skin mask over an (N, 3) Lab list -- see skin_chroma_rein."""
+    return negpy_core.skin_chroma_rein(np.ascontiguousarray(lab, dtype=np.float32), strength)
 
 
 def skin_chroma_rein(lab: np.ndarray, strength: float) -> np.ndarray:

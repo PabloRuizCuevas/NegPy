@@ -1035,20 +1035,15 @@ depends = []
 
 ["kernel/image/logic.py::_skin_chroma_rein_kernel"]
 phase = 3
-status = "todo"
-calls = ["numba"]
-depends = ["_skin_weight"]
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.skin_chroma_rein"]
+depends = []
 
 ["kernel/image/logic.py::_skin_weight"]
 phase = 3
-status = "todo"
-calls = ["numba"]
-depends = ["_smoothstep_scalar"]
-
-["kernel/image/logic.py::_smoothstep_scalar"]
-phase = 3
-status = "todo"
-calls = ["numba"]
+status = "ported"
+calls = ["negpy_core.skin_weight"]
 depends = []
 
 ["kernel/image/logic.py::_to_uint16_jit"]
@@ -1128,7 +1123,8 @@ depends = []
 
 ["kernel/image/logic.py::skin_chroma_rein"]
 phase = 3
-status = "todo"
+status = "ported"
+compare = "ulp=1"
 calls = []
 depends = ["_skin_chroma_rein_kernel"]
 

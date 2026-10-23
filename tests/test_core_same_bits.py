@@ -38,6 +38,7 @@ _CASES = {
     "lab_to_rgb": lambda: negpy_core.lab_to_rgb(
         _LAB, _M.T.copy(), np.array([0.95047, 1.0, 1.08883], np.float32), np.float32(0.008856), np.float32(7.787)
     ),
+    "skin_chroma_rein": lambda: negpy_core.skin_chroma_rein(_LAB, np.float32(0.6)),
 }
 
 _HASHES = {
@@ -58,6 +59,7 @@ _HASHES = {
     "oetf_encode": "44508d28673c678fc0ec7b5262a06d0053ea6b4bed4bead7bc49556bc60eb070",
     "rgb_to_lab": "02c583bf1f5fe9723e2cb0a3e1f34759d6b0778d3644e8e2cff2251e756b68f2",
     "lab_to_rgb": "34016e7f9aebcfdf780b67b96b128041c6ba1ac2a427f4e87b5413dcc7345eef",
+    "skin_chroma_rein": "6def89b9f456f16abf406c351745bbb791f15bc69e5b03f2e478ed7391839b01",
 }
 
 

@@ -16,3 +16,4 @@ tolerance listed for each entry.
 | `features/exposure/normalization.py::to_log_density` (through `prefilter_log_grid`) | log10 is correctly rounded (`mathf::log10f`); NumPy's float32 log10 (SVML) is up to 3 ULP off on about half the inputs. | ulp=3 |
 | `kernel/image/logic.py::_rgb_to_lab_kernel` (and `rgb_to_lab_working`) | The cube root is `mathf::pow_f64`, not glibc's correctly rounded pow; a* and b* near zero take the float64 difference in a few ULP. | abs=1e-6 |
 | `kernel/image/logic.py::_lab_to_rgb_kernel` (and `lab_to_rgb_working`) | One value in the corpus rounds the other way; the float64 operation order copies Numba's fastmath build. | ulp=1 |
+| `kernel/image/logic.py::_skin_chroma_rein_kernel` (and `skin_chroma_rein`) | `atan2f` and `exp` are `mathf`'s, not glibc's; Numba's own serial and parallel builds of the kernel already differ in the last bit. | ulp=1 |

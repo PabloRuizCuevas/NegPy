@@ -104,9 +104,28 @@ fn lab_to_rgb<'py>(
     filled(py, &lab, |src, d| color::lab_to_rgb(src, d, s))
 }
 
+/// `_skin_chroma_rein_kernel` of an (..., 3) float32 Lab array.
+#[pyfunction]
+fn skin_chroma_rein<'py>(
+    py: Python<'py>,
+    lab: PyReadonlyArrayDyn<'py, f32>,
+    strength: f32,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    triplets(&lab)?;
+    filled(py, &lab, |src, d| color::skin_chroma_rein(src, d, strength))
+}
+
+/// `_skin_weight(l, a, b)`.
+#[pyfunction]
+fn skin_weight(l: f32, a: f32, b: f32) -> f64 {
+    color::skin_weight_of(l, a, b)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(oetf_encode, m)?)?;
     m.add_function(wrap_pyfunction!(oetf_decode, m)?)?;
     m.add_function(wrap_pyfunction!(rgb_to_lab, m)?)?;
-    m.add_function(wrap_pyfunction!(lab_to_rgb, m)?)
+    m.add_function(wrap_pyfunction!(lab_to_rgb, m)?)?;
+    m.add_function(wrap_pyfunction!(skin_chroma_rein, m)?)?;
+    m.add_function(wrap_pyfunction!(skin_weight, m)?)
 }

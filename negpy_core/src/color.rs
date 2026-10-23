@@ -175,3 +175,112 @@ fn lab_to_rgb_block(src: &[f32], dst: &mut [f32], s: LabSpace) {
         });
     }
 }
+
+// Skin-tone mask: an axis-aligned reduction of the CIELAB skin locus. Hue stays put across the
+// tonal range, chroma is bounded, and lightness is free apart from the two ends where the hue
+// turns to noise. The chroma window is the measured skin locus, not a gamut bound: sunset,
+// terracotta and brick sit inside the hue band, and wood, tan leather and sand at skin's own
+// chroma are skin's colour. Neither is separable per pixel.
+const HUE_CENTER: f32 = 52.0;
+const HUE_WIDTH: f64 = 20.0;
+const CHROMA_FULL: f32 = 35.0;
+const CHROMA_ZERO: f32 = 60.0;
+const L_LO: f32 = 15.0;
+const L_HI: f32 = 95.0;
+// The ceiling is CEIL_AT_FULL / strength, so it runs past any reachable chroma as strength nears
+// 0 and the control fades out without a step. The knee starts at a fraction of the ceiling, so
+// ordinary skin below it passes untouched.
+const CEIL_AT_FULL: f32 = 22.0;
+const KNEE_START: f32 = 0.6;
+
+/// `smoothstep` of a clamped `t`, as float64: Numba returns `float(...)`.
+#[inline(always)]
+fn clamp01(t: f32) -> f64 {
+    if t < 0.0 {
+        0.0
+    } else if t > 1.0 {
+        1.0
+    } else {
+        t as f64
+    }
+}
+
+/// `_skin_chroma_rein_kernel` over N x 3 Lab. Numba's fastmath build folds the smoothstep
+/// divisions into reciprocal constants and regroups the weight's products; this copies its
+/// machine code.
+pub fn skin_chroma_rein(src: &[f32], dst: &mut [f32], strength: f32) {
+    let ceiling = CEIL_AT_FULL / strength;
+    let start = ceiling * KNEE_START;
+    let span = ceiling * (1.0 - KNEE_START);
+    let inv_span = 1.0f32 / span;
+    dst.par_chunks_mut(BLOCK * 3)
+        .zip(src.par_chunks(BLOCK * 3))
+        .for_each(|(d, p)| rein_block(p, d, (start, span, inv_span)));
+}
+
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2+fma",
+    "aarch64+neon"
+))]
+fn rein_block(src: &[f32], dst: &mut [f32], (start, span, inv_span): (f32, f32, f32)) {
+    // The skin candidates of each run are gathered first, so their weights compute in one
+    // vectorized loop; every other pixel keeps its values (a scale of 1 is exact).
+    const RUN: usize = 512;
+    let mut idx = [0usize; RUN];
+    let mut cand = [[0f32; 4]; RUN];
+    let mut scale = [1f64; RUN];
+    dst.copy_from_slice(src);
+    for (d, p) in dst.chunks_mut(3 * RUN).zip(src.chunks(3 * RUN)) {
+        let mut n = 0;
+        for (i, &[l, a, b]) in p.as_chunks::<3>().0.iter().enumerate() {
+            let chroma = b.mul_add(b, a * a).sqrt();
+            idx[n] = i;
+            cand[n] = [l, a, b, chroma];
+            // `chroma <= start` is unordered-or-less: a NaN chroma keeps the pixel.
+            n += !(chroma <= start || chroma < 2.0) as usize;
+        }
+        for (s, &[l, a, b, chroma]) in scale[..n].iter_mut().zip(&cand[..n]) {
+            let w = skin_weight(l, a, b, chroma);
+            let gap = start - chroma;
+            let e = crate::mathf::exp_f64((gap * inv_span) as f64) as f32;
+            let knee_gap = (1.0 - e).mul_add(span, gap);
+            let c = chroma as f64;
+            let rein = w.mul_add(knee_gap as f64, c) / c;
+            *s = if w > 0.0 { rein } else { 1.0 };
+        }
+        let out = d.as_chunks_mut::<3>().0;
+        for ((&i, &[_, a, b, _]), &s) in idx[..n].iter().zip(&cand[..n]).zip(&scale[..n]) {
+            out[i][1] = (s * a as f64) as f32;
+            out[i][2] = (s * b as f64) as f32;
+        }
+    }
+}
+
+/// `_skin_weight`: 0 below a chroma of 2, where the hue angle is noise.
+pub fn skin_weight_of(l: f32, a: f32, b: f32) -> f64 {
+    let chroma = b.mul_add(b, a * a).sqrt();
+    if chroma < 2.0 {
+        0.0
+    } else {
+        skin_weight(l, a, b, chroma)
+    }
+}
+
+/// `_skin_weight` for a chroma above 2.
+#[inline(always)]
+fn skin_weight(l: f32, a: f32, b: f32, chroma: f32) -> f64 {
+    let deg = 180.0f32 / std::f32::consts::PI;
+    let dist = crate::mathf::atan2f(b, a).mul_add(deg, -HUE_CENTER);
+    let turns = (dist * (1.0f32 / 360.0)).round_ties_even();
+    let wrapped = (-(turns as f64)).mul_add(360.0, dist as f64);
+    let w_hue = crate::mathf::exp_f64(wrapped * wrapped * (-0.5 / (HUE_WIDTH * HUE_WIDTH)));
+    let window = CHROMA_ZERO - CHROMA_FULL;
+    let tc = clamp01(chroma.mul_add(1.0 / window, -CHROMA_FULL / window));
+    let w_chroma = (-(tc * tc)).mul_add((-tc).mul_add(2.0, 3.0), 1.0);
+    let t_lo = clamp01(l * (1.0 / L_LO));
+    let t_hi = clamp01(l.mul_add(1.0 / (100.0 - L_HI), -L_HI / (100.0 - L_HI)));
+    let rise = (w_hue * w_chroma) * ((t_lo * t_lo) * (-t_lo).mul_add(2.0, 3.0));
+    let fall = (t_hi * t_hi) * (-t_hi).mul_add(2.0, 3.0);
+    (-fall).mul_add(rise, rise)
+}
