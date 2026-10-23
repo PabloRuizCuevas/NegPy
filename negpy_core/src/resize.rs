@@ -655,6 +655,268 @@ fn resize_kernel_as<S: Copy + Sync, D: Copy + Send>(
     Some(())
 }
 
+/// `cv2.resize(src, (dw, dh), interpolation=cv2.INTER_AREA)` of a uint8 image: OpenCV's area
+/// weights in float32, rounded half to even and saturated to uint8.
+pub fn resize_area_u8(
+    src: &[u8],
+    (h, w, cn): (usize, usize, usize),
+    (dh, dw): (usize, usize),
+    dst: &mut [u8],
+) -> Option<()> {
+    let mut f = vec![0f32; src.len()];
+    crate::par_zip(&mut f, src, |d, &v| *d = v as f32);
+    let out = resize_area(&f, h, w, cn, dh, dw)?;
+    // Adding 1.5 * 2^23 rounds half to even into the low mantissa bits.
+    crate::par_zip(dst, &out, |d, &v| {
+        *d = ((v.clamp(-1.0, 256.0) + 12_582_912.0).to_bits() as i32 - 0x4b40_0000).clamp(0, 255)
+            as u8;
+    });
+    Some(())
+}
+
+/// `cv2.resize(src, (dw, dh), interpolation=cv2.INTER_CUBIC)` of a uint8 image, as OpenCV
+/// computes it without IPP: 11-bit fixed-point weights, integer rows, and a column pass that
+/// runs in float32 over blocks of 8 values of each row and in fixed point over the rest.
+pub fn resize_cubic_u8(
+    src: &[u8],
+    (h, w, cn): (usize, usize, usize),
+    (dh, dw): (usize, usize),
+    dst: &mut [u8],
+) -> Option<()> {
+    if h == 0
+        || w == 0
+        || dh == 0
+        || dw == 0
+        || cn == 0
+        || src.len() != h * w * cn
+        || dst.len() != dh * dw * cn
+    {
+        return None;
+    }
+    // saturate_cast<short> of the float weight: round half to even.
+    let fixed = |wt: [f32; 8]| {
+        std::array::from_fn::<i16, 4, _>(|k| (wt[k] * 2048.0).round_ties_even() as i16)
+    };
+    let xs = kernel_axis(w, dw, Kernel::Cubic);
+    let ys: Vec<(i64, [i16; 4])> = kernel_axis(h, dh, Kernel::Cubic)
+        .into_iter()
+        .map(|(y, wt)| (y, fixed(wt)))
+        .collect();
+    // A row padded with PAD replicated pixels each side holds every tap window: x0 >= -2, x0 + 3 <= w + 1.
+    let starts: Vec<u32> = xs.iter().map(|&(x0, _)| (x0 + PAD as i64) as u32).collect();
+    // Each pixel's four weights repeated per channel lane group, as the AVX2 row pass loads them.
+    let wts: Vec<[i16; 16]> = xs
+        .iter()
+        .map(|&(_, wt)| {
+            let a = fixed(wt);
+            std::array::from_fn(|i| a[i % 4])
+        })
+        .collect();
+    let padded_len = (w + 2 * PAD) * cn + SLACK;
+    let windows_fit = starts
+        .iter()
+        .all(|&s| (s as usize + 4) * cn + 16 <= padded_len);
+    let clamp = |i: i64, len: usize| i.clamp(0, len as i64 - 1) as usize;
+    let row_len = dw * cn;
+    let vec_len = row_len / 8 * 8;
+    let band = dh
+        .div_ceil(BANDS_PER_THREAD * rayon::current_num_threads())
+        .max(8);
+    dst.par_chunks_mut(band * row_len)
+        .zip(ys.par_chunks(band))
+        .for_each(|(band, ys)| {
+            let lo = clamp(ys[0].0, h);
+            let hi = clamp(ys[ys.len() - 1].0 + 3, h);
+            BUFFERS.with_borrow_mut(|(rows, padded)| {
+                rows.resize((hi - lo + 1) * row_len, 0);
+                padded.resize(padded_len, 0);
+                for (r, out) in rows.chunks_mut(row_len).enumerate() {
+                    let s = &src[(lo + r) * w * cn..][..w * cn];
+                    padded[PAD * cn..][..w * cn].copy_from_slice(s);
+                    for p in 0..PAD {
+                        padded[p * cn..][..cn].copy_from_slice(&s[..cn]);
+                        padded[(PAD + w + p) * cn..][..cn].copy_from_slice(&s[(w - 1) * cn..]);
+                    }
+                    cubic_row_u8(padded, cn, &starts, &wts, out, windows_fit);
+                }
+                for (o, (y0, b)) in band.chunks_mut(row_len).zip(ys) {
+                    let r = |k: usize| &rows[(clamp(y0 + k as i64, h) - lo) * row_len..][..row_len];
+                    cubic_column_u8(o, [r(0), r(1), r(2), r(3)], *b, vec_len);
+                }
+            });
+        });
+    Some(())
+}
+
+thread_local! {
+    /// Each worker's row buffers, kept across calls: a fresh large buffer page-faults on every call.
+    static BUFFERS: std::cell::RefCell<(Vec<i32>, Vec<u8>)> = const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+}
+
+const PAD: usize = 2;
+const BANDS_PER_THREAD: usize = 4;
+const SLACK: usize = 16;
+
+/// `HResizeCubic` of one padded row: output (dx, c) is the integer dot product of channel c of
+/// the four pixels from `starts[dx]` with the weights of dx. `windows_fit` says each 16-byte
+/// load at a window start lies inside `padded`.
+fn cubic_row_u8(
+    padded: &[u8],
+    cn: usize,
+    starts: &[u32],
+    wts: &[[i16; 16]],
+    out: &mut [i32],
+    windows_fit: bool,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if windows_fit && (cn == 3 || cn == 4) && std::arch::is_x86_feature_detected!("avx2") {
+        // SAFETY: AVX2 is present, and every 16-byte load at a window start lies inside `padded`.
+        let done = unsafe { cubic_row_u8_avx2(padded, cn, starts, wts, out) };
+        cubic_row_u8_scalar(
+            padded,
+            cn,
+            &starts[done..],
+            &wts[done..],
+            &mut out[done * cn..],
+        );
+        return;
+    }
+    cubic_row_u8_scalar(padded, cn, starts, wts, out);
+}
+
+fn cubic_row_u8_scalar(
+    padded: &[u8],
+    cn: usize,
+    starts: &[u32],
+    wts: &[[i16; 16]],
+    out: &mut [i32],
+) {
+    for ((o, &s), a) in out.chunks_exact_mut(cn).zip(starts).zip(wts) {
+        let p = &padded[s as usize * cn..][..4 * cn];
+        for (c, d) in o.iter_mut().enumerate() {
+            *d = (0..4).map(|k| p[k * cn + c] as i32 * a[k] as i32).sum();
+        }
+    }
+}
+
+/// Two pixels per step: `pshufb` sorts each 16-byte window by channel, `pmaddwd` multiplies the
+/// four taps pairwise and `phaddd` adds the pairs. Returns how many pixels it wrote; a pixel whose
+/// 8-lane store would pass the end of `out` is left to the caller.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn cubic_row_u8_avx2(
+    padded: &[u8],
+    cn: usize,
+    starts: &[u32],
+    wts: &[[i16; 16]],
+    out: &mut [i32],
+) -> usize {
+    use std::arch::x86_64::*;
+    // Channel-major order of a window's bytes; 3 channels leave the last four lanes zero.
+    let order: [i8; 16] = if cn == 3 {
+        [0, 3, 6, 9, 1, 4, 7, 10, 2, 5, 8, 11, -1, -1, -1, -1]
+    } else {
+        [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15]
+    };
+    // Lanes of [p.c0, p.c1, q.c0, q.c1 | p.c2, p.c3, q.c2, q.c3] in pixel order.
+    let lanes = if cn == 3 {
+        [0, 1, 4, 2, 3, 6, 7, 7]
+    } else {
+        [0, 1, 4, 5, 2, 3, 6, 7]
+    };
+    let n = starts.len();
+    let mut dx = 0;
+    // SAFETY: every load at a window start is inside `padded` (the caller's check), and each
+    // store writes 8 lanes at dx * cn with (dx + 2) * cn + 8 - 2 * cn <= out.len() checked below.
+    unsafe {
+        let shuf = _mm_loadu_si128(order.as_ptr() as *const __m128i);
+        let perm = _mm256_loadu_si256(lanes.as_ptr() as *const __m256i);
+        let pixel = |d: usize| {
+            let v = _mm_loadu_si128(padded.as_ptr().add(starts[d] as usize * cn) as *const __m128i);
+            let taps = _mm256_cvtepu8_epi16(_mm_shuffle_epi8(v, shuf));
+            let wv = _mm256_loadu_si256(wts[d].as_ptr() as *const __m256i);
+            _mm256_madd_epi16(taps, wv)
+        };
+        while dx + 2 <= n && dx * cn + 8 <= out.len() {
+            let sums = _mm256_hadd_epi32(pixel(dx), pixel(dx + 1));
+            let ordered = _mm256_permutevar8x32_epi32(sums, perm);
+            _mm256_storeu_si256(out.as_mut_ptr().add(dx * cn) as *mut __m256i, ordered);
+            dx += 2;
+        }
+    }
+    dx
+}
+
+/// `VResizeCubic` with `VResizeCubicVec_32s8u` at 128-bit lanes for one plane: the first `split`
+/// values in float32 (weights scaled by 2^-22, the last product added first, rounded half to
+/// even), the rest `(sum + 2^21) >> 22`. Both saturate to uint8.
+#[multiversion(targets(
+    "x86_64+avx512f+avx512bw+avx512vl+avx512dq",
+    "x86_64+avx2",
+    "aarch64+neon"
+))]
+fn cubic_column_u8(out: &mut [u8], r: [&[i32]; 4], b: [i16; 4], split: usize) {
+    let scale = 1.0f32 / (2048.0 * 2048.0);
+    let bf = b.map(|v| v as f32 * scale);
+    let n = out.len();
+    let r = r.map(|x| &x[..n]);
+    let mut done = 0;
+    #[cfg(target_arch = "x86_64")]
+    if std::arch::is_x86_feature_detected!("avx2") {
+        // SAFETY: AVX2 is present; the kernel reads and writes only below `split <= n`.
+        done = unsafe { cubic_column_u8_avx2(&mut out[..split], r, bf) };
+    }
+    let (vec, rest) = out.split_at_mut(split);
+    let vec = &mut vec[done..];
+    let rows = r[0].iter().zip(r[1]).zip(r[2]).zip(r[3]);
+    for (d, (((&s0, &s1), &s2), &s3)) in vec.iter_mut().zip(rows.clone().skip(done)) {
+        let v = s3 as f32 * bf[3];
+        let v = s2 as f32 * bf[2] + v;
+        let v = s1 as f32 * bf[1] + v;
+        let v = s0 as f32 * bf[0] + v;
+        // 1.5 * 2^23 rounds half to even into the low mantissa bits for |v| < 2^22.
+        let q = (v.clamp(-1.0, 256.0) + 12_582_912.0).to_bits() as i32 - 0x4b40_0000;
+        *d = q.clamp(0, 255) as u8;
+    }
+    let b = b.map(i32::from);
+    for (d, (((&s0, &s1), &s2), &s3)) in rest.iter_mut().zip(rows.skip(split)) {
+        let s = s0 * b[0] + s1 * b[1] + s2 * b[2] + s3 * b[3];
+        *d = ((s + (1 << 21)) >> 22).clamp(0, 255) as u8;
+    }
+}
+
+/// The float32 part of the column pass, 16 values per step: `cvtps2dq` rounds half to even as
+/// `v_round` does, and the saturating packs clamp to uint8 as `v_pack` and `v_pack_u_store` do.
+/// Returns how many values it wrote.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn cubic_column_u8_avx2(out: &mut [u8], r: [&[i32]; 4], bf: [f32; 4]) -> usize {
+    use std::arch::x86_64::*;
+    let n = out.len() / 16 * 16;
+    // SAFETY: each step reads 16 values of every row and writes 16 bytes below n <= out.len()
+    // and n <= r[k].len().
+    unsafe {
+        let b = bf.map(|v| _mm256_set1_ps(v));
+        let sum = |i: usize| {
+            let ld = |k: usize| {
+                _mm256_cvtepi32_ps(_mm256_loadu_si256(r[k].as_ptr().add(i) as *const __m256i))
+            };
+            let v = _mm256_mul_ps(ld(3), b[3]);
+            let v = _mm256_add_ps(_mm256_mul_ps(ld(2), b[2]), v);
+            let v = _mm256_add_ps(_mm256_mul_ps(ld(1), b[1]), v);
+            _mm256_cvtps_epi32(_mm256_add_ps(_mm256_mul_ps(ld(0), b[0]), v))
+        };
+        for i in (0..n).step_by(16) {
+            let words =
+                _mm256_permute4x64_epi64::<0b11_01_10_00>(_mm256_packs_epi32(sum(i), sum(i + 8)));
+            let bytes = _mm256_packus_epi16(words, words);
+            let low = _mm256_castsi256_si128(_mm256_permute4x64_epi64::<0b10_00_10_00>(bytes));
+            _mm_storeu_si128(out.as_mut_ptr().add(i) as *mut __m128i, low);
+        }
+    }
+    n
+}
+
 /// `expand_mask_plane` times `scale`: a ph x pw plane resized bilinearly onto rows y1..y2 and
 /// columns x1..x2 of an oh x ow plane, the edges replicated outside, each value times `scale`
 /// in float32.

@@ -27,3 +27,32 @@ def test_resize_kernel_stays_near_cv2(shape, dsize, lanczos, flag, tol):
     got = negpy_core.resize_kernel(np.ascontiguousarray(src), dsize, lanczos=lanczos)
     assert got.shape == want.shape
     np.testing.assert_allclose(got, want, rtol=0, atol=tol)
+
+
+U8_CASES = [
+    ((20, 30, 3), (45, 31)),
+    ((17, 23), (40, 33)),
+    ((200, 300, 3), (450, 300)),
+    ((300, 200, 4), (500, 333)),
+    ((64, 64, 3), (48, 40)),
+    ((9, 7, 3), (31, 29)),
+]
+
+
+@pytest.fixture
+def no_ipp():
+    cv2.ipp.setUseIPP(False)
+    yield
+    cv2.ipp.setUseIPP(True)
+
+
+@pytest.mark.parametrize("shape,dsize", U8_CASES)
+def test_uint8_cubic_matches_opencv_without_ipp(shape, dsize, no_ipp):
+    src = np.random.default_rng(sum(shape)).integers(0, 256, shape).astype(np.uint8)
+    np.testing.assert_array_equal(negpy_core.resize_u8(src, dsize, cubic=True), cv2.resize(src, dsize, interpolation=cv2.INTER_CUBIC))
+
+
+@pytest.mark.parametrize("shape,dsize", [((400, 600, 3), (240, 160)), ((600, 900, 3), (300, 200)), ((101, 77, 3), (40, 31))])
+def test_uint8_area_matches_cv2(shape, dsize):
+    src = np.random.default_rng(sum(shape)).integers(0, 256, shape).astype(np.uint8)
+    np.testing.assert_array_equal(negpy_core.resize_u8(src, dsize), cv2.resize(src, dsize, interpolation=cv2.INTER_AREA))

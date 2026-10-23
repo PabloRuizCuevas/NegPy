@@ -2627,9 +2627,11 @@ depends = []
 
 ["services/export/contact_sheet.py::_place_tile"]
 phase = 7
-status = "todo"
-calls = ["cv2.resize"]
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.resize_u8"]
 depends = []
+note = "negpy_core.resize_u8"
 
 ["services/export/linear_output.py::_apply_ice"]
 phase = 7

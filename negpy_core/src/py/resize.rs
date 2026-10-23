@@ -203,7 +203,48 @@ fn resize_kernel<'py>(
     Ok(out)
 }
 
+/// `cv2.resize(src, dsize, interpolation=...)` of a contiguous uint8 image: `cubic` False is
+/// INTER_AREA, True INTER_CUBIC as OpenCV computes it without IPP.
+#[pyfunction]
+#[pyo3(signature = (src, dsize, cubic=false))]
+fn resize_u8<'py>(
+    py: Python<'py>,
+    src: PyReadonlyArrayDyn<'py, u8>,
+    dsize: (usize, usize),
+    cubic: bool,
+) -> PyResult<Bound<'py, PyArrayDyn<u8>>> {
+    let shape = src.shape().to_vec();
+    let (h, w, cn) = match shape.as_slice() {
+        [h, w] => (*h, *w, 1),
+        [h, w, c] => (*h, *w, *c),
+        _ => return Err(PyValueError::new_err("resize_u8 needs a 2-D or 3-D array")),
+    };
+    let data = src
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("resize_u8 needs a contiguous array"))?;
+    let (dw, dh) = dsize;
+    let mut dims = vec![dh, dw];
+    dims.extend_from_slice(&shape[2..]);
+    let out = PyArrayDyn::<u8>::zeros(py, dims, false);
+    {
+        let mut rw = out.readwrite();
+        let dst = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        super::detach(py, dst.len(), || {
+            if cubic {
+                resize::resize_cubic_u8(data, (h, w, cn), (dh, dw), dst)
+            } else {
+                resize::resize_area_u8(data, (h, w, cn), (dh, dw), dst)
+            }
+        })
+        .ok_or_else(|| PyValueError::new_err("resize_u8 needs a non-empty image and size"))?;
+    }
+    Ok(out)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(resize_u8, m)?)?;
     m.add_function(wrap_pyfunction!(resize_kernel, m)?)?;
     m.add_function(wrap_pyfunction!(expand_plane, m)?)?;
     m.add_function(wrap_pyfunction!(resize_nearest, m)?)?;
