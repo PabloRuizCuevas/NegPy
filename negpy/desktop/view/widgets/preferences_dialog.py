@@ -330,7 +330,7 @@ class PreferencesDialog(QDialog):
             "mdi6.cpu-64-bit",
             tr("Multi-core CPU Rendering"),
             parallel_enabled(),
-            tr("Render on all CPU cores, an experimental mode that can close the app without warning."),
+            tr("Render on all CPU cores. When off, CPU rendering uses one core."),
         )
         self.parallel_box.toggled.connect(self._on_parallel_changed)
         self._add_toggles(grid, row, self.gpu_box, self.parallel_box)
@@ -512,16 +512,10 @@ class PreferencesDialog(QDialog):
             self.session.set_semantic_search_enabled(checked)
 
     def _on_parallel_changed(self, checked: bool) -> None:
-        """Takes effect at once: every kernel is compiled both ways and dispatched per
-        call, so there is nothing to recompile and no restart to wait for."""
+        """Takes effect from the next negpy_core call; no restart."""
         set_parallel_enabled(bool(checked))
-        self.repo.save_global_settings({"cpu_parallel": bool(checked), "cpu_parallel_active": bool(checked)})
-        self.controller.set_status(
-            tr("Multi-core CPU rendering is on. Turn it off if the app closes unexpectedly.")
-            if checked
-            else tr("Multi-core CPU rendering off"),
-            5000,
-        )
+        self.repo.save_global_setting("cpu_parallel", bool(checked))
+        self.controller.set_status(tr("Multi-core CPU rendering on") if checked else tr("Multi-core CPU rendering off"), 5000)
 
     def _on_low_vram_tiling_changed(self, checked: bool) -> None:
         APP_CONFIG.low_vram_export_tiling = bool(checked)

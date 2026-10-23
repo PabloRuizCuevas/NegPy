@@ -14,7 +14,6 @@ from negpy.kernel.image.logic import (
     working_oetf_encode,
 )
 from negpy.kernel.image.validation import ensure_image
-from negpy.kernel.system.parallel import SERIAL_MAX_ELEMENTS
 
 
 CLAHE_GRID = 8
@@ -158,12 +157,9 @@ def _map_row_blocks(img: ImageBuffer, fn: Callable[[ImageBuffer], ImageBuffer], 
     if img.shape[0] <= rows:
         return fn(img)
     output = np.empty(img.shape, dtype=np.float32)
-    min_rows = math.ceil(SERIAL_MAX_ELEMENTS / img[0].size)
     for start in range(0, img.shape[0], rows):
         end = min(start + rows, img.shape[0])
         low, high = max(0, start - halo), min(img.shape[0], end + halo)
-        # Keep a short tail on the full frame's Numba dispatch path.
-        low = min(low, max(0, high - min_rows))
         block = fn(img[low:high])
         output[start:end] = block[start - low : end - low]
     return output

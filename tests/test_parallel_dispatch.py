@@ -1,14 +1,13 @@
-"""The multi-core failsafe: parallel_njit dual dispatch, platform policy, override."""
+"""The Multi-core CPU Rendering setting: one thread or all, the same bits either way; policy, override."""
 
 import threading
 
 import numpy as np
 import pytest
-from numba import prange
 
 from negpy.kernel.system import parallel as par
 from negpy.kernel.system.override import OverrideConfig, _parse
-from negpy.kernel.system.parallel import default_cpu_parallel, parallel_njit
+from negpy.kernel.system.parallel import default_cpu_parallel
 
 
 @pytest.fixture(autouse=True)
@@ -18,32 +17,10 @@ def _restore_flag():
     par.set_parallel_enabled(before)
 
 
-@parallel_njit(fastmath=True)
-def _double(arr):
-    out = np.empty_like(arr)
-    for i in prange(arr.shape[0]):
-        out[i] = arr[i] * 2.0
-    return out
-
-
 def test_platform_policy():
     assert default_cpu_parallel("darwin") is False
     assert default_cpu_parallel("win32") is True
     assert default_cpu_parallel("linux") is True
-
-
-def test_dispatch_uses_selected_variant():
-    # At or above SERIAL_MAX_ELEMENTS; smaller inputs always take the serial variant.
-    arr = np.arange(par.SERIAL_MAX_ELEMENTS, dtype=np.float32)
-
-    par.set_parallel_enabled(False)
-    np.testing.assert_array_equal(_double(arr), arr * 2.0)
-    assert _double.serial.signatures  # serial variant compiled and used
-    assert not _double.parallel.signatures  # parallel never touched while disabled
-
-    par.set_parallel_enabled(True)
-    np.testing.assert_array_equal(_double(arr), arr * 2.0)
-    assert _double.parallel.signatures
 
 
 def test_print_curve_parity_serial_vs_parallel():
@@ -57,7 +34,7 @@ def test_print_curve_parity_serial_vs_parallel():
     par.set_parallel_enabled(False)
     res_ser = apply_characteristic_curve(img, (0.5, 2.0), (0.5, 2.0), (0.5, 2.0))
 
-    np.testing.assert_allclose(res_par, res_ser, rtol=0, atol=1e-6)
+    np.testing.assert_array_equal(res_par, res_ser)
 
 
 def test_lab_roundtrip_parity_serial_vs_parallel():
@@ -71,24 +48,26 @@ def test_lab_roundtrip_parity_serial_vs_parallel():
     par.set_parallel_enabled(False)
     lab_ser = rgb_to_lab_working(img)
 
-    np.testing.assert_allclose(lab_par, lab_ser, rtol=0, atol=1e-4)
+    np.testing.assert_array_equal(lab_par, lab_ser)
 
 
-def test_concurrent_parallel_invocation_is_serialized():
-    # Regression for the workqueue concurrent-access abort: many threads invoking
-    # a parallel kernel simultaneously must be safe (the gate serializes entry).
-    par.set_parallel_enabled(True)
-    arr = np.arange(200_000, dtype=np.float32)
+def test_concurrent_calls_while_the_setting_flips_are_safe():
+    from negpy.kernel.image.logic import rgb_to_lab_working
+
+    img = np.random.default_rng(3).random((300, 400, 3), dtype=np.float32)
+    want = rgb_to_lab_working(img)
     errors: list[Exception] = []
 
-    def hammer():
+    def hammer(flip: bool):
         try:
-            for _ in range(20):
-                _double(arr)
+            for i in range(20):
+                if flip:
+                    par.set_parallel_enabled(i % 2 == 0)
+                np.testing.assert_array_equal(rgb_to_lab_working(img), want)
         except Exception as e:  # pragma: no cover
             errors.append(e)
 
-    threads = [threading.Thread(target=hammer) for _ in range(6)]
+    threads = [threading.Thread(target=hammer, args=(i == 0,)) for i in range(6)]
     for t in threads:
         t.start()
     for t in threads:

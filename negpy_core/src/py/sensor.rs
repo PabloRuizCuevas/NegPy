@@ -57,7 +57,7 @@ fn sensor_unmix(
     image(&x)?;
     let (src, m) = (data(&x)?, matrix(&m)?);
     let dst = target(&mut out, x.shape())?;
-    py.detach(|| sensor::unmix(src, dst, m));
+    super::detach(py, || sensor::unmix(src, dst, m));
     Ok(())
 }
 
@@ -74,7 +74,7 @@ fn sensor_log_unmix(
     image(&x)?;
     let (src, c, offset, floor) = (data(&x)?, matrix(&c)?, triplet(&offset)?, triplet(&floor)?);
     let dst = target(&mut out, x.shape())?;
-    py.detach(|| sensor::log_unmix(src, dst, c, offset, floor));
+    super::detach(py, || sensor::log_unmix(src, dst, c, offset, floor));
     Ok(())
 }
 
@@ -104,7 +104,7 @@ fn sensor_two_scale_layer(
         start,
         full,
     };
-    py.detach(|| sensor::two_scale_layer(src, m, own, s, c, w));
+    super::detach(py, || sensor::two_scale_layer(src, m, own, s, c, w));
     Ok(())
 }
 
@@ -131,7 +131,9 @@ fn sensor_two_scale(
     let (xs, b, col, w) = (data(&x)?, data(&blurred)?, data(&color)?, data(&weight)?);
     let (m, c) = (matrix(&m)?, matrix(&c)?);
     let dst = target(&mut out, &shape)?;
-    py.detach(|| sensor::two_scale(xs, b, col, w, m, c, (floor, log_defect), dst));
+    super::detach(py, || {
+        sensor::two_scale(xs, b, col, w, m, c, (floor, log_defect), dst)
+    });
     Ok(())
 }
 

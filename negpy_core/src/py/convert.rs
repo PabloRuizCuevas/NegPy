@@ -37,7 +37,7 @@ fn filled<'py, T: numpy::Element>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        py.detach(|| fill(dst));
+        super::detach(py, || fill(dst));
     }
     Ok(out)
 }
@@ -129,10 +129,10 @@ fn rgb_to_rgba_into(
     }
     let cn = s.dim().2;
     if let (Some(src), Some(dst)) = (s.as_slice(), d.as_slice_mut()) {
-        py.detach(|| convert::rgb_to_rgba(src, cn, dst));
+        super::detach(py, || convert::rgb_to_rgba(src, cn, dst));
         return Ok(());
     }
-    py.detach(|| {
+    super::detach(py, || {
         for (srow, mut drow) in s.outer_iter().zip(d.outer_iter_mut()) {
             for (sp, mut dp) in srow.outer_iter().zip(drow.outer_iter_mut()) {
                 for c in 0..3 {
@@ -158,7 +158,7 @@ fn rgba_to_rgb_into(
     if oy + h > s.dim().0 || ox + w > s.dim().1 || s.dim().2 < 3 || dc < 3 {
         return Err(PyValueError::new_err("region outside the source"));
     }
-    py.detach(|| {
+    super::detach(py, || {
         for (y, mut drow) in d.outer_iter_mut().enumerate() {
             let srow = s.index_axis(numpy::ndarray::Axis(0), oy + y);
             // A padded readback has whole RGBA rows: copy them as slices when it does.

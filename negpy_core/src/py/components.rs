@@ -29,7 +29,9 @@ fn connected_components_with_stats<'py>(
     let data = mask
         .as_slice()
         .map_err(|_| PyValueError::new_err("needs a contiguous array"))?;
-    let c = py.detach(|| components::connected_components(data, h, w, connectivity));
+    let c = super::detach(py, || {
+        components::connected_components(data, h, w, connectivity)
+    });
     let labels = numpy::PyArray1::from_vec(py, c.labels).reshape(vec![h, w])?;
     let stats =
         numpy::PyArray2::from_vec2(py, &c.stats.iter().map(|s| s.to_vec()).collect::<Vec<_>>())
@@ -72,7 +74,7 @@ fn distance_transform<'py>(
         }
     };
     let (data, h, w) = mask_of(&mask)?;
-    let d = py.detach(|| distance::distance_transform(data, h, w, metric));
+    let d = super::detach(py, || distance::distance_transform(data, h, w, metric));
     numpy::PyArray1::from_vec(py, d).reshape(vec![h, w])
 }
 
@@ -88,7 +90,9 @@ fn distance_transform_labels<'py>(
     mask: PyReadonlyArrayDyn<'py, u8>,
 ) -> PyResult<Distances<'py>> {
     let (data, h, w) = mask_of(&mask)?;
-    let (d, l) = py.detach(|| crate::distance::distance_transform_labels(data, h, w));
+    let (d, l) = super::detach(py, || {
+        crate::distance::distance_transform_labels(data, h, w)
+    });
     Ok((
         numpy::PyArray1::from_vec(py, d).reshape(vec![h, w])?,
         numpy::PyArray1::from_vec(py, l).reshape(vec![h, w])?,
@@ -104,7 +108,9 @@ fn mask_to_score<'py>(
     floor: f64,
 ) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
     let (data, h, w) = mask_of(&mask)?;
-    let d = py.detach(|| crate::distance::mask_to_score(data, h, w, pad, floor));
+    let d = super::detach(py, || {
+        crate::distance::mask_to_score(data, h, w, pad, floor)
+    });
     numpy::PyArray1::from_vec(py, d).reshape(vec![h, w])
 }
 

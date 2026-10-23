@@ -69,8 +69,6 @@
         };
     in {
       numpy = fromNixpkgs "numpy" prev.numpy;
-      llvmlite = fromNixpkgs "llvmlite" prev.llvmlite;
-      numba = fromNixpkgs "numba" prev.numba;
       # nixpkgs' own "opencv-python-headless" is a metapackage that only propagates
       # "opencv4" (where cv2 actually lives); nixpkgsPrebuilt strips propagation, so
       # point straight at opencv4 or the venv ends up without a cv2 module.

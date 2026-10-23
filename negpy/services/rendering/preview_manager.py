@@ -21,7 +21,7 @@ from negpy.infrastructure.loaders.helpers import (
     is_xtrans,
 )
 from negpy.infrastructure.gpu.device import GPUDevice
-from negpy.kernel.image.logic import apply_exif_orientation, ensure_rgb, uint16_to_float32, working_oetf_decode, working_oetf_encode
+from negpy.kernel.image.logic import apply_exif_orientation, ensure_rgb, uint16_to_float32
 from negpy.kernel.image.validation import ensure_image
 from negpy.kernel.system.config import APP_CONFIG
 from negpy.kernel.system.override import effective_max_texture_size
@@ -71,15 +71,6 @@ def _output_dimensions_from_raw(raw: Any, postprocessed_h: int, postprocessed_w:
     except Exception:
         pass
     return (postprocessed_h, postprocessed_w)
-
-
-# Pre-warm the Numba JIT so the first actual preview load doesn't pay the compile cost. The
-# small-array OETF calls take the serial variant, which has no disk cache, so the Analysis
-# chart's first paint would otherwise compile it on the GUI thread.
-_warmup = np.zeros((2, 2, 3), dtype=np.uint16)
-uint16_to_float32(_warmup)
-working_oetf_decode(working_oetf_encode(np.zeros(4, dtype=np.float32)))
-del _warmup
 
 
 def _linear_preview_key(

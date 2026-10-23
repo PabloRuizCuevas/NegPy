@@ -20,7 +20,7 @@ fn channel_percentiles(
     qs: Vec<f64>,
 ) -> PyResult<[Vec<f64>; 3]> {
     let g = grid_of(&grid)?;
-    Ok(py.detach(|| bounds::channel_percentiles(g, &qs)))
+    Ok(super::detach(py, || bounds::channel_percentiles(g, &qs)))
 }
 
 /// `_same_pixel_color_floor_refs` with its constants (chroma quantile, chroma cap, first-pass
@@ -44,7 +44,7 @@ fn same_pixel_color_floor_refs(
         min_pixels,
         band_width,
     };
-    Ok(py.detach(|| {
+    Ok(super::detach(py, || {
         bounds::same_pixel_color_floor_refs(g, luma_floors, luma_ceils, base, color_clip, c)
     }))
 }

@@ -62,7 +62,7 @@ def separation_damping_gain(k: float, damping: float, chroma: float, ref_spread:
 
 def separation_damping_gain_np(k: float, damping: float, chroma: Any, ref_spread: float) -> Any:
     """Vectorized numpy twin of separation_damping_gain, for the transfer curve's
-    per-pixel gain over a whole image rather than the numba kernel's per-pixel scalar.
+    per-pixel gain over a whole image rather than the print curve's per-pixel scalar.
     Same math; see that function for the derivation."""
     if k <= 0.0:
         return np.zeros_like(chroma, dtype=np.float32)

@@ -21,7 +21,7 @@ fn filled<'py>(
         let dst = rw
             .as_slice_mut()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        py.detach(|| fill(data, dst));
+        super::detach(py, || fill(data, dst));
     }
     Ok(out)
 }

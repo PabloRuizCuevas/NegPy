@@ -24,8 +24,7 @@ import time
 from pathlib import Path
 
 if len(sys.argv) > 1 and sys.argv[1] in ("record", "bench"):
-    # One thread on both sides: the speed gate is per core. Numba reads this at import.
-    os.environ["NUMBA_NUM_THREADS"] = "1"
+    # One thread on both sides: the speed gate is per core.
     os.environ["RAYON_NUM_THREADS"] = "1"
 
 import numpy as np  # noqa: E402

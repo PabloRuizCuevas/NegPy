@@ -2556,3 +2556,9 @@ phase = 9
 status = "stays"
 calls = ["cv2.cvtColor", "cv2.imencode"]
 depends = []
+
+["kernel/system/parallel.py::set_parallel_enabled"]
+phase = 9
+status = "todo"
+calls = ["negpy_core.set_parallel"]
+depends = []

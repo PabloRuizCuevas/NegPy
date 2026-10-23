@@ -1939,7 +1939,7 @@ class ThumbnailRenderWorker(QObject):
 
     @pyqtSlot(ThumbnailRenderTask)
     def process(self, task: ThumbnailRenderTask) -> None:
-        """Render each frame sequentially: the CPU engine is already multi-core via numba,
+        """Render each frame sequentially: the CPU engine is already multi-core,
         and one frame at a time keeps the live UI responsive while the user keeps editing."""
         generation = int(task.generation)
         with self._cancel_lock:
