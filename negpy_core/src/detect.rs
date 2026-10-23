@@ -3,7 +3,7 @@
 
 use rayon::prelude::*;
 
-use crate::analysis::{Snap, detection_luma, luminance, snap_edge_to_gradient};
+use crate::analysis::{Snap, crop, detection_plane, rgb, snap_edge_to_gradient};
 use crate::contours::{contour_area, find_external_contours};
 use crate::filter::Border;
 use crate::gray;
@@ -121,12 +121,6 @@ fn outer_ring_values(lum: &[f32], h: usize, w: usize) -> Vec<f32> {
         }
     }
     out
-}
-
-fn crop(img: &[f32], w: usize, (y1, y2, x1, x2): (usize, usize, usize, usize)) -> Vec<f32> {
-    (y1..y2)
-        .flat_map(|y| img[y * w + x1..y * w + x2].iter().copied())
-        .collect()
 }
 
 /// `_threshold_polarities`: which polarities the trials sample.
@@ -737,6 +731,7 @@ fn pairwise_sum_f64(a: &[f64]) -> f64 {
     pairwise_sum_f64(&a[..n2]) + pairwise_sum_f64(&a[n2..])
 }
 
+#[derive(Clone)]
 pub struct Consensus {
     pub roi: Roi,
     pub correction_angle: f64,
@@ -910,11 +905,12 @@ pub fn film_surround_is_plausible(lum: &[f32], h: usize, w: usize, roi: &Roi) ->
     let clampx = |v: i64| v.clamp(0, w as i64) as usize;
     let (y1, y2, x1, x2) = (clampy(roi.0), clampy(roi.1), clampx(roi.2), clampx(roi.3));
     let mut out = Vec::with_capacity(h * w);
-    for y in 0..h {
-        for x in 0..w {
-            if !(y >= y1 && y < y2 && x >= x1 && x < x2) {
-                out.push(lum[y * w + x]);
-            }
+    for (y, row) in lum.chunks_exact(w).enumerate() {
+        if y >= y1 && y < y2 && x2 > x1 {
+            out.extend_from_slice(&row[..x1]);
+            out.extend_from_slice(&row[x2..]);
+        } else {
+            out.extend_from_slice(row);
         }
     }
     if (out.len() as f64) < 0.005 * lum.len() as f64 {
@@ -973,6 +969,25 @@ fn snap_film_bounds(roi: Roi, lum: &[f32], h: usize, w: usize) -> Roi {
     )
 }
 
+/// The structural masks of an HxW or HxWx3 image, in trial order.
+fn structural_masks(img: &[f32], h: usize, w: usize, cn: usize) -> Vec<(&'static str, Vec<u8>)> {
+    let mut preview = vec![0u8; h * w * 3];
+    crate::analysis::normalize_to_uint8(&rgb(img, cn), &mut preview);
+    let mut gray_img = vec![0u8; h * w];
+    gray::bgr_to_gray(&preview, &mut gray_img);
+    ["inverse-threshold", "blackhat", "edges"]
+        .par_iter()
+        .map(|&source| {
+            let mask = match source {
+                "inverse-threshold" => mask_from_inverse_threshold(&gray_img, h, w),
+                "blackhat" => mask_from_blackhat(&gray_img, h, w),
+                _ => mask_from_edges(&gray_img, h, w),
+            };
+            (source, mask)
+        })
+        .collect()
+}
+
 /// One adaptive threshold trial.
 struct Trial {
     source: &'static str,
@@ -981,6 +996,7 @@ struct Trial {
     threshold: f64,
 }
 
+#[derive(Clone)]
 pub struct Detection {
     pub consensus: Option<Consensus>,
     pub profile: Vec<f32>,
@@ -989,6 +1005,12 @@ pub struct Detection {
 
 /// `detect_film_bounds_with_confidence(img)` for an HxW or HxWx3 float32 image.
 pub fn detect_film_bounds(img: &[f32], h: usize, w: usize, cn: usize) -> Detection {
+    static LAST: crate::memo::Memo<Detection, 4> = crate::memo::Memo::new();
+    let key = crate::memo::key(img, &[h, w, cn]);
+    LAST.get_or(key, || detect(img, h, w, cn, key))
+}
+
+fn detect(img: &[f32], h: usize, w: usize, cn: usize, key: u128) -> Detection {
     let empty = |profile: Vec<f32>, contrast: f64| Detection {
         consensus: None,
         profile,
@@ -997,37 +1019,40 @@ pub fn detect_film_bounds(img: &[f32], h: usize, w: usize, cn: usize) -> Detecti
     if h < 2 || w < 2 {
         return empty(Vec::new(), 0.0);
     }
-    let color: Vec<f32> = if cn == 1 {
-        img.iter().flat_map(|&v| [v, v, v]).collect()
-    } else {
-        img.to_vec()
-    };
-    let mut raw = vec![0f32; h * w];
-    luminance(&color, &mut raw);
-    let mut lum = vec![0f32; h * w];
-    if detection_luma(&raw, &mut lum).is_none() {
+    let Some(lum) = detection_plane(img, h, w, cn, key) else {
         return empty(Vec::new(), 0.0);
-    }
-    let (profile, contrast) = vertical_edge_profile(&lum, h, w);
-    let lohi = np_percentiles_f64(&lum, &[2.0, 98.0]);
-    let span = lohi[1] - lohi[0];
-    if span < 0.04 || span.is_nan() {
-        return empty(profile, contrast);
-    }
-    let ring_median = np_median(&mut outer_ring_values(&lum, h, w)) as f64;
-    let polarities = threshold_polarities(&lum, h, w, span, ring_median);
-    let blur = odd_kernel_size(0.004 * h.min(w) as f64, 3, 9) as usize;
-    let mut blurred = vec![0f32; h * w];
-    let _ = crate::filter::gaussian_blur(
-        &lum,
-        &mut blurred,
-        (h, w, 1),
-        (blur, blur),
-        (0.0, 0.0),
-        Border::Reflect101,
+    };
+    let lum = lum.as_slice();
+    let threshold_inputs = || {
+        let lohi = np_percentiles_f64(lum, &[2.0, 98.0]);
+        let span = lohi[1] - lohi[0];
+        if span < 0.04 || span.is_nan() {
+            return None;
+        }
+        let ring_median = np_median(&mut outer_ring_values(lum, h, w)) as f64;
+        let polarities = threshold_polarities(lum, h, w, span, ring_median);
+        let blur = odd_kernel_size(0.004 * h.min(w) as f64, 3, 9) as usize;
+        let mut blurred = vec![0f32; h * w];
+        let _ = crate::filter::gaussian_blur(
+            lum,
+            &mut blurred,
+            (h, w, 1),
+            (blur, blur),
+            (0.0, 0.0),
+            Border::Reflect101,
+        );
+        Some((lohi, span, ring_median, polarities, blurred))
+    };
+    // The structural masks need none of the threshold inputs, so they build alongside them.
+    let (((profile, contrast), inputs), masks) = rayon::join(
+        || rayon::join(|| vertical_edge_profile(lum, h, w), threshold_inputs),
+        || structural_masks(img, h, w, cn),
     );
+    let Some((lohi, span, ring_median, polarities, blurred)) = inputs else {
+        return empty(profile, contrast);
+    };
     let scene = Scene {
-        lum: &lum,
+        lum,
         h,
         w,
         ring_median,
@@ -1062,32 +1087,24 @@ pub fn detect_film_bounds(img: &[f32], h: usize, w: usize, cn: usize) -> Detecti
             });
         }
     }
-    let structural = ["inverse-threshold", "blackhat", "edges"];
-    let gray_img = {
-        let mut preview = vec![0u8; h * w * 3];
-        crate::analysis::normalize_to_uint8(&color, &mut preview);
-        let mut g = vec![0u8; h * w];
-        gray::bgr_to_gray(&preview, &mut g);
-        g
-    };
-    let mut results: Vec<Vec<Candidate>> = trials
-        .par_iter()
-        .map(|t| {
-            let mask = adaptive_threshold_mask(&blurred, h, w, t.threshold, t.polarity == "dark");
-            candidates_from_mask(&mask, &scene, t.source, Some(t.index), Some(t.polarity))
-        })
-        .collect();
-    let structural_results: Vec<Vec<Candidate>> = structural
-        .par_iter()
-        .map(|&source| {
-            let mask = match source {
-                "inverse-threshold" => mask_from_inverse_threshold(&gray_img, h, w),
-                "blackhat" => mask_from_blackhat(&gray_img, h, w),
-                _ => mask_from_edges(&gray_img, h, w),
-            };
-            candidates_from_mask(&mask, &scene, source, None, None)
-        })
-        .collect();
+    let (mut results, structural_results): (Vec<Vec<Candidate>>, Vec<Vec<Candidate>>) = rayon::join(
+        || {
+            trials
+                .par_iter()
+                .map(|t| {
+                    let mask =
+                        adaptive_threshold_mask(&blurred, h, w, t.threshold, t.polarity == "dark");
+                    candidates_from_mask(&mask, &scene, t.source, Some(t.index), Some(t.polarity))
+                })
+                .collect()
+        },
+        || {
+            masks
+                .par_iter()
+                .map(|(source, mask)| candidates_from_mask(mask, &scene, source, None, None))
+                .collect()
+        },
+    );
     results.extend(structural_results);
     let candidates: Vec<Candidate> = results.into_iter().flatten().collect();
 
@@ -1095,11 +1112,11 @@ pub fn detect_film_bounds(img: &[f32], h: usize, w: usize, cn: usize) -> Detecti
         return empty(profile, contrast);
     };
     if !film_box_covers_enough(h, w, &consensus.roi)
-        || !film_surround_is_plausible(&lum, h, w, &consensus.roi)
+        || !film_surround_is_plausible(lum, h, w, &consensus.roi)
     {
         return empty(profile, contrast);
     }
-    let roi = snap_film_bounds(consensus.roi, &lum, h, w);
+    let roi = snap_film_bounds(consensus.roi, lum, h, w);
     Detection {
         consensus: Some(Consensus { roi, ..consensus }),
         profile,

@@ -28,6 +28,37 @@ pub(crate) fn luminance_chunk(rgb: &[f32], dst: &mut [f32]) {
     }
 }
 
+/// An HxW plane as HxWx3, or an HxWx3 image as it is.
+pub fn rgb(img: &[f32], cn: usize) -> std::borrow::Cow<'_, [f32]> {
+    if cn == 1 {
+        img.iter()
+            .flat_map(|&v| [v, v, v])
+            .collect::<Vec<_>>()
+            .into()
+    } else {
+        img.into()
+    }
+}
+
+/// `_detection_luma` of the luminance of an HxW or HxWx3 image whose `memo::key` is `key`;
+/// None for an empty one.
+pub fn detection_plane(
+    img: &[f32],
+    h: usize,
+    w: usize,
+    cn: usize,
+    key: u128,
+) -> Option<std::sync::Arc<Vec<f32>>> {
+    static LAST: crate::memo::Memo<Option<std::sync::Arc<Vec<f32>>>, 2> = crate::memo::Memo::new();
+    LAST.get_or(key, || {
+        let mut lum = vec![0f32; h * w];
+        luminance(&rgb(img, cn), &mut lum);
+        let mut det = vec![0f32; h * w];
+        detection_luma(&lum, &mut det)?;
+        Some(det.into())
+    })
+}
+
 /// `_normalize_to_uint8` for a float32 image: the 1st and 99th percentiles of its finite
 /// values stretched to 0..255, NumPy's float32 arithmetic (NEP 50) and truncating cast.
 pub fn normalize_to_uint8(img: &[f32], dst: &mut [u8]) {
@@ -278,10 +309,16 @@ pub fn base_log_from_blocks(
     base: &[[f32; 3]],
 ) -> Option<[f64; 3]> {
     let mean = |p: &[f32]| (p[0] + p[1] + p[2]) / 3.0;
-    let mut picture: Vec<f32> = (gy1..gy2)
-        .flat_map(|y| (gx1..gx2).map(move |x| (y * w + x) * 3))
-        .map(|i| mean(&det[i..i + 3]))
-        .collect();
+    let mut picture = Vec::with_capacity((gy2 - gy1) * (gx2 - gx1));
+    for y in gy1..gy2 {
+        picture.extend(
+            det[(y * w + gx1) * 3..(y * w + gx2) * 3]
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .map(|p| mean(p)),
+        );
+    }
     let mut base_means: Vec<f32> = base.iter().map(|p| mean(p)).collect();
     // `<=` is false for NaN, so a NaN median keeps the base.
     if np_median(&mut base_means) <= np_median(&mut picture) {
@@ -446,10 +483,16 @@ pub fn base_blocks(det: &[f32], band: &[u8], h: usize, w: usize) -> Option<Vec<[
 }
 
 /// A copy of `img[y1:y2, x1:x2]` of an HxW plane, row by row.
-fn crop(img: &[f32], w: usize, (y1, y2, x1, x2): (usize, usize, usize, usize)) -> Vec<f32> {
-    (y1..y2)
-        .flat_map(|y| img[y * w + x1..y * w + x2].iter().copied())
-        .collect()
+pub(crate) fn crop(
+    img: &[f32],
+    w: usize,
+    (y1, y2, x1, x2): (usize, usize, usize, usize),
+) -> Vec<f32> {
+    let mut out = Vec::with_capacity(y2.saturating_sub(y1) * x2.saturating_sub(x1));
+    for y in y1..y2 {
+        out.extend_from_slice(&img[y * w + x1..y * w + x2]);
+    }
+    out
 }
 
 /// Python's round() of a float: half to even.
@@ -776,18 +819,24 @@ enum Side {
     Right,
 }
 
-/// `_EDGE_ORIENT[side](box)`, cropped to the core columns: lines run inward from the edge
-/// (rows), one per position along it (columns).
-fn edge_lines(boxed: &[f32], bh: usize, bw: usize, side: Side) -> (Vec<f32>, usize, usize) {
+/// A film box inside an HxW plane: the plane's row stride, and the box's top, left, height
+/// and width.
+#[derive(Clone, Copy)]
+struct BoxView<'a> {
+    lum: &'a [f32],
+    w: usize,
+    y1: usize,
+    x1: usize,
+    bh: usize,
+    bw: usize,
+}
+
+/// `_EDGE_ORIENT[side](box)`, cropped to the core columns and to its first `keep` lines (rows),
+/// each one position along the edge (columns); and the uncropped line count.
+fn edge_lines(b: BoxView, side: Side, keep: usize) -> (Vec<f32>, usize, usize, usize) {
     let (rows, n) = match side {
-        Side::Top | Side::Bottom => (bh, bw),
-        Side::Left | Side::Right => (bw, bh),
-    };
-    let at = |r: usize, c: usize| match side {
-        Side::Top => boxed[r * bw + c],
-        Side::Bottom => boxed[(bh - 1 - r) * bw + c],
-        Side::Left => boxed[c * bw + r],
-        Side::Right => boxed[c * bw + (bw - 1 - r)],
+        Side::Top | Side::Bottom => (b.bh, b.bw),
+        Side::Left | Side::Right => (b.bw, b.bh),
     };
     let margin = py_round((1.0 - EDGE_CORE) * 0.5 * n as f64).max(0) as usize;
     let (c0, c1) = if n >= 2 * margin + 8 {
@@ -795,32 +844,49 @@ fn edge_lines(boxed: &[f32], bh: usize, bw: usize, side: Side) -> (Vec<f32>, usi
     } else {
         (0, n)
     };
-    let cols = c1 - c0;
-    let mut out = Vec::with_capacity(rows * cols);
-    for r in 0..rows {
-        for c in c0..c1 {
-            out.push(at(r, c));
+    let (cols, kept) = (c1 - c0, keep.min(rows));
+    let row = |y: usize| &b.lum[(b.y1 + y) * b.w + b.x1..][..b.bw];
+    let mut out = vec![0f32; kept * cols];
+    match side {
+        Side::Top | Side::Bottom => {
+            for (r, line) in out.chunks_exact_mut(cols).enumerate() {
+                let y = if matches!(side, Side::Top) {
+                    r
+                } else {
+                    b.bh - 1 - r
+                };
+                line.copy_from_slice(&row(y)[c0..c1]);
+            }
+        }
+        // Read along the source rows; the box's columns are these lines.
+        Side::Left | Side::Right => {
+            for c in c0..c1 {
+                let src = row(c);
+                for r in 0..kept {
+                    let x = if matches!(side, Side::Left) {
+                        r
+                    } else {
+                        b.bw - 1 - r
+                    };
+                    out[r * cols + c - c0] = src[x];
+                }
+            }
         }
     }
-    (out, rows, cols)
+    (out, rows, kept, cols)
 }
 
 /// `_edge_border_depth(box, side, limit, deep_limit)`: the border depth on one side, per line
 /// (these frames are slightly tilted) and pooled. A first walk to `limit` is believed; a second
 /// to `deep_limit` is adopted only where it goes deeper and passes all four proofs.
-fn edge_border_depth(
-    boxed: &[f32],
-    bh: usize,
-    bw: usize,
-    side: Side,
-    limit: i64,
-    deep_limit: i64,
-) -> i64 {
-    let (lines, rows, cols) = edge_lines(boxed, bh, bw, side);
+fn edge_border_depth(b: BoxView, side: Side, limit: i64, deep_limit: i64) -> i64 {
+    // The walks read no line past their limit plus the picture reference.
+    let keep = limit.max(deep_limit).max(0) as usize + EDGE_REBATE_REF;
+    let (lines, rows, kept, cols) = edge_lines(b, side, keep);
     if limit <= 0 || (rows as i64) < limit + 8 || cols < 8 {
         return 0;
     }
-    let Some(walk) = walk_border_depth(&lines, rows, cols, limit as usize, EDGE_BRIDGE, false)
+    let Some(walk) = walk_border_depth(&lines, kept, cols, limit as usize, EDGE_BRIDGE, false)
     else {
         return 0;
     };
@@ -830,7 +896,7 @@ fn edge_border_depth(
     }
     let Some(deep) = walk_border_depth(
         &lines,
-        rows,
+        kept,
         cols,
         deep_limit as usize,
         EDGE_DEEP_BRIDGE,
@@ -874,17 +940,31 @@ pub fn measure_film_edges(
     if bh < 16 || bw < 16 {
         return [0.0; 4];
     }
-    let boxed = crop(lum, w, (y1, y2, x1, x2));
+    let view = BoxView {
+        lum,
+        w,
+        y1,
+        x1,
+        bh,
+        bw,
+    };
     let ly = py_round(EDGE_TRIM_CAP * bh as f64);
     let lx = py_round(EDGE_TRIM_CAP * bw as f64);
     let dy = py_round(EDGE_DEEP_CAP * bh as f64);
     let dx = py_round(EDGE_DEEP_CAP * bw as f64);
-    [
-        edge_border_depth(&boxed, bh, bw, Side::Top, ly, dy) as f64 / bh as f64,
-        edge_border_depth(&boxed, bh, bw, Side::Bottom, ly, dy) as f64 / bh as f64,
-        edge_border_depth(&boxed, bh, bw, Side::Left, lx, dx) as f64 / bw as f64,
-        edge_border_depth(&boxed, bh, bw, Side::Right, lx, dx) as f64 / bw as f64,
-    ]
+    let sides = [
+        (Side::Top, ly, dy, bh),
+        (Side::Bottom, ly, dy, bh),
+        (Side::Left, lx, dx, bw),
+        (Side::Right, lx, dx, bw),
+    ];
+    let mut out = [0.0; 4];
+    out.par_iter_mut()
+        .zip(sides)
+        .for_each(|(o, (side, limit, deep, extent))| {
+            *o = edge_border_depth(view, side, limit, deep) as f64 / extent as f64;
+        });
+    out
 }
 
 /// `_trim_film_edges(lum, film_roi)`: the box inset past the border on each side, or the box
@@ -1180,6 +1260,7 @@ fn estimate_tier_levels(
     Some((bed, rebate, image, ring_spread))
 }
 
+#[derive(Clone)]
 pub struct TierRefinement {
     pub roi: (i64, i64, i64, i64),
     pub rows: Vec<f32>,
@@ -1277,13 +1358,8 @@ pub fn refine_film_roi_by_tiers(
 /// The uint8 preview and its gray plane, as `_refine_frame_bounds` and `_dark_region_bounds`
 /// build them from an HxW or HxWx3 float32 image.
 fn preview_gray(img: &[f32], h: usize, w: usize, cn: usize) -> Vec<u8> {
-    let color: Vec<f32> = if cn == 1 {
-        img.iter().flat_map(|&v| [v, v, v]).collect()
-    } else {
-        img.to_vec()
-    };
     let mut preview = vec![0u8; h * w * 3];
-    normalize_to_uint8(&color, &mut preview);
+    normalize_to_uint8(&rgb(img, cn), &mut preview);
     let mut gray = vec![0u8; h * w];
     crate::gray::bgr_to_gray(&preview, &mut gray);
     gray
@@ -1531,32 +1607,45 @@ pub fn refine_roi_to_image(
     cn: usize,
     roi: Roi,
 ) -> Option<(Roi, Option<TierRefinement>)> {
-    let color: Vec<f32> = if cn == 1 {
-        img.iter().flat_map(|&v| [v, v, v]).collect()
-    } else {
-        img.to_vec()
+    type Refined = Option<(Roi, Option<TierRefinement>)>;
+    static LAST: crate::memo::Memo<Refined, 4> = crate::memo::Memo::new();
+    let key = crate::memo::key(img, &[h, w, cn]);
+    let refined = || {
+        let det = detection_plane(img, h, w, cn, key)?;
+        refine_roi(img, &det, h, w, cn, roi)
     };
-    let mut lum = vec![0f32; h * w];
-    luminance(&color, &mut lum);
-    let mut det = vec![0f32; h * w];
-    detection_luma(&lum, &mut det)?;
+    LAST.get_or(
+        crate::memo::extend(key, &[roi.0, roi.1, roi.2, roi.3]),
+        refined,
+    )
+}
+
+fn refine_roi(
+    img: &[f32],
+    det: &[f32],
+    h: usize,
+    w: usize,
+    cn: usize,
+    roi: Roi,
+) -> Option<(Roi, Option<TierRefinement>)> {
     let clamp = |v: i64| v.max(0) as usize;
     let uroi = (clamp(roi.0), clamp(roi.1), clamp(roi.2), clamp(roi.3));
-    if let Some(r) = refine_film_roi_by_tiers(&det, h, w, uroi) {
+    if let Some(r) = refine_film_roi_by_tiers(det, h, w, uroi) {
         return Some((r.roi, Some(r)));
     }
-    let walked = trim_film_edges(&det, h, w, roi);
+    let walked = trim_film_edges(det, h, w, roi);
     if walked != roi {
         return Some((walked, None));
     }
-    if let Some(m) = roi_from_measured_border(&det, h, w, roi) {
+    if let Some(m) = roi_from_measured_border(det, h, w, roi) {
         return Some((m, None));
     }
-    if find_rebate_level(&det, h, w, uroi, None).is_none() {
+    if find_rebate_level(det, h, w, uroi, None).is_none() {
         return Some((roi, None));
     }
     let (y1, y2, x1, x2) = (uroi.0.min(h), uroi.1.min(h), uroi.2.min(w), uroi.3.min(w));
     let crop_w = x2.saturating_sub(x1);
+    let color = rgb(img, cn);
     let crop: Vec<f32> = (y1..y2)
         .flat_map(|y| color[(y * w + x1) * 3..(y * w + x2) * 3].iter().copied())
         .collect();

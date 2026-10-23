@@ -23,6 +23,7 @@ pub mod loaders;
 pub mod lsd;
 pub mod mathf;
 pub mod median;
+pub mod memo;
 pub mod meter;
 pub mod morph;
 pub mod phase;

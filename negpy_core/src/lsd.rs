@@ -160,6 +160,9 @@ struct Detector {
     h: usize,
     angles: Vec<f64>,
     modgrad: Vec<f64>,
+    /// `(cosf, sinf)` of each defined angle, as the region sums take them.
+    unit: Vec<(f32, f32)>,
+    /// Taken by a region, or with no defined angle: no region can take it.
     used: Vec<bool>,
 }
 
@@ -235,12 +238,27 @@ impl Detector {
             order[*s] = i as u32;
             *s += 1;
         }
+        let mut unit = vec![(0f32, 0f32); h * w];
+        let mut used = vec![false; h * w];
+        unit.par_chunks_mut(w)
+            .zip(used.par_chunks_mut(w))
+            .zip(angles.par_chunks(w))
+            .for_each(|((u, d), a)| {
+                for ((u, d), &a) in u.iter_mut().zip(d).zip(a) {
+                    if a == NOTDEF {
+                        *d = true;
+                    } else {
+                        *u = (libm::cosf(a as f32), libm::sinf(a as f32));
+                    }
+                }
+            });
         let det = Detector {
             w,
             h,
             angles,
             modgrad,
-            used: vec![false; h * w],
+            unit,
+            used,
         };
         (det, order)
     }
@@ -286,8 +304,9 @@ impl Detector {
                             angle,
                             modgrad: self.modgrad[j],
                         });
-                        sumdx += libm::cosf(angle as f32);
-                        sumdy += libm::sinf(angle as f32);
+                        let (c, s) = self.unit[j];
+                        sumdx += c;
+                        sumdy += s;
                         reg_angle = fast_atan2(sumdy, sumdx) as f64 * DEG_TO_RADS;
                     }
                 }
@@ -444,7 +463,7 @@ pub fn line_segments(img: &[u8], (h, w): (usize, usize)) -> Vec<[f32; 4]> {
     let mut lines = Vec::new();
     for &i in &order {
         let i = i as usize;
-        if det.used[i] || det.angles[i] == NOTDEF {
+        if det.used[i] {
             continue;
         }
         let (x, y) = (i % sw, i / sw);

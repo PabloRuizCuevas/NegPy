@@ -241,8 +241,9 @@ pub fn loupe_acutance(rgb: &[f32], (h, w, cn): (usize, usize, usize)) -> f64 {
     } else {
         let three: Vec<f32> = rgb
             .chunks_exact(cn)
-            .flat_map(|p| [p[0], p[1], p[2]])
-            .collect();
+            .map(|p| [p[0], p[1], p[2]])
+            .collect::<Vec<_>>()
+            .into_flattened();
         crate::analysis::luminance_chunk(&three, &mut lum);
     }
     // Reflect-101 padding, one pixel wide, so every tap reads inside the buffer.

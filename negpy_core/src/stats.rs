@@ -204,12 +204,15 @@ pub fn np_percentiles_f64(values: &[f32], qs: &[f64]) -> Vec<f64> {
 }
 
 /// `np.median` of float32 values: the middle one, or the float32 mean of the two middle ones;
-/// NaN when any value is NaN or there are none. Reorders `values`.
+/// NaN when any value is NaN or there are none. May reorder `values`.
 pub fn np_median(values: &mut [f32]) -> f32 {
+    let n = values.len();
+    if n > DIRECT_MAX {
+        return median(values);
+    }
     if values.is_empty() || values.iter().any(|v| v.is_nan()) {
         return f32::NAN;
     }
-    let n = values.len();
     let (_, &mut hi, _) = values.select_nth_unstable_by(n / 2, f32::total_cmp);
     if n % 2 == 1 {
         return hi;

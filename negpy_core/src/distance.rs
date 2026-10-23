@@ -200,12 +200,60 @@ pub fn distance_transform_labels(src: &[u8], h: usize, w: usize) -> (Vec<f32>, V
 /// `_mask_to_score(mask, pad_px)` of retouch: the floor on the defect (nonzero), rising to 1 over
 /// `pad` pixels of 3x3 chamfer distance along a smoothstep, in float32.
 pub fn mask_to_score(mask: &[u8], h: usize, w: usize, pad: f64, floor: f64) -> Vec<f32> {
-    let clean: Vec<u8> = mask.iter().map(|&m| (m == 0) as u8).collect();
-    let mut d = distance_transform(&clean, h, w, Metric::L2Mask3);
+    use rayon::prelude::*;
+    let clean: Vec<u8> = mask.par_iter().map(|&m| (m == 0) as u8).collect();
     let (pad, floor, rise) = (pad.max(1e-3) as f32, floor as f32, (1.0 - floor) as f32);
-    for v in d.iter_mut() {
-        let t = (*v / pad).clamp(0.0, 1.0);
-        *v = floor + rise * (t * t * (3.0 - 2.0 * t));
+    // The score is flat past `pad`, and a chamfer path no longer than `pad` moves at most
+    // pad / 0.955 rows, so bands with that much margin give every unclamped distance exactly.
+    let halo = (pad / steps(Metric::L2Mask3)[0]).ceil() as usize + 2;
+    let band = 64.max(h.div_ceil(4 * rayon::current_num_threads()));
+    let mut out = vec![0f32; h * w];
+    out.par_chunks_mut(band * w.max(1))
+        .enumerate()
+        .for_each(|(i, rows)| {
+            let (y0, y1) = (i * band, i * band + rows.len() / w.max(1));
+            let (lo, hi) = (y0.saturating_sub(halo), (y1 + halo).min(h));
+            let d = distance_transform(&clean[lo * w..hi * w], hi - lo, w, Metric::L2Mask3);
+            for (o, &v) in rows.iter_mut().zip(&d[(y0 - lo) * w..]) {
+                let t = (v / pad).clamp(0.0, 1.0);
+                *o = floor + rise * (t * t * (3.0 - 2.0 * t));
+            }
+        });
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn banded_score_matches_one_pass() {
+        let (h, w) = (700, 97);
+        let mut seed = 7u64;
+        let mut mask = vec![0u8; h * w];
+        for m in mask.iter_mut() {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *m = (seed >> 33).is_multiple_of(400) as u8;
+        }
+        for pad in [0.5, 2.5, 9.0, 40.0] {
+            let clean: Vec<u8> = mask.iter().map(|&m| (m == 0) as u8).collect();
+            let (p, floor) = (pad as f32, 0.02f32);
+            let want: Vec<f32> = distance_transform(&clean, h, w, Metric::L2Mask3)
+                .iter()
+                .map(|&v| {
+                    let t = (v / p).clamp(0.0, 1.0);
+                    floor + (1.0 - floor) * (t * t * (3.0 - 2.0 * t))
+                })
+                .collect();
+            let got = mask_to_score(&mask, h, w, pad, floor as f64);
+            assert!(
+                want.iter()
+                    .zip(&got)
+                    .all(|(a, b)| a.to_bits() == b.to_bits()),
+                "pad {pad}"
+            );
+        }
     }
-    d
 }

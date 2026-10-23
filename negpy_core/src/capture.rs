@@ -120,15 +120,10 @@ pub fn meter_picture(
     sat: f32,
     blown_share: f64,
 ) -> (f64, bool, [f32; 3]) {
-    let picture: Vec<[f32; 3]> = (y1..y2)
-        .flat_map(|y| {
-            img[(y * w + x1) * 3..(y * w + x2) * 3]
-                .as_chunks::<3>()
-                .0
-                .iter()
-                .copied()
-        })
-        .collect();
+    let mut picture: Vec<[f32; 3]> = Vec::with_capacity((y2 - y1) * (x2 - x1));
+    for y in y1..y2 {
+        picture.extend_from_slice(img[(y * w + x1) * 3..(y * w + x2) * 3].as_chunks::<3>().0);
+    }
     let saturated: Vec<bool> = picture
         .iter()
         .map(|p| p[0].max(p[1]).max(p[2]) >= sat)
@@ -252,9 +247,10 @@ pub fn ring_inner_medians(arr: &[f32], h: usize, w: usize, m: usize) -> (f32, f3
         ring.extend_from_slice(&at(y)[..m]);
         ring.extend_from_slice(&at(y)[w - m..]);
     }
-    let mut inner: Vec<f32> = (h / 4..3 * h / 4)
-        .flat_map(|y| at(y)[w / 4..3 * w / 4].iter().copied())
-        .collect();
+    let mut inner = Vec::with_capacity((3 * h / 4 - h / 4) * (3 * w / 4 - w / 4));
+    for y in h / 4..3 * h / 4 {
+        inner.extend_from_slice(&at(y)[w / 4..3 * w / 4]);
+    }
     (np_median(&mut ring), np_median(&mut inner))
 }
 

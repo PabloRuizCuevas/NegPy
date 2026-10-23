@@ -1358,8 +1358,9 @@ fn local_mean(
         .0
         .iter()
         .zip(weight)
-        .flat_map(|(p, &k)| [p[0] * k, p[1] * k, p[2] * k])
-        .collect();
+        .map(|(p, &k)| [p[0] * k, p[1] * k, p[2] * k])
+        .collect::<Vec<_>>()
+        .into_flattened();
     let (mut num, mut den) = (vec![0f32; 3 * h * w], vec![0f32; h * w]);
     gaussian_blur(
         &weighted,
@@ -1495,7 +1496,8 @@ pub fn release_score(score: &mut [f32], cover: &[u8], (h, w): (usize, usize), ri
         let (x0, x1) = (cols[0].saturating_sub(1), (cols[cols.len() - 1] + 2).min(w));
         let (ch, cw) = (y1 - y0, x1 - x0);
         let crop: Vec<u8> = (y0..y1)
-            .flat_map(|y| cover[y * w + x0..y * w + x1].iter().copied())
+            .flat_map(|y| &cover[y * w + x0..y * w + x1])
+            .copied()
             .collect();
         let d =
             crate::distance::distance_transform(&crop, ch, cw, crate::distance::Metric::L2Mask3);

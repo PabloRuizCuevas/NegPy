@@ -206,8 +206,9 @@ pub fn compute_gain(
         .0
         .iter()
         .zip(&lit)
-        .flat_map(|(p, &l)| [p[0] * l, p[1] * l, p[2] * l])
-        .collect();
+        .map(|(p, &l)| [p[0] * l, p[1] * l, p[2] * l])
+        .collect::<Vec<_>>()
+        .into_flattened();
     let (mut num, mut den) = (vec![0f32; 3 * n], vec![0f32; n]);
     let s = (c.sigma, c.sigma);
     gaussian_blur(

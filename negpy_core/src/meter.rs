@@ -2,6 +2,7 @@
 //! range, shadow reach and highlight hold, read off the block-median grid.
 
 use crate::stats::{np_median, np_percentiles, np_percentiles_f64, np_quantile, pairwise_sum_f32};
+use rayon::prelude::*;
 
 const LUMA_R: f32 = 0.2126;
 const LUMA_G: f32 = 0.7152;
@@ -220,17 +221,19 @@ pub fn neutral_axis(
     crate::analysis::normalize_log_image(grid, floors32, ceils32, &mut norm_all);
     let (norm_all, log_all) = (norm_all.as_chunks::<3>().0, grid.as_chunks::<3>().0);
     let keep: Vec<usize> = (0..norm_all.len())
+        .into_par_iter()
         .filter(|&i| !exclude_subjects || !is_subject(norm_all[i], &c.subjects))
         .collect();
-    let norm: Vec<[f32; 3]> = keep.iter().map(|&i| norm_all[i]).collect();
-    let log: Vec<[f32; 3]> = keep.iter().map(|&i| log_all[i]).collect();
+    let norm: Vec<[f32; 3]> = keep.par_iter().map(|&i| norm_all[i]).collect();
+    let log: Vec<[f32; 3]> = keep.par_iter().map(|&i| log_all[i]).collect();
     let lum: Vec<f32> = norm
-        .iter()
+        .par_iter()
         .map(|n| LUMA_R * n[0] + LUMA_G * n[1] + LUMA_B * n[2])
         .collect();
 
     let band_refs = |(lo, hi): (f32, f32), chroma: &[f32], cap: f64| -> Option<BandRefs> {
         let band: Vec<usize> = (0..lum.len())
+            .into_par_iter()
             .filter(|&i| lum[i] >= lo && lum[i] <= hi)
             .collect();
         if band.len() < c.min_pixels {
@@ -284,7 +287,7 @@ pub fn neutral_axis(
         })
     };
 
-    let chroma1: Vec<f32> = norm.iter().map(|&n| rms_chroma(n)).collect();
+    let chroma1: Vec<f32> = norm.par_iter().map(|&n| rms_chroma(n)).collect();
     let mid1 = band_refs(c.mid, &chroma1, c.first_pass_cap)?;
     let sh1 = band_refs(c.shadow, &chroma1, c.first_pass_cap)?;
     let (nm, ns) = (norm_ref(mid1.refs), norm_ref(sh1.refs));
@@ -300,7 +303,7 @@ pub fn neutral_axis(
         gain[ch] = (a as f32, b as f32);
     }
     let chroma2: Vec<f32> = norm
-        .iter()
+        .par_iter()
         .map(|n| {
             rms_chroma([
                 gain[0].0 * n[0] + gain[0].1,
