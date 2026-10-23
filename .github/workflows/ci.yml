@@ -137,4 +137,4 @@ jobs:
         run: uv sync --group dev
 
       - name: Ported-function oracles
-        run: uv run pytest tests/test_percentiles.py tests/test_core_same_bits.py tests/test_core_resize.py tests/test_core_filter.py tests/test_core_morph.py tests/test_core_gray.py tests/test_core_contours.py tests/test_core_shapes.py
+        run: uv run pytest tests/test_percentiles.py tests/test_core_same_bits.py tests/test_core_resize.py tests/test_core_filter.py tests/test_core_morph.py tests/test_core_gray.py tests/test_core_contours.py tests/test_core_shapes.py tests/test_core_components.py
