@@ -4,6 +4,7 @@ pub mod components;
 pub mod contours;
 pub mod convert;
 pub mod detect;
+pub mod distance;
 pub mod filter;
 pub mod gray;
 pub mod histogram;

@@ -11,3 +11,4 @@ results already differ by CPU. Replay accepts the tolerance listed for each entr
 | Function | Differs because | Tolerance |
 |---|---|---|
 | `features/exposure/normalization.py::_base_blocks` | Blocks of equal log brightness come out in block order, not in NumPy's SIMD argsort order. log10 is libm's, not SVML's, so a block on a group gap can change group in rare cases. | rows in any order |
+| `negpy_core.distance_transform` (DIST_L2, mask 3), once a port calls it | opencv-python runs IPP's float32 chamfer, whose 3x3 pass picks a path one float32 unit longer than the two-pass order at rare pixels; OpenCV without IPP (Apple Silicon wheels) returns its own fixed-point values. | ulp=1 |

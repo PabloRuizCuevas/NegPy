@@ -42,6 +42,61 @@ fn connected_components_with_stats<'py>(
     Ok((c.count, labels, stats, centroids))
 }
 
+fn mask_of<'a>(mask: &'a PyReadonlyArrayDyn<'_, u8>) -> PyResult<(&'a [u8], usize, usize)> {
+    let [h, w] = mask.shape()[..] else {
+        return Err(PyValueError::new_err("needs an HxW array"));
+    };
+    let data = mask
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous array"))?;
+    Ok((data, h, w))
+}
+
+/// `cv2.distanceTransform(mask, dist_type, mask_size)` for DIST_C (3) and DIST_L2 (3 or 5).
+#[pyfunction]
+fn distance_transform<'py>(
+    py: Python<'py>,
+    mask: PyReadonlyArrayDyn<'py, u8>,
+    dist_type: i32,
+    mask_size: i32,
+) -> PyResult<Bound<'py, numpy::PyArrayDyn<f32>>> {
+    use crate::distance::{self, Metric};
+    let metric = match (dist_type, mask_size) {
+        (3, _) => Metric::Chessboard,
+        (2, 3) => Metric::L2Mask3,
+        (2, 5) => Metric::L2Mask5,
+        _ => {
+            return Err(PyValueError::new_err(
+                "covers DIST_C and DIST_L2 with mask 3 or 5",
+            ));
+        }
+    };
+    let (data, h, w) = mask_of(&mask)?;
+    let d = py.detach(|| distance::distance_transform(data, h, w, metric));
+    numpy::PyArray1::from_vec(py, d).reshape(vec![h, w])
+}
+
+type Distances<'py> = (
+    Bound<'py, numpy::PyArrayDyn<f32>>,
+    Bound<'py, numpy::PyArrayDyn<i32>>,
+);
+
+/// `cv2.distanceTransformWithLabels(mask, DIST_L2, _, labelType=DIST_LABEL_PIXEL)`: (dist, labels).
+#[pyfunction]
+fn distance_transform_labels<'py>(
+    py: Python<'py>,
+    mask: PyReadonlyArrayDyn<'py, u8>,
+) -> PyResult<Distances<'py>> {
+    let (data, h, w) = mask_of(&mask)?;
+    let (d, l) = py.detach(|| crate::distance::distance_transform_labels(data, h, w));
+    Ok((
+        numpy::PyArray1::from_vec(py, d).reshape(vec![h, w])?,
+        numpy::PyArray1::from_vec(py, l).reshape(vec![h, w])?,
+    ))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(connected_components_with_stats, m)?)
+    m.add_function(wrap_pyfunction!(connected_components_with_stats, m)?)?;
+    m.add_function(wrap_pyfunction!(distance_transform, m)?)?;
+    m.add_function(wrap_pyfunction!(distance_transform_labels, m)?)
 }
