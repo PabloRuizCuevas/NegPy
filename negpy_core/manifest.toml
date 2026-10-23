@@ -2498,8 +2498,9 @@ depends = []
 
 ["features/stitch/logic.py::find_seams"]
 phase = 9
-status = "todo"
-calls = ["cv2.UMat", "cv2.detail_DpSeamFinder", "negpy_core.resize_area", "negpy_core.resize_nearest"]
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.dp_seams", "negpy_core.resize_area", "negpy_core.resize_nearest"]
 depends = []
 
 ["features/stitch/logic.py::register_pair"]

@@ -45,6 +45,33 @@ fn compensation_gains(
     }))
 }
 
+/// `cv2.detail_DpSeamFinder("COLOR").find(images, [(0, 0)] * n, masks)` of HxWx3 float32 parts
+/// on one canvas: the cut masks, as new uint8 arrays.
+#[pyfunction]
+fn dp_seams<'py>(
+    py: Python<'py>,
+    images: Vec<PyReadonlyArrayDyn<'py, f32>>,
+    masks: Vec<PyReadonlyArrayDyn<'py, u8>>,
+) -> PyResult<Vec<Bound<'py, numpy::PyArrayDyn<u8>>>> {
+    use numpy::{IntoPyArray, PyArrayMethods};
+    let Some(&[h, w, 3]) = images.first().map(|a| a.shape()) else {
+        return Err(PyValueError::new_err("needs HxWx3 parts"));
+    };
+    if images.len() != masks.len() {
+        return Err(PyValueError::new_err("needs one mask per part"));
+    }
+    let imgs = slices(&images, 3 * h * w)?;
+    let mut cut: Vec<Vec<u8>> = slices(&masks, h * w)?
+        .into_iter()
+        .map(<[u8]>::to_vec)
+        .collect();
+    super::detach(py, h * w, || crate::seam::dp_seams(&imgs, &mut cut, (h, w)));
+    cut.into_iter()
+        .map(|m| m.into_pyarray(py).reshape(vec![h, w]))
+        .collect()
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(dp_seams, m)?)?;
     m.add_function(wrap_pyfunction!(compensation_gains, m)?)
 }

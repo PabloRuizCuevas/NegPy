@@ -24,6 +24,7 @@ pub mod morph;
 pub mod print_curve;
 pub mod resize;
 pub mod retouch;
+pub mod seam;
 pub mod sensor;
 pub mod shapes;
 pub mod skew;

@@ -225,12 +225,8 @@ def find_seams(warped: Sequence[np.ndarray], masks: Sequence[np.ndarray], canvas
     try:
         small = [_seam_cost_image(negpy_core.resize_area(np.ascontiguousarray(img, dtype=np.float32), size)) for img in warped]
         small_masks = [negpy_core.resize_nearest(m.astype(np.uint8), size) for m in masks]
-        corners = [(0, 0)] * len(small)
-        cut = cv2.detail_DpSeamFinder("COLOR").find(small, corners, [cv2.UMat(m) for m in small_masks])
-        seams = [
-            (negpy_core.resize_nearest(np.ascontiguousarray(cv2.UMat.get(m), dtype=np.uint8), (w, h)) > 0) & valid
-            for m, valid in zip(cut, masks)
-        ]
+        cut = negpy_core.dp_seams(small, small_masks)
+        seams = [(negpy_core.resize_nearest(m, (w, h)) > 0) & valid for m, valid in zip(cut, masks)]
         # Nearest-neighbour upscaling can leave a covered pixel assigned to no part, and
         # an unassigned pixel has no weight to normalize against. Give each one back to a
         # part that actually covers it.
@@ -244,7 +240,7 @@ def find_seams(warped: Sequence[np.ndarray], masks: Sequence[np.ndarray], canvas
                 claim = orphan & mask
                 seam |= claim
                 orphan &= ~claim
-    except (cv2.error, MemoryError):
+    except MemoryError:
         return None
     return seams
 
