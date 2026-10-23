@@ -8,6 +8,7 @@ from dataclasses import dataclass, fields, replace
 from typing import Any, Callable, Collection, Dict, List, Optional, Set, Tuple, Union
 
 import cv2
+import negpy_core
 import numpy as np
 from PyQt6.QtCore import Q_ARG, QMetaObject, QObject, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QTransform
@@ -7817,7 +7818,6 @@ class AppController(QObject):
         """Paint the selected profile's reference times its gain, ±EVENNESS_RANGE as black..white:
         a good profile shows gray. With no stored reference, show the light its gain corrects.
         A sensor-layout profile takes the frame's EXIF orientation, quarter turns and flips only."""
-        import cv2
 
         from negpy.features.flatfield.logic import EVENNESS_RANGE, GAIN_VIEW_RANGE, evenness_view, self_corrected
         from negpy.services.assets.flatfield import FlatFieldProfiles
@@ -7862,7 +7862,7 @@ class AppController(QObject):
         view = np.ascontiguousarray(view)
         h, w = view.shape[:2]
         scale = APP_CONFIG.preview_render_size / max(h, w)
-        view = cv2.resize(view, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_LINEAR)
+        view = negpy_core.resize_linear(np.ascontiguousarray(view, dtype=np.float32), (round(w * scale), round(h * scale)))
         # Display-ready: the map is already black..white, so no working OETF.
         self._store_peek_frame(view, splash=False, crop_preview_full=False)
         self.set_status(message, 10000)

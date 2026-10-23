@@ -36,7 +36,7 @@ def build_proxy(rgb: np.ndarray) -> Tuple[np.ndarray, float]:
     scale = min(1.0, PROXY_MAX_EDGE / max(gray.shape))
     if scale < 1.0:
         size = (max(1, round(gray.shape[1] * scale)), max(1, round(gray.shape[0] * scale)))
-        gray = cv2.resize(gray, size, interpolation=cv2.INTER_AREA)
+        gray = negpy_core.resize_area(np.ascontiguousarray(gray, dtype=np.float32), size)
     lo, hi = np.percentile(gray, (1.0, 99.0))
     gray = np.clip((gray - lo) / max(hi - lo, 1e-9), 0.0, 1.0)
     return (gray ** (1.0 / 2.2) * 255.0).astype(np.uint8), scale
@@ -222,7 +222,7 @@ def find_seams(warped: Sequence[np.ndarray], masks: Sequence[np.ndarray], canvas
     # this is where an export tight on memory fails, and it has to degrade to the
     # average rather than end the export.
     try:
-        small = [_seam_cost_image(cv2.resize(img, size, interpolation=cv2.INTER_AREA)) for img in warped]
+        small = [_seam_cost_image(negpy_core.resize_area(np.ascontiguousarray(img, dtype=np.float32), size)) for img in warped]
         small_masks = [cv2.resize(m.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) for m in masks]
         corners = [(0, 0)] * len(small)
         cut = cv2.detail_DpSeamFinder("COLOR").find(small, corners, [cv2.UMat(m) for m in small_masks])

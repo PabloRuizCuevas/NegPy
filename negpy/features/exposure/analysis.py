@@ -317,7 +317,7 @@ def zone_grid(rgb: Any, cells: int = ZONE_GRID_CELLS) -> Optional[np.ndarray]:
     small = np.ascontiguousarray(rgb[::step, ::step, :3], dtype=np.float32)
     scale = cells / max(small.shape[:2])
     sh, sw = small.shape[:2]
-    small = cv2.resize(small, (max(1, round(sw * scale)), max(1, round(sh * scale))), interpolation=cv2.INTER_AREA)
+    small = negpy_core.resize_area(np.ascontiguousarray(small, dtype=np.float32), (max(1, round(sw * scale)), max(1, round(sh * scale))))
     z = np.nan_to_num(zone_of_encoded(get_luminance(small)))
     return np.rint(z).astype(np.int32)
 
@@ -355,7 +355,9 @@ def zone_field(rgb: Any, max_edge: int = ZONE_FIELD_MAX_EDGE) -> Optional[np.nda
     small = np.ascontiguousarray(rgb[::step, ::step, :3], dtype=np.float32)
     scale = min(1.0, max_edge / max(small.shape[:2]))
     sh, sw = small.shape[:2]
-    lum = get_luminance(cv2.resize(small, (max(1, round(sw * scale)), max(1, round(sh * scale))), interpolation=cv2.INTER_AREA))
+    lum = get_luminance(
+        negpy_core.resize_area(np.ascontiguousarray(small, dtype=np.float32), (max(1, round(sw * scale)), max(1, round(sh * scale))))
+    )
     lum = negpy_core.gaussian_blur(np.ascontiguousarray(lum, dtype=np.float32), (0, 0), 2.0)
     zones = np.clip(np.rint(np.nan_to_num(zone_of_encoded(lum))), 0, ZONE_COUNT).astype(np.uint8)
     return cv2.medianBlur(zones, 5)
@@ -511,7 +513,7 @@ def paper_grid_mosaic(tiles: Sequence[np.ndarray]) -> np.ndarray:
     h, w = out.shape[:2]
     for tile, (x0, y0, x1, y1) in zip(tiles, paper_grid_cells(len(tiles))):
         top, bottom, left, right = round(y0 * h), round(y1 * h), round(x0 * w), round(x1 * w)
-        out[top:bottom, left:right] = cv2.resize(tile, (right - left, bottom - top), interpolation=cv2.INTER_AREA)
+        out[top:bottom, left:right] = negpy_core.resize_area(np.ascontiguousarray(tile, dtype=np.float32), (right - left, bottom - top))
     return out
 
 

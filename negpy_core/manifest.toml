@@ -72,7 +72,7 @@ depends = []
 ["features/exposure/analysis.py::paper_grid_mosaic"]
 phase = 2
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_area"]
 depends = []
 
 ["features/exposure/analysis.py::scan_full_scale_columns"]
@@ -126,13 +126,13 @@ depends = []
 ["features/exposure/analysis.py::zone_field"]
 phase = 2
 status = "todo"
-calls = ["cv2.medianBlur", "cv2.resize", "negpy_core.gaussian_blur"]
+calls = ["cv2.medianBlur", "negpy_core.gaussian_blur", "negpy_core.resize_area"]
 depends = ["zone_of_encoded"]
 
 ["features/exposure/analysis.py::zone_grid"]
 phase = 2
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_area"]
 depends = ["zone_of_encoded"]
 
 ["features/exposure/analysis.py::zone_occupancy"]
@@ -224,7 +224,7 @@ depends = []
 ["features/exposure/normalization.py::analysis_grid"]
 phase = 2
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_area"]
 depends = []
 
 ["features/exposure/normalization.py::analyze_log_exposure_bounds"]
@@ -1209,7 +1209,7 @@ depends = []
 ["features/flatfield/logic.py::work_copy"]
 phase = 4
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_area"]
 depends = []
 
 ["features/lens/logic.py::_edge_reads"]
@@ -1371,7 +1371,7 @@ depends = []
 ["features/process/sensor.py::_two_scale_unmix"]
 phase = 4
 status = "todo"
-calls = ["cv2.GaussianBlur", "cv2.resize", "negpy_core.resize_linear"]
+calls = ["cv2.GaussianBlur", "negpy_core.resize_area", "negpy_core.resize_linear"]
 depends = ["_two_scale_kernel", "_two_scale_layer_kernel", "film_base"]
 
 ["features/process/sensor.py::_unmix_kernel"]
@@ -1389,7 +1389,7 @@ depends = ["_density_unmix", "_two_scale_unmix", "_unmix_kernel"]
 ["features/process/sensor.py::film_base"]
 phase = 4
 status = "todo"
-calls = ["cv2.resize", "np.median", "np.percentile", "np.quantile"]
+calls = ["negpy_core.resize_area", "np.median", "np.percentile", "np.quantile"]
 depends = []
 
 ["features/retouch/clone.py::_cover"]
@@ -1587,7 +1587,7 @@ depends = []
 ["features/retouch/logic.py::ir_ratio_and_gain"]
 phase = 4
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_area"]
 depends = ["_fit_refraction_gammas", "_ir_clean_base", "_ir_decontaminate", "_ir_glare", "_ir_live", "_ir_normalize_ratio", "normalize_ir"]
 
 ["features/retouch/logic.py::lines_to_score"]
@@ -1779,7 +1779,7 @@ depends = ["warp_into_canvas"]
 ["features/stitch/logic.py::build_proxy"]
 phase = 5
 status = "todo"
-calls = ["cv2.resize", "np.percentile"]
+calls = ["negpy_core.resize_area", "np.percentile"]
 depends = []
 
 ["features/stitch/logic.py::compute_canvas"]
@@ -2194,13 +2194,13 @@ depends = []
 ["services/rendering/gpu_engine.py::GPUEngine._process_tiled"]
 phase = 6
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["cv2.resize", "negpy_core.resize_linear"]
 depends = ["_downsample_for_analysis"]
 
 ["services/rendering/gpu_engine.py::_downsample_for_analysis"]
 phase = 6
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_area"]
 depends = []
 
 ["services/rendering/image_processor.py::ImageProcessor.render_display_array"]
@@ -2224,7 +2224,7 @@ depends = []
 ["services/rendering/preview_manager.py::PreviewManager._load_from_open_raw"]
 phase = 6
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_area"]
 depends = []
 
 ["services/rendering/preview_manager.py::PreviewManager._try_splash_from_open_raw"]
@@ -2236,31 +2236,31 @@ depends = []
 ["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_hdr"]
 phase = 6
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_area"]
 depends = ["_load"]
 
 ["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_hdr._load"]
 phase = 6
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_area"]
 depends = []
 
 ["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_rgb"]
 phase = 6
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_area"]
 depends = ["_match"]
 
 ["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_rgb._match"]
 phase = 6
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_area"]
 depends = []
 
 ["desktop/controller.py::AppController._paint_flatfield_peek"]
 phase = 7
 status = "todo"
-calls = ["cv2.resize"]
+calls = ["negpy_core.resize_linear"]
 depends = []
 
 ["desktop/controller.py::_interactive_proxy"]
@@ -2452,7 +2452,7 @@ depends = ["ranked_thumb"]
 ["services/capture/meter.py::ranked_thumb"]
 phase = 7
 status = "todo"
-calls = ["cv2.resize", "np.argsort"]
+calls = ["negpy_core.resize_area", "np.argsort"]
 depends = []
 
 ["services/export/contact_sheet.py::_place_tile"]
@@ -2506,13 +2506,13 @@ depends = ["_borrow_clean_grain", "_hair_encode"]
 ["features/rgbscan/logic.py::estimate_shift"]
 phase = 9
 status = "todo"
-calls = ["cv2.createHanningWindow", "cv2.phaseCorrelate", "cv2.resize"]
+calls = ["cv2.createHanningWindow", "cv2.phaseCorrelate", "negpy_core.resize_area"]
 depends = []
 
 ["features/stitch/logic.py::find_seams"]
 phase = 9
 status = "todo"
-calls = ["cv2.UMat", "cv2.detail_DpSeamFinder", "cv2.resize"]
+calls = ["cv2.UMat", "cv2.detail_DpSeamFinder", "cv2.resize", "negpy_core.resize_area"]
 depends = []
 
 ["features/stitch/logic.py::register_pair"]

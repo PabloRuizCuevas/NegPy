@@ -157,7 +157,9 @@ def film_base(x: np.ndarray) -> Optional[np.ndarray]:
     h, w = sample.shape[:2]
     scale = _BASE_GRID_EDGE / max(h, w)
     if scale < 1.0:
-        sample = cv2.resize(sample, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=cv2.INTER_AREA)
+        sample = negpy_core.resize_area(
+            np.ascontiguousarray(sample, dtype=np.float32), (max(1, round(w * scale)), max(1, round(h * scale)))
+        )
     logs = np.log(np.maximum(sample.reshape(-1, 3), _LOG_FLOOR)).astype(np.float64)
     # A cell is as thin as its least-thin channel, each channel against its own thin end.
     thin = (logs - np.percentile(logs, _BASE_PERCENTILE, axis=0)).min(axis=1)
@@ -193,7 +195,7 @@ def _two_scale_unmix(x: np.ndarray, m: np.ndarray) -> Optional[np.ndarray]:
     sigma = max(1.0, max(h, w) * _TWO_SCALE_SIGMA)
     # The color layer and the weight are smooth by construction, so they are built small.
     step = max(1, int(sigma // 2))
-    small = x if step == 1 else cv2.resize(x, (-(-w // step), -(-h // step)), interpolation=cv2.INTER_AREA)
+    small = x if step == 1 else negpy_core.resize_area(np.ascontiguousarray(x, dtype=np.float32), (-(-w // step), -(-h // step)))
     small = cv2.GaussianBlur(small, (0, 0), sigma / step)
     color = np.empty_like(small)
     weight = np.empty(small.shape[:2], np.float32)

@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict, Optional, Tuple
 
 import cv2
+import negpy_core
 import numpy as np
 import wgpu  # type: ignore
 
@@ -153,7 +154,7 @@ def _downsample_for_analysis(img: np.ndarray, max_size: int) -> np.ndarray:
     scale = min(1.0, max_size / max(h, w))
     if scale >= 1.0:
         return img
-    return cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    return negpy_core.resize_area(np.ascontiguousarray(img, dtype=np.float32), (int(w * scale), int(h * scale)))
 
 
 def _build_analysis_source(
@@ -2825,7 +2826,7 @@ class GPUEngine:
             )
 
         preview_scale = APP_CONFIG.preview_render_size / max(h, w)
-        img_small = cv2.resize(img, (int(w * preview_scale), int(h * preview_scale)))
+        img_small = negpy_core.resize_linear(np.ascontiguousarray(img, dtype=np.float32), (int(w * preview_scale), int(h * preview_scale)))
 
         # This render meters the whole frame for the tiles; the CLAHE CDF it leaves behind
         # is the one they share. Taken from here rather than from the last preview, which

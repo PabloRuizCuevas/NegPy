@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-import cv2
+import negpy_core
 import numpy as np
 
 from negpy.features.geometry.logic import (
@@ -68,7 +68,7 @@ class MeterReading:
 def ranked_thumb(gray: np.ndarray) -> np.ndarray:
     """A picture at thumbnail size as zero-mean, unit-variance ranks: two thumbnails' mean product
     is their rank correlation, which no monotonic tone curve and no exposure change can move."""
-    small = cv2.resize(np.ascontiguousarray(gray, dtype=np.float32), _THUMB, interpolation=cv2.INTER_AREA).ravel()
+    small = negpy_core.resize_area(np.ascontiguousarray(gray, dtype=np.float32), _THUMB).ravel()
     ranks = np.argsort(np.argsort(small)).astype(np.float32)
     ranks -= ranks.mean()
     return ranks / max(float(ranks.std()), 1e-6)

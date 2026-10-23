@@ -270,8 +270,8 @@ def estimate_shift(ref_gray: np.ndarray, mov_gray: np.ndarray) -> Tuple[float, f
     if w > _EST_WIDTH:
         scale = w / _EST_WIDTH
         sz = (_EST_WIDTH, max(1, round(h / scale)))
-        r = cv2.resize(ref_gray, sz, interpolation=cv2.INTER_AREA)
-        m = cv2.resize(mov_gray, sz, interpolation=cv2.INTER_AREA)
+        r = negpy_core.resize_area(np.ascontiguousarray(ref_gray, dtype=np.float32), sz)
+        m = negpy_core.resize_area(np.ascontiguousarray(mov_gray, dtype=np.float32), sz)
     r = np.ascontiguousarray(r, dtype=np.float32)
     m = np.ascontiguousarray(m, dtype=np.float32)
     win = cv2.createHanningWindow((r.shape[1], r.shape[0]), cv2.CV_32F)

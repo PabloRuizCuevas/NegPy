@@ -532,7 +532,7 @@ def analysis_grid(
     grid = int(EXPOSURE_CONSTANTS["analysis_grid"])
     if max(h, w) > grid:
         scale = grid / float(max(h, w))
-        image = cv2.resize(image, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=cv2.INTER_AREA)
+        image = negpy_core.resize_area(np.ascontiguousarray(image, dtype=np.float32), (max(1, round(w * scale)), max(1, round(h * scale))))
 
     if rotation:
         image = np.rot90(image, k=rotation)

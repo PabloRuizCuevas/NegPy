@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any, Optional, Sequence, Tuple
 
 import cv2
+import negpy_core
 import numpy as np
 
 import rawpy
@@ -458,26 +459,14 @@ class PreviewManager:
             scale = vram_cap / max(h_p, w_p)
             target_w = int(w_p * scale)
             target_h = int(h_p * scale)
-            preview_raw = ensure_image(
-                cv2.resize(
-                    full_linear,
-                    (target_w, target_h),
-                    interpolation=cv2.INTER_AREA,
-                )
-            )
+            preview_raw = ensure_image(negpy_core.resize_area(np.ascontiguousarray(full_linear, dtype=np.float32), (target_w, target_h)))
             metadata["vram_capped_long_edge"] = vram_cap
             log("preview vram_cap applied: %dx%d -> %dx%d", w_p, h_p, target_w, target_h)
         elif max(h_p, w_p) > max_res and not full_resolution:
             scale = max_res / max(h_p, w_p)
             target_w = int(w_p * scale)
             target_h = int(h_p * scale)
-            preview_raw = ensure_image(
-                cv2.resize(
-                    full_linear,
-                    (target_w, target_h),
-                    interpolation=cv2.INTER_AREA,
-                )
-            )
+            preview_raw = ensure_image(negpy_core.resize_area(np.ascontiguousarray(full_linear, dtype=np.float32), (target_w, target_h)))
         else:
             # Full-res, or already preview-sized: hand the decoded buffer through as it is. A
             # defensive copy doubles peak RSS on HQ loads of large scans for no benefit, since
@@ -760,7 +749,7 @@ class PreviewManager:
         def _match(buf: ImageBuffer) -> np.ndarray:
             arr = np.asarray(buf, dtype=np.float32)
             if arr.shape[:2] != red.shape[:2]:
-                arr = cv2.resize(arr, (red.shape[1], red.shape[0]), interpolation=cv2.INTER_AREA)
+                arr = negpy_core.resize_area(np.ascontiguousarray(arr, dtype=np.float32), (red.shape[1], red.shape[0]))
             return arr
 
         merged = assemble_rgb(red, _match(green_out), _match(blue_out), align=align)
@@ -868,7 +857,7 @@ class PreviewManager:
                 # at stake.
                 if abs(arr.shape[1] * ref.shape[0] - arr.shape[0] * ref.shape[1]) > 0.02 * ref.shape[1] * arr.shape[0]:
                     raise ValueError(f"bracket frames differ in shape: {arr.shape}, {ref.shape}")
-                arr = cv2.resize(arr, (ref.shape[1], ref.shape[0]), interpolation=cv2.INTER_AREA)
+                arr = negpy_core.resize_area(np.ascontiguousarray(arr, dtype=np.float32), (ref.shape[1], ref.shape[0]))
             return arr
 
         providers = [lambda: ref, *[lambda p=p: _load(p) for p in other_paths]]

@@ -1227,7 +1227,7 @@ def ir_ratio_and_gain(ir_det: np.ndarray, img_det: np.ndarray) -> Tuple[np.ndarr
     ratio[~live] = 1.0
     img_det = np.ascontiguousarray(img_det, dtype=np.float32)
     if img_det.shape[:2] != ratio.shape[:2]:
-        img_det = cv2.resize(img_det, (ratio.shape[1], ratio.shape[0]), interpolation=cv2.INTER_AREA)
+        img_det = negpy_core.resize_area(np.ascontiguousarray(img_det, dtype=np.float32), (ratio.shape[1], ratio.shape[0]))
 
     vis_log = np.stack([np.log(np.clip(normalize_ir(img_det[:, :, c]), 1e-4, 1.0)) for c in range(3)], axis=-1)
     ratio, ghost = _ir_decontaminate(ratio, vis_log)

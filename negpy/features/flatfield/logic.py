@@ -109,7 +109,7 @@ def work_copy(reference: ImageBuffer, long_edge: int = _GAIN_WORK_SIZE) -> np.nd
     h, w = ref.shape[:2]
     scale = min(1.0, long_edge / max(h, w))
     if scale < 1.0:
-        ref = cv2.resize(ref, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=cv2.INTER_AREA)
+        ref = negpy_core.resize_area(np.ascontiguousarray(ref, dtype=np.float32), (max(1, round(w * scale)), max(1, round(h * scale))))
     return ref
 
 
