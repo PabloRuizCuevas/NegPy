@@ -13,6 +13,7 @@ pub mod gray;
 pub mod hdr;
 pub mod histogram;
 pub mod lab;
+pub mod lens;
 pub mod meter;
 pub mod morph;
 pub mod print_curve;

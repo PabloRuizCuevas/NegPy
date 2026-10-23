@@ -1228,7 +1228,7 @@ depends = ["_edge_reads"]
 
 ["features/lens/logic.py::apply_lens"]
 phase = 4
-status = "todo"
+status = "ported"
 calls = ["negpy_core.remap"]
 depends = ["fill_scale"]
 
@@ -1238,10 +1238,22 @@ status = "todo"
 calls = []
 depends = ["_search_fill_scale"]
 
-["features/lens/warps.py::RectilinearWarp.remap"]
+["features/lens/warps.py::PanasonicWarp.remap"]
 phase = 4
 status = "todo"
-calls = ["cv2.undistortPointsIter"]
+calls = ["negpy_core.panasonic_map"]
+depends = []
+
+["features/lens/warps.py::RectilinearWarp.remap"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.rectilinear_ca_map", "negpy_core.rectilinear_map"]
+depends = []
+
+["features/lens/warps.py::SonyWarp.remap"]
+phase = 4
+status = "todo"
+calls = ["negpy_core.sony_map"]
 depends = []
 
 ["features/local/logic.py::_tinted_area"]
