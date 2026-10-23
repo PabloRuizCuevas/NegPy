@@ -136,7 +136,8 @@ jobs:
           echo "CMAKE_ARGS=-DLLVM_DIR=${LLVM20}/lib/cmake/llvm -DCMAKE_PREFIX_PATH=${LLVM20}" >> "$GITHUB_ENV"
 
       - name: Install Dependencies
-        run: uv sync --group dev
+        # The plustek group brings opencv, the oracle the ported-function tests compare against.
+        run: uv sync --group dev --group plustek
 
       - name: Ported-function oracles
         run: uv run pytest tests/test_percentiles.py tests/test_core_same_bits.py tests/test_core_resize.py tests/test_core_filter.py tests/test_core_morph.py tests/test_core_gray.py tests/test_core_contours.py tests/test_core_shapes.py tests/test_core_components.py tests/test_core_color.py tests/test_core_warp.py tests/test_core_lab.py tests/test_core_altprocess.py tests/test_core_finish.py

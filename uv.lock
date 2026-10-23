@@ -385,7 +385,6 @@ camera = [
     { name = "gphoto2", marker = "sys_platform != 'win32'" },
 ]
 dev = [
-    { name = "opencv-python-headless" },
     { name = "pyinstaller" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -434,7 +433,6 @@ provides-extras = ["nkscan", "plustek", "sane", "camera"]
 [package.metadata.requires-dev]
 camera = [{ name = "gphoto2", marker = "sys_platform != 'win32'", specifier = ">=2.5" }]
 dev = [
-    { name = "opencv-python-headless", specifier = "==4.13.0.92" },
     { name = "pyinstaller", specifier = ">=6.18.0" },
     { name = "pytest", specifier = "==9.0.2" },
     { name = "pytest-cov", specifier = ">=7.0" },

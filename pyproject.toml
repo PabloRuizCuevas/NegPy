@@ -50,8 +50,6 @@ camera = ["gphoto2>=2.5 ; sys_platform != 'win32'"]
 
 [dependency-groups]
 dev = [
-    # The oracle the negpy_core tests and the replay tool compare against; the app needs none.
-    "opencv-python-headless==4.13.0.92",
     "pyinstaller>=6.18.0",
     "pytest==9.0.2",
     "pytest-cov>=7.0",

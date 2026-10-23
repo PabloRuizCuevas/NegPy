@@ -16,7 +16,7 @@ NegPy requires Python 3.13+, `uv` and a Rust toolchain.
 ### 1. Prerequisites
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and [rustup](https://rustup.rs/). `rustup` reads the toolchain version from `negpy_core/rust-toolchain.toml`.
 
-The `negpy_core/` folder is a Rust library with NegPy's CPU kernels. The first `uv sync` compiles it. After you edit a Rust file, the next `uv run` or `make test` compiles it again. `negpy_core` builds no C or C++ code: `cargo-deny` (`negpy_core/deny.toml`) rejects a dependency that does.
+The `negpy_core/` folder is a Rust library with NegPy's CPU kernels. The first `uv sync` compiles it. After you edit a Rust file, the next `uv run` or `make test` compiles it again. `negpy_core` builds no C or C++ code: `cargo-deny` (`negpy_core/deny.toml`) rejects a dependency that does. Its tests compare against opencv, which only the `plustek` group installs; `make install` (`uv sync --all-groups`) brings it.
 
 Scanner support (optional):
 

@@ -1,4 +1,4 @@
-"""negpy never imports cv2: negpy_core holds every kernel, and opencv is only the tests' oracle."""
+"""negpy never imports cv2: negpy_core holds every kernel."""
 
 import pathlib
 import re
