@@ -11,6 +11,12 @@
   [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey)](#getting-started)
   [![Contributors](https://img.shields.io/github/contributors/marcinz606/NegPy)](https://github.com/marcinz606/NegPy/graphs/contributors)
   [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/JySNzUWgwy)
+  [![Stars](https://img.shields.io/github/stars/marcinz606/NegPy?style=flat&logo=github)](https://github.com/marcinz606/NegPy/stargazers)
+  [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+  [![GPU](https://img.shields.io/badge/GPU-WebGPU-005A9C)](docs/PIPELINE.md)
+  [![Qt](https://img.shields.io/badge/UI-PyQt6-41CD52?logo=qt&logoColor=white)](https://www.riverbankcomputing.com/software/pyqt/)
+  [![Languages](https://img.shields.io/badge/languages-EN%20%7C%20日本語%20%7C%20한국어%20%7C%20中文-informational)](docs/USER_GUIDE.md)
+  [![Film](https://img.shields.io/badge/film-C41%20%7C%20B%26W%20%7C%20E6-red?logo=googlephotos&logoColor=white)](docs/PIPELINE.md)
 </div>
 
 NegPy turns scans of film negatives and slides into finished pictures. I wrote it because I wanted a tool made for film scans that does more than invert them. It models film and photographic paper, and adds the conveniences of a lab scanner. It runs on Linux, macOS and Windows. 
