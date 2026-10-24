@@ -16,9 +16,23 @@ $(error NEGPY_USER_DIR is "$(NEGPY_USER_DIR)", which is not an absolute path. ma
 endif
 endif
 
+# maturin reads ARCHFLAGS on every OS, so a stray "-arch x86_64" builds negpy_core for macOS.
+unexport ARCHFLAGS
+
+# From inside negpy_core/, so rustup picks the toolchain pinned in its rust-toolchain.toml.
+CARGO = cd negpy_core && cargo --quiet
+
 # Default target
 .PHONY: all
-all: format lint type test
+all: format rust lint type test
+
+# Rust checks for negpy_core: format, clippy (warnings fail), unit tests
+.PHONY: rust
+rust:
+	@echo "Running Rust checks (cargo fmt, clippy, test)..."
+	@$(CARGO) fmt --check
+	@$(CARGO) clippy --all-targets --all-features -- -D warnings
+	@$(CARGO) test
 
 .PHONY: translations translations-check
 translations:
@@ -70,10 +84,22 @@ test:
 	@echo "Running unit tests (pytest)..."
 	@$(UV) pytest tests/ --cov=negpy --cov-report=term-missing
 
+# negpy_core replay corpus ($$NEGPY_CORPUS, default ~/negpy-corpus). PHASE=2 limits to one phase.
+# Record first, on main: uv run python scripts/replay.py record FRAME... [--phase N]
+REPLAY_PHASE = $(if $(PHASE),--phase $(PHASE))
+
+.PHONY: replay bench
+replay:
+	@$(UV) python scripts/replay.py replay $(REPLAY_PHASE)
+
+bench:
+	@$(UV) python scripts/replay.py bench $(REPLAY_PHASE)
+
 # Auto-format and fix (ruff)
 .PHONY: format
 format:
 	@echo "Running ruff format and fix..."
+	@$(CARGO) fmt
 	@$(UV) ruff format .
 	@$(UV) ruff check --fix .
 
@@ -165,4 +191,5 @@ clean:
 	rm -rf .ruff_cache
 	rm -rf build
 	rm -rf dist
+	rm -rf negpy_core/target
 	find . -type d -name "__pycache__" -exec rm -rf {} +

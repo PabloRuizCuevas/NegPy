@@ -1,0 +1,2796 @@
+# One entry per Python function that negpy_core replaces. scripts/core_manifest.py writes
+# calls and depends; phase, status (todo, ported, stays), owner, compare (replay: exact, rows,
+# ulp=N, abs=X, quality: a pytest gate; see negpy_core/LEDGER.md) and note are kept by hand.
+
+["kernel/image/logic.py::percentiles"]
+phase = 1
+status = "ported"
+calls = ["negpy_core.percentiles"]
+depends = []
+note = "negpy_core::stats::percentiles"
+
+["features/exposure/analysis.py::_mid_gray_encoded"]
+phase = 2
+status = "stays"
+calls = []
+depends = []
+note = "scalar or roll-size math"
+
+["features/exposure/analysis.py::_scope_lookup"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.scope_lookup"]
+depends = []
+
+["features/exposure/analysis.py::_waveform"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.waveform"]
+depends = []
+
+["features/exposure/analysis.py::_waveform_cells"]
+phase = 2
+status = "ported"
+calls = []
+depends = []
+
+["features/exposure/analysis.py::color_histogram"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.color_histogram"]
+depends = []
+
+["features/exposure/analysis.py::density_histogram"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.density_histogram"]
+depends = []
+
+["features/exposure/analysis.py::density_parade"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.density_parade"]
+depends = []
+
+["features/exposure/analysis.py::encoded_of_zone"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_mid_gray_encoded"]
+note = "scalar or roll-size math"
+
+["features/exposure/analysis.py::loupe_acutance"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.loupe_acutance"]
+depends = []
+
+["features/exposure/analysis.py::output_histogram"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.output_histogram"]
+depends = []
+
+["features/exposure/analysis.py::paper_grid_mosaic"]
+phase = 2
+status = "stays"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "orchestration of negpy_core kernels"
+
+["features/exposure/analysis.py::scan_full_scale_columns"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.scan_full_scale_columns"]
+depends = []
+
+["features/exposure/analysis.py::scope_point"]
+phase = 2
+status = "stays"
+calls = []
+depends = []
+note = "scalar or roll-size math"
+
+["features/exposure/analysis.py::vectorscope_density"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.vectorscope_density"]
+depends = ["_scope_lookup"]
+
+["features/exposure/analysis.py::vectorscope_histogram"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.vectorscope_histogram"]
+depends = []
+
+["features/exposure/analysis.py::waveform"]
+phase = 2
+status = "ported"
+calls = []
+depends = ["_waveform"]
+
+["features/exposure/analysis.py::waveform_color"]
+phase = 2
+status = "ported"
+calls = []
+depends = ["_waveform"]
+
+["features/exposure/analysis.py::waveform_parade"]
+phase = 2
+status = "ported"
+calls = []
+depends = ["_waveform"]
+
+["features/exposure/analysis.py::zone_anchors"]
+phase = 2
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.zone_anchors"]
+depends = []
+
+["features/exposure/analysis.py::zone_field"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.zone_field"]
+depends = ["_mid_gray_encoded"]
+
+["features/exposure/analysis.py::zone_grid"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.zone_grid"]
+depends = ["_mid_gray_encoded"]
+
+["features/exposure/analysis.py::zone_occupancy"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.zone_occupancy"]
+depends = ["_mid_gray_encoded"]
+
+["features/exposure/analysis.py::zone_of_encoded"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_mid_gray_encoded"]
+note = "scalar or roll-size math"
+
+["features/exposure/analysis.py::zone_region_labels"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.zone_region_labels"]
+depends = []
+
+["features/exposure/analysis.py::zone_shares"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.zone_shares"]
+depends = []
+
+["features/exposure/normalization.py::_base_blocks"]
+phase = 2
+status = "ported"
+compare = "rows"
+calls = ["negpy_core.base_blocks"]
+depends = []
+note = "negpy_core::analysis::base_blocks"
+
+["features/exposure/normalization.py::_block_median_grid"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.block_median_grid"]
+depends = []
+
+["features/exposure/normalization.py::_block_median_grid._median"]
+phase = 2
+status = "ported"
+calls = ["np.median"]
+depends = []
+
+["features/exposure/normalization.py::_normalize_log_image_jit"]
+phase = 2
+status = "ported"
+calls = ["numba"]
+depends = []
+
+["features/exposure/normalization.py::_same_pixel_color_floor_refs"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.same_pixel_color_floor_refs"]
+depends = []
+
+["features/exposure/normalization.py::_same_pixel_color_floor_refs._select"]
+phase = 2
+status = "ported"
+calls = ["np.median", "np.quantile"]
+depends = []
+
+["features/exposure/normalization.py::_sample_log_bounds"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.channel_percentiles"]
+depends = []
+
+["features/exposure/normalization.py::_sample_log_bounds._pct"]
+phase = 2
+status = "ported"
+calls = ["np.percentile"]
+depends = []
+
+["features/exposure/normalization.py::_smooth_along_scan_order"]
+phase = 2
+status = "stays"
+calls = ["np.median"]
+depends = []
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::_weighted_median"]
+phase = 2
+status = "stays"
+calls = ["np.argsort", "np.cumsum"]
+depends = []
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::analysis_grid"]
+phase = 2
+status = "stays"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::analyze_log_exposure_bounds"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["analyze_log_exposure_bounds_from_log", "to_log_density"]
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::analyze_log_exposure_bounds_from_log"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_block_median_grid", "_same_pixel_color_floor_refs", "_sample_log_bounds"]
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::contrast_mask_plane"]
+phase = 2
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.contrast_mask_tail"]
+depends = ["analysis_grid", "normalize_log_image", "prefilter_log_grid"]
+note = "negpy_core::analysis::contrast_mask_tail"
+
+["features/exposure/normalization.py::density_above_base"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.luma_median"]
+depends = []
+note = "negpy_core::analysis"
+
+["features/exposure/normalization.py::detect_light_groups"]
+phase = 2
+status = "stays"
+calls = ["np.median"]
+depends = ["_smooth_along_scan_order", "pool_neutral_axis"]
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::diffusion_grid"]
+phase = 2
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.diffusion_tail"]
+depends = ["analysis_grid", "prefilter_log_grid"]
+note = "negpy_core::analysis::diffusion_tail"
+
+["features/exposure/normalization.py::diffusion_plane"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.luma_planes"]
+depends = ["normalize_log_image"]
+note = "negpy_core::analysis"
+
+["features/exposure/normalization.py::effective_crosstalk_matrix"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["resolve_crosstalk_matrix"]
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::measure_anchor"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["measure_anchor_from_log", "to_log_density"]
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::measure_anchor_from_log"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.textured_anchor"]
+depends = ["_block_median_grid"]
+
+["features/exposure/normalization.py::measure_base_log"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.measure_base_log"]
+depends = []
+
+["features/exposure/normalization.py::measure_clip_fractions"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.clip_fractions"]
+depends = []
+note = "negpy_core::analysis"
+
+["features/exposure/normalization.py::measure_highlight_point_from_log"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.textured_percentile"]
+depends = ["_block_median_grid"]
+
+["features/exposure/normalization.py::measure_neutral_axis"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["measure_neutral_axis_from_log", "to_log_density"]
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::measure_neutral_axis_from_log"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.neutral_axis"]
+depends = ["_block_median_grid"]
+
+["features/exposure/normalization.py::measure_neutral_axis_from_log._band_refs"]
+phase = 2
+status = "ported"
+calls = ["np.median", "np.percentile", "np.quantile"]
+depends = []
+
+["features/exposure/normalization.py::measure_shadow_point_from_log"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.textured_percentile"]
+depends = ["_block_median_grid"]
+
+["features/exposure/normalization.py::measure_textural_range"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["measure_textural_range_from_log", "to_log_density"]
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::measure_textural_range_from_log"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.textured_range"]
+depends = ["_block_median_grid"]
+
+["features/exposure/normalization.py::normalize_log_image"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.normalize_log_image"]
+depends = []
+
+["features/exposure/normalization.py::pool_frame_bounds"]
+phase = 2
+status = "stays"
+calls = ["np.median"]
+depends = []
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::pool_neutral_axis"]
+phase = 2
+status = "stays"
+calls = ["np.median"]
+depends = ["_weighted_median", "band"]
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::pool_neutral_axis.band"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_weighted_median"]
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::prefilter_log_grid"]
+phase = 2
+status = "ported"
+compare = "ulp=3"
+calls = []
+depends = ["_block_median_grid", "to_log_density"]
+
+["features/exposure/normalization.py::resolve_crosstalk_matrix"]
+phase = 2
+status = "stays"
+calls = ["np.sum"]
+depends = []
+note = "orchestration or roll-size math"
+
+["features/exposure/normalization.py::sorted_channel_grid"]
+phase = 2
+status = "stays"
+calls = ["np.sort"]
+depends = []
+note = "np.sort (SIMD sort) is faster than a radix port"
+
+["features/exposure/normalization.py::to_log_density"]
+phase = 2
+status = "ported"
+compare = "ulp=3"
+calls = ["negpy_core.to_log_density"]
+depends = []
+note = "negpy_core::analysis::to_log_density"
+
+["features/geometry/batch_autocrop.py::_border_without_a_film_box"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_bright_side_border", "_side_border"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/batch_autocrop.py::_bright_side_border"]
+phase = 2
+status = "stays"
+calls = []
+depends = []
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/batch_autocrop.py::_edge_fit"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = []
+depends = []
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/batch_autocrop.py::_mad"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = ["np.median"]
+depends = []
+note = "scalar or roll-size math"
+
+["features/geometry/batch_autocrop.py::_map_rect_between_rotations"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = ["negpy_core.rotation_matrix"]
+depends = []
+note = "scalar or roll-size math"
+
+["features/geometry/batch_autocrop.py::_no_box_evidence"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = []
+depends = ["_border_without_a_film_box"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/batch_autocrop.py::_rect_from_edge_profile"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.rect_from_edge_profile"]
+depends = []
+
+["features/geometry/batch_autocrop.py::_roll_border"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = ["np.median"]
+depends = []
+note = "scalar or roll-size math"
+
+["features/geometry/batch_autocrop.py::_side_border"]
+phase = 2
+status = "stays"
+calls = []
+depends = []
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/batch_autocrop.py::_threshold_fallback_frames"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = ["np.median"]
+depends = []
+note = "scalar or roll-size math"
+
+["features/geometry/batch_autocrop.py::_top_edge_slope"]
+phase = 2
+status = "ported"
+compare = "abs=1e-9"
+calls = ["negpy_core.top_edge_slope"]
+depends = []
+
+["features/geometry/batch_autocrop.py::_vertical_edge_profile"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.batch_edge_profile"]
+depends = []
+
+["features/geometry/batch_autocrop.py::build_roll_template"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = ["np.median", "np.percentile"]
+depends = ["_mad", "_roll_border", "_threshold_fallback_frames"]
+note = "scalar or roll-size math"
+
+["features/geometry/batch_autocrop.py::detect_crop_candidate"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = []
+depends = ["_bright_side_border", "_edge_fit", "_no_box_evidence", "_side_border", "_top_edge_slope", "_vertical_edge_profile"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/batch_autocrop.py::resolve_roll_crops"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = []
+depends = ["_map_rect_between_rotations", "_rect_from_edge_profile", "build_roll_template"]
+note = "scalar or roll-size math"
+
+["features/geometry/logic.py::_adaptive_threshold_levels"]
+phase = 2
+status = "ported"
+calls = ["np.percentile"]
+depends = []
+
+["features/geometry/logic.py::_adaptive_threshold_mask"]
+phase = 2
+status = "ported"
+calls = ["cv2.getStructuringElement", "negpy_core.morphology_ex"]
+depends = []
+
+["features/geometry/logic.py::_border_edge_scatter"]
+phase = 2
+status = "ported"
+calls = ["np.median"]
+depends = []
+note = "negpy_core::analysis::border_edge_scatter (Python deleted)"
+
+["features/geometry/logic.py::_candidate_from_contour"]
+phase = 2
+status = "ported"
+calls = ["cv2.boundingRect", "cv2.boxPoints", "cv2.contourArea", "cv2.minAreaRect"]
+depends = ["_oriented_boundary_evidence"]
+
+["features/geometry/logic.py::_candidates_from_mask"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.find_external_contours"]
+depends = ["_candidate_from_contour"]
+
+["features/geometry/logic.py::_dark_region_bounds"]
+phase = 2
+status = "ported"
+calls = ["cv2.boundingRect", "cv2.contourArea", "cv2.getStructuringElement", "negpy_core.bgr_to_gray", "negpy_core.find_external_contours", "negpy_core.morphology_ex", "np.percentile"]
+depends = ["_normalize_to_uint8"]
+note = "negpy_core::analysis::dark_region_bounds (Python deleted)"
+
+["features/geometry/logic.py::_detect_film_bounds"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["detect_film_bounds_with_confidence"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/logic.py::_detection_luma"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.detection_luma"]
+depends = []
+note = "negpy_core::analysis::detection_luma"
+
+["features/geometry/logic.py::_edge_border_depth"]
+phase = 2
+status = "ported"
+calls = ["np.median"]
+depends = ["_border_edge_scatter", "_pool_border_depth", "_walk_border_depth"]
+note = "negpy_core::analysis::edge_border_depth (Python deleted)"
+
+["features/geometry/logic.py::_enforce_ratio_by_occupancy"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_place_window_by_occupancy"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/logic.py::_estimate_tier_levels"]
+phase = 2
+status = "ported"
+calls = ["np.percentile"]
+depends = ["_find_rebate_level"]
+note = "negpy_core::analysis::estimate_tier_levels (Python deleted)"
+
+["features/geometry/logic.py::_film_surround_is_plausible"]
+phase = 2
+status = "ported"
+calls = ["np.median", "np.percentile"]
+depends = []
+
+["features/geometry/logic.py::_find_autocrop_roi_from_contours"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_detect_film_bounds", "_refine_roi_to_image"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/logic.py::_find_rebate_level"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.find_rebate_level"]
+depends = []
+note = "negpy_core::analysis::find_rebate_level"
+
+["features/geometry/logic.py::_get_threshold_autocrop_coords"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.threshold_box"]
+depends = []
+
+["features/geometry/logic.py::_mask_from_blackhat"]
+phase = 2
+status = "ported"
+calls = ["cv2.getStructuringElement", "negpy_core.gaussian_blur_u8", "negpy_core.morphology_ex", "negpy_core.threshold_otsu"]
+depends = []
+
+["features/geometry/logic.py::_mask_from_edges"]
+phase = 2
+status = "ported"
+calls = ["cv2.getStructuringElement", "negpy_core.canny", "negpy_core.gaussian_blur_u8", "negpy_core.morphology_ex"]
+depends = []
+
+["features/geometry/logic.py::_mask_from_inverse_threshold"]
+phase = 2
+status = "ported"
+calls = ["cv2.getStructuringElement", "negpy_core.gaussian_blur_u8", "negpy_core.morphology_ex", "negpy_core.threshold_otsu"]
+depends = []
+
+["features/geometry/logic.py::_normalize_detection_input"]
+phase = 2
+status = "stays"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/logic.py::_normalize_to_uint8"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.normalize_to_uint8"]
+depends = []
+note = "negpy_core::analysis::normalize_to_uint8"
+
+["features/geometry/logic.py::_oriented_boundary_evidence"]
+phase = 2
+status = "ported"
+calls = ["np.median"]
+depends = ["_polygon_values"]
+
+["features/geometry/logic.py::_place_window_by_occupancy"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.place_window_by_occupancy"]
+depends = []
+
+["features/geometry/logic.py::_polygon_values"]
+phase = 2
+status = "ported"
+calls = ["cv2.fillConvexPoly"]
+depends = []
+
+["features/geometry/logic.py::_pool_border_depth"]
+phase = 2
+status = "ported"
+calls = ["np.percentile"]
+depends = []
+note = "negpy_core::analysis::pool_border_depth (Python deleted)"
+
+["features/geometry/logic.py::_pre_keystone_point"]
+phase = 2
+status = "stays"
+calls = ["negpy_core.rotation_matrix"]
+depends = []
+note = "scalar or roll-size math"
+
+["features/geometry/logic.py::_refine_film_roi_by_tiers"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.refine_film_roi_by_tiers"]
+depends = []
+note = "negpy_core::analysis::refine_film_roi_by_tiers"
+
+["features/geometry/logic.py::_refine_frame_bounds"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.refine_frame_bounds"]
+depends = []
+note = "negpy_core::analysis::refine_frame_bounds"
+
+["features/geometry/logic.py::_refine_roi_to_image"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.refine_roi_to_image"]
+depends = []
+note = "negpy_core::analysis::refine_roi_to_image"
+
+["features/geometry/logic.py::_roi_from_measured_border"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.roi_from_measured_border"]
+depends = []
+note = "negpy_core::analysis::roi_from_measured_border"
+
+["features/geometry/logic.py::_select_consensus_cluster"]
+phase = 2
+status = "ported"
+calls = []
+depends = ["_weighted_median"]
+
+["features/geometry/logic.py::_smooth_signal"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.smooth_signal"]
+depends = []
+
+["features/geometry/logic.py::_snap_edge_to_gradient"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.snap_edge_to_gradient"]
+depends = []
+note = "negpy_core::analysis::snap_edge_to_gradient"
+
+["features/geometry/logic.py::_snap_film_bounds_to_bed_gradient"]
+phase = 2
+status = "ported"
+calls = []
+depends = ["_snap_edge_to_gradient"]
+
+["features/geometry/logic.py::_threshold_polarities"]
+phase = 2
+status = "ported"
+calls = ["np.median"]
+depends = []
+
+["features/geometry/logic.py::_trim_film_edges"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.trim_film_edges"]
+depends = []
+note = "negpy_core::analysis::trim_film_edges"
+
+["features/geometry/logic.py::_vertical_edge_profile"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.gaussian_blur", "negpy_core.sobel", "np.mean", "np.percentile"]
+depends = []
+
+["features/geometry/logic.py::_walk_border_depth"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.walk_border_depth"]
+depends = []
+note = "negpy_core::analysis::walk_border_depth"
+
+["features/geometry/logic.py::_weighted_median"]
+phase = 2
+status = "ported"
+calls = ["np.argsort", "np.cumsum", "np.sum"]
+depends = []
+
+["features/geometry/logic.py::apply_fine_rotation"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.rotation_matrix", "negpy_core.warp_affine"]
+depends = []
+
+["features/geometry/logic.py::apply_keystone"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.warp_perspective"]
+depends = ["keystone_matrix"]
+
+["features/geometry/logic.py::apply_radial_distortion"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.remap_radial"]
+depends = []
+
+["features/geometry/logic.py::compute_geometry_crop_rect"]
+phase = 2
+status = "stays"
+calls = ["negpy_core.rotation_matrix"]
+depends = ["keystone_matrix"]
+note = "scalar or roll-size math"
+
+["features/geometry/logic.py::detect_closest_aspect_ratio"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_find_autocrop_roi_from_contours", "_get_threshold_autocrop_coords", "_normalize_detection_input"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/logic.py::detect_film_bounds_with_confidence"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.detect_film_bounds"]
+depends = []
+
+["features/geometry/logic.py::film_and_picture"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.film_and_picture"]
+depends = []
+
+["features/geometry/logic.py::get_autocrop_coords"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_detect_film_bounds", "_detection_luma", "_enforce_ratio_by_occupancy", "_get_threshold_autocrop_coords", "_normalize_detection_input", "_refine_roi_to_image", "_trim_film_edges"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/logic.py::keystone_inverse_normalized"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["keystone_matrix_normalized"]
+note = "scalar or roll-size math"
+
+["features/geometry/logic.py::keystone_matrix"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["keystone_matrix_normalized"]
+note = "scalar or roll-size math"
+
+["features/geometry/logic.py::keystone_matrix_normalized"]
+phase = 2
+status = "stays"
+calls = ["negpy_core.perspective_transform"]
+depends = []
+note = "scalar or roll-size math; the perspective solve is negpy_core's"
+
+["features/geometry/logic.py::map_coords_to_geometry"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_pre_keystone_point", "map_point_keystone"]
+note = "scalar or roll-size math"
+
+["features/geometry/logic.py::map_point_keystone"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["keystone_matrix"]
+note = "scalar or roll-size math"
+
+["features/geometry/logic.py::measure_film_border"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.measure_film_border"]
+depends = []
+note = "negpy_core::analysis::measure_film_border"
+
+["features/geometry/logic.py::measure_film_edges"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.measure_film_edges"]
+depends = []
+note = "negpy_core::analysis::measure_film_edges"
+
+["features/geometry/logic.py::resolve_autocrop_rect"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_detect_film_bounds", "_normalize_detection_input", "apply_fine_rotation", "apply_keystone", "apply_radial_distortion", "get_autocrop_coords"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/logic.py::resolve_meter_rect"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["resolve_autocrop_rect"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/logic.py::solve_keystone_from_edges"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_pre_keystone_point", "map_point_keystone", "residuals", "slope_h", "slope_v"]
+note = "scalar or roll-size math"
+
+["features/geometry/logic.py::solve_keystone_from_edges.residuals"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["slope_h", "slope_v"]
+note = "scalar or roll-size math"
+
+["features/geometry/logic.py::solve_keystone_from_edges.slope_h"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["map_point_keystone"]
+note = "scalar or roll-size math"
+
+["features/geometry/logic.py::solve_keystone_from_edges.slope_v"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["map_point_keystone"]
+note = "scalar or roll-size math"
+
+["features/geometry/processor.py::GeometryProcessor.process"]
+phase = 2
+status = "stays"
+calls = []
+depends = []
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/skew.py::_at_canvas_edges"]
+phase = 2
+status = "ported"
+calls = ["negpy_core.skew_at_canvas_edges"]
+depends = []
+
+["features/geometry/skew.py::_fit_side"]
+phase = 2
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.skew_fit_side"]
+depends = []
+
+["features/geometry/skew.py::_frame_lines"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = []
+depends = ["_fit_side"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/skew.py::_line_angles"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_map"]
+note = "scalar line geometry; the rotation matrix is negpy_core's"
+
+["features/geometry/skew.py::_map"]
+phase = 2
+status = "stays"
+calls = ["negpy_core.rotation_matrix"]
+depends = []
+note = "scalar line geometry; the rotation matrix is negpy_core's"
+
+["features/geometry/skew.py::_measure_from"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = ["np.mean"]
+depends = ["_at_canvas_edges", "_frame_lines", "_profile_lines", "_solve", "_unrotate"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/skew.py::_profile_lines"]
+phase = 2
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.skew_profile_lines"]
+depends = []
+
+["features/geometry/skew.py::_solve"]
+phase = 2
+status = "stays"
+calls = []
+depends = ["_line_angles"]
+note = "scalar line geometry; the rotation matrix is negpy_core's"
+
+["features/geometry/skew.py::_unrotate"]
+phase = 2
+status = "stays"
+calls = ["negpy_core.rotation_matrix"]
+depends = []
+note = "scalar line geometry; the rotation matrix is negpy_core's"
+
+["features/geometry/skew.py::measure_frame_skew"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = []
+depends = ["_coarse_angles", "_measure_from"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/skew.py::squared_geometry"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = []
+depends = ["trusted_frame_skew"]
+note = "orchestration of negpy_core kernels"
+
+["features/geometry/skew.py::trusted_frame_skew"]
+phase = 2
+status = "stays"
+compare = "abs=1e-6"
+calls = []
+depends = ["measure_frame_skew"]
+note = "orchestration of negpy_core kernels"
+
+["infrastructure/loaders/logluv.py::normalize_linear"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.normalize_linear"]
+depends = []
+note = "negpy_core::loaders::normalize_linear"
+
+["infrastructure/loaders/pakon_loader.py::PakonLoader._looks_interleaved"]
+phase = 3
+status = "stays"
+calls = ["np.mean"]
+depends = []
+note = "6000-sample layout probe"
+
+["infrastructure/loaders/rawpy_loader.py::_stream_linearraw_preview"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.ellipse_kernel", "negpy_core.morphology_ex", "negpy_core.resize_area"]
+depends = []
+note = "negpy_core resize_area, morphology_ex, ellipse_kernel"
+
+["kernel/image/logic.py::_float_to_uint16_luma_jit"]
+phase = 3
+status = "ported"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_float_to_uint8_luma_jit"]
+phase = 3
+status = "ported"
+calls = ["numba"]
+depends = []
+
+["kernel/image/logic.py::_gamut_aware_chroma_scale_kernel"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.gamut_aware_chroma_scale"]
+depends = []
+
+["kernel/image/logic.py::_lab_to_rgb_kernel"]
+phase = 3
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.lab_to_rgb"]
+depends = []
+
+["kernel/image/logic.py::_matmul_3x3_kernel"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.matmul_3x3"]
+depends = []
+
+["kernel/image/logic.py::_oetf_decode_flat"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.oetf_decode"]
+depends = []
+
+["kernel/image/logic.py::_oetf_encode_flat"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.oetf_encode"]
+depends = []
+
+["kernel/image/logic.py::_rgb_to_lab_kernel"]
+phase = 3
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.rgb_to_lab"]
+depends = []
+
+["kernel/image/logic.py::_skin_chroma_rein_kernel"]
+phase = 3
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.skin_chroma_rein"]
+depends = []
+
+["kernel/image/logic.py::_skin_weight"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.skin_weight"]
+depends = []
+
+["kernel/image/logic.py::_to_uint16_jit"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.to_uint16"]
+depends = []
+
+["kernel/image/logic.py::_to_uint8_jit"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.to_uint8"]
+depends = []
+
+["kernel/image/logic.py::apply_primaries_transform"]
+phase = 3
+status = "ported"
+calls = []
+depends = ["_matmul_3x3_kernel", "working_oetf_decode", "working_oetf_encode"]
+
+["kernel/image/logic.py::float_to_uint16"]
+phase = 3
+status = "ported"
+calls = []
+depends = ["_to_uint16_jit"]
+
+["kernel/image/logic.py::float_to_uint8"]
+phase = 3
+status = "ported"
+calls = []
+depends = ["_to_uint8_jit"]
+
+["kernel/image/logic.py::float_to_uint_luma"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.luma_to_uint"]
+depends = []
+
+["kernel/image/logic.py::gamut_aware_chroma_scale"]
+phase = 3
+status = "ported"
+calls = []
+depends = ["_gamut_aware_chroma_scale_kernel"]
+
+["kernel/image/logic.py::get_luminance"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.luminance"]
+depends = []
+note = "negpy_core::analysis::luminance"
+
+["kernel/image/logic.py::lab_to_rgb_working"]
+phase = 3
+status = "ported"
+compare = "ulp=1"
+calls = []
+depends = ["_lab_to_rgb_kernel"]
+
+["kernel/image/logic.py::rgb_to_lab_working"]
+phase = 3
+status = "ported"
+compare = "abs=1e-6"
+calls = []
+depends = ["_rgb_to_lab_kernel"]
+
+["kernel/image/logic.py::rgb_to_rgba_into"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.rgb_to_rgba_into"]
+depends = []
+
+["kernel/image/logic.py::rgba_to_rgb_into"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.rgba_to_rgb_into"]
+depends = []
+
+["kernel/image/logic.py::skin_chroma_rein"]
+phase = 3
+status = "ported"
+compare = "ulp=1"
+calls = []
+depends = ["_skin_chroma_rein_kernel"]
+
+["kernel/image/logic.py::srgb_to_linear"]
+phase = 3
+status = "ported"
+compare = "ulp=4"
+calls = ["negpy_core.srgb_to_linear"]
+depends = []
+note = "negpy_core::color::srgb_to_linear"
+
+["kernel/image/logic.py::uint16_to_float32"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.uint16_to_float32"]
+depends = []
+
+["kernel/image/logic.py::uint8_to_float32"]
+phase = 3
+status = "ported"
+calls = ["negpy_core.uint8_to_float32"]
+depends = []
+
+["kernel/image/logic.py::working_oetf_decode"]
+phase = 3
+status = "ported"
+calls = []
+depends = ["_oetf_decode_flat"]
+
+["kernel/image/logic.py::working_oetf_encode"]
+phase = 3
+status = "ported"
+calls = []
+depends = ["_oetf_encode_flat"]
+
+["features/flatfield/logic.py::_evenness"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.evenness"]
+depends = []
+
+["features/flatfield/logic.py::_fill_from_nearest"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.fill_from_nearest"]
+depends = []
+
+["features/flatfield/logic.py::_is_clipped"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.clipped_fraction"]
+depends = []
+
+["features/flatfield/logic.py::_lit_mask"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.lit_mask"]
+depends = []
+
+["features/flatfield/logic.py::apply_flatfield"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.multiply", "negpy_core.resize_linear"]
+depends = []
+
+["features/flatfield/logic.py::check_copy"]
+phase = 4
+status = "ported"
+calls = []
+depends = ["work_copy"]
+
+["features/flatfield/logic.py::check_reference"]
+phase = 4
+status = "ported"
+compare = "abs=1e-6"
+calls = []
+depends = ["_is_clipped", "check_copy", "evenness", "self_corrected"]
+
+["features/flatfield/logic.py::compute_gain"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.compute_gain"]
+depends = ["work_copy"]
+
+["features/flatfield/logic.py::evenness"]
+phase = 4
+status = "ported"
+calls = []
+depends = ["_evenness"]
+
+["features/flatfield/logic.py::evenness_view"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.evenness_view"]
+depends = ["_evenness"]
+
+["features/flatfield/logic.py::self_corrected"]
+phase = 4
+status = "ported"
+compare = "ulp=4"
+calls = ["negpy_core.multiply", "negpy_core.resize_linear"]
+depends = []
+
+["features/flatfield/logic.py::work_copy"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = []
+
+["features/lens/logic.py::_edge_reads"]
+phase = 4
+status = "stays"
+calls = []
+depends = ["_lookup"]
+note = "orchestration over Rust warp maps, edge-size math"
+
+["features/lens/logic.py::_lookup"]
+phase = 4
+status = "stays"
+calls = ["np.unique"]
+depends = []
+note = "orchestration over Rust warp maps, edge-size math"
+
+["features/lens/logic.py::_search_fill_scale"]
+phase = 4
+status = "stays"
+calls = []
+depends = ["_edge_reads"]
+note = "orchestration over Rust warp maps, edge-size math"
+
+["features/lens/logic.py::apply_lens"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.remap"]
+depends = ["fill_scale"]
+
+["features/lens/logic.py::fill_scale"]
+phase = 4
+status = "stays"
+calls = []
+depends = ["_search_fill_scale"]
+note = "orchestration over Rust warp maps, edge-size math"
+
+["features/lens/warps.py::PanasonicWarp.remap"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.panasonic_map"]
+depends = []
+note = "negpy_core::lens"
+
+["features/lens/warps.py::RectilinearWarp.remap"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.rectilinear_ca_map", "negpy_core.rectilinear_map"]
+depends = []
+
+["features/lens/warps.py::SonyWarp.remap"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.sony_map"]
+depends = []
+note = "negpy_core::lens"
+
+["features/local/logic.py::_tinted_area"]
+phase = 4
+status = "stays"
+calls = []
+depends = ["rasterise"]
+note = "calls the Rust rasteriser"
+
+["features/local/logic.py::compute_local_maps"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.local_maps"]
+depends = []
+
+["features/local/logic.py::overlapping_masks"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.alphas_overlap"]
+depends = ["_tinted_area"]
+note = "negpy_core::shapes::alphas_overlap"
+
+["features/local/logic.py::rasterise"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.rasterise_mask"]
+depends = []
+
+["features/process/capture_color.py::apply_camera_matrix"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.matmul_3x3"]
+depends = []
+note = "negpy_core.matmul_3x3"
+
+["features/process/capture_color.py::lightbox_level"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.lightbox_white"]
+depends = []
+note = "negpy_core::process::lightbox_white"
+
+["features/process/chart.py::_patch_medians"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.chart_patches"]
+depends = ["patch_centers", "sample_radius"]
+note = "negpy_core::process::chart_patches"
+
+["features/process/chart.py::detect_orientation"]
+phase = 4
+status = "stays"
+calls = ["np.mean"]
+depends = ["measure_lab"]
+note = "24-patch math and orchestration"
+
+["features/process/chart.py::fit_chart_matrix"]
+phase = 4
+status = "stays"
+calls = []
+depends = ["detect_orientation", "lab_for", "measure_lab"]
+note = "24-patch math and orchestration"
+
+["features/process/chart.py::fit_chart_matrix.lab_for"]
+phase = 4
+status = "stays"
+calls = []
+depends = ["measure_lab"]
+note = "24-patch math and orchestration"
+
+["features/process/chart.py::grid_corners"]
+phase = 4
+status = "stays"
+calls = ["np.argsort"]
+depends = []
+note = "24-patch math and orchestration"
+
+["features/process/chart.py::measure_lab"]
+phase = 4
+status = "ported"
+calls = ["np.mean"]
+depends = ["_patch_medians"]
+note = "negpy_core::process::chart_patches"
+
+["features/process/chart.py::patch_centers"]
+phase = 4
+status = "stays"
+calls = []
+depends = ["grid_corners"]
+note = "24-patch math and orchestration"
+
+["features/process/chart.py::sample_patches"]
+phase = 4
+status = "ported"
+calls = []
+depends = ["_patch_medians"]
+note = "negpy_core::process::chart_patches"
+
+["features/process/chart.py::sample_radius"]
+phase = 4
+status = "stays"
+calls = []
+depends = ["grid_corners"]
+note = "24-patch math and orchestration"
+
+["features/process/hue.py::apply_hue_trim"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.hue_trim"]
+depends = []
+
+["features/process/logic.py::detect_process_mode"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.process_mode_stats"]
+depends = []
+note = "negpy_core::process::process_mode_stats"
+
+["features/process/sensor.py::_density_unmix"]
+phase = 4
+status = "ported"
+compare = "ulp=16"
+calls = []
+depends = ["_log_unmix_kernel", "film_base"]
+note = "the 3x3 setup stays NumPy"
+
+["features/process/sensor.py::_log_unmix_kernel"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.sensor_log_unmix"]
+depends = []
+
+["features/process/sensor.py::_two_scale_kernel"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.sensor_two_scale"]
+depends = []
+
+["features/process/sensor.py::_two_scale_layer_kernel"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.sensor_two_scale_layer"]
+depends = []
+
+["features/process/sensor.py::_two_scale_unmix"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.gaussian_blur", "negpy_core.resize_area", "negpy_core.resize_linear"]
+depends = ["_two_scale_kernel", "_two_scale_layer_kernel", "film_base"]
+note = "the 3x3 setup stays NumPy"
+
+["features/process/sensor.py::_unmix_kernel"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.sensor_unmix"]
+depends = []
+
+["features/process/sensor.py::apply_sensor_correction"]
+phase = 4
+status = "ported"
+compare = "ulp=16"
+calls = []
+depends = ["_density_unmix", "_two_scale_unmix", "_unmix_kernel"]
+note = "dispatch only"
+
+["features/process/sensor.py::film_base"]
+phase = 4
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.film_base"]
+depends = []
+
+["features/retouch/clone.py::apply_clone_stroke"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.clone_stroke"]
+depends = []
+
+["features/retouch/clone.py::apply_clone_strokes"]
+phase = 4
+status = "ported"
+calls = []
+depends = ["apply_clone_stroke"]
+
+["features/retouch/logic.py::_add_floor_deficit"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.add_floor_deficit"]
+depends = []
+
+["features/retouch/logic.py::_blend_fill"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.blend_fill"]
+depends = []
+
+["features/retouch/logic.py::_box_mean_std"]
+phase = 4
+status = "ported"
+calls = ["cv2.blur"]
+depends = []
+
+["features/retouch/logic.py::_density"]
+phase = 4
+status = "stays"
+calls = []
+depends = []
+note = "NumPy float32 log10 (SVML on AVX-512); the detection ports take its output as input"
+
+["features/retouch/logic.py::_erode_resize_bounded"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.morphology_ex", "negpy_core.resize_area", "np.sum"]
+depends = []
+
+["features/retouch/logic.py::_fill_rung"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.fill_rung"]
+depends = []
+
+["features/retouch/logic.py::_fit_refraction_gammas"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.fit_refraction_gammas"]
+depends = []
+
+["features/retouch/logic.py::_hair_encode"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.hair_encode"]
+depends = []
+
+["features/retouch/logic.py::_ir_clean_base"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.ir_clean_base"]
+depends = []
+
+["features/retouch/logic.py::_ir_decontaminate"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.ir_ghost_divide", "negpy_core.percentiles"]
+depends = []
+
+["features/retouch/logic.py::_ir_glare"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.ir_glare"]
+depends = []
+
+["features/retouch/logic.py::_ir_live"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.ir_live"]
+depends = []
+
+["features/retouch/logic.py::_ir_normalize_ratio"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.ir_normalize_ratio"]
+depends = []
+
+["features/retouch/logic.py::_is_hair"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.distance_transform"]
+depends = []
+
+["features/retouch/logic.py::_mask_to_score"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.mask_to_score"]
+depends = []
+
+["features/retouch/logic.py::_scratch_ridge"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.scratch_ridge"]
+depends = ["_density"]
+
+["features/retouch/logic.py::_scratch_ridge_rows"]
+phase = 4
+status = "ported"
+calls = []
+depends = ["_scratch_ridge"]
+
+["features/retouch/logic.py::_shear_rows"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.warp_affine"]
+depends = []
+
+["features/retouch/logic.py::apply_ir_attenuation"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.multiply", "negpy_core.resize_linear"]
+depends = []
+
+["features/retouch/logic.py::apply_score_repair"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.apply_score_repair", "negpy_core.resize_linear"]
+depends = []
+
+["features/retouch/logic.py::compute_dust_stats"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.dust_stats", "negpy_core.ellipse_kernel"]
+depends = ["_density"]
+
+["features/retouch/logic.py::detect_luma_score"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.detect_luma_score", "negpy_core.ellipse_kernel"]
+depends = ["compute_dust_stats"]
+
+["features/retouch/logic.py::downsample_ir"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.ellipse_kernel", "negpy_core.morphology_ex", "negpy_core.resize_area"]
+depends = ["_erode_resize_bounded"]
+
+["features/retouch/logic.py::drop_exclusions"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.release_score"]
+depends = ["exclusion_cover"]
+
+["features/retouch/logic.py::exclusion_cover"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.stroke_cover"]
+depends = []
+
+["features/retouch/logic.py::ir_defect_score"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.ir_defect_score"]
+depends = []
+
+["features/retouch/logic.py::ir_ratio_and_gain"]
+phase = 4
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.ir_gain", "negpy_core.ir_vis_log", "negpy_core.resize_area"]
+depends = ["_fit_refraction_gammas", "_ir_clean_base", "_ir_decontaminate", "_ir_glare", "_ir_live", "_ir_normalize_ratio", "normalize_ir"]
+
+["features/retouch/logic.py::lines_to_score"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.box_filter"]
+depends = ["_mask_to_score", "_scratch_ridge_rows", "_shear_rows"]
+note = "negpy_core.box_filter"
+
+["features/retouch/logic.py::normalize_ir"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.normalize_ir"]
+depends = []
+
+["features/retouch/logic.py::repair_components"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.repair_components", "negpy_core.resize_linear", "negpy_core.resize_nearest"]
+depends = []
+
+["features/retouch/logic.py::route_wide_defects"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.ellipse_kernel", "negpy_core.route_wide_defects"]
+depends = []
+
+["features/retouch/logic.py::score_weighted_fill"]
+phase = 4
+status = "ported"
+calls = ["cv2.GaussianBlur", "cv2.boxFilter"]
+depends = ["_fill_rung"]
+
+["features/retouch/logic.py::split_hairs"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.split_hairs"]
+depends = []
+
+["features/retouch/logic.py::strokes_to_score"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.heal_region"]
+depends = ["_density"]
+
+["features/retouch/logic.py::trace_scratch"]
+phase = 4
+status = "ported"
+calls = ["negpy_core.box_filter", "negpy_core.scratch_slope_search", "np.median"]
+depends = ["_scratch_ridge_rows", "_shear_rows"]
+
+["features/hdr/logic.py::_accumulate"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.hdr_accumulate"]
+depends = []
+
+["features/hdr/logic.py::_align"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.mean_channels", "negpy_core.warp_affine"]
+depends = []
+
+["features/hdr/logic.py::_count_clipped_rows"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.count_clipped_rows"]
+depends = []
+
+["features/hdr/logic.py::apply_render_exposure"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.render_exposure"]
+depends = ["output_scale"]
+
+["features/hdr/logic.py::clipped_fraction"]
+phase = 5
+status = "ported"
+calls = []
+depends = ["_count_clipped_rows"]
+note = "negpy_core.count_clipped_rows"
+
+["features/hdr/logic.py::measure_exposure"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.exposure_level"]
+depends = ["clipped_fraction"]
+
+["features/hdr/logic.py::merge_bracket"]
+phase = 5
+status = "stays"
+calls = []
+depends = ["apply_render_exposure", "merge_providers"]
+note = "orchestration or bracket-size math"
+
+["features/hdr/logic.py::merge_frames"]
+phase = 5
+status = "stays"
+calls = []
+depends = ["apply_render_exposure", "merge_providers"]
+note = "orchestration or bracket-size math"
+
+["features/hdr/logic.py::merge_providers"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.finish_merge", "negpy_core.mean_channels"]
+depends = ["_accumulate", "_align"]
+note = "negpy_core mean_channels, hdr_accumulate, finish_merge"
+
+["features/hdr/logic.py::output_scale"]
+phase = 5
+status = "stays"
+calls = ["np.median"]
+depends = []
+note = "orchestration or bracket-size math"
+
+["features/hdr/logic.py::pair_ratio"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.pair_ratio"]
+depends = []
+
+["features/hdr/logic.py::probe_exposures"]
+phase = 5
+status = "stays"
+calls = []
+depends = ["measure_exposure"]
+note = "orchestration or bracket-size math"
+
+["features/hdr/logic.py::seed_shadow_density"]
+phase = 5
+status = "stays"
+calls = []
+depends = ["shadow_reach_stops"]
+note = "orchestration or bracket-size math"
+
+["features/hdr/logic.py::shadow_reach_stops"]
+phase = 5
+status = "stays"
+calls = []
+depends = ["output_scale"]
+note = "orchestration or bracket-size math"
+
+["features/hdr/logic.py::solve_ratios"]
+phase = 5
+status = "stays"
+calls = []
+depends = ["measure_exposure", "pair_ratio", "step"]
+note = "orchestration or bracket-size math"
+
+["features/hdr/logic.py::solve_ratios.step"]
+phase = 5
+status = "stays"
+calls = []
+depends = ["pair_ratio"]
+note = "orchestration or bracket-size math"
+
+["features/rgbscan/logic.py::_align_to"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.warp_affine"]
+depends = ["estimate_shift"]
+note = "negpy_core phase_correlate, warp_affine"
+
+["features/rgbscan/logic.py::_channel_means"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.channel_means"]
+depends = []
+note = "negpy_core::rgbscan::channel_means"
+
+["features/rgbscan/logic.py::assemble_rgb"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.extract_channel", "negpy_core.pick_channels"]
+depends = ["_align_to"]
+note = "negpy_core pick_channels, extract_channel"
+
+["features/rgbscan/logic.py::merge_rgb_triplet"]
+phase = 5
+status = "stays"
+calls = []
+depends = ["assemble_rgb"]
+note = "orchestration"
+
+["features/rgbscan/logic.py::probe_channel_means"]
+phase = 5
+status = "stays"
+calls = []
+depends = ["probe_frame"]
+note = "orchestration"
+
+["features/rgbscan/logic.py::probe_frame"]
+phase = 5
+status = "ported"
+calls = ["np.mean"]
+depends = ["_channel_means"]
+note = "negpy_core::rgbscan::channel_means"
+
+["features/stitch/logic.py::_seam_weight"]
+phase = 5
+status = "ported"
+compare = "quality"
+calls = []
+depends = []
+note = "negpy_core::stitch::seam_weight, inside seam_blend"
+
+["features/stitch/logic.py::blend_ir"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.ir_blend_into", "negpy_core.ir_finish"]
+depends = ["warp_into_canvas"]
+note = "negpy_core::stitch"
+
+["features/stitch/logic.py::build_proxy"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.proxy_stretch", "negpy_core.resize_area"]
+depends = []
+note = "negpy_core::stitch"
+
+["features/stitch/logic.py::feather_blend"]
+phase = 5
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.feather_blend"]
+depends = []
+
+["features/stitch/logic.py::gain_compensate"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.compensation_gains", "negpy_core.scale_channels"]
+depends = []
+note = "negpy_core::stitch"
+
+["features/stitch/logic.py::register_parts"]
+phase = 5
+status = "stays"
+compare = "abs=0.01"
+calls = []
+depends = ["build_proxy", "register_pair"]
+note = "orchestration of negpy_core kernels"
+
+["features/stitch/logic.py::seam_blend"]
+phase = 5
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.seam_blend"]
+depends = []
+
+["features/stitch/logic.py::stitch_composite"]
+phase = 5
+status = "ported"
+compare = "abs=1e-4"
+calls = ["negpy_core.clip_unit", "negpy_core.mask_overlap"]
+depends = ["blend_ir", "feather_blend", "find_seams", "gain_compensate", "seam_blend", "warp_into_canvas"]
+note = "negpy_core::stitch"
+
+["features/stitch/logic.py::warp_into_canvas"]
+phase = 5
+status = "ported"
+calls = ["negpy_core.warp_affine"]
+depends = []
+
+["features/cyanotype/logic.py::apply_cyanotype"]
+phase = 6
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.cyanotype"]
+depends = []
+
+["features/cyanotype/processor.py::CyanotypeProcessor.process"]
+phase = 6
+status = "stays"
+calls = []
+depends = []
+note = "orchestration"
+
+["features/exposure/densitometer.py::compute_reading"]
+phase = 6
+status = "stays"
+calls = []
+depends = []
+note = "one pixel"
+
+["features/exposure/logic.py::_apply_print_curve_kernel"]
+phase = 6
+status = "ported"
+calls = ["numba"]
+depends = ["_black_hold", "_fast_sigmoid", "_softplus", "plane_taps", "quadratic_core", "separation_damping_gain", "tone_key_weight"]
+
+["features/exposure/logic.py::_black_hold"]
+phase = 6
+status = "ported"
+calls = ["numba"]
+depends = []
+
+["features/exposure/logic.py::_expanded"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.expand_plane"]
+depends = []
+note = "negpy_core.expand_plane"
+
+["features/exposure/logic.py::_softplus"]
+phase = 6
+status = "ported"
+calls = ["numba"]
+depends = []
+
+["features/exposure/logic.py::apply_characteristic_curve"]
+phase = 6
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.apply_print_curve"]
+depends = []
+
+["features/exposure/logic.py::contrast_mask_ev"]
+phase = 6
+status = "ported"
+calls = []
+depends = ["_expanded"]
+note = "negpy_core.expand_plane"
+
+["features/exposure/logic.py::expand_mask_plane"]
+phase = 6
+status = "ported"
+calls = []
+depends = ["_expanded"]
+note = "negpy_core.expand_plane"
+
+["features/exposure/logic.py::plane_taps"]
+phase = 6
+status = "ported"
+calls = ["numba"]
+depends = []
+
+["features/exposure/logic.py::print_curve_output"]
+phase = 6
+status = "stays"
+calls = []
+depends = []
+note = "chart samples"
+
+["features/exposure/logic.py::quadratic_core"]
+phase = 6
+status = "ported"
+calls = ["numba"]
+depends = []
+
+["features/exposure/logic.py::tone_key_weight"]
+phase = 6
+status = "ported"
+calls = ["numba"]
+depends = []
+
+["features/exposure/placement.py::_pick_knee"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["predicted_zone"]
+note = "scalar solver"
+
+["features/exposure/placement.py::_solve_density"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["predicted_zone"]
+note = "scalar solver"
+
+["features/exposure/placement.py::_solve_density.residual"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["predicted_zone"]
+note = "scalar solver"
+
+["features/exposure/placement.py::_solve_grade_and_density"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["_solve_density", "predicted_zone"]
+note = "scalar solver"
+
+["features/exposure/placement.py::_solve_grade_and_density.light_residual"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["_solve_density", "predicted_zone"]
+note = "scalar solver"
+
+["features/exposure/placement.py::_solve_knee_field"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["predicted_zone"]
+note = "scalar solver"
+
+["features/exposure/placement.py::_solve_knee_field.residual"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["predicted_zone"]
+note = "scalar solver"
+
+["features/exposure/placement.py::_solve_with_knee"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["_pick_knee", "_solve_grade_and_density", "_solve_knee_field", "predicted_zone"]
+note = "scalar solver"
+
+["features/exposure/placement.py::_zones_of"]
+phase = 6
+status = "stays"
+calls = []
+depends = []
+note = "scalar solver"
+
+["features/exposure/placement.py::key_edges"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["_zones_of"]
+note = "scalar solver"
+
+["features/exposure/placement.py::limited_mask_params"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["key_edges"]
+note = "scalar solver"
+
+["features/exposure/placement.py::predicted_zone"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["_zones_of"]
+note = "scalar solver"
+
+["features/exposure/placement.py::solve_placement"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["_solve_density", "_solve_grade_and_density", "_solve_with_knee", "predicted_zone"]
+note = "scalar solver"
+
+["features/exposure/print_lut.py::lut_black_luminance"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["tetra_lookup"]
+note = "one color"
+
+["features/exposure/print_lut.py::tetra_lookup"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.tetra_lookup"]
+depends = []
+
+["features/exposure/processor.py::NormalizationProcessor.process"]
+phase = 6
+status = "ported"
+compare = "abs=2e-6"
+calls = ["negpy_core.log_density_open"]
+depends = []
+note = "negpy_core.log_density_open"
+
+["features/exposure/processor.py::NormalizationProcessor.process.analyze_base"]
+phase = 6
+status = "stays"
+calls = []
+depends = []
+note = "orchestration"
+
+["features/exposure/processor.py::PhotometricProcessor._build_local_maps"]
+phase = 6
+status = "stays"
+calls = []
+depends = []
+note = "calls the Rust local maps"
+
+["features/exposure/processor.py::PhotometricProcessor._process_flat"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.gray_to_rgb"]
+depends = []
+note = "negpy_core.gray_to_rgb"
+
+["features/exposure/processor.py::PhotometricProcessor.process"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.add", "negpy_core.channel_any", "negpy_core.extract_channel", "negpy_core.gray_to_rgb"]
+depends = []
+note = "negpy_core gray_to_rgb, extract_channel, add, channel_any"
+
+["features/finish/logic.py::_carrier_block"]
+phase = 6
+status = "ported"
+compare = "abs=1e-6"
+calls = []
+depends = ["carrier_profiles"]
+
+["features/finish/logic.py::_filed_edge"]
+phase = 6
+status = "stays"
+calls = ["np.cumsum"]
+depends = []
+note = "one cached 1-D profile set"
+
+["features/finish/logic.py::apply_carrier"]
+phase = 6
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.apply_carrier"]
+depends = ["carrier_profiles"]
+
+["features/finish/logic.py::carrier_profiles"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["_filed_edge"]
+note = "one cached 1-D profile set"
+
+["features/finish/processor.py::FinishProcessor.process"]
+phase = 6
+status = "stays"
+calls = []
+depends = []
+note = "orchestration"
+
+["features/finish/processor.py::rebate_tone"]
+phase = 6
+status = "stays"
+calls = []
+depends = []
+note = "one 1-D strip"
+
+["features/lab/logic.py::_saturation_block"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.clip_unit"]
+depends = []
+note = "negpy_core Lab kernels, clip_unit"
+
+["features/lab/logic.py::_usm_sharpening_block"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.usm_sharpen"]
+depends = []
+
+["features/lab/logic.py::apply_chroma_denoise"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.chroma_denoise"]
+depends = []
+
+["features/lab/logic.py::apply_clahe"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.clahe"]
+depends = []
+
+["features/lab/logic.py::apply_glow_and_halation"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.glow_and_halation"]
+depends = []
+
+["features/lab/logic.py::apply_resize_sharpening"]
+phase = 6
+status = "ported"
+calls = []
+depends = ["_usm_sharpening_block"]
+note = "negpy_core decode, usm, encode"
+
+["features/lab/logic.py::apply_resize_sharpening.block"]
+phase = 6
+status = "ported"
+calls = []
+depends = ["_usm_sharpening_block"]
+note = "negpy_core decode, usm, encode"
+
+["features/lab/logic.py::apply_rl_sharpening"]
+phase = 6
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.rl_sharpen"]
+depends = []
+
+["features/lab/logic.py::apply_saturation"]
+phase = 6
+status = "stays"
+calls = []
+depends = ["_saturation_block"]
+note = "row-block orchestration"
+
+["features/lab/logic.py::apply_usm_sharpening"]
+phase = 6
+status = "ported"
+calls = []
+depends = ["_usm_sharpening_block"]
+
+["features/lab/processor.py::PhotoLabProcessor.process"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.clip01"]
+depends = []
+note = "negpy_core.clip01"
+
+["features/lith/logic.py::apply_lith"]
+phase = 6
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.lith"]
+depends = []
+
+["features/lith/processor.py::LithProcessor.process"]
+phase = 6
+status = "stays"
+calls = []
+depends = []
+note = "orchestration"
+
+["features/sabattier/logic.py::apply_sabattier"]
+phase = 6
+status = "ported"
+compare = "abs=1e-6"
+calls = ["negpy_core.sabattier"]
+depends = []
+
+["features/sabattier/processor.py::SabattierProcessor.process"]
+phase = 6
+status = "stays"
+calls = []
+depends = []
+note = "orchestration"
+
+["features/toning/logic.py::_apply_chemical_toning_jit"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.apply_chemical_toning"]
+depends = []
+
+["features/toning/logic.py::apply_chemical_toning"]
+phase = 6
+status = "ported"
+calls = []
+depends = ["_apply_chemical_toning_jit"]
+
+["features/toning/logic.py::apply_split_toning"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.split_toning"]
+depends = []
+
+["features/toning/processor.py::ToningProcessor.process"]
+phase = 6
+status = "stays"
+calls = []
+depends = []
+note = "orchestration"
+
+["features/transparency/processor.py::TransparencyBaseProcessor.process"]
+phase = 6
+status = "ported"
+compare = "abs=2e-6"
+calls = ["negpy_core.log_density_open", "negpy_core.nan_to_num"]
+depends = []
+note = "negpy_core nan_to_num, matmul_3x3, log_density_open"
+
+["services/rendering/gpu_engine.py::GPUEngine._process_tiled"]
+phase = 6
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.resize_area", "negpy_core.resize_kernel", "negpy_core.resize_linear"]
+depends = ["_downsample_for_analysis"]
+note = "negpy_core resize_area, resize_kernel"
+
+["services/rendering/gpu_engine.py::_downsample_for_analysis"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "negpy_core.resize_area"
+
+["services/rendering/image_processor.py::ImageProcessor.render_display_array"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = ["_downsample_to_long_edge"]
+note = "negpy_core.resize_area"
+
+["services/rendering/image_processor.py::_downsample_to_long_edge"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "negpy_core.resize_area"
+
+["services/rendering/image_processor.py::_resize_mask"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.resize_nearest"]
+depends = []
+note = "negpy_core.resize_nearest"
+
+["services/rendering/preview_manager.py::PreviewManager._load_from_open_raw"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "negpy_core.resize_area"
+
+["services/rendering/preview_manager.py::PreviewManager._try_splash_from_open_raw"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "negpy_core.resize_area"
+
+["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_hdr"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = ["_load"]
+note = "negpy_core.resize_area"
+
+["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_hdr._load"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "negpy_core.resize_area"
+
+["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_rgb"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = ["_match"]
+note = "negpy_core.resize_area"
+
+["services/rendering/preview_manager.py::PreviewManager.load_linear_preview_rgb._match"]
+phase = 6
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "negpy_core.resize_area"
+
+["desktop/controller.py::AppController._paint_flatfield_peek"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.resize_linear"]
+depends = []
+note = "calls negpy_core"
+
+["desktop/controller.py::_interactive_proxy"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "negpy_core.resize_area"
+
+["desktop/view/canvas/overlay.py::CanvasOverlay._ir_layer_qimage"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.remap"]
+depends = []
+
+["desktop/view/canvas/overlay.py::CanvasOverlay._mask_wash_qimage"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.remap"]
+depends = []
+
+["desktop/view/canvas/overlay.py::CanvasOverlay._zone_outline"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.contour_outlines"]
+depends = []
+note = "negpy_core.contour_outlines"
+
+["desktop/view/sidebar/files.py::FileBrowser._measure_rebate"]
+phase = 7
+status = "stays"
+calls = ["np.mean"]
+depends = ["print_dmax"]
+note = "per-frame tone list"
+
+["desktop/view/sidebar/files.py::print_dmax"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.print_dmax"]
+depends = []
+note = "negpy_core.print_dmax"
+
+["desktop/view/sidebar/scanlight.py::ScanlightSidebar._current_raw_clip"]
+phase = 7
+status = "ported"
+calls = ["np.mean"]
+depends = []
+note = "negpy_core.mean_channels"
+
+["desktop/view/sidebar/scanlight.py::_RawClip.at"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.resize_nearest"]
+depends = []
+note = "calls negpy_core"
+
+["desktop/view/widgets/charts.py::VectorscopeWidget._trace_image"]
+phase = 7
+status = "stays"
+calls = ["np.percentile"]
+depends = []
+note = "scope bin grid"
+
+["desktop/view/widgets/charts.py::WaveformWidget._trace_images"]
+phase = 7
+status = "stays"
+calls = ["np.percentile"]
+depends = []
+note = "scope bin grid"
+
+["desktop/view/widgets/prescan_dialog.py::_preview_u8"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.stretch_preview"]
+depends = []
+note = "negpy_core.stretch_preview"
+
+["desktop/view/widgets/scan_preview_common.py::preview_positive"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.stretch_preview"]
+depends = []
+note = "negpy_core.stretch_preview"
+
+["desktop/view/widgets/sensor_calibration_dialog.py::SensorCalibrationDialog._compute_and_save"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.any_channel_at_least"]
+depends = []
+note = "negpy_core.any_channel_at_least"
+
+["desktop/workers/chart_fit.py::ChartFitWorker.__init__"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "negpy_core.resize_area"
+
+["desktop/workers/export.py::_looks_border_crushed"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.mean_channels", "negpy_core.ring_inner_medians"]
+depends = []
+note = "negpy_core mean_channels, ring_inner_medians"
+
+["infrastructure/display/icc_lut.py::_apply_lut_f32_jit"]
+phase = 7
+status = "ported"
+calls = ["numba"]
+depends = []
+
+["infrastructure/display/icc_lut.py::_apply_lut_u16_jit"]
+phase = 7
+status = "ported"
+calls = ["numba"]
+depends = []
+
+["infrastructure/display/icc_lut.py::_matrix_trc_u8_jit"]
+phase = 7
+status = "ported"
+calls = ["numba"]
+depends = []
+
+["infrastructure/display/icc_lut.py::apply_lut_f32"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.apply_lut_f32"]
+depends = []
+note = "calls negpy_core"
+
+["infrastructure/display/icc_lut.py::apply_lut_u16"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.apply_lut_u16"]
+depends = []
+note = "calls negpy_core"
+
+["infrastructure/display/icc_lut.py::apply_matrix_trc_u8"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.matrix_trc_u8"]
+depends = []
+note = "calls negpy_core"
+
+["services/assets/half_frame.py::_edge_band"]
+phase = 7
+status = "stays"
+calls = ["np.median"]
+depends = []
+note = "1-D edge profile"
+
+["services/assets/half_frame.py::_gutter_scan"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.column_means", "np.median"]
+depends = []
+note = "negpy_core.column_means"
+
+["services/assets/half_frame.py::_luma"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.mean_channels"]
+depends = []
+note = "negpy_core.mean_channels"
+
+["services/assets/semantic_model.py::rank_by_similarity"]
+phase = 7
+status = "stays"
+calls = ["np.argsort"]
+depends = []
+note = "embedding vectors"
+
+["services/assets/thumbnails.py::preview_positive"]
+phase = 7
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.log_stretch_u8"]
+depends = []
+note = "negpy_core srgb_to_linear, log_stretch_u8"
+
+["services/capture/calibration.py::_ladder_stops"]
+phase = 7
+status = "stays"
+calls = ["np.median"]
+depends = []
+note = "shutter ladder values"
+
+["services/capture/calibration.py::clip_fraction"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.patch_level_stats"]
+depends = []
+note = "negpy_core.patch_level_stats"
+
+["services/capture/calibration.py::meter_base"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.patch_level_stats"]
+depends = []
+note = "negpy_core.patch_level_stats"
+
+["services/capture/focus_meter.py::sharpness"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.sharpness"]
+depends = []
+note = "negpy_core.sharpness"
+
+["services/capture/meter.py::_peak_map"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.peak_map"]
+depends = []
+note = "negpy_core.peak_map"
+
+["services/capture/meter.py::framing_mismatch"]
+phase = 7
+status = "ported"
+calls = ["np.mean"]
+depends = ["gray_of", "ranked_thumb"]
+note = "negpy_core.mean_channels"
+
+["services/capture/meter.py::gray_of"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.mean_channels"]
+depends = []
+note = "negpy_core.mean_channels"
+
+["services/capture/meter.py::meter_frame"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.meter_picture", "negpy_core.normalized", "np.median"]
+depends = ["_peak_map", "gray_of", "ranked_thumb"]
+note = "negpy_core normalized, meter_picture, peak_map"
+
+["services/capture/meter.py::ranked_thumb"]
+phase = 7
+status = "stays"
+calls = ["negpy_core.resize_area", "np.argsort"]
+depends = []
+note = "2752-value rank on a Rust resize"
+
+["services/export/contact_sheet.py::_place_tile"]
+phase = 7
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.resize_u8"]
+depends = []
+note = "negpy_core.resize_u8"
+
+["services/export/encoders.py::encode_jpeg"]
+phase = 7
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.encode_jpeg"]
+depends = []
+
+["services/export/linear_output.py::_apply_ice"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.resize_area"]
+depends = []
+note = "negpy_core.resize_area"
+
+["services/export/print.py::PrintService.apply_layout"]
+phase = 7
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.resize_area", "negpy_core.resize_kernel"]
+depends = []
+note = "negpy_core resize_area, resize_kernel"
+
+["services/scanning/writer.py::_to_grey"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.to_grey"]
+depends = []
+note = "negpy_core.to_grey"
+
+["services/view/coordinate_mapping.py::CoordinateMapping._grid_homography"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.perspective_transform"]
+depends = []
+note = "calls negpy_core"
+
+["services/view/coordinate_mapping.py::CoordinateMapping.create_uv_grid"]
+phase = 7
+status = "ported"
+calls = ["negpy_core.rotation_matrix"]
+depends = []
+note = "calls negpy_core"
+
+["features/geometry/skew.py::_coarse_angles"]
+phase = 9
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.coarse_angles"]
+depends = []
+
+["features/retouch/logic.py::apply_hair_inpaint"]
+phase = 9
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.add_clean_grain", "negpy_core.ellipse_kernel", "negpy_core.hair_fill", "negpy_core.morphology_ex", "negpy_core.resize_linear"]
+depends = []
+
+["features/rgbscan/logic.py::estimate_shift"]
+phase = 9
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.phase_correlate", "negpy_core.resize_area"]
+depends = []
+note = "negpy_core::phase::phase_correlate"
+
+["features/stitch/logic.py::find_seams"]
+phase = 9
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.dp_seams", "negpy_core.resize_area", "negpy_core.resize_nearest"]
+depends = []
+
+["features/stitch/logic.py::register_pair"]
+phase = 9
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.register_pair"]
+depends = []
+note = "negpy_core::register::register_pair, SIFT in negpy_core::sift"
+
+["infrastructure/capture/raw_demosaic.py::raw_channel_clip_fraction"]
+phase = 9
+status = "ported"
+calls = ["negpy_core.raw_clip_fractions"]
+depends = []
+note = "negpy_core.raw_clip_fractions"
+
+["infrastructure/scanners/sane_backend.py::_align_ir_to_rgb"]
+phase = 9
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.mean_channels", "negpy_core.phase_correlate", "negpy_core.resize_area"]
+depends = []
+note = "negpy_core phase_correlate, mean_channels"
+
+["infrastructure/scanners/sane_backend.py::_resample_rows_to_dpi"]
+phase = 9
+status = "ported"
+compare = "ulp=1"
+calls = ["negpy_core.resize_linear", "negpy_core.resize_rows_linear"]
+depends = []
+note = "negpy_core.resize_rows_linear"

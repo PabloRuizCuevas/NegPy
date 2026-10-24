@@ -14,7 +14,7 @@ import re
 from dataclasses import asdict, dataclass, fields, replace
 from typing import Optional
 
-import cv2
+import negpy_core
 import numpy as np
 import qtawesome as qta
 from PyQt6.QtCore import QTimer, pyqtSignal, pyqtSlot
@@ -59,7 +59,7 @@ from negpy.infrastructure.capture.settings import ScanlightSettings, WhiteCaptur
 from negpy.features.exposure.analysis import output_histogram
 from negpy.services.capture.focus_meter import FocusMeter
 from negpy.services.capture.live_stats import clip_masks
-from negpy.services.capture.meter import framing_mismatch, ranked_thumb, raw_clip_mask
+from negpy.services.capture.meter import framing_mismatch, gray_of, ranked_thumb, raw_clip_mask
 from negpy.services.capture.calibration import (
     CLIP_CEILING,
     REFERENCE_LEVELS,
@@ -165,7 +165,7 @@ class _RawClip:
     def at(self, shape: tuple) -> np.ndarray:
         if self.resized is None or self.resized[0] != shape:
             h, w = shape
-            self.resized = (shape, cv2.resize(self.mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool))
+            self.resized = (shape, negpy_core.resize_nearest(self.mask.astype(np.uint8), (w, h)).astype(bool))
         return self.resized[1]
 
 
@@ -1493,7 +1493,7 @@ class ScanlightSidebar(QWidget):
             return clip  # the metered shutter is on its way; the stepper may still lag
         if self._exposure_key() != clip.exposure:
             return None
-        thumb = ranked_thumb(rgb.mean(axis=2))
+        thumb = ranked_thumb(gray_of(rgb))
         if clip.reference is None:
             # The first preview at the metered exposure must frame the RAW the probe read, or
             # the map would land on the wrong pixels: drop it and say why.

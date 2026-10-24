@@ -11,10 +11,12 @@ A 👀 reaction on your comment confirms that the command ran.
 
 ## Development Setup
 
-NegPy requires Python 3.13+ and `uv`.
+NegPy requires Python 3.13+, `uv` and a Rust toolchain.
 
 ### 1. Prerequisites
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and [rustup](https://rustup.rs/). `rustup` reads the toolchain version from `negpy_core/rust-toolchain.toml`.
+
+The `negpy_core/` folder is a Rust library with NegPy's CPU kernels. The first `uv sync` compiles it. After you edit a Rust file, the next `uv run` or `make test` compiles it again. `negpy_core` builds no C or C++ code: `cargo-deny` (`negpy_core/deny.toml`) rejects a dependency that does. Its tests compare against opencv, which only the `plustek` group installs; `make install` (`uv sync --all-groups`) brings it.
 
 Scanner support (optional):
 
@@ -108,6 +110,7 @@ backend are fake.
 - `negpy/kernel/`: core system services (Logging, Config, caching).
 - `negpy/services/`: high-level orchestration (Rendering engine, Export service).
 - `negpy/desktop/`: PyQt6 UI (View, Controller, Workers).
+- `negpy_core/`: Rust library for CPU kernels (`src/<area>.rs`), with its PyO3 wrappers in `src/py/`.
 - `tests/`: unit and integration tests.
 
 ## Coding Standards
@@ -149,8 +152,10 @@ Every developer command runs through `uv run`:
 - `make lint`: Ruff checks.
 - `make type`: `ty` type checks.
 - `make test`: unit tests.
-- `make format`: auto-format with Ruff.
-- `make all`: lint, type and test in sequence.
+- `make format`: auto-format with `cargo fmt` and Ruff.
+- `make rust`: `cargo fmt --check`, `cargo clippy` (warnings fail) and `cargo test` for `negpy_core`.
+- `make all`: format, Rust checks, lint, type and test in sequence.
+- `make replay` / `make bench`: check a `negpy_core` port against calls recorded on real frames, for identical results and speed. Record with `uv run python scripts/replay.py record FRAME...`; the corpus goes to `$NEGPY_CORPUS` (default `~/negpy-corpus`).
 - `make clean`: remove cache and build artifacts.
 - `make run-sim`: run with simulated scanning hardware (see [above](#running-without-scanning-hardware)).
 - `make clear-devhome`: delete the development user directory (see [above](#a-separate-user-directory-for-development)).

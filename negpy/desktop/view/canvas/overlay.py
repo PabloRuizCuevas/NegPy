@@ -7,7 +7,7 @@ import time
 from dataclasses import replace
 from typing import Any, Dict, List, Optional, Tuple
 
-import cv2
+import negpy_core
 import numpy as np
 import qtawesome as qta
 from PyQt6.QtCore import QEvent, QLineF, QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
@@ -1713,11 +1713,10 @@ class CanvasOverlay(QWidget):
 
     def _zone_outline(self, zones: np.ndarray, zone: int) -> List[QPolygonF]:
         if zone not in self._zone_outlines:
-            contours, _ = cv2.findContours((zones == zone).astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+            mask = np.ascontiguousarray(zones == zone, dtype=np.uint8)
             self._zone_outlines[zone] = [
-                QPolygonF([QPointF(float(x) + 0.5, float(y) + 0.5) for [[x, y]] in cv2.approxPolyDP(c, 1.0, True)])
-                for c in contours
-                if cv2.contourArea(c) >= _ZONE_OUTLINE_MIN_AREA
+                QPolygonF([QPointF(float(x) + 0.5, float(y) + 0.5) for x, y in c])
+                for c in negpy_core.contour_outlines(mask, float(_ZONE_OUTLINE_MIN_AREA), 1.0)
             ]
         return self._zone_outlines[zone]
 
@@ -2372,7 +2371,7 @@ class CanvasOverlay(QWidget):
         h_ir, w_ir = ir.shape[:2]
         map_x = (uv_grid[..., 0] * (w_ir - 1)).astype(np.float32)
         map_y = (uv_grid[..., 1] * (h_ir - 1)).astype(np.float32)
-        remapped = cv2.remap(np.ascontiguousarray(ir, dtype=np.float32), map_x, map_y, interpolation=cv2.INTER_LINEAR)
+        remapped = negpy_core.remap(np.ascontiguousarray(ir, dtype=np.float32), map_x, map_y, border="constant")
         gray = np.ascontiguousarray((np.clip(remapped, 0.0, 1.0) * 255.0).astype(np.uint8))
         gh, gw = gray.shape[:2]
         img = QImage(gray.data, gw, gh, gw, QImage.Format.Format_Grayscale8).copy()
@@ -2410,7 +2409,7 @@ class CanvasOverlay(QWidget):
         h_m, w_m = mask.shape[:2]
         map_x = (uv_grid[..., 0] * (w_m - 1)).astype(np.float32)
         map_y = (uv_grid[..., 1] * (h_m - 1)).astype(np.float32)
-        remapped = cv2.remap(np.ascontiguousarray(mask, dtype=np.float32), map_x, map_y, interpolation=cv2.INTER_NEAREST)
+        remapped = negpy_core.remap(np.ascontiguousarray(mask, dtype=np.float32), map_x, map_y, "nearest", "constant")
         img = _tint_qimage([(remapped > 0.5, color)], _IR_CORRECTED_ALPHA)
         if len(self._wash_cache) > 8:  # drop stale ids from prior frames
             self._wash_cache.clear()

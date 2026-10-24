@@ -532,8 +532,8 @@ class TestThumbnailRefreshController:
         self.controller.refresh_thumbnails_for(["other", "third"])
         self.controller._thumbnail_render_timing = [4.0, 6.0, 2]
         self.controller._on_thumbnail_render_frame_started(3, 5, "c.dng")
-        # Frames 3, 4 and 5 are left at 5 s each.
-        assert lines[-1] == "Thumbnails 3/5 · ~15 s left"
+        # Frames 3, 4 and 5 are left at 5 s each, two at a time.
+        assert lines[-1] == "Thumbnails 3/5 · ~8 s left"
         self.controller._on_thumbnail_render_cancelled()
 
     def test_a_cancelled_refresh_clears_its_progress(self) -> None:
@@ -1023,6 +1023,10 @@ def test_progress_text_has_no_time_left_after_one_frame() -> None:
 def test_progress_text_formats_seconds_and_minutes() -> None:
     assert thumbnail_refresh_progress_text(2, 5, 1.0, 1.0) == "Thumbnails 2/5 · ~6 s left"
     assert thumbnail_refresh_progress_text(2, 49, 1.0, 1.0) == "Thumbnails 2/49 · ~2 min left"
+
+
+def test_progress_text_divides_the_time_left_by_the_frames_at_once() -> None:
+    assert thumbnail_refresh_progress_text(2, 5, 1.0, 1.0, frames_at_once=2) == "Thumbnails 2/5 · ~3 s left"
 
 
 def test_progress_text_has_no_time_left_on_the_last_frame() -> None:

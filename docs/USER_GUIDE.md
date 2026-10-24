@@ -838,7 +838,6 @@ Shows the whole strip, to place and pick the frames before the scan. **Apply Fra
 ### Performance
 
 *   **GPU Acceleration**: renders on the graphics card. Off uses the slower CPU, with the same result. If the GPU fails at launch, an amber line here says so.
-*   **Multi-core CPU Rendering**: uses all CPU cores. It is off at first on macOS, where it can crash.
 *   **Search by Meaning**: find frames by description (§2).
 *   **Update Thumbnails Automatically**: renders out-of-date thumbnails again in the background, when a roll opens and after a change to many frames. Off (the default), the frames get an amber dot until you use **Update Thumbnails**.
 *   **Preview size**: the canvas resolution. Higher is sharper and uses more memory.
@@ -861,7 +860,6 @@ If NegPy crashes at launch or draws wrongly, edit `Documents/NegPy/override.toml
 | `display.qt_rhi_backend` | `"auto"`, `"vulkan"`, `"d3d12"`, `"metal"`, `"opengl"`, `"software"` | How the window is drawn. |
 | `display.qt_platform` | `"auto"`, `"xcb"`, `"wayland"` | Window system (Linux only). |
 | `performance.force_hq_preview` | `true` / `false` | Turns HQ Preview on or off. |
-| `performance.cpu_parallel` | `true` / `false` | Multi-core CPU Rendering. |
 | `logging.level` | `"debug"`, `"info"`, `"warning"`, `"error"` | How much NegPy logs. Use `"debug"` for a bug report. |
 
 The memory rows of Preferences can be set here too (`max_texture_size`, `preview_render_size`, `preview_cache_max_bytes`, `preview_cache_max_entries`, `preview_cache_max_full_res_entries`, `render_memo_max_entries`).
