@@ -475,7 +475,8 @@ def test_thumbnail_render_runs_two_frames_at_once_on_the_background_pool(qapp, m
     worker.process(_task(_input("a", base), _input("b", base)))
 
     assert seen["most"] == 2
-    assert seen["pool"] == {max(1, negpy_core.pool_threads() // 4)}
+    cores = negpy_core.pool_threads()
+    assert seen["pool"] == {min(cores, max(2, cores // 4))}
     assert rendered == ["key-a", "key-b"]
     assert progress == [1, 2]
     assert finished == [2]
