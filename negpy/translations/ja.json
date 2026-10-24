@@ -545,7 +545,7 @@
   "Contrast Mask down": "コントラストマスクダウン",
   "Contrast Mask up": "コントラストマスクアップ",
   "Contrast Mask ↑/↓": "コントラストマスク ↑/↓",
-  "Contrast Mask: a soft darkroom mask that opens up large dark areas and holds back large bright ones, off at 0.": "コントラストマスク: 広い暗部を明るくし、広い明部を抑える柔らかな暗室マスクで、0 でオフです。",
+  "Contrast Mask: a soft darkroom mask that opens up large dark areas and holds back large bright ones, modeled on the Fujifilm Frontier's digital interpretation.": "コントラストマスク: 広い暗部を明るくし、広い明部を抑える柔らかな暗室マスクで、富士フイルム Frontier によるデジタルでの解釈を手本にしています。",
   "Contrast Target": "コントラストターゲット",
   "Contrast in the highlights only.": "ハイライトだけのコントラスト。",
   "Contrast in the shadows only.": "シャドウだけのコントラスト。",

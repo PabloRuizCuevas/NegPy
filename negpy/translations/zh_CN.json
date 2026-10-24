@@ -545,7 +545,7 @@
   "Contrast Mask down": "减小反差蒙版",
   "Contrast Mask up": "增大反差蒙版",
   "Contrast Mask ↑/↓": "反差蒙版 ↑/↓",
-  "Contrast Mask: a soft darkroom mask that opens up large dark areas and holds back large bright ones, off at 0.": "反差蒙版：一张柔和的暗房蒙版，提亮大片暗部并压住大片亮部，0 为关闭。",
+  "Contrast Mask: a soft darkroom mask that opens up large dark areas and holds back large bright ones, modeled on the Fujifilm Frontier's digital interpretation.": "反差蒙版：一张柔和的暗房蒙版，提亮大片暗部并压住大片亮部，仿照富士 Frontier 的数字化诠释。",
   "Contrast Target": "反差目标",
   "Contrast in the highlights only.": "仅高光的反差。",
   "Contrast in the shadows only.": "仅暗部的反差。",
