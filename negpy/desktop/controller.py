@@ -117,7 +117,7 @@ from negpy.services.export.contact_sheet_layout import ContactSheetSettings
 from negpy.services.export.contact_sheet_roll import (
     FrameFacts,
     SheetFrame,
-    creation_order,
+    name_order,
     infer_format,
     roll_label_text,
     sheet_look,
@@ -8559,7 +8559,7 @@ class AppController(QObject):
             return
         self._contact_sheet_pending = None
         self.set_status("", 0)
-        frames = creation_order(
+        frames = name_order(
             [SheetFrame(asset, config, fact or FrameFacts()) for asset, config, fact in zip(pending["assets"], pending["configs"], facts)]
         )
         try:

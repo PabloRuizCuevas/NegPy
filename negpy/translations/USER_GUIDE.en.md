@@ -700,11 +700,11 @@ On the **Alongside Exports** tab. A contact sheet shows the whole roll as film s
 *   **Contact Sheet…**: opens the sheet. Drag an edge of the paper to resize it.
 *   **Film format**: 35mm, 35mm Half Frame or 120 (with **Frame size** for 120).
 *   **Paper**, **Width**, **Height** and **DPI**: the sheet's size and resolution. The default paper holds a 36-exposure roll.
-*   **Order**: by date, or by scene with a new strip or row for each scene.
+*   **Order**: by file name, by date, or by scene with a new strip or row for each scene.
 *   **Print**: **As Edited**, or **Straight Proof**: the whole roll at one exposure and normal contrast, so you see which negatives are thin or dense.
 *   **Pick Frames**: click a frame to leave it out or put it back. Rejects start out.
 *   **Edge Print**: the film maker's markings along the edges, such as the film name and frame numbers.
-*   **Roll Label**: the roll name, film, camera and date above the strips.
+*   **Roll Label**: the roll name, film, camera and date above the strips. Type your own text in **Label text** to print it instead.
 *   **White Paper**: prints on white, which saves ink on a home printer.
 *   **Film Edges**: off prints the frames upright, each at its own shape, in rows as on the Light Table. The sheet then has no perforations and no **Edge Print**.
 
