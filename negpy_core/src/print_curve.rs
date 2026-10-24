@@ -2,8 +2,7 @@
 //! line of slope `slope` through the exposure pivot, bounded above by the toe (shadows to paper
 //! black d_max) and below by the shoulder (highlights to paper white), two independent softplus
 //! bounds. Output is linear reflectance, 10^-D; the working-space OETF comes at the engine output.
-//! The float64 order follows the Numba kernel it replaced, which fastmath regrouped, so the float32
-//! output can differ from it by an ULP (negpy_core/LEDGER.md).
+//! The float64 order follows the Numba kernel it replaced, which fastmath regrouped.
 
 // The steps index several per-pixel arrays of one run in step.
 #![allow(clippy::needless_range_loop)]

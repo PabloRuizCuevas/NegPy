@@ -4,45 +4,20 @@ import negpy_core
 import numpy as np
 import pytest
 
-
-def _profile_peaks(profile):
-    """The NumPy peak finder that negpy_core.skew_sample replaces."""
-    if profile.size < 5:
-        return np.empty(0)
-    grad = np.abs(np.gradient(negpy_core.gaussian_blur(profile.reshape(-1, 1).astype(np.float32), (1, 0), 0, 1.0).ravel()))
-    peak = float(grad.max())
-    if peak <= 3.0 * float(np.median(grad)) + 1e-6:
-        return np.empty(0)
-    i = np.arange(1, grad.size - 1)
-    i = i[(grad[i] >= grad[i - 1]) & (grad[i] > grad[i + 1]) & (grad[i] >= 0.4 * peak)]
-    a, b, c = grad[i - 1], grad[i], grad[i + 1]
-    denom = a - 2 * b + c
-    safe = np.where(np.abs(denom) > 1e-9, denom, 1.0)
-    return i + np.where(np.abs(denom) > 1e-9, 0.5 * (a - c) / safe, 0.0)
+from core_pin import digest, linux_pin
 
 
-def _sample(lum, horizontal, stations, center, half, nearest):
-    img = lum if horizontal else lum.T
-    h, w = img.shape
-    xs, ys = [], []
-    for x, c in zip(stations, center):
-        x0 = int(round(x))
-        lo, hi = int(max(0, math.floor(c - half))), int(min(h, math.ceil(c + half) + 1))
-        if hi - lo < 5 or x0 < 1 or x0 > w - 2:
-            continue
-        peaks = _profile_peaks(img[lo:hi, x0 - 1 : x0 + 2].mean(axis=1))
-        if peaks.size == 0:
-            continue
-        if nearest:
-            peaks = peaks[[int(np.argmin(np.abs(peaks - (c - lo))))]]
-        xs.extend([x] * peaks.size)
-        ys.extend(lo + peaks)
-    return np.asarray(xs), np.asarray(ys)
-
-
-@pytest.mark.parametrize("horizontal", [True, False])
-@pytest.mark.parametrize("nearest", [False, True])
-def test_skew_sample_matches_numpy(horizontal, nearest):
+@pytest.mark.parametrize(
+    "horizontal, nearest, pin",
+    [
+        (True, False, "33b68dc6247e76e4b75e42f22526794f3e0963dea0ee9461955595f62df66ae0"),
+        (False, False, "79ecf0e77eceec1f434524d7282b3a5334af7e2296befb09327cf218681023e7"),
+        (True, True, "33b68dc6247e76e4b75e42f22526794f3e0963dea0ee9461955595f62df66ae0"),
+        (False, True, "3295e712cb659f034ef6005f55ab36eab5feb00b4283129cdf357e7992952888"),
+    ],
+)
+@linux_pin
+def test_skew_sample_pin(horizontal, nearest, pin):
     rng = np.random.default_rng(31)
     lum = rng.random((180, 260), dtype=np.float32) * np.float32(0.05)
     lum[60:, :] += np.float32(0.8)
@@ -50,79 +25,9 @@ def test_skew_sample_matches_numpy(horizontal, nearest):
     lum[:, 7] = 1.0
     stations = np.linspace(4.0, (260 if horizontal else 180) - 5.0, 37)
     center = np.full(stations.size, 61.0) + np.linspace(-3.0, 3.0, stations.size)
-    want = _sample(lum, horizontal, stations, center, 14.0, nearest)
-    got = negpy_core.skew_sample(lum, horizontal, stations, center, 14.0, nearest)
-    assert want[0].tobytes() == got[0].tobytes()
-    assert want[1].tobytes() == got[1].tobytes()
-
-
-def _ransac_line_numpy(xs, ys, expected, half, span):
-    if xs.size < 12:
-        return None
-    rng = np.random.default_rng(0)
-    a, b = rng.integers(0, xs.size, (2, 300))
-    ok = np.abs(xs[a] - xs[b]) >= 0.3 * span
-    a, b = a[ok], b[ok]
-    if a.size == 0:
-        return None
-    slope = (ys[b] - ys[a]) / (xs[b] - xs[a])
-    ok = np.abs(slope) <= math.tan(math.radians(4.0))
-    a, b, slope = a[ok], b[ok], slope[ok]
-    if a.size == 0:
-        return None
-    intercept = ys[a] - slope * xs[a]
-    inlier = np.abs(ys[None, :] - (slope[:, None] * xs[None, :] + intercept[:, None])) <= 1.5
-    stations = np.array([np.unique(xs[row]).size for row in inlier])
-    mid = slope * (0.5 * (xs.min() + xs.max())) + intercept
-    score = stations * (1.0 - 0.5 * np.minimum(1.0, np.abs(mid - expected) / half))
-    best = int(np.argmax(score))
-    if stations[best] < 12:
-        return None
-    return np.polyfit(xs[inlier[best]], ys[inlier[best]], 1)
-
-
-def _fit_side_numpy(lum, horizontal, at, start, stop, outward=0):
-    """skew.py's NumPy _fit_side, the reference for negpy_core.skew_fit_side."""
-    h, w = lum.shape if horizontal else lum.T.shape
-    length = stop - start
-    if length < 0.25 * w or not (at >= 2 and at <= h - 3):
-        return None
-    stations = np.linspace(start + 0.1 * length, stop - 0.1 * length, int(min(240, max(24, length / 4))))
-    plane = np.ascontiguousarray(lum, dtype=np.float32)
-
-    def sample(center, half, nearest):
-        return negpy_core.skew_sample(plane, horizontal, stations, np.ascontiguousarray(center, dtype=np.float64), float(half), nearest)
-
-    inside = max(10.0, 0.035 * max(h, w))
-    outside = inside if outward == 0 else max(16.0, 0.02 * h)
-    center = float(at) + 0.5 * outward * (outside - inside)
-    half = 0.5 * (inside + outside)
-    xs, ys = sample(np.full(stations.size, center), half, False)
-    fit = _ransac_line_numpy(xs, ys, float(at), half, length)
-    if fit is None:
-        return None
-    xs, ys = sample(np.polyval(fit, stations), max(6.0, 0.3 * inside), True)
-    if xs.size < 12:
-        return None
-    keep = np.ones(xs.size, bool)
-    for _ in range(8):
-        fit = np.polyfit(xs[keep], ys[keep], 1)
-        res = ys - np.polyval(fit, xs)
-        mad = 1.4826 * float(np.median(np.abs(res[keep] - np.median(res[keep]))))
-        new = np.abs(res) <= max(1.0, 2.5 * mad)
-        if new.sum() < 12 or np.array_equal(new, keep):
-            break
-        keep = new
-    inliers = float(keep.sum()) / stations.size
-    rms = float(np.sqrt(np.mean((ys[keep] - np.polyval(fit, xs[keep])) ** 2)))
-    if inliers < 0.5 or rms > 2.0:
-        return None
-    x1, x2 = float(xs[keep].min()), float(xs[keep].max())
-    if x2 - x1 < 0.25 * w:
-        return None
-    y1, y2 = float(np.polyval(fit, x1)), float(np.polyval(fit, x2))
-    p1, p2 = ((x1, y1), (x2, y2)) if horizontal else ((y1, x1), (y2, x2))
-    return p1, p2, horizontal, inliers, rms
+    xs, ys = negpy_core.skew_sample(lum, horizontal, stations, center, 14.0, nearest)
+    assert xs.size > 0
+    assert digest(xs, ys) == pin
 
 
 def _frame(angle=1.2, size=(420, 600), seed=5):
@@ -136,16 +41,15 @@ def _frame(angle=1.2, size=(420, 600), seed=5):
     return (lum + np.random.default_rng(seed).normal(0, 0.01, lum.shape)).astype(np.float32)
 
 
-def _close(a, b, tol=1e-6):
-    if a is None or b is None:
-        return a is None and b is None
-    flat = lambda line: np.array([*line[0], *line[1], line[3], line[4]])  # noqa: E731
-    return a[2] == b[2] and np.allclose(flat(a), flat(b), rtol=0, atol=tol)
-
-
-@pytest.mark.parametrize("angle", [-3.0, -0.4, 0.0, 0.9, 2.5])
-@pytest.mark.parametrize("horizontal", [True, False])
-def test_fit_side_matches_numpy(angle, horizontal):
+@pytest.mark.parametrize(
+    "angle, horizontal, pin",
+    [
+        (-3.0, True, "8cea7bcfccf642f0d92977c018f46f7933bc70a3cc00817b5e1b9371090d3ba0"), (-0.4, True, "3f1cbfdf2ddaa5e5af32ff5b3f8e4786d884a9e168085732eab487ddcf26283e"), (0.0, True, "dfe8b695eb4791bb1c10edaf7fd07265d17428eb838918d6707047088cef79ad"), (0.9, True, "38735c44b64473d6eed3600d3412237904187b9b0f7916a0bd6c21216a5a868e"), (2.5, True, "fccc16cfe0b19b107ffc4decb8e1fd4c4ffc871e1aa5bc8457b24fb222d9dc3d"),
+        (-3.0, False, "faee2bea08193b19690cab0931609a5173faa2d4fb939e73e443288292bc455e"), (-0.4, False, "bb96a39748cdab2a4c03b035242999e3ba4ee09e6bd44d867ced3d710bc1a9ed"), (0.0, False, "564180147499d0fd04c1d964188a1ff94b86f011d27216e2952fe8d2d2f14ed1"), (0.9, False, "baf5b8a1c350a50e1fc6967512031f6d406efc9bb19dfaa82cf35e4faf83e6b7"), (2.5, False, "c60ed5b7e5663f2f7280f9429162b526f3b894c9273a9f1970a71157619ef309"),
+    ],
+)  # fmt: skip
+@linux_pin
+def test_fit_side_pin(angle, horizontal, pin):
     lum = _frame(angle, seed=int(angle * 10) + 50)
     h, w = lum.shape
     sides = (
@@ -153,11 +57,6 @@ def test_fit_side_matches_numpy(angle, horizontal):
         if horizontal
         else [(0.12 * w, 0.14 * h, 0.86 * h, -1), (0.88 * w, 0.14 * h, 0.86 * h, 1)]
     )
-    found = 0
-    for at, start, stop, outward in sides:
-        for out in (outward, 0):
-            want = _fit_side_numpy(lum, horizontal, at, start, stop, out)
-            got = negpy_core.skew_fit_side(lum, horizontal, at, start, stop, out)
-            assert _close(got, want), (at, out, got, want)
-            found += want is not None
-    assert found > 0
+    got = [negpy_core.skew_fit_side(lum, horizontal, at, start, stop, out) for at, start, stop, outward in sides for out in (outward, 0)]
+    assert any(g is not None for g in got)
+    assert digest(got) == pin

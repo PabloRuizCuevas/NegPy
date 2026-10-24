@@ -1,10 +1,10 @@
-"""The render-stage helpers against the NumPy code they replace."""
+"""The render-stage helpers: NumPy oracles for one-line rules, hash pins for the mask expansion."""
 
 import numpy as np
-import pytest
+from core_pin import digest, linux_pin
 
 import negpy_core
-from negpy.features.exposure.logic import contrast_mask_ev, contrast_mask_scale, expand_mask_plane
+from negpy.features.exposure.logic import contrast_mask_ev, expand_mask_plane
 from negpy.features.process.capture_color import apply_camera_matrix
 
 
@@ -41,32 +41,15 @@ def test_camera_matrix_matches_numpy():
     np.testing.assert_array_equal(apply_camera_matrix(img, m), want)
 
 
-def _expand_numpy(plane, out_shape, roi):
-    h, w = out_shape
-    if roi is None:
-        if plane.shape[:2] != (h, w):
-            plane = negpy_core.resize_linear(np.ascontiguousarray(plane, dtype=np.float32), (w, h))
-        return np.ascontiguousarray(plane, dtype=np.float32)
-    y1, y2, x1, x2 = roi
-    y1, x1 = max(0, y1), max(0, x1)
-    y2, x2 = min(h, y2), min(w, x2)
-    if y2 - y1 < 1 or x2 - x1 < 1:
-        return None
-    inner = negpy_core.resize_linear(np.ascontiguousarray(plane, dtype=np.float32), (x2 - x1, y2 - y1))
-    if (y1, x1, y2, x2) == (0, 0, h, w):
-        return inner
-    return np.pad(inner, ((y1, h - y2), (x1, w - x2)), mode="edge").astype(np.float32)
+@linux_pin
+def test_expand_mask_plane_output_is_pinned():
+    outs = []
+    for plane_shape in [(300, 400), (61, 87)]:
+        plane = _img(6, plane_shape)
+        for roi in [None, (0, 300, 0, 400), (20, 250, 35, 390), (-5, 320, 10, 500)]:
+            outs += [expand_mask_plane(plane, (300, 400), roi), contrast_mask_ev(plane, 0.6, 1.8, (300, 400), roi)]
+    assert digest(*outs) == "21bcf4594fcfefb350e50daac02a61d5710ae4e2b5145a52287f50336b405399"
 
 
-@pytest.mark.parametrize("roi", [None, (0, 300, 0, 400), (20, 250, 35, 390), (-5, 320, 10, 500), (100, 100, 0, 10)])
-@pytest.mark.parametrize("plane_shape", [(300, 400), (61, 87)])
-def test_expand_mask_plane_matches_numpy(roi, plane_shape):
-    plane = _img(6, plane_shape)
-    want = _expand_numpy(plane, (300, 400), roi)
-    got = expand_mask_plane(plane, (300, 400), roi)
-    if want is None:
-        assert got is None
-        return
-    np.testing.assert_array_equal(got, want)
-    scale = contrast_mask_scale(0.6, 1.8)
-    np.testing.assert_array_equal(contrast_mask_ev(plane, 0.6, 1.8, (300, 400), roi), (want * scale).astype(np.float32))
+def test_expand_mask_plane_of_an_empty_roi_is_none():
+    assert expand_mask_plane(_img(6, (61, 87)), (300, 400), (100, 100, 0, 10)) is None

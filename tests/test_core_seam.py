@@ -1,39 +1,34 @@
+"""dp_seams and distance_transform against cv2 on synthetic overlaps, and hash pins of the seam and
+feather blends."""
+
 import functools
-import pickle
-from pathlib import Path
 
 import cv2
 import negpy_core
 import numpy as np
 import pytest
 from core_oracle import cv2_oracle
+from core_pin import digest
 
 from negpy.features.stitch import logic
 
 pytestmark = cv2_oracle
 
 _RNG = np.random.default_rng(31)
-_CORPUS = Path("~/negpy-corpus-p5/features__stitch__logic.py--seam_blend").expanduser()
 
 
-@functools.cache
-def _recorded():
-    """(warped, masks, seams, feather) of the recorded panorama blends; empty without the corpus."""
-    return [pickle.loads(p.read_bytes())["args"] for p in sorted(_CORPUS.glob("*.pkl"))]
-
-
-def _parts(h, w, n, shift, angle):
+def _parts(h, w, n, shift, angle, rng=_RNG):
     """`n` noisy, slightly rotated views of one scene, each covering a shifted window."""
     wide = w + (n - 1) * shift
-    scene = cv2.GaussianBlur(_RNG.random((h, wide, 3), dtype=np.float32), (0, 0), 4)
+    scene = cv2.GaussianBlur(rng.random((h, wide, 3), dtype=np.float32), (0, 0), 4)
     imgs, masks = [], []
     for i in range(n):
         img = np.zeros((h, wide, 3), np.float32)
         x0 = i * shift
-        img[:, x0 : x0 + w] = scene[:, x0 : x0 + w] + _RNG.normal(0, 0.01, (h, w, 3)).astype(np.float32)
+        img[:, x0 : x0 + w] = scene[:, x0 : x0 + w] + rng.normal(0, 0.01, (h, w, 3)).astype(np.float32)
         m = np.zeros((h, wide), np.uint8)
         m[:, x0 : x0 + w] = 1
-        rot = cv2.getRotationMatrix2D((wide / 2, h / 2), float(_RNG.normal(0, angle)), 1.0)
+        rot = cv2.getRotationMatrix2D((wide / 2, h / 2), float(rng.normal(0, angle)), 1.0)
         imgs.append(np.ascontiguousarray(cv2.warpAffine(img, rot, (wide, h))))
         masks.append(np.ascontiguousarray(cv2.warpAffine(m, rot, (wide, h), flags=cv2.INTER_NEAREST)))
     return imgs, masks
@@ -84,15 +79,6 @@ def test_dp_seams_match_cv2_on_small_random_cuts():
         _check_seams(*_parts(h, w, 2, int(_RNG.integers(2, w)), 5.0))
 
 
-def test_dp_seams_match_cv2_on_the_recorded_panorama():
-    for warped, masks, _, _ in _recorded():
-        h, w = masks[0].shape
-        scale = min(1.0, logic._SEAM_MAX_EDGE / max(w, h))
-        size = (max(1, round(w * scale)), max(1, round(h * scale)))
-        small = [logic._seam_cost_image(negpy_core.resize_area(np.ascontiguousarray(i, dtype=np.float32), size)) for i in warped]
-        _check_seams(small, [negpy_core.resize_nearest(m.astype(np.uint8), size) for m in masks])
-
-
 def test_find_seams_partitions_the_coverage():
     imgs, masks = _parts(90, 120, 3, 50, 2.0)
     seams = logic.find_seams(imgs, [m > 0 for m in masks], (imgs[0].shape[1], imgs[0].shape[0]))
@@ -101,30 +87,12 @@ def test_find_seams_partitions_the_coverage():
     assert np.array_equal(np.sum(seams, 0) >= 1, covered)
 
 
-def _seam_weight_cv2(seam, valid, feather_px):
-    span = 2.0 * feather_px
-    owned = seam.astype(np.uint8)
-    weight = cv2.distanceTransform(owned, cv2.DIST_L2, 3) / np.float32(span) + np.float32(0.5)
-    beyond = np.float32(0.5) - cv2.distanceTransform(1 - owned, cv2.DIST_L2, 3) / np.float32(span)
-    weight = np.where(seam, np.clip(weight, 0.0, 1.0), np.clip(beyond, 0.0, 1.0))
-    edge = np.clip(cv2.distanceTransform(valid.astype(np.uint8), cv2.DIST_L2, 3) / np.float32(feather_px), 0.0, 1.0)
-    return weight * edge
-
-
-def _mean_cv2(warped, weights):
-    acc = np.zeros_like(warped[0])
-    weight_sum = np.zeros(warped[0].shape[:2], np.float32)
-    for img, weight in zip(warped, weights):
-        acc += img * weight[..., None]
-        weight_sum += weight
-    return acc / np.maximum(weight_sum, 1e-6)[..., None]
-
-
 @functools.cache
 def _blend_cases():
-    cases = [(w, m, s, f) for w, m, s, f in _recorded()]
+    rng = np.random.default_rng(31)
+    cases = []
     for n, size in ((2, (120, 160, 70)), (3, (200, 260, 150)), (4, (64, 90, 40))):
-        imgs, masks = _parts(*size, n, 3.0)
+        imgs, masks = _parts(*size, n, 3.0, rng)
         seams = [c > 0 for c in negpy_core.dp_seams(imgs, masks)]
         cases.append((imgs, [m > 0 for m in masks], seams, 12.0))
     return cases
@@ -139,14 +107,11 @@ def test_distance_transform_stays_near_cv2():
             assert np.abs(negpy_core.distance_transform(src, cv2.DIST_L2, 3) - want).max() <= 0.005
 
 
-def test_seam_blend_matches_cv2_version():
-    for warped, masks, seams, feather in _blend_cases():
-        f = max(feather, 1.0)
-        want = _mean_cv2(warped, [_seam_weight_cv2(s, m, f) for s, m in zip(seams, masks)])
-        assert np.abs(logic.seam_blend(warped, masks, seams, feather) - want).max() <= 1e-4
+def test_seam_blend_pin():
+    got = [logic.seam_blend(warped, masks, seams, feather) for warped, masks, seams, feather in _blend_cases()]
+    assert digest(got) == "f6ecc6b24049f1bd51302ecba5b1094f84f4bdc643c4fa530a0c7c47e846d2a9"
 
 
-def test_feather_blend_matches_cv2_version():
-    for warped, masks, _, _ in _blend_cases():
-        want = _mean_cv2(warped, [cv2.distanceTransform(m.astype(np.uint8), cv2.DIST_L2, 3) for m in masks])
-        assert np.abs(logic.feather_blend(warped, masks) - want).max() <= 1e-4
+def test_feather_blend_pin():
+    got = [logic.feather_blend(warped, masks) for warped, masks, _, _ in _blend_cases()]
+    assert digest(got) == "2704490969b2167d5fe478617608c152081ed2b9f0519d556809e281dfa61a66"

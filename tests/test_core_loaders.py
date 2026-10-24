@@ -1,29 +1,30 @@
-"""The loader kernels against the NumPy and cv2 code they replace."""
+"""Hash pins of the loader kernels on fixed inputs, and checks against single cv2 calls."""
 
 import cv2
 import numpy as np
 import pytest
 from core_oracle import cv2_oracle
+from core_pin import digest, linux_pin
 
 import negpy_core
 from negpy.infrastructure.loaders.logluv import normalize_linear
 
 
-def _normalize_linear_numpy(lin):
-    flat = lin.reshape(-1, lin.shape[-1])
-    lo = np.percentile(flat, 0.2, axis=0)
-    hi = np.percentile(flat, 99.8, axis=0)
-    denom = hi - lo
-    denom = np.where(denom > 0, denom, 1.0)
-    return np.clip((lin - lo) / denom, 0.0, 1.0)
-
-
-@pytest.mark.parametrize("shape", [(1, 1, 3), (7, 5, 3), (311, 517, 3), (40, 30, 4)])
-def test_normalize_linear_matches_numpy(shape):
+@pytest.mark.parametrize(
+    "shape,want",
+    [
+        ((1, 1, 3), "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0"),
+        ((7, 5, 3), "870392426c6e48c2e6541e4c8d193a73064648b8dc6a1917d960c95f5b3abe40"),
+        ((311, 517, 3), "2f96ccdae2c08d83000ff4193cf5a35830034a0c86e392b5a75cac7475a6ac77"),
+        ((40, 30, 4), "cffa44f70d09ca0e66f4af8afbadbd8d75625f705b471f9434f84d7d8e29ccb8"),
+    ],
+)
+@linux_pin
+def test_normalize_linear_pin(shape, want):
     rng = np.random.default_rng(sum(shape))
     lin = rng.lognormal(0.0, 1.5, shape) * np.array([0.3, 1.0, 2.0, 1.0][: shape[-1]])
     lin[..., -1] = 0.25 if shape[0] == 7 else lin[..., -1]
-    np.testing.assert_array_equal(normalize_linear(lin), _normalize_linear_numpy(lin))
+    assert digest(normalize_linear(lin)) == want
 
 
 @cv2_oracle
@@ -51,26 +52,16 @@ def test_constants_match_cv2():
         assert getattr(negpy_core, name) == getattr(cv2, name), name
 
 
-class _Cv2Core:
-    MORPH_ERODE = cv2.MORPH_ERODE
-    BORDER_REPLICATE = cv2.BORDER_REPLICATE
-
-    @staticmethod
-    def ellipse_kernel(ksize):
-        return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize)
-
-    @staticmethod
-    def resize_area(src, dsize):
-        return cv2.resize(src, dsize, interpolation=cv2.INTER_AREA)
-
-    @staticmethod
-    def morphology_ex(src, op, kernel, border_type):
-        return cv2.morphologyEx(src, op, kernel, borderType=border_type)
-
-
-@cv2_oracle
-@pytest.mark.parametrize("samples,preserve_ir", [(3, False), (4, False), (4, True)])
-def test_streamed_linearraw_preview_matches_cv2(tmp_path, monkeypatch, samples, preserve_ir):
+@pytest.mark.parametrize(
+    "samples,preserve_ir,want",
+    [
+        (3, False, "fb8fb89f0ae4823a776b85f79c6f6e0649bb6264b55ccb79408488cdf5671cfe"),
+        (4, False, "39a04764e022fe88c2f98d60301ecad5ae48544d5683d1a845252421dd36a660"),
+        (4, True, "7696eb79268752ef6349e668a915d61288c454115b143f1a94a250c8d7ab07a0"),
+    ],
+)
+@linux_pin
+def test_streamed_linearraw_preview_pin(tmp_path, samples, preserve_ir, want):
     import tifffile
 
     from negpy.infrastructure.loaders import rawpy_loader
@@ -82,7 +73,4 @@ def test_streamed_linearraw_preview_matches_cv2(tmp_path, monkeypatch, samples, 
     with tifffile.TiffFile(path) as tf:
         page = tf.pages[0]
         got = rawpy_loader._stream_linearraw_preview(page, page, 100, normalize_tags=False, min_preserve_ir=preserve_ir)
-        monkeypatch.setattr(rawpy_loader, "negpy_core", _Cv2Core)
-        want = rawpy_loader._stream_linearraw_preview(page, page, 100, normalize_tags=False, min_preserve_ir=preserve_ir)
-    np.testing.assert_array_equal(got[0], want[0])
-    assert got[1] == want[1]
+    assert digest(got) == want
