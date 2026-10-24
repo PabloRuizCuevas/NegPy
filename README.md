@@ -13,7 +13,7 @@
   [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/JySNzUWgwy)
 </div>
 
-NegPy turns scans of film negatives and slides into finished pictures. I wrote it because I wanted a tool made for film scans that does more than invert them. It models film and photographic paper, and adds the conveniences of a lab scanner. It runs on Linux, macOS and Windows. Python runs the interface and organizes the work, and Rust does the image processing. The GPU renders through wgpu, a Rust library. Every CPU step runs in `negpy_core` on all cores, with or without the GPU: analysis, detection, dust removal, export encoding and the CPU render path.
+NegPy turns scans of film negatives and slides into finished pictures. I wrote it because I wanted a tool made for film scans that does more than invert them. It models film and photographic paper, and adds the conveniences of a lab scanner. It runs on Linux, macOS and Windows. 
 
 ![NegPy main window](docs/media/0660.webp)
 
