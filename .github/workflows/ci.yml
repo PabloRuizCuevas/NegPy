@@ -124,17 +124,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libegl1 libxkbcommon-x11-0 libdbus-1-3 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 x11-utils libgl1
 
-      - name: Configure LLVM for llvmlite (macOS x86_64)
-        # llvmlite has no Intel macOS wheel, so it builds from source against LLVM 20.
-        if: matrix.os == 'macos-15-intel'
-        shell: bash
-        run: |
-          brew install llvm@20
-          LLVM20="$(brew --prefix llvm@20)"
-          echo "PATH=/usr/local/bin:${LLVM20}/bin:${PATH}" >> "$GITHUB_ENV"
-          echo "LLVM_CONFIG=${LLVM20}/bin/llvm-config" >> "$GITHUB_ENV"
-          echo "CMAKE_ARGS=-DLLVM_DIR=${LLVM20}/lib/cmake/llvm -DCMAKE_PREFIX_PATH=${LLVM20}" >> "$GITHUB_ENV"
-
       - name: Install Dependencies
         # The plustek group brings opencv, the oracle the ported-function tests compare against.
         run: uv sync --group dev --group plustek
