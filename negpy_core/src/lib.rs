@@ -17,6 +17,7 @@ pub mod gray;
 pub mod hdr;
 pub mod histogram;
 pub mod inpaint;
+pub mod jpeg;
 pub mod lab;
 pub mod lens;
 pub mod loaders;
@@ -96,5 +97,6 @@ fn negpy_core(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> 
     py::register::register(m)?;
     py::autocrop::register(m)?;
     py::zones::register(m)?;
-    py::pool::register(m)
+    py::pool::register(m)?;
+    py::jpeg::register(m)
 }

@@ -2692,6 +2692,13 @@ calls = ["negpy_core.resize_u8"]
 depends = []
 note = "negpy_core.resize_u8"
 
+["services/export/encoders.py::encode_jpeg"]
+phase = 7
+status = "ported"
+compare = "quality"
+calls = ["negpy_core.encode_jpeg"]
+depends = []
+
 ["services/export/linear_output.py::_apply_ice"]
 phase = 7
 status = "ported"
