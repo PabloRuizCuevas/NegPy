@@ -13,6 +13,13 @@ linux_pin = pytest.mark.skipif(
 )
 
 
+def wave(t):
+    """A smooth periodic pattern in -1..1, period 2, from exact arithmetic. Pin inputs avoid
+    np.sin and the like: NumPy computes them through SVML on some CPUs and libm on others."""
+    tri = np.abs(np.mod(t, 2.0) - 1.0)
+    return tri * tri * (3.0 - 2.0 * tri) * 2.0 - 1.0
+
+
 def digest(*parts) -> str:
     """SHA-256 of the bytes of each part in order: arrays as C-contiguous memory, numbers as
     float64, so a pinned kernel output changes its digest when a single bit moves."""

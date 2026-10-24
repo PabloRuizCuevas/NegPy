@@ -11,7 +11,7 @@ from negpy.features.geometry.logic import _place_window_by_occupancy
 def _tilted_box(tilt, seed, size=(400, 600)):
     h, w = size
     y, x = np.mgrid[0:h, 0:w].astype(np.float64)
-    top = 100 + np.tan(np.radians(tilt)) * (x - w / 2)
+    top = 100 + tilt * (np.pi / 180) * (x - w / 2)
     lum = np.where(y >= top, 0.8, 0.1) + np.random.default_rng(seed).normal(0, 0.02, (h, w))
     return lum.astype(np.float32)
 

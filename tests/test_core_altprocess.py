@@ -11,13 +11,14 @@ from negpy.features.cyanotype.logic import apply_cyanotype
 @linux_pin
 def test_cyanotype_output_is_pinned():
     rng = np.random.default_rng(23)
-    images = [rng.random((97, 131, 3), dtype=np.float32), rng.random((40, 50, 3), dtype=np.float32) ** 3]
+    dark = rng.random((40, 50, 3), dtype=np.float32)
+    images = [rng.random((97, 131, 3), dtype=np.float32), dark * dark * dark]
     outs = [
         apply_cyanotype(img, args[0], True, *args[1:])
         for img in images
         for args in [("classic", 0.0, 1.4, 0.0, 0.0), ("new", 1.0, 2.3, 0.6, 0.4)]
     ]
-    assert digest(*outs) == "296f7ceb774557dc5705e5b1ccbae0917a8d05684c8dbe7e3db049615eab76cd"
+    assert digest(*outs) == "ddbdef09e6ec49a030ca26c5dde1fb667a3616a39c0f068c22b30cdb0aa9d57b"
 
 
 def test_sabattier_rejects_a_bad_image():

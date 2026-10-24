@@ -92,9 +92,9 @@ def test_fit_refraction_gammas_pin():
     rng = np.random.default_rng(7)
     ratio = rng.uniform(0.6, 1.0, (160, 120)).astype(np.float32)
     img = rng.random((160, 120, 3), dtype=np.float32)
-    vis_log = (np.log(ratio)[..., None] * np.float32([1.1, 1.3, 1.6])).astype(np.float32)
+    vis_log = ((ratio - np.float32(1.0))[..., None] * np.float32([1.1, 1.3, 1.6])).astype(np.float32)
     vis_log += 0.01 * rng.standard_normal(vis_log.shape).astype(np.float32)
-    assert digest(L._fit_refraction_gammas(ratio, vis_log, img)) == "0dbf25616e8d176181040dd89fa61a9ef78039142d354be9427cae7d5d868634"
+    assert digest(L._fit_refraction_gammas(ratio, vis_log, img)) == "7ab6eeee1906753359a717030cf88b16131c69f7021bb18be9d53b581590ed1d"
 
 
 @linux_pin

@@ -5,7 +5,7 @@ import negpy_core
 import numpy as np
 import pytest
 from core_oracle import cv2_oracle
-from core_pin import digest
+from core_pin import digest, wave
 
 from negpy.features.retouch import logic
 from negpy.features.retouch.logic import apply_hair_inpaint
@@ -18,7 +18,7 @@ _RNG = np.random.default_rng(23)
 def _textured(h, w):
     img = cv2.GaussianBlur(_RNG.random((h, w, 3), dtype=np.float32), (0, 0), 2.5)
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
-    img += (0.3 * np.sin(xx / 9.0) * np.cos(yy / 13.0))[..., None]
+    img += (0.3 * wave(xx / 9.0) * wave(yy / 13.0 + 0.5))[..., None]
     return np.ascontiguousarray((img - img.min()) / (img.max() - img.min()), dtype=np.float32)
 
 
@@ -81,4 +81,4 @@ def test_hair_inpaint_pin(monkeypatch):
         h, w = img.shape[:2]
         for hair in (_strokes(h, w, 2, 1), _strokes(h // 2, w // 2, 3, 2)):
             got.append(np.asarray(apply_hair_inpaint(img, [hair])))
-    assert digest(got) == "06093e6dee76fd82574bd9aa9f0de26c29d8af3e7f10c6b2338ef01afb1c9fd5"
+    assert digest(got) == "ce305e209c674492faf140178163368125dba16675eaf372c4105148fded3ee2"
