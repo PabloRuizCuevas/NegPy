@@ -23,9 +23,9 @@ def _background(fn):
     return _on_thread(run)
 
 
-def test_a_background_thread_uses_a_quarter_of_the_cores():
+def test_a_background_thread_uses_a_quarter_of_the_cores_and_at_least_two():
     cores = negpy_core.pool_threads()
-    assert _background(negpy_core.pool_threads) == max(1, cores // 4)
+    assert _background(negpy_core.pool_threads) == min(cores, max(2, cores // 4))
     assert _on_thread(negpy_core.pool_threads) == cores
 
 

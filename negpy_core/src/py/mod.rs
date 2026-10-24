@@ -64,13 +64,14 @@ fn all_cores() -> &'static rayon::ThreadPool {
     })
 }
 
-/// A quarter of the cores, so background work leaves the rest to the live preview.
+/// A quarter of the cores, so background work leaves the rest to the live preview. At least
+/// two: on a small machine one thread would leave thumbnails slower than the all-core pool.
 fn background() -> &'static rayon::ThreadPool {
     static POOL: std::sync::OnceLock<rayon::ThreadPool> = std::sync::OnceLock::new();
     POOL.get_or_init(|| {
         let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
         rayon::ThreadPoolBuilder::new()
-            .num_threads((cores / 4).max(1))
+            .num_threads((cores / 4).max(2).min(cores))
             .thread_name(|i| format!("negpy-bg-{i}"))
             .build()
             .expect("cannot start the negpy_core background pool")
