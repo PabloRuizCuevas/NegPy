@@ -334,7 +334,7 @@ fn rotating_calipers(points: &[(f32, f32)]) -> [(f32, f32); 3] {
     [(px, py), (a1 * bw, b1 * bw), (a2 * bh, b2 * bh)]
 }
 
-/// `cv2.boxPoints(rect)` (`RotatedRect::points`); cos and sin are libm's (see LEDGER.md).
+/// `cv2.boxPoints(rect)` (`RotatedRect::points`); cos and sin are libm's.
 pub fn box_points(r: &RotatedRect) -> [(f32, f32); 4] {
     let a_rad = r.angle as f64 * std::f64::consts::PI / 180.0;
     let b = libm::cos(a_rad) as f32 * 0.5;

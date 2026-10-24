@@ -84,17 +84,6 @@ test:
 	@echo "Running unit tests (pytest)..."
 	@$(UV) pytest tests/ --cov=negpy --cov-report=term-missing
 
-# negpy_core replay corpus ($$NEGPY_CORPUS, default ~/negpy-corpus). PHASE=2 limits to one phase.
-# Record first, on main: uv run python scripts/replay.py record FRAME... [--phase N]
-REPLAY_PHASE = $(if $(PHASE),--phase $(PHASE))
-
-.PHONY: replay bench
-replay:
-	@$(UV) python scripts/replay.py replay $(REPLAY_PHASE)
-
-bench:
-	@$(UV) python scripts/replay.py bench $(REPLAY_PHASE)
-
 # Auto-format and fix (ruff)
 .PHONY: format
 format:

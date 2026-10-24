@@ -1,7 +1,7 @@
 //! `cv2.distanceTransform` for a uint8 mask: chamfer distances to the nearest zero pixel.
 //! Without labels, opencv-python runs IPP's float32 two-pass chamfer; with labels, OpenCV's own
 //! 5x5 pass in 16-bit fixed point. IPP's 3x3 pass picks a path one float32 unit longer at rare
-//! pixels than this two-pass order does (negpy_core/LEDGER.md).
+//! pixels than this two-pass order does.
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Metric {

@@ -454,7 +454,7 @@ const GROUP_GAP: f32 = 0.04;
 
 /// `_base_blocks`: the flat blocks grouped by log brightness, brightest first, split where two
 /// neighbours differ by more than `GROUP_GAP` decades; the largest group of at least
-/// max(5, 2%) blocks. log10 is libm's (see LEDGER.md); ties sort by block index.
+/// max(5, 2%) blocks. log10 is libm's; ties sort by block index.
 pub fn base_blocks(det: &[f32], band: &[u8], h: usize, w: usize) -> Option<Vec<[f32; 3]>> {
     let cand = flat_block_means(det, band, h, w)?;
     let log_lum: Vec<f32> = cand

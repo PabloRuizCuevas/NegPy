@@ -17,8 +17,6 @@ make run          # Launch the desktop app
 make run-sim      # Launch with a simulated camera, Scanlight and film scanners
 make all          # format + Rust checks + lint + type check + tests (run before committing)
 make rust         # cargo fmt --check + clippy -D warnings + cargo test for negpy_core
-make replay       # replay recorded real calls through the current code, bit for bit (PHASE=N)
-make bench        # all-core speed of ported functions against the recorded Python (PHASE=N)
 make test         # pytest only
 make lint         # ruff check
 make type         # ty check (not mypy)
@@ -55,9 +53,9 @@ Edits persist in SQLite (`edits.db`, keyed by content hash), optionally mirrored
 
 ### negpy_core (Rust)
 
-`negpy_core/` is a PyO3 extension (abi3-py313, maturin, a `uv` workspace member) that takes over CPU kernels one group at a time.
+`negpy_core/` is a PyO3 extension (abi3-py313, maturin, a `uv` workspace member) that holds every CPU kernel. It is the source of truth for CPU pixels; the GPU shaders follow it through the parity tests.
 
-- A ported function keeps its Python signature; the Python body becomes a call into `negpy_core`, and the Python implementation goes in the same change. No runtime switch, no fallback.
+- A kernel's Python entry point keeps its NumPy-style signature and calls into `negpy_core`. No Python implementation, runtime switch or fallback sits beside it.
 - Core code in `src/<area>.rs` takes slices or `ndarray` views and plain numbers, never config. `src/py/<area>.rs` holds only the wrappers: dtype, shape and contiguity checks, `py::detach` around the work, errors as Python exceptions. No panic crosses into Python.
 - `cargo test` builds without Python: PyO3 is behind the `python` feature, which maturin turns on.
 - Pure Rust: no dependency compiles C or C++ (`deny.toml` bans `cc`, `cmake`, `pkg-config`, `bindgen`). Codecs that need C stay on their Python wheels. A new crate's license goes in `NOTICE.md`.
@@ -65,11 +63,10 @@ Edits persist in SQLite (`edits.db`, keyed by content hash), optionally mirrored
 - `mul_add` is one instruction only on a CPU with FMA; the release baseline has none, so a loop that uses it takes `#[multiversion(targets("x86_64+avx2+fma", "aarch64+neon"))]`. `mul_add` is exactly fused on every path, so the bits never depend on the CPU.
 - Hot loops: an element-wise pass goes through `par_zip` (rayon blocks; `par_iter_mut().zip` makes a task per element), and its closure is `move`. A capture read through a reference can alias the output, so LLVM reloads it per element and does not vectorize.
 - A float-to-int `as` cast saturates, and LLVM leaves such a loop scalar. Clamp first, then take the integer part as `convert.rs::trunc_bits` does (add 2^52, read the low bits).
-- **Bit-exact**: a port matches the Python result bit for bit (a zero's sign may differ where NumPy ranks -0.0 and 0.0 equal), checked by a pytest oracle against the numpy or `cv2` call it replaces. The `cv2` oracles run on Linux x86-64 only (`tests/core_oracle.py`: opencv-python's other builds differ in the last bits); `tests/test_core_same_bits.py` holds output hashes that every release OS must match (`ci.yml` job `native`). NumPy's rules to copy: the linear percentile (virtual index in f64, interpolation in f32, the `t >= 0.5` branch from the upper value); float32 sums in NumPy's order; NEP 50 promotion (a Python float joins float32 math as float32); Numba `fastmath` as f64 with `mul_add`; Python `round` ties to even. No fast-math. Threads only over independent outputs, or integer reductions, so the core count never changes a result. A reduction with a large accumulator takes one chunk per thread (rayon's `fold` makes one per split job) and enough work per chunk to repay clearing and merging it.
+- **Pinned output**: a kernel's output is deterministic and the same on every release OS. `tests/test_core_same_bits.py` (run on each OS by `ci.yml` job `native`) and the pins in `tests/test_core_*.py` hold output hashes (`tests/core_pin.py`). A change that moves the bits updates its pins in the same change and follows the `BOUNDS_VERSION` and `THUMBNAIL_RENDER_VERSION` rules. Direct oracles against one `cv2` or NumPy call stay where a kernel copies a library primitive; the `cv2` ones run on Linux x86-64 only (`tests/core_oracle.py`). Kernels that replaced NumPy code keep its arithmetic, so keep it when editing them: the linear percentile (virtual index in f64, interpolation in f32, the `t >= 0.5` branch from the upper value), float32 sums in NumPy's order, NEP 50 promotion (a Python float joins float32 math as float32), Python `round` ties to even. No fast-math. Threads only over independent outputs, or integer reductions, so the core count never changes a result. A reduction with a large accumulator takes one chunk per thread (rayon's `fold` makes one per split job) and enough work per chunk to repay clearing and merging it.
 - `negpy_core` holds every CPU kernel; NegPy has no Numba and imports no `cv2` (`tests/test_no_cv2.py`). opencv-python is only a dependency of the plustek extra and group, for pyopticfilm's pass alignment; the tests use it as their oracle through the plustek group. Every binding runs its work through `py::detach(py, n, f)`, never `py.detach`: it releases the GIL, keeps work under 64K elements on the calling thread and enters the all-core pool once per call (`tests/test_core_ir.py` checks). A thread marked by `negpy_core.set_background_thread(True)` (the thumbnail refresh) enters a pool of a quarter of the cores (at least two) instead, so the live preview keeps the rest. The app has no single-core mode.
-- `negpy_core/manifest.toml` lists every function to port (phase, status, `depends`). A port sets its entries to `ported`; `uv run python scripts/core_manifest.py` refreshes the rest after a change or a merge from `main`, and `tests/test_core_manifest.py` fails while it is stale.
-- **Replay**: before a group is ported, record its calls on main (`scripts/replay.py record FRAME... --phase N`, corpus in `$NEGPY_CORPUS`). The port passes `make replay` and `make bench` (never slower with every core in use, as users run the app). Both are local tools, not CI.
-- Transcendental functions (`log10`, `exp`, `pow`, ...) in array loops come from `src/mathf.rs` (branch-free, so they vectorize; `libm` is too slow for the speed gate), scalar ones from the `libm` crate. NumPy uses SVML on an AVX-512 CPU and libm elsewhere, so the Python bits already differ by CPU. A port that cannot be bit-exact writes an entry in `negpy_core/LEDGER.md` and a `compare` mode in the manifest (`rows`, `ulp=N`); the release bumps `BOUNDS_VERSION` and `THUMBNAIL_RENDER_VERSION` one time for the whole ledger.
+- Transcendental functions (`log10`, `exp`, `pow`, ...) in array loops come from `src/mathf.rs` (branch-free, so they vectorize; `libm` is too slow there), scalar ones from the `libm` crate. Both give the same bits on every CPU.
+- A speed change keeps the output pins and is never slower with every core in use, as users run the app.
 
 ### Pipeline
 
