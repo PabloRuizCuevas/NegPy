@@ -26,7 +26,7 @@ For the math behind each step, read [PIPELINE.md](PIPELINE.md).
 
 *   **Canvas** (center): the picture. Scroll or pinch to zoom, drag to pan, and double-click to switch between fit and 100%. Right-click for view options, copy and paste of settings, resets and **Unload**.
 *   **Film Strip** (under the canvas): the open frames in one row. Drag its top edge to resize it; `Ctrl+[` folds it away.
-*   **Toolbar** (bottom): **Photo** holds navigation, zoom, rotate, **Tools** (crop, pickers, masks, retouching), undo, the **Print** menu (Before / After and the peeks) and **Overlays**. **Roll** holds the Film Strip's import, filter, sort and roll actions. The **⋯** menu holds every action, **Preferences…** included.
+*   **Toolbar** (bottom): **Photo** holds navigation, zoom, rotate, **Tools** (crop, pickers, masks, retouching), undo, the **Print** menu (Before / After and the peeks), **Export** and **Overlays**. **Export** does what the Export panel's button does, and its chevron picks the frames. **Roll** holds the Film Strip's import, filter, sort and roll actions. The **⋯** menu holds every action, **Preferences…** included.
 *   **Controls** (right): the tabs **Library**, **Roll**, **Frame**, **Metadata**, **Export** and **Scan**. Only Roll and Frame change the picture. Drag the panel by its top edge to float it.
 *   **Frame Info** (`I`): the file name, film and size in the corners of the canvas.
 
