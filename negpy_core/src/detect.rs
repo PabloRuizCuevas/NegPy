@@ -1005,7 +1005,7 @@ pub struct Detection {
 
 /// `detect_film_bounds_with_confidence(img)` for an HxW or HxWx3 float32 image.
 pub fn detect_film_bounds(img: &[f32], h: usize, w: usize, cn: usize) -> Detection {
-    static LAST: crate::memo::Memo<Detection, 4> = crate::memo::Memo::new();
+    static LAST: crate::memo::Memo<Detection, 8> = crate::memo::Memo::new();
     let key = crate::memo::key(img, &[h, w, cn]);
     LAST.get_or(key, || detect(img, h, w, cn, key))
 }

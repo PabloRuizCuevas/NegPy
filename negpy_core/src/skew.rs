@@ -539,7 +539,7 @@ pub fn coarse_angles(
     angle_bin: f64,
 ) -> Vec<f64> {
     // Squaring the frame and the crop's own edge fit both measure the same plane.
-    static LAST: crate::memo::Memo<Vec<f64>, 2> = crate::memo::Memo::new();
+    static LAST: crate::memo::Memo<Vec<f64>, 4> = crate::memo::Memo::new();
     let params = [min_segment, max_skew, angle_bin].map(|v| v.to_bits() as i64);
     let key = crate::memo::extend(crate::memo::key(lum, &[h, w]), &params);
     LAST.get_or(key, || {

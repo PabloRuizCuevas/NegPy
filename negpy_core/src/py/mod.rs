@@ -20,6 +20,7 @@ pub mod loaders;
 pub mod meter;
 pub mod morph;
 pub mod phase;
+pub mod pool;
 pub mod print_curve;
 pub mod process;
 pub mod register;
@@ -48,6 +49,8 @@ thread_local! {
         .use_current_thread()
         .build()
         .ok();
+    /// Set on a thread whose large work runs in `background()`, such as a thumbnail worker.
+    static BACKGROUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Every core. A thread that joined `LOCAL` stays in it, so large work enters this pool
@@ -61,6 +64,28 @@ fn all_cores() -> &'static rayon::ThreadPool {
     })
 }
 
+/// A quarter of the cores, so background work leaves the rest to the live preview.
+fn background() -> &'static rayon::ThreadPool {
+    static POOL: std::sync::OnceLock<rayon::ThreadPool> = std::sync::OnceLock::new();
+    POOL.get_or_init(|| {
+        let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+        rayon::ThreadPoolBuilder::new()
+            .num_threads((cores / 4).max(1))
+            .thread_name(|i| format!("negpy-bg-{i}"))
+            .build()
+            .expect("cannot start the negpy_core background pool")
+    })
+}
+
+/// The pool that large work from the calling thread enters.
+fn large_pool() -> &'static rayon::ThreadPool {
+    if BACKGROUND.get() {
+        background()
+    } else {
+        all_cores()
+    }
+}
+
 /// `py.detach(f)` for work of `n` elements: the GIL released, and every binding's work run
 /// through here so that each call enters a pool once.
 pub fn detach<T: Ungil + Send>(
@@ -71,7 +96,7 @@ pub fn detach<T: Ungil + Send>(
     py.detach(|| {
         LOCAL.with(|local| match local {
             Some(p) if n < SMALL => p.install(f),
-            _ => all_cores().install(f),
+            _ => large_pool().install(f),
         })
     })
 }

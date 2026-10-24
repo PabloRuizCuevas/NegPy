@@ -43,6 +43,7 @@ from negpy.desktop.workers.export import (
     resolve_output_dir,
 )
 from negpy.desktop.workers.render import (
+    _THUMBNAIL_WORKERS,
     AssetDiscoveryTask,
     AssetDiscoveryWorker,
     AutoDetectAllSplitsTask,
@@ -453,13 +454,15 @@ def thumbnail_refresh_progress_text(
     mean_render_s: float,
     *,
     in_flight: bool = False,
+    frames_at_once: int = 1,
 ) -> str:
-    """With ``in_flight`` the ``index``-th frame is still decoding; otherwise ``index`` frames are done."""
+    """With ``in_flight`` the ``index``-th frame is still decoding; otherwise ``index`` frames are done.
+    The time left divides by ``frames_at_once``, the frames the worker renders side by side."""
     text = tr("Thumbnails {index}/{total}", index=index, total=total)
     samples = index - 1 if in_flight else index
     left = total - samples if in_flight else total - index
     if samples >= 2 and left > 0:
-        seconds = (mean_decode_s + mean_render_s) * left
+        seconds = (mean_decode_s + mean_render_s) * left / frames_at_once
         left_text = (
             tr("~{value} min left", value=round(seconds / 60)) if seconds >= 60 else tr("~{value} s left", value=max(1, round(seconds)))
         )
@@ -4762,7 +4765,11 @@ class AppController(QObject):
     def _on_thumbnail_render_frame_started(self, index: int, total: int, name: str) -> None:
         if not self._thumbnail_render_running:
             return
-        self.thumbnail_refresh_progress.emit(thumbnail_refresh_progress_text(index, total, *self._thumbnail_render_means(), in_flight=True))
+        self.thumbnail_refresh_progress.emit(
+            thumbnail_refresh_progress_text(
+                index, total, *self._thumbnail_render_means(), in_flight=True, frames_at_once=_THUMBNAIL_WORKERS
+            )
+        )
 
     def _on_thumbnail_render_progress(self, current: int, total: int, name: str, decode_s: float, render_s: float) -> None:
         if not self._thumbnail_render_running:
@@ -4772,7 +4779,9 @@ class AppController(QObject):
         timing[1] += render_s
         timing[2] += 1
         self.status_progress_requested.emit(current, total)
-        self.thumbnail_refresh_progress.emit(thumbnail_refresh_progress_text(current, total, *self._thumbnail_render_means()))
+        self.thumbnail_refresh_progress.emit(
+            thumbnail_refresh_progress_text(current, total, *self._thumbnail_render_means(), frames_at_once=_THUMBNAIL_WORKERS)
+        )
 
     def _on_thumbnail_rendered(self, frame: ThumbnailRenderInput, buffer: np.ndarray) -> None:
         if not self._thumbnail_render_running:

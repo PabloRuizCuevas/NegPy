@@ -49,7 +49,7 @@ pub fn detection_plane(
     cn: usize,
     key: u128,
 ) -> Option<std::sync::Arc<Vec<f32>>> {
-    static LAST: crate::memo::Memo<Option<std::sync::Arc<Vec<f32>>>, 2> = crate::memo::Memo::new();
+    static LAST: crate::memo::Memo<Option<std::sync::Arc<Vec<f32>>>, 4> = crate::memo::Memo::new();
     LAST.get_or(key, || {
         let mut lum = vec![0f32; h * w];
         luminance(&rgb(img, cn), &mut lum);
@@ -1608,7 +1608,7 @@ pub fn refine_roi_to_image(
     roi: Roi,
 ) -> Option<(Roi, Option<TierRefinement>)> {
     type Refined = Option<(Roi, Option<TierRefinement>)>;
-    static LAST: crate::memo::Memo<Refined, 4> = crate::memo::Memo::new();
+    static LAST: crate::memo::Memo<Refined, 8> = crate::memo::Memo::new();
     let key = crate::memo::key(img, &[h, w, cn]);
     let refined = || {
         let det = detection_plane(img, h, w, cn, key)?;
