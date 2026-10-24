@@ -216,7 +216,7 @@ class PhotometricCurveWidget(QWidget):
         curvatures: tuple[float, float, float] | None = None,
         process_mode: str | None = None,
         flat: bool = False,
-        mask: tuple[float, tuple[float, float] | None, float, tuple[float, float, float]] | None = None,
+        mask: tuple[float, float, tuple[float, float, float]] | None = None,
         highlight_density: float | None = None,
         shadow_density: float | None = None,
     ) -> None:
@@ -296,7 +296,7 @@ class PhotometricCurveWidget(QWidget):
         # Base (white) reference curve, and also the fill, pivot and zone geometry.
         self._curve_pts = _curve_points(slope, pivot)
 
-        # Contrast Mask: (centre, tails, density range, filtration offsets) of its plane. It moves each pixel's print
+        # Contrast Mask: (centre, density range, filtration offsets) of its plane. It moves each pixel's print
         # exposure by its blurred surroundings' tone, so it has no single curve. A large flat area,
         # where the blur equals its own value, prints on the mask's curve; fine detail rides along.
         # The band spans the base curve and that one.
@@ -304,11 +304,10 @@ class PhotometricCurveWidget(QWidget):
         if mask is not None and not flat:
             from negpy.features.exposure.logic import contrast_mask_coeffs
 
-            centre, tails, density_range, offsets = mask
+            centre, density_range, offsets = mask
             coeffs = contrast_mask_coeffs(
                 params.contrast_mask_strength,
                 centre,
-                tails,
                 slopes or (slope, slope, slope),
                 pivots or (pivot, pivot, pivot),
                 offsets,

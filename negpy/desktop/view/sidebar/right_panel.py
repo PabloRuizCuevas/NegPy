@@ -1067,7 +1067,6 @@ class RightPanel(QWidget):
                 mask=(
                     (
                         metrics["contrast_mask_centre"],
-                        metrics.get("contrast_mask_tails"),
                         metrics.get("norm_density_range") or 0.0,
                         filtration_offsets(
                             (config.wb_cyan, config.wb_magenta, config.wb_yellow),

@@ -1720,14 +1720,8 @@ pub fn luma_planes(val: &[f32], dst: &mut [f32]) {
 }
 
 /// `contrast_mask_plane` after normalization: the float32 luma of an HxWx3 plane, blurred by
-/// `sigma` with a replicated border, minus its float32 mean. Returns the plane, the mean and the
-/// 1st and 99th percentiles of the unblurred luma.
-pub fn contrast_mask_tail(
-    val: &[f32],
-    h: usize,
-    w: usize,
-    sigma: f64,
-) -> Option<(Vec<f32>, f32, f32, f32)> {
+/// `sigma` with a replicated border, minus its float32 mean. Returns the plane and the mean.
+pub fn contrast_mask_tail(val: &[f32], h: usize, w: usize, sigma: f64) -> Option<(Vec<f32>, f32)> {
     let mut lum = vec![0f32; h * w];
     crate::par_zip(&mut lum, val.as_chunks::<3>().0, move |d, p| {
         *d = luma_f32(p)
@@ -1747,8 +1741,7 @@ pub fn contrast_mask_tail(
             *v -= centre;
         }
     });
-    let tails = percentiles(&lum, &[1.0, 99.0])?;
-    Some((blurred, centre, tails[0], tails[1]))
+    Some((blurred, centre))
 }
 
 /// The Contrast Mask's print stops from its zero-mean plane: `d = a·p + b` clamped to

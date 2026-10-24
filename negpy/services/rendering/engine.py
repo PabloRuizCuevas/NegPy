@@ -94,7 +94,7 @@ class DarkroomEngine:
     def __init__(self) -> None:
         self.config = APP_CONFIG
         self.cache = PipelineCache()
-        self._mask_plane: Optional[Tuple[Any, np.ndarray, float, Optional[Tuple[float, float]]]] = None
+        self._mask_plane: Optional[Tuple[Any, np.ndarray, float]] = None
         self._diffusion_plane: Optional[Tuple[Tuple, np.ndarray]] = None
 
     def _run_stage(
@@ -268,7 +268,7 @@ class DarkroomEngine:
             mask_roi = context.active_roi
             mask_key = (source_hash, calculate_config_hash(base_key), mask_roi, current_img.shape[:2])
             if self._mask_plane is None or self._mask_plane[0] != mask_key:
-                plane, centre, tails = contrast_mask_plane(
+                plane, centre = contrast_mask_plane(
                     img,
                     mask_bounds,
                     effective_crosstalk_matrix(settings.process, settings.process.process_mode),
@@ -278,11 +278,10 @@ class DarkroomEngine:
                 # Expanded here, not in the exposure stage: the slider re-runs that stage,
                 # and only the coefficients move with it.
                 expanded = expand_mask_plane(plane, current_img.shape[:2], mask_roi)
-                self._mask_plane = None if expanded is None else (mask_key, expanded, centre, tails)
+                self._mask_plane = None if expanded is None else (mask_key, expanded, centre)
             if self._mask_plane is not None:
                 context.metrics["contrast_mask_plane"] = self._mask_plane[1]
                 context.metrics["contrast_mask_centre"] = self._mask_plane[2]
-                context.metrics["contrast_mask_tails"] = self._mask_plane[3]
                 context.metrics["contrast_mask_roi"] = None
 
         timing.lap("contrast mask")

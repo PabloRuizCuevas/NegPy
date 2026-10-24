@@ -1285,45 +1285,33 @@ MASK_TABLE_CAP = 819.0
 def contrast_mask_coeffs(
     strength: float,
     centre: float,
-    tails: Optional[Tuple[float, float]],
     slopes: Tuple[float, float, float],
     pivots: Tuple[float, float, float],
     offsets: Tuple[float, float, float],
     density_range: float,
 ) -> Optional[Tuple[float, float, float, float, float, float, float]]:
     """
-    The (a, b, lo, hi, g_lo, g_hi, lim) of negpy_core.contrast_mask_stops, or None when the mask does
-    nothing. Each side grows with how far the frame's tail (`tails`, light then dark luma) prints past
-    mid-gray, as HyperTone's mode 1 does, scaled by `strength`. The luma's code is the mean of the three
+    The (a, b, lo, hi, g_lo, g_hi, lim) of negpy_core.contrast_mask_stops, or None when off. Both sides
+    take `strength` of the full table. The luma's code is the mean of the three
     channels' straight lines, as the Frontier reads the mean of its channels; green's sizes the stops.
     """
     from negpy.features.exposure.models import EXPOSURE_CONSTANTS
 
     slope = float(np.mean(slopes))
-    if strength <= 0.0 or tails is None or slope <= 0.0 or slopes[1] <= 0.0 or density_range <= 0.0:
+    if strength <= 0.0 or slope <= 0.0 or slopes[1] <= 0.0 or density_range <= 0.0:
         return None
     c = MASK_CODES_PER_DENSITY
     ref = float(EXPOSURE_CONSTANTS["reference_print_density"])
     shift = float(np.mean([k * (o - p) for k, o, p in zip(slopes, offsets, pivots)]))
-
-    def code(x: float) -> float:
-        return MASK_AIM_CODE + c * (slope * x + shift - ref)
-
-    light, dark = tails
-    gain = strength / 100.0
-    hold = min(max((code(light) - MASK_MID_CODE) / 512.0 * -316.56 - 87.18, 0.0), 100.0) * gain
-    lift = min(max((code(dark) - MASK_MID_CODE) / 512.0 * 178.16 - 62.89, 0.0), 100.0) * gain
-    if hold <= 0.0 and lift <= 0.0:
-        return None
     stops_per_code = float(density_range) / (c * float(slopes[1]) * math.log10(2.0))
-    per_d2 = stops_per_code / (4.0 * 256.0)
+    gain = float(strength) * stops_per_code / (4.0 * 256.0)
     return (
         c * slope,
-        code(centre) - MASK_MID_CODE,
+        MASK_AIM_CODE + c * (slope * centre + shift - ref) - MASK_MID_CODE,
         -MASK_MID_CODE,
         MASK_CODE_MAX - MASK_MID_CODE,
-        hold * per_d2,
-        lift * per_d2,
+        gain,
+        gain,
         MASK_TABLE_CAP / 4.0 * stops_per_code,
     )
 

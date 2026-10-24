@@ -1,6 +1,6 @@
 """The Contrast Mask: an automatic tone mask after the Frontier's HyperTone.
 
-Pins what would break silently: the sign, the per-frame strength, resolution invariance,
+Pins what would break silently: the sign, the fixed strength, resolution invariance,
 the crop boundary, the migration and CPU/GPU parity.
 """
 
@@ -61,8 +61,8 @@ _SLOPE, _PIVOT, _RANGE = 1.6, 0.5, 1.4
 _MID_OFFSET = ((MASK_MID_CODE - MASK_AIM_CODE) / MASK_CODES_PER_DENSITY + 0.75) / _SLOPE
 
 
-def _coeffs(strength: float = 1.0, light: float = -0.5, dark: float = 2.0):
-    return contrast_mask_coeffs(strength, 0.5, (light, dark), (_SLOPE,) * 3, (_PIVOT,) * 3, (0.0,) * 3, _RANGE)
+def _coeffs(strength: float = 1.0):
+    return contrast_mask_coeffs(strength, 0.5, (_SLOPE,) * 3, (_PIVOT,) * 3, (0.0,) * 3, _RANGE)
 
 
 def _render(img: np.ndarray, settings: WorkspaceConfig, tag: str) -> np.ndarray:
@@ -72,14 +72,8 @@ def _render(img: np.ndarray, settings: WorkspaceConfig, tag: str) -> np.ndarray:
 class TestContrastMaskPlane(unittest.TestCase):
     def test_plane_is_zero_mean(self):
         """The plane carries only the surround's tone; its mean rides in the centre."""
-        plane, _, _ = contrast_mask_plane(_wide_range_negative(), _BOUNDS, None)
+        plane, _ = contrast_mask_plane(_wide_range_negative(), _BOUNDS, None)
         self.assertAlmostEqual(float(plane.mean()), 0.0, places=5)
-
-    def test_plane_reports_the_frame_tails(self):
-        _, centre, tails = contrast_mask_plane(_wide_range_negative(), _BOUNDS, None)
-        assert tails is not None
-        self.assertLess(tails[0], centre)
-        self.assertGreater(tails[1], centre)
 
     def test_surround_outside_the_crop_stays_out_of_the_mask(self):
         """A rebate or surround blurred into the mask prints as a vignette the negative
@@ -90,8 +84,8 @@ class TestContrastMaskPlane(unittest.TestCase):
         img[:border] = img[-border:] = img[:, :border] = img[:, -border:] = 0.98
         roi_norm = (border / h, (h - border) / h, border / w, (w - border) / w)
 
-        cropped, _, _ = contrast_mask_plane(img, _BOUNDS, None, roi_norm=roi_norm)
-        whole, _, _ = contrast_mask_plane(img, _BOUNDS, None)
+        cropped, _ = contrast_mask_plane(img, _BOUNDS, None, roi_norm=roi_norm)
+        whole, _ = contrast_mask_plane(img, _BOUNDS, None)
 
         # A uniform picture area has no low frequencies, so its mask must be flat.
         self.assertLess(float(cropped.std()), 0.002, f"crop-respecting plane std {cropped.std():.5f}")
@@ -100,17 +94,20 @@ class TestContrastMaskPlane(unittest.TestCase):
 
 
 class TestContrastMaskCoeffs(unittest.TestCase):
-    def test_off_at_zero_strength_or_without_tails(self):
+    def test_off_at_zero_strength_or_without_a_density_range(self):
         self.assertIsNone(_coeffs(strength=0.0))
-        self.assertIsNone(contrast_mask_coeffs(1.0, 0.5, None, (_SLOPE,) * 3, (_PIVOT,) * 3, (0.0,) * 3, _RANGE))
+        self.assertIsNone(contrast_mask_coeffs(1.0, 0.5, (_SLOPE,) * 3, (_PIVOT,) * 3, (0.0,) * 3, 0.0))
 
-    def test_a_frame_whose_tails_stay_near_mid_gray_is_left_alone(self):
-        """The strength comes from the frame: a flat frame gets nothing at full strength."""
-        self.assertIsNone(_coeffs(light=0.45 + _MID_OFFSET, dark=0.55 + _MID_OFFSET))
+    def test_both_sides_take_the_slider_on_every_frame(self):
+        """One slider value sets both sides on every frame."""
+        k = _coeffs(0.7)
+        assert k is not None
+        self.assertEqual(k[4], k[5])
+        self.assertAlmostEqual(k[4], 0.7 * _RANGE / (MASK_CODES_PER_DENSITY * _SLOPE * np.log10(2.0)) / 1024.0)
 
     def test_the_code_follows_the_mean_of_the_channel_lines(self):
         """Cast Removal splits the slopes; the Frontier reads the mean of its channels."""
-        k = contrast_mask_coeffs(1.0, 0.5, (-0.5, 2.0), (2.0, 1.0, 3.0), (_PIVOT,) * 3, (0.0,) * 3, _RANGE)
+        k = contrast_mask_coeffs(1.0, 0.5, (2.0, 1.0, 3.0), (_PIVOT,) * 3, (0.0,) * 3, _RANGE)
         assert k is not None
         self.assertAlmostEqual(k[0], MASK_CODES_PER_DENSITY * 2.0)
 

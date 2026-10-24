@@ -428,7 +428,7 @@ class GPUEngine:
         self._local_ev_key: Optional[Tuple] = None
         # (key, maps): mask raster, keyed without grade; grade only rescales plane 1 at upload.
         self._local_maps_cache: Optional[Tuple[Tuple, Optional[np.ndarray]]] = None
-        self._mask_plane: Optional[Tuple[Tuple, np.ndarray, float, Optional[Tuple[float, float]]]] = None
+        self._mask_plane: Optional[Tuple[Tuple, np.ndarray, float]] = None
         self._diffusion_grid: Optional[Tuple[Tuple, np.ndarray]] = None
         self._diffusion_plane: Optional[Tuple[Tuple, Optional[np.ndarray]]] = None
         # Identity of the plane currently sitting in the contrast_mask texture.
@@ -666,7 +666,7 @@ class GPUEngine:
         analysis_source_hash: Optional[str] = None,
         cam_xyz: Optional[list] = None,
         camera_wb: Optional[list] = None,
-        contrast_mask_override: Optional[Tuple[np.ndarray, float, Optional[Tuple[float, float]], Tuple[int, int, int, int]]] = None,
+        contrast_mask_override: Optional[Tuple[np.ndarray, float, Tuple[int, int, int, int]]] = None,
         film_base: Optional[tuple] = None,
         source_base_log: Any = NOT_READ,
         sabattier_sigma_override: Optional[float] = None,
@@ -682,7 +682,7 @@ class GPUEngine:
         map already in the post-geometry frame; tiled export passes a per-tile slice.
         When None and masks are present, it is computed here from ``settings.local``.
 
-        ``contrast_mask_override`` is (plane, centre, tails, printed frame in rotated pixels),
+        ``contrast_mask_override`` is (plane, centre, printed frame in rotated pixels),
         built once per tiled export because a tile cannot see the pre-geometry source.
         """
         if not self.gpu.is_available:
@@ -966,7 +966,6 @@ class GPUEngine:
         # Keyed off the meter, so only the Contrast Mask slider's own value stays live.
         mask_plane = None
         mask_centre = 0.5
-        mask_tails = None
         mask_key = None
         # The printed frame in rotated pixels; the shader maps a plane onto it and clamps
         # outside, which is expand_mask_plane's edge padding.
@@ -980,7 +979,7 @@ class GPUEngine:
                 # A tile holds no pre-geometry source, so the caller builds the plane once
                 # for the whole export and the frame shifts into tile coords here.
                 if contrast_mask_override is not None:
-                    mask_plane, mask_centre, mask_tails, frame = contrast_mask_override
+                    mask_plane, mask_centre, frame = contrast_mask_override
                     mask_key = ("tiled",)
                     mask_rect = (frame[0] - global_offset[0], frame[1] - global_offset[1], frame[2], frame[3])
             else:
@@ -1005,7 +1004,6 @@ class GPUEngine:
                     )
                 mask_plane = self._mask_plane[1]
                 mask_centre = self._mask_plane[2]
-                mask_tails = self._mask_plane[3]
                 mask_rect = frame_rect
 
         mask_uniform = None
@@ -1015,7 +1013,6 @@ class GPUEngine:
             else:
                 mask_uniform = (
                     mask_centre,
-                    mask_tails,
                     float(mask_rect[0]),
                     float(mask_rect[1]),
                     float(mask_rect[2]),
@@ -1688,7 +1685,6 @@ class GPUEngine:
             "film_base_density": base_scan_density(read_base_log, unmix_m),
             "metered_anchor": metered_anchor,
             "contrast_mask_centre": mask_centre,
-            "contrast_mask_tails": mask_tails,
             "textural_range": textural_range,
             "shadow_point": shadow_point,
             "highlight_point": highlight_point,
@@ -2142,12 +2138,12 @@ class GPUEngine:
         mask_k = (0.0,) * 7
         if contrast_mask:
             coeffs = contrast_mask_coeffs(
-                exp.contrast_mask_strength, contrast_mask[0], contrast_mask[1], slopes, pivots, wb_offsets, lum_range
+                exp.contrast_mask_strength, contrast_mask[0], slopes, pivots, wb_offsets, lum_range
             )
             if coeffs is not None:
                 mask_k = (coeffs[6], *coeffs[:6])
         plane_rect_v = (
-            tuple(float(v) for v in contrast_mask[2:])
+            tuple(float(v) for v in contrast_mask[1:])
             if contrast_mask
             else (tuple(float(v) for v in plane_rect) if plane_rect is not None else (0.0, 0.0, 1.0, 1.0))
         )

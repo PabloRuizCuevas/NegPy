@@ -46,8 +46,8 @@ class ExposureConfig:
     highlight_density: float = 0.0
     # A shadow lift fades to nothing at paper black, so the black point barely moves.
     hold_black: bool = False
-    # Tone mask: lifts large dark areas and holds back large bright ones, scaled by how far the
-    # frame's tails reach (contrast_mask_coeffs). [0, 1]; 0 = off.
+    # Tone mask: lifts large dark areas and holds back large bright ones, more the farther they sit
+    # from mid-gray (contrast_mask_coeffs). [0, 1]; 0 = off.
     contrast_mask_strength: float = 0.0
     # A diffuser under the enlarger lens: the paper sees the light mixed with a blurred copy,
     # so shadows bleed into highlights. [0, 1]; 0 = off; fixed spread (DIFFUSION_SPREAD).

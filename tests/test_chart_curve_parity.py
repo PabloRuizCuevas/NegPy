@@ -148,8 +148,8 @@ def test_curvature_spread_alone_triggers_divergence(qapp):
     assert not w._channel_curves
 
 
-# (centre, light/dark tails, density range, offsets) of a frame that runs far past mid-gray both ways.
-_WIDE_MASK = (0.5, (-0.3, 1.3), 1.4, (0.0, 0.0, 0.0))
+# (centre, density range, offsets) of a frame's mask plane.
+_WIDE_MASK = (0.5, 1.4, (0.0, 0.0, 0.0))
 
 
 def test_mask_band_is_absent_without_a_mask(qapp):
@@ -161,7 +161,7 @@ def test_mask_band_is_absent_without_a_mask(qapp):
 
 
 def test_mask_band_needs_the_metered_plane(qapp):
-    """Without the centre and tails from the render the band stays hidden rather than guessing."""
+    """Without the centre from the render the band stays hidden rather than guessing."""
     from negpy.desktop.view.widgets.charts import PhotometricCurveWidget
 
     w = PhotometricCurveWidget()

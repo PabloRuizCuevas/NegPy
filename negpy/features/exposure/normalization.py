@@ -564,19 +564,19 @@ def contrast_mask_plane(
     converge_v: float = 0.0,
     converge_h: float = 0.0,
     roi_norm: Optional[Tuple[float, float, float, float]] = None,
-) -> Tuple[np.ndarray, float, Optional[Tuple[float, float]]]:
+) -> Tuple[np.ndarray, float]:
     """The zero-mean blurred luma plane the Contrast Mask reads, on `analysis_grid`, plus the val it was
-    centred on and the frame's 1st and 99th percentile luma (its light and dark tails; None unmetered)."""
+    centred on."""
     image = analysis_grid(image, rotation, fine_rotation, flip_horizontal, flip_vertical, distortion_k1, converge_v, converge_h, roi_norm)
 
     # A frame that never metered normalizes to huge values; no stretch, no mask.
     if luminance_density_range(bounds) < 1e-6:
-        return np.zeros(image.shape[:2], dtype=np.float32), 0.5, None
+        return np.zeros(image.shape[:2], dtype=np.float32), 0.5
 
     val = normalize_log_image(unmix_log_image(prefilter_log_grid(image, None, 0.0), unmix), bounds)
     sigma = MASK_BLUR_PERCENT * 0.01 * min(val.shape[:2])
-    plane, centre, lo, hi = negpy_core.contrast_mask_tail(np.ascontiguousarray(val, dtype=np.float32), sigma)
-    return plane, float(centre), (float(lo), float(hi))
+    plane, centre = negpy_core.contrast_mask_tail(np.ascontiguousarray(val, dtype=np.float32), sigma)
+    return plane, float(centre)
 
 
 def diffusion_grid(

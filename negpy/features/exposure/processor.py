@@ -314,7 +314,6 @@ class PhotometricProcessor:
         mask_coeffs = contrast_mask_coeffs(
             self.config.contrast_mask_strength,
             context.metrics.get("contrast_mask_centre", 0.5),
-            context.metrics.get("contrast_mask_tails"),
             slopes,
             pivots,
             cmy_offsets,

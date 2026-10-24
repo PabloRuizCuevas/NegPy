@@ -719,15 +719,13 @@ fn luma_planes<'py>(
     })
 }
 
-/// `contrast_mask_plane`'s blurred zero-mean luma of a normalized HxWx3 plane, its mean, and
-/// the 1st and 99th percentiles of the unblurred luma.
+/// `contrast_mask_plane`'s blurred zero-mean luma of a normalized HxWx3 plane, and its mean.
 #[pyfunction]
-#[allow(clippy::type_complexity)]
 fn contrast_mask_tail<'py>(
     py: Python<'py>,
     val: PyReadonlyArrayDyn<'py, f32>,
     sigma: f64,
-) -> PyResult<(Bound<'py, PyArrayDyn<f32>>, f32, f32, f32)> {
+) -> PyResult<(Bound<'py, PyArrayDyn<f32>>, f32)> {
     let (h, w) = rgb_dims(&val, "contrast_mask_tail")?;
     if h * w == 0 {
         return Err(PyValueError::new_err(
@@ -735,15 +733,13 @@ fn contrast_mask_tail<'py>(
         ));
     }
     let data = slice(&val)?;
-    let (plane, centre, lo, hi) = super::detach(py, data.len(), || {
+    let (plane, centre) = super::detach(py, data.len(), || {
         analysis::contrast_mask_tail(data, h, w, sigma)
     })
     .ok_or_else(|| PyValueError::new_err("blur sigma must be positive"))?;
     Ok((
         numpy::PyArray1::from_vec(py, plane).reshape(vec![h, w])?,
         centre,
-        lo,
-        hi,
     ))
 }
 
