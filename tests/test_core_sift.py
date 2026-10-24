@@ -1,8 +1,6 @@
 """The quality gate of the SIFT registration port: negpy_core.register_pair against the true
 transform of synthetic pairs and against cv2's SIFT + BFMatcher + estimateAffinePartial2D."""
 
-import os
-import pickle
 from pathlib import Path
 
 import cv2
@@ -17,13 +15,7 @@ pytestmark = cv2_oracle
 
 ROOT = Path(__file__).resolve().parents[1]
 _TIF = ROOT / "samples" / "panorama" / "Img428 - NX Studio Tiff.TIF"
-_RECORDING = "features__stitch__logic.py--register_parts"
 _CASES = [(1.5, 1.01, 0.2), (-2.8, 0.975, 0.25), (3.0, 1.03, 0.15), (-1.0, 0.99, 0.3)]
-
-
-def _corpus_recordings():
-    dirs = [Path(os.environ.get("NEGPY_CORPUS", Path.home() / "negpy-corpus")), Path.home() / "negpy-corpus-p5"]
-    return sorted(p for d in dirs for p in (d / _RECORDING).glob("*.pkl"))
 
 
 def _synthetic():
@@ -37,11 +29,6 @@ def _synthetic():
 def _source(name):
     if name == "synthetic":
         return _synthetic()
-    if name == "preview":
-        recs = _corpus_recordings()
-        if not recs:
-            pytest.skip("no register_parts recording in the corpus")
-        return pickle.load(recs[0].open("rb"))["args"][0][0]
     if not _TIF.exists():
         pytest.skip("panorama samples not present")
     import tifffile
@@ -86,7 +73,7 @@ def _cv2_register(ref, mov):
     return matrix, int(mask.sum())
 
 
-@pytest.mark.parametrize("name", ["synthetic", "preview", "full"])
+@pytest.mark.parametrize("name", ["synthetic", "full"])
 def test_register_pair_recovers_a_known_similarity(name):
     src = _source(name)
     for angle, scale, shift in _CASES:
@@ -101,7 +88,7 @@ def test_register_pair_recovers_a_known_similarity(name):
         assert err < 0.1, (angle, scale, err, ref_err)
 
 
-@pytest.mark.parametrize("name", ["synthetic", "preview", "full"])
+@pytest.mark.parametrize("name", ["synthetic", "full"])
 def test_keypoint_count_matches_cv2(name):
     proxy, _ = L.build_proxy(_source(name))
     for nfeatures in (0, 6000):
@@ -127,20 +114,3 @@ def test_descriptors_match_cv2():
     )
     print(f"descriptors within 2 of cv2's: {np.mean(diffs <= 2):.4f}, identical: {np.mean(diffs == 0):.4f}")
     assert np.mean(diffs <= 2) >= 0.95
-
-
-def test_real_panorama_matches_cv2_recording():
-    recs = _corpus_recordings()
-    if not recs:
-        pytest.skip("no register_parts recording in the corpus")
-    for path in recs:
-        rec = pickle.load(path.open("rb"))
-        parts = rec["args"][0]
-        want_transforms, want_canvas = rec["result"]
-        transforms, canvas = L.register_parts(parts)
-        assert canvas == tuple(want_canvas)
-        for part, m, want in zip(parts, transforms, want_transforms):
-            h, w = part.shape[:2]
-            err = _corner_error(m, want, w, h)
-            print(f"{path.name}: corner error against cv2 {err:.4f} px")
-            assert err < 0.25

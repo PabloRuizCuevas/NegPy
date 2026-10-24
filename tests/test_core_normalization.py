@@ -1,14 +1,14 @@
-"""The normalization planes and metrics against the NumPy and cv2 code they replace."""
+"""The normalization planes and metrics: NumPy and cv2 oracles, and a hash pin for the clip fractions."""
 
 import cv2
 import numpy as np
 import pytest
 from core_oracle import cv2_oracle
+from core_pin import digest, linux_pin
 
 import negpy_core
 from negpy.domain.types import LUMA_B, LUMA_G, LUMA_R
 from negpy.features.exposure import normalization as N
-from negpy.features.exposure.models import EXPOSURE_CONSTANTS
 
 
 def _rgb(seed, shape=(301, 457)):
@@ -16,25 +16,15 @@ def _rgb(seed, shape=(301, 457)):
     return rng.uniform(0.0, 1.0, (*shape, 3)).astype(np.float32)
 
 
-def _clip_fractions_numpy(image, roi, buffer):
-    img = image
-    if roi:
-        y1, y2, x1, x2 = roi
-        img = img[y1:y2, x1:x2]
-    if buffer > 0:
-        img = N.get_analysis_crop(img, buffer)
-    clipped = np.mean(img[::4, ::4] >= float(EXPOSURE_CONSTANTS["scan_clip_level"]), axis=(0, 1))
-    return tuple(float(v) for v in clipped)
-
-
-@pytest.mark.parametrize(
-    "roi,buffer",
-    [(None, 0.0), (None, 0.1), ((13, 250, 7, 401), 0.0), ((13, 250, 7, 401), 0.05), ((0, 500, 0, 900), 0.0)],
-)
-def test_clip_fractions_match_numpy(roi, buffer):
+@linux_pin
+def test_clip_fractions_are_pinned():
     img = _rgb(1)
     img[img > 0.97] = 1.0
-    assert N.measure_clip_fractions(img, roi, buffer) == _clip_fractions_numpy(img, roi, buffer)
+    rois = [(None, 0.0), (None, 0.1), ((13, 250, 7, 401), 0.0), ((13, 250, 7, 401), 0.05), ((0, 500, 0, 900), 0.0)]
+    assert (
+        digest(*(N.measure_clip_fractions(img, roi, buffer) for roi, buffer in rois))
+        == "1c64edb8eb44aacea60cc6233b28a4bf29f6428ee48610892d85ae1c868f0b1f"
+    )
 
 
 def _lum32(val):

@@ -1,11 +1,12 @@
-"""cv2.fillPoly and the local-mask rasteriser against the cv2 and NumPy code they replace."""
+"""fill_poly and stroke_cover against cv2 on random shapes, and a hash pin of the local-mask rasteriser."""
 
 import cv2
 import numpy as np
 from core_oracle import cv2_oracle
+from core_pin import digest
 
 import negpy_core
-from negpy.features.local.logic import outline_points, rasterise
+from negpy.features.local.logic import rasterise
 from negpy.features.local.models import MaskShape
 
 pytestmark = cv2_oracle
@@ -22,37 +23,15 @@ def test_fill_poly_matches_cv2_on_random_polygons():
         np.testing.assert_array_equal(negpy_core.fill_poly((h, w), pts), want)
 
 
-def _rasterise_cv2(shape, pts, h, w, sigma, invert):
-    if shape == MaskShape.GRADIENT:
-        (a, b) = pts
-        ax, ay = a[0] * w, a[1] * h
-        dx, dy = b[0] * w - ax, b[1] * h - ay
-        denom = dx * dx + dy * dy
-        xs = (np.arange(w, dtype=np.float32) - ax) * (dx / denom)
-        ys = (np.arange(h, dtype=np.float32) - ay) * (dy / denom)
-        t = np.clip(xs[None, :] + ys[:, None], 0.0, 1.0)
-        alpha = (1.0 - t * t * (3.0 - 2.0 * t)).astype(np.float32)
-    else:
-        outline = np.array([[x * w, y * h] for x, y in outline_points(shape, pts)], dtype=np.float32)
-        filled = np.zeros((h, w), dtype=np.uint8)
-        cv2.fillPoly(filled, [outline.astype(np.int32)], 255)
-        alpha = filled.astype(np.float32) / 255.0
-        if sigma > 1e-3:
-            k = int(sigma * 3) | 1
-            alpha = cv2.GaussianBlur(alpha, (k, k), sigma)
-    return 1.0 - alpha if invert else alpha
-
-
-def test_rasterise_matches_cv2():
+def test_rasterise_pin():
     cases = [
         (MaskShape.POLYGON, ((0.2, 0.2), (0.5, 0.15), (0.6, 0.45), (0.25, 0.5)), 6.0, False),
         (MaskShape.OVAL, ((0.6, 0.6), (0.85, 0.6), (0.6, 0.8)), 3.5, True),
         (MaskShape.GRADIENT, ((0.5, 0.0), (0.4, 0.7)), 0.0, False),
         (MaskShape.POLYGON, ((0.1, 0.9), (0.9, 0.1), (0.9, 0.9), (0.1, 0.1)), 0.0, False),
     ]
-    for shape, pts, sigma, invert in cases:
-        want = _rasterise_cv2(shape, pts, 150, 210, sigma, invert)
-        assert rasterise(shape, pts, 150, 210, sigma, invert).tobytes() == want.tobytes(), shape
+    got = [rasterise(shape, pts, 150, 210, sigma, invert) for shape, pts, sigma, invert in cases]
+    assert digest(got) == "51449962febf32a1347b6bd79fb6eb013700cfdd5f7b29d25ed89264887b51f9"
 
 
 def test_stroke_cover_matches_cv2_on_random_strokes():

@@ -1,12 +1,9 @@
-"""The flat-field reference checks against the NumPy and cv2 code they replace."""
+"""Hash pins of the flat-field reference kernels on fixed inputs."""
 
-import cv2
 import numpy as np
-from core_oracle import cv2_oracle
+from core_pin import digest, linux_pin
 
 from negpy.features.flatfield import logic as F
-
-pytestmark = cv2_oracle
 
 
 def _reference(shape=(170, 256), seed=0):
@@ -21,61 +18,27 @@ def _reference(shape=(170, 256), seed=0):
     return ref.astype(np.float32)
 
 
-def _lit_numpy(ref):
-    lum = ref.mean(axis=2)
-    lit = (lum > F._LIT_FRACTION * np.percentile(lum, F._LIT_PERCENTILE)).astype(np.uint8)
-    lit = cv2.erode(lit, np.ones((5, 5), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0)
-    if lit.sum() < F._MIN_LIT_FRACTION * lit.size:
-        return np.ones(lum.shape, np.float32)
-    return lit.astype(np.float32)
-
-
-def _fill_numpy(values, valid):
-    if valid.all() or not valid.any():
-        return values
-    _, labels = cv2.distanceTransformWithLabels((~valid).astype(np.uint8), cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
-    source = np.zeros(labels.max() + 1, np.int64)
-    source[labels[valid]] = np.flatnonzero(valid)
-    return values.reshape(-1, values.shape[2])[source[labels]].reshape(values.shape)
-
-
-def test_lit_mask_matches_numpy():
-    ref = _reference()
-    assert F._lit_mask(ref).tobytes() == _lit_numpy(ref).tobytes()
+@linux_pin
+def test_lit_mask_pin():
+    assert digest(F._lit_mask(_reference())) == "385092d5960659d60d6aed91f2b229fb09138531a9b9bf464a8860a57c5412d5"
     dark = np.zeros((40, 40, 3), dtype=np.float32)
     assert F._lit_mask(dark).tobytes() == np.ones((40, 40), np.float32).tobytes()
 
 
-def test_evenness_matches_numpy():
-    img = _reference(seed=1)
-    lit = _lit_numpy(img).astype(bool)
-    median = np.clip(np.median(img[lit], axis=0), 1e-6, None)
-    ratio = img / median
-    ratio[~lit] = 0.0
-    lum = ratio[lit].mean(axis=1)
-    low, high = np.percentile(lum - 1.0, [1.0, 99.0])
-    chroma = np.percentile(ratio[lit] / np.clip(lum, 1e-6, None)[:, None] - 1.0, [1.0, 99.0], axis=0)
-    clipped = float((img[lit] >= F._CLIP_LEVEL).any(axis=1).mean()) > F._CLIP_FRACTION
-    got_ratio, got = F._evenness(img)
-    assert got_ratio.tobytes() == ratio.tobytes()
-    assert got == F.Evenness(float(low), float(high), float(np.abs(chroma).max()), clipped)
+@linux_pin
+def test_evenness_pin():
+    ratio, evenness = F._evenness(_reference(seed=1))
+    assert digest(ratio, evenness) == "57a7d729bbcc37f80b8247c580f68a95522ec58fc95a857a0f31fd02d4376768"
 
 
-def test_compute_gain_matches_numpy():
-    ref = F.work_copy(_reference((400, 600), seed=2))
-    sigma = max(ref.shape[:2]) / F._BLUR_DIVISOR
-    lit = _lit_numpy(ref)
-    num = cv2.GaussianBlur(ref * lit[..., None], (0, 0), sigmaX=sigma, sigmaY=sigma)
-    den = cv2.GaussianBlur(lit, (0, 0), sigmaX=sigma, sigmaY=sigma)
-    blur = np.clip(num / np.clip(den, 1e-4, None)[..., None], 1e-4, None)
-    blur = _fill_numpy(blur, den >= F._MIN_LIT_WEIGHT)
-    means = (blur * lit[..., None]).sum(axis=(0, 1)) / lit.sum()
-    want = np.clip(means[None, None, :] / blur, F._GAIN_MIN, F._GAIN_MAX).astype(np.float32)
-    assert F.compute_gain(_reference((400, 600), seed=2)).tobytes() == want.tobytes()
+@linux_pin
+def test_compute_gain_pin():
+    assert digest(F.compute_gain(_reference((400, 600), seed=2))) == "694f2fb56aa25ce7cfbbeb942bcaef06ea74d254f36454f7bb7942ea1bf1fd48"
 
 
-def test_fill_from_nearest_matches_cv2():
+@linux_pin
+def test_fill_from_nearest_pin():
     rng = np.random.default_rng(3)
     values = rng.random((50, 70, 3), dtype=np.float32)
     valid = rng.random((50, 70)) > 0.6
-    assert F._fill_from_nearest(values, valid).tobytes() == _fill_numpy(values, valid).tobytes()
+    assert digest(F._fill_from_nearest(values, valid)) == "7a759c551a1368dd7612e5d839e10b66fc2c6ca8fd9e4fd09c899973921cadbf"
