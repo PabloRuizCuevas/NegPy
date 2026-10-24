@@ -371,7 +371,7 @@ class GPUEngine:
         self._uniform_sizes = {
             "geometry": 64,
             "normalization": 160,
-            "exposure": 448,
+            "exposure": 464,
             "transfer": 224,
             "clahe_u": 32,
             "lab": 96,
@@ -428,7 +428,7 @@ class GPUEngine:
         self._local_ev_key: Optional[Tuple] = None
         # (key, maps): mask raster, keyed without grade; grade only rescales plane 1 at upload.
         self._local_maps_cache: Optional[Tuple[Tuple, Optional[np.ndarray]]] = None
-        self._mask_plane: Optional[Tuple[Tuple, np.ndarray, float]] = None
+        self._mask_plane: Optional[Tuple[Tuple, np.ndarray, float, Optional[Tuple[float, float]]]] = None
         self._diffusion_grid: Optional[Tuple[Tuple, np.ndarray]] = None
         self._diffusion_plane: Optional[Tuple[Tuple, Optional[np.ndarray]]] = None
         # Identity of the plane currently sitting in the contrast_mask texture.
@@ -666,7 +666,7 @@ class GPUEngine:
         analysis_source_hash: Optional[str] = None,
         cam_xyz: Optional[list] = None,
         camera_wb: Optional[list] = None,
-        contrast_mask_override: Optional[Tuple[np.ndarray, float, Tuple[int, int, int, int]]] = None,
+        contrast_mask_override: Optional[Tuple[np.ndarray, float, Optional[Tuple[float, float]], Tuple[int, int, int, int]]] = None,
         film_base: Optional[tuple] = None,
         source_base_log: Any = NOT_READ,
         sabattier_sigma_override: Optional[float] = None,
@@ -682,7 +682,7 @@ class GPUEngine:
         map already in the post-geometry frame; tiled export passes a per-tile slice.
         When None and masks are present, it is computed here from ``settings.local``.
 
-        ``contrast_mask_override`` is (plane, centre, printed frame in rotated pixels),
+        ``contrast_mask_override`` is (plane, centre, tails, printed frame in rotated pixels),
         built once per tiled export because a tile cannot see the pre-geometry source.
         """
         if not self.gpu.is_available:
@@ -966,6 +966,7 @@ class GPUEngine:
         # Keyed off the meter, so only the Contrast Mask slider's own value stays live.
         mask_plane = None
         mask_centre = 0.5
+        mask_tails = None
         mask_key = None
         # The printed frame in rotated pixels; the shader maps a plane onto it and clamps
         # outside, which is expand_mask_plane's edge padding.
@@ -974,12 +975,12 @@ class GPUEngine:
         y2_f, x2_f = min(h_rot, y2_f), min(w_rot, x2_f)
         frame_rect = (x1_f, y1_f, x2_f - x1_f, y2_f - y1_f)
         mask_rect = None
-        if settings.exposure.contrast_mask != 0.0:
+        if settings.exposure.contrast_mask_strength > 0.0 and render_path(settings.process) is RenderPath.PRINT:
             if tiling_mode:
                 # A tile holds no pre-geometry source, so the caller builds the plane once
                 # for the whole export and the frame shifts into tile coords here.
                 if contrast_mask_override is not None:
-                    mask_plane, mask_centre, frame = contrast_mask_override
+                    mask_plane, mask_centre, mask_tails, frame = contrast_mask_override
                     mask_key = ("tiled",)
                     mask_rect = (frame[0] - global_offset[0], frame[1] - global_offset[1], frame[2], frame[3])
             else:
@@ -989,7 +990,6 @@ class GPUEngine:
                     bounds,
                     roi,
                     (h_rot, w_rot),
-                    settings.exposure.mask_spacer,
                     (geo.rotation, geo.fine_rotation, geo.flip_horizontal, geo.flip_vertical, geo.converge_v, geo.converge_h, k1_eff),
                 )
                 if self._mask_plane is None or self._mask_plane[0] != mask_key:
@@ -1000,12 +1000,12 @@ class GPUEngine:
                             bounds,
                             unmix_m,
                             roi_norm=normalized_roi(roi, (h_rot, w_rot)),
-                            spacer=settings.exposure.mask_spacer,
                             **geometry_kwargs(settings.geometry, k1_eff),
                         ),
                     )
                 mask_plane = self._mask_plane[1]
                 mask_centre = self._mask_plane[2]
+                mask_tails = self._mask_plane[3]
                 mask_rect = frame_rect
 
         mask_uniform = None
@@ -1013,10 +1013,9 @@ class GPUEngine:
             if mask_rect[2] < 1 or mask_rect[3] < 1:
                 mask_plane = None
             else:
-                from negpy.features.exposure.logic import contrast_mask_scale
-
                 mask_uniform = (
-                    contrast_mask_scale(settings.exposure.contrast_mask, luminance_density_range(bounds)),
+                    mask_centre,
+                    mask_tails,
                     float(mask_rect[0]),
                     float(mask_rect[1]),
                     float(mask_rect[2]),
@@ -1689,6 +1688,7 @@ class GPUEngine:
             "film_base_density": base_scan_density(read_base_log, unmix_m),
             "metered_anchor": metered_anchor,
             "contrast_mask_centre": mask_centre,
+            "contrast_mask_tails": mask_tails,
             "textural_range": textural_range,
             "shadow_point": shadow_point,
             "highlight_point": highlight_point,
@@ -1813,7 +1813,7 @@ class GPUEngine:
         unmix: Optional[np.ndarray] = None,
         cam_xyz: Optional[list] = None,
         camera_wb: Optional[list] = None,
-        contrast_mask: Optional[Tuple[float, float, float, float, float]] = None,
+        contrast_mask: Optional[Tuple[Any, ...]] = None,
         sabattier_sigma: float = 0.0,
         plane_rect: Optional[Tuple[float, float, float, float]] = None,
         diffusion_mix: float = 0.0,
@@ -1893,6 +1893,7 @@ class GPUEngine:
         from negpy.features.exposure.logic import (
             _reference_linear_value,
             cast_solve_inputs,
+            contrast_mask_coeffs,
             filtration_offsets,
             neutral_axis_affine,
             per_channel_dye_separation,
@@ -2137,9 +2138,16 @@ class GPUEngine:
         key_rows = np.zeros((MAX_KEYED_MASKS, 4), dtype=np.float32)
         if key_params is not None:
             key_rows[: len(key_params)] = key_params
-        contrast_mask_scale_v = float(contrast_mask[0]) if contrast_mask else 0.0
+        # (lim, a, b, lo, hi, g_lo, g_hi); lim 0 = off.
+        mask_k = (0.0,) * 7
+        if contrast_mask:
+            coeffs = contrast_mask_coeffs(
+                exp.contrast_mask_strength, contrast_mask[0], contrast_mask[1], slopes, pivots, wb_offsets, lum_range
+            )
+            if coeffs is not None:
+                mask_k = (coeffs[6], *coeffs[:6])
         plane_rect_v = (
-            tuple(float(v) for v in contrast_mask[1:])
+            tuple(float(v) for v in contrast_mask[2:])
             if contrast_mask
             else (tuple(float(v) for v in plane_rect) if plane_rect is not None else (0.0, 0.0, 1.0, 1.0))
         )
@@ -2226,10 +2234,12 @@ class GPUEngine:
                 max(exp.preflash, 0.0),
                 *preflash_params(exp.grade, d_min, paper, mg),
             )
-            # Contrast Mask: stops per plane unit (0 = off), then the printed frame's origin and span in rotated pixels, shared
-            # with the Diffusion plane; w = the diffusion mix (0 = off). The shader does the upscale.
-            + struct.pack("ffff", contrast_mask_scale_v, plane_rect_v[0], plane_rect_v[1], diffusion_mix)
-            + struct.pack("ffff", plane_rect_v[2], plane_rect_v[3], 0.0, 0.0)
+            # Contrast Mask: its stop cap (0 = off), then the printed frame's origin and span in rotated pixels, shared
+            # with the Diffusion plane; w = the diffusion mix (0 = off). The shader does the upscale. The span's
+            # zw and the next row carry the rest of contrast_mask_coeffs.
+            + struct.pack("ffff", mask_k[0], plane_rect_v[0], plane_rect_v[1], diffusion_mix)
+            + struct.pack("ffff", plane_rect_v[2], plane_rect_v[3], mask_k[3], mask_k[4])
+            + struct.pack("ffff", mask_k[1], mask_k[2], mask_k[5], mask_k[6])
             + key_rows.tobytes()
             + key_meta
             # Diffusion: each channel's log range, one normalized unit of val in density; w = the
@@ -2972,14 +2982,13 @@ class GPUEngine:
             global_highlight_point = measure_highlight_point_from_log(_meter_grid(), meter_bounds, None, 0.0)
 
         global_mask = None
-        if settings.exposure.contrast_mask != 0.0:
+        if settings.exposure.contrast_mask_strength > 0.0 and render_path(settings.process) is RenderPath.PRINT:
             global_mask = (
                 *contrast_mask_plane(
                     img,
                     global_bounds,
                     unmix_m,
                     roi_norm=normalized_roi(roi, (h_rot, w_rot)),
-                    spacer=settings.exposure.mask_spacer,
                     **geometry_kwargs(settings.geometry, k1_eff),
                 ),
                 (x1, y1, crop_w, crop_h),

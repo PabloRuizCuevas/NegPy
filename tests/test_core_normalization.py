@@ -52,9 +52,10 @@ def test_contrast_mask_tail_matches_numpy(sigma):
         np.ascontiguousarray(_lum32(val), dtype=np.float32), (0, 0), sigma, sigmaY=0, borderType=cv2.BORDER_REPLICATE
     )
     centre = float(blurred.mean())
-    plane, got = negpy_core.contrast_mask_tail(val, sigma)
+    plane, got, lo, hi = negpy_core.contrast_mask_tail(val, sigma)
     assert got == np.float32(centre)
     np.testing.assert_array_equal(plane, blurred - centre)
+    np.testing.assert_allclose((lo, hi), np.percentile(_lum32(val), (1.0, 99.0)), rtol=1e-6)
 
 
 @cv2_oracle
