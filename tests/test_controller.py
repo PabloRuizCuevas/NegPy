@@ -832,6 +832,25 @@ class TestAppController(unittest.TestCase):
 
         self.assertEqual(tasks[-1].generation, self.controller._prefetch_gen)
 
+    def test_a_frame_without_the_source_fact_asks_the_decode_to_measure_it(self):
+        tasks = []
+        self.controller.preview_load_requested.connect(tasks.append)
+
+        self.controller.load_file("dummy.dng")
+
+        self.assertTrue(tasks[-1].detect_source)
+
+    def test_a_frame_with_the_source_fact_does_not_measure_it_again(self):
+        tasks = []
+        self.controller.preview_load_requested.connect(tasks.append)
+        state = self.controller.state
+        state.config = replace(state.config, process=replace(state.config.process, source_color=False))
+
+        self.controller.load_file("dummy.dng")
+
+        self.assertEqual(self.controller.state.config.process.source_color, False)
+        self.assertFalse(tasks[-1].detect_source)
+
     def test_lens_toggles_keep_the_displayed_texture_during_reload(self):
         from negpy.infrastructure.gpu.resources import GPUTexture
         from negpy.features.lens.models import LensCorrections
@@ -2337,6 +2356,21 @@ class TestAppController(unittest.TestCase):
         self.assertIsNone(self.controller.state.preview_ir)
         mock_slot.assert_called_once_with()
         self.controller.request_render.assert_called_once_with()
+
+    def test_the_measured_source_fact_is_stored_and_keeps_the_saved_mode(self):
+        from negpy.features.process.models import ProcessMode
+
+        self.controller.request_render = MagicMock()
+        self.controller._requested_file_path = "dummy.dng"
+        state = self.controller.state
+        state.config = replace(state.config, process=replace(state.config.process, process_mode=ProcessMode.BW))
+        state.is_dirty = False
+
+        self.controller._on_preview_loaded("dummy.dng", object(), (10, 20), "", None, "", None, None, None, True)
+
+        self.assertIs(state.config.process.source_color, True)
+        self.assertEqual(state.config.process.process_mode, ProcessMode.BW)
+        self.assertTrue(state.is_dirty)
 
     def test_the_decode_orientation_reaches_the_render_for_the_flat_field(self):
         import numpy as np

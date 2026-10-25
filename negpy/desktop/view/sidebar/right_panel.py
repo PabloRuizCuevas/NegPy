@@ -1028,7 +1028,9 @@ class RightPanel(QWidget):
             filtration_offsets,
         )
 
-        config = self.controller.session.state.config.exposure
+        from negpy.features.exposure.bw_filter import printed_exposure
+
+        config = printed_exposure(self.controller.session.state.config.process, self.controller.session.state.config.exposure)
         process_mode = self.controller.session.state.config.process.process_mode
 
         # While peeking the flat master, plot the flat curve so the chart matches what the canvas

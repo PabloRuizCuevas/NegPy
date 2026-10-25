@@ -50,7 +50,7 @@ _COLOR_CLIP_MAX = 5.0
 # silver grey, slide blue.
 _MODES = (
     (ProcessMode.C41, tr("Color"), THEME.mode_c41, tr("Color Negative (C-41): orange-masked negative")),
-    (ProcessMode.BW, tr("B&W"), THEME.mode_bw, tr("B&W Negative: panchromatic silver negative")),
+    (ProcessMode.BW, tr("B&W"), THEME.mode_bw, tr("B&W: a black-and-white print, from a B&W negative or a color negative.")),
     (ProcessMode.E6, tr("Slide"), THEME.mode_e6, tr("Transparency: slide or reversal film")),
 )
 

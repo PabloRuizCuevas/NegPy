@@ -84,6 +84,7 @@ from negpy.features.transparency.logic import (
 )
 from negpy.features.process.capture_color import apply_camera_matrix, camera_to_working_matrix
 from negpy.features.process.logic import should_fold_camera_wb
+from negpy.features.exposure.bw_filter import collapse_weights, plane_weights, printed_exposure
 from negpy.features.process.models import ProcessMode, per_channel_point_offsets, pooled_neutral_axis
 from negpy.features.process.path import RenderPath, render_path
 from negpy.infrastructure.gpu.device import GPUDevice
@@ -371,7 +372,7 @@ class GPUEngine:
         self._uniform_sizes = {
             "geometry": 64,
             "normalization": 160,
-            "exposure": 464,
+            "exposure": 480,
             "transfer": 224,
             "clahe_u": 32,
             "lab": 96,
@@ -984,12 +985,14 @@ class GPUEngine:
                     mask_rect = (frame[0] - global_offset[0], frame[1] - global_offset[1], frame[2], frame[3])
             else:
                 geo = settings.geometry
+                bw_weights = plane_weights(settings.process, settings.exposure)
                 mask_key = (
                     analysis_key,
                     bounds,
                     roi,
                     (h_rot, w_rot),
                     (geo.rotation, geo.fine_rotation, geo.flip_horizontal, geo.flip_vertical, geo.converge_v, geo.converge_h, k1_eff),
+                    bw_weights,
                 )
                 if self._mask_plane is None or self._mask_plane[0] != mask_key:
                     self._mask_plane = (
@@ -999,6 +1002,7 @@ class GPUEngine:
                             bounds,
                             unmix_m,
                             roi_norm=normalized_roi(roi, (h_rot, w_rot)),
+                            bw_weights=bw_weights,
                             **geometry_kwargs(settings.geometry, k1_eff),
                         ),
                     )
@@ -1036,7 +1040,7 @@ class GPUEngine:
                 diff_bounds = LogNegativeBounds(
                     tuple(bounds.floors[ch] + wp3[ch] for ch in range(3)), tuple(bounds.ceils[ch] + bp3[ch] for ch in range(3))
                 )
-                panchromatic = settings.process.process_mode == ProcessMode.BW
+                diff_weights = plane_weights(settings.process, settings.exposure)
                 grid_key = (
                     analysis_key,
                     roi,
@@ -1054,11 +1058,11 @@ class GPUEngine:
                             **geometry_kwargs(geo, k1_eff),
                         ),
                     )
-                diff_key = (grid_key, tuple(diff_bounds.floors), tuple(diff_bounds.ceils), panchromatic)
+                diff_key = (grid_key, tuple(diff_bounds.floors), tuple(diff_bounds.ceils), diff_weights)
                 # A None plane (an unmetered frame) is cached under its key like any other.
                 cached = self._diffusion_plane
                 if cached is None or cached[0] != diff_key:
-                    cached = (diff_key, diffusion_plane(self._diffusion_grid[1], diff_bounds, panchromatic))
+                    cached = (diff_key, diffusion_plane(self._diffusion_grid[1], diff_bounds, diff_weights))
                     self._diffusion_plane = cached
                 diff_plane = cached[1]
                 diff_rect = frame_rect
@@ -2013,7 +2017,7 @@ class GPUEngine:
             resolve_saturation_matrix,
         )
 
-        exp = settings.exposure
+        exp = printed_exposure(settings.process, settings.exposure)
         paper = effective_paper_profile(exp.paper_profile, settings.process.process_mode)
         pc = effective_constants(paper)  # tonal overrides; non-paper keys == EXPOSURE_CONSTANTS
         d_min = paper.d_min if exp.paper_dmin else 0.0
@@ -2137,9 +2141,7 @@ class GPUEngine:
         # (lim, a, b, lo, hi, g_lo, g_hi); lim 0 = off.
         mask_k = (0.0,) * 7
         if contrast_mask:
-            coeffs = contrast_mask_coeffs(
-                exp.contrast_mask_strength, contrast_mask[0], slopes, pivots, wb_offsets, lum_range
-            )
+            coeffs = contrast_mask_coeffs(exp.contrast_mask_strength, contrast_mask[0], slopes, pivots, wb_offsets, lum_range)
             if coeffs is not None:
                 mask_k = (coeffs[6], *coeffs[:6])
         plane_rect_v = (
@@ -2243,6 +2245,7 @@ class GPUEngine:
             + struct.pack("ffff", *channel_density_ranges(LogNegativeBounds(adj_floors, adj_ceils)), black_hold_taper(exp, paper))
             # Print-stock LUT: xyz = e_max (0 = no LUT), w = the black that BPC maps to 0.
             + struct.pack("ffff", *lut_row)
+            + struct.pack("ffff", *collapse_weights(settings.process, exp), 0.0)
         )
 
         cls = float(settings.lab.clahe_strength)
@@ -2985,6 +2988,7 @@ class GPUEngine:
                     global_bounds,
                     unmix_m,
                     roi_norm=normalized_roi(roi, (h_rot, w_rot)),
+                    bw_weights=plane_weights(settings.process, settings.exposure),
                     **geometry_kwargs(settings.geometry, k1_eff),
                 ),
                 (x1, y1, crop_w, crop_h),
@@ -3003,7 +3007,7 @@ class GPUEngine:
                 roi_norm=normalized_roi(roi, (h_rot, w_rot)),
                 **geometry_kwargs(settings.geometry, k1_eff),
             )
-            plane = diffusion_plane(grid, trimmed, settings.process.process_mode == ProcessMode.BW)
+            plane = diffusion_plane(grid, trimmed, plane_weights(settings.process, settings.exposure))
             global_diffusion = None if plane is None else (plane, (x1, y1, crop_w, crop_h))
             self._mask_tex_key = None
 

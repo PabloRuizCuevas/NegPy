@@ -209,6 +209,7 @@ CATALOG: list[tuple[str, tuple[SettingRow, ...]]] = [
         _row(mark("Shadows CMY"), "exposure", "shadow_cyan", "shadow_magenta", "shadow_yellow", channels="CMY"),
         _row(mark("Highlights CMY"), "exposure", "highlight_cyan", "highlight_magenta", "highlight_yellow", channels="CMY"),
         _row(mark("Cast Removal"), "exposure", "cast_removal_strength", sticky=True),
+        _row(mark("Filter"), "exposure", "bw_filter"),
     )),
     (mark("Lab"), (
         _row(mark("Chroma"), "lab", "saturation", sticky=True),
@@ -384,7 +385,7 @@ def rows_for_section(section: str) -> list[SettingRow]:
 
 _LISTED = frozenset((r.section, f) for r in all_rows() for f in r.fields)
 # Written by a render, not by the user, so never a change of its own.
-_MEASURED = frozenset({("process", "local_floors"), ("process", "local_ceils"), ("process", "meter_key")})
+_MEASURED = frozenset({("process", "local_floors"), ("process", "local_ceils"), ("process", "meter_key"), ("process", "source_color")})
 
 # The card a change lives on when no catalog row lists its field (a crop rectangle, a heal, a mask).
 _UNLISTED_CARD = {
@@ -442,6 +443,7 @@ COLOR_FIELDS = (
     "highlight_magenta",
     "highlight_yellow",
     "cast_removal_strength",
+    "bw_filter",
 )
 
 GEOMETRY_FIELDS = (
