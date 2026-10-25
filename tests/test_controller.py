@@ -7132,6 +7132,54 @@ class TestLibrarySearch(unittest.TestCase):
             self.controller.open_roll("not-a-real-id")
         discovery.assert_not_called()
 
+    def test_save_as_roll_starts_from_the_open_rolls_settings(self):
+        """The frames look the same in the new roll: its modes, defaults and their locks."""
+        self._dict_repo()
+        from negpy.services.assets import rolls
+
+        repo = self.controller.session.repo
+        source = rolls.recognize_folder(repo, "/photos/portra")
+        rolls.set_roll_defaults(repo, source, film_stock_id="portra400")
+        rolls.add_frame_seed(repo, source, cast_removal_strength=0.5)
+        rolls.set_section_push(repo, source, "lab", {"saturation": 1.2})
+        rolls.set_frame_override(repo, source, "h12", "film", True)
+        rolls.set_frame_override(repo, source, "h99", "film", True)
+        rolls.set_roll_normalization(repo, source, (0.1, 0.1, 0.1), (0.9, 0.9, 0.9))
+        rolls.create_scene(repo, source, "Beach", ["h12"])
+        repo.save_global_setting("half_frame_mode_by_roll", {source: True})
+        repo.save_global_setting("rgbscan_mode_by_roll", {source: True})
+        self.controller.state.active_roll_id = source
+        self.controller.state.uploaded_files = [
+            {"path": "/photos/portra/12.tif", "hash": f"h12#roll:{source}"},
+            {"path": "/photos/portra/13.tif", "hash": "h13"},
+        ]
+
+        roll_id = self.controller.create_roll_from_session("Portra picks")
+
+        entry = rolls.roll_for_id(repo, roll_id)
+        self.assertEqual(entry["defaults"], {"film_stock_id": "portra400"})
+        self.assertEqual(entry["frame_seed"], {"cast_removal_strength": 0.5})
+        self.assertEqual(entry["section_pushes"], {"lab": {"saturation": 1.2}})
+        self.assertEqual(entry["frame_overrides"], {"h12": ["film"]})
+        self.assertNotIn("normalization", entry)
+        self.assertNotIn("scenes", entry)
+        self.assertTrue(self.controller.half_frame_mode_for_roll(roll_id))
+        self.assertTrue(self.controller.rgb_scan_mode_for_roll(roll_id))
+
+    def test_save_as_roll_with_no_roll_open_takes_the_no_roll_modes(self):
+        self._dict_repo()
+        from negpy.services.assets import rolls
+
+        repo = self.controller.session.repo
+        repo.save_global_setting("half_frame_mode", True)
+        self.controller.state.active_roll_id = None
+        self.controller.state.uploaded_files = [{"path": "/a.nef", "hash": "h1"}]
+
+        roll_id = self.controller.create_roll_from_session("Picks")
+
+        self.assertTrue(self.controller.half_frame_mode_for_roll(roll_id))
+        self.assertNotIn("defaults", rolls.roll_for_id(repo, roll_id))
+
     def test_create_roll_from_session_saves_the_loaded_paths(self):
         self._dict_repo()
         self.controller.state.uploaded_files = [{"path": "/a.nef"}, {"path": "/b.nef"}]

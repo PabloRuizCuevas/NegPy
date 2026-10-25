@@ -1956,13 +1956,17 @@ class AppController(QObject):
         if not paths:
             self.set_status(tr("Nothing loaded to save as a roll"), 3000)
             return None
+        source = self.state.active_roll_id
         roll_id = rolls.create_virtual_roll(self.session.repo, name, paths)
-        # Seed the new roll's own half-frame toggle from the ad hoc session's, so saving as
-        # a roll doesn't silently reset it to off the next time this roll is opened.
+        # The new roll starts from the open roll's settings, or the no-roll ones without
+        # one, so the frames look the same once it becomes the open roll.
         by_roll = dict(self.session.repo.get_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, default=None) or {})
-        by_roll[roll_id] = self.half_frame_mode_for_roll(None)
+        by_roll[roll_id] = self.half_frame_mode_for_roll(source)
         self.session.repo.save_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, by_roll)
-        self._save_rgb_scan_mode(self.rgb_scan_mode_for_roll(None), roll_id)
+        self._save_rgb_scan_mode(self.rgb_scan_mode_for_roll(source), roll_id)
+        if source:
+            hashes = {rolls.unforked_hash(f["hash"]) for f in self.state.uploaded_files if f.get("hash")}
+            rolls.copy_roll_settings(self.session.repo, source, roll_id, hashes)
         self.state.active_roll_id = roll_id
         self._announce_roll_modes(roll_id)
         self.set_status(tr("Saved as roll “{name}”", name=name), 3000)

@@ -1033,3 +1033,26 @@ def test_a_baseline_from_an_older_analysis_is_stale_for_the_frames_that_ride_it(
 
     monkeypatch.setattr(rolls, "BOUNDS_VERSION", rolls.BOUNDS_VERSION + 1)
     assert [rolls.frame_baseline_stale(repo, ProcessConfig(baseline_source=s)) for s in sources] == [True, True, False, False]
+
+
+def test_copy_roll_settings_takes_the_roll_level_parts_and_the_named_locks():
+    from negpy.services.assets.rolls import add_frame_seed, copy_roll_settings, set_frame_override, set_roll_defaults
+
+    repo = _repo()
+    source = recognize_folder(repo, "/scans/portra")
+    target = create_virtual_roll(repo, "Picks", ["/scans/portra/1.tif"])
+    set_roll_defaults(repo, source, film_stock_id="portra400")
+    add_frame_seed(repo, source, cast_removal_strength=0.5)
+    set_frame_override(repo, source, "h1", "film", True)
+    set_frame_override(repo, source, "h2", "film", True)
+
+    copy_roll_settings(repo, source, target, {"h1"})
+    set_roll_defaults(repo, source, film_stock_id="hp5")
+
+    entry = roll_for_id(repo, target)
+    assert entry["defaults"] == {"film_stock_id": "portra400"}
+    assert entry["frame_seed"] == {"cast_removal_strength": 0.5}
+    assert entry["frame_overrides"] == {"h1": ["film"]}
+    assert entry["member_paths"] == ["/scans/portra/1.tif"]
+    copy_roll_settings(repo, "not-a-roll", target, {"h1"})
+    assert roll_for_id(repo, target) == entry

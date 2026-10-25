@@ -13,6 +13,7 @@ a handful of film, rig and scanning facts that describe the roll rather than one
 frame's own look.
 """
 
+import copy
 import os
 import re
 import time
@@ -693,6 +694,24 @@ def restore_roll_fields(repo: Any, roll_id: str, snapshot: Dict[str, Any]) -> No
         else:
             defaults[name] = value
     entry["defaults"] = defaults
+    _write(repo, store)
+
+
+def copy_roll_settings(repo: Any, from_id: str, to_id: str, file_hashes: Collection[str]) -> None:
+    """Give roll *to_id* the roll-level settings of *from_id* (its defaults, frame seed and
+    card pushes) and the card locks of *file_hashes* (unforked), in one write. A lock is
+    what keeps a frame's own value against the copied defaults. Scenes, forks and the
+    baseline stay behind. No-op for an unknown id."""
+    store = _read(repo)
+    source, target = store.get(from_id), store.get(to_id)
+    if source is None or target is None:
+        return
+    for key in ("defaults", "frame_seed", "section_pushes"):
+        if source.get(key):
+            target[key] = copy.deepcopy(source[key])
+    locks = {h: list(cards) for h, cards in source.get("frame_overrides", {}).items() if h in file_hashes and cards}
+    if locks:
+        target["frame_overrides"] = locks
     _write(repo, store)
 
 
