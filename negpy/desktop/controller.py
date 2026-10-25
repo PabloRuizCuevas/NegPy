@@ -374,6 +374,30 @@ class _DiscoveryRequest:
     skip_paths: frozenset = frozenset()
 
 
+@dataclass(frozen=True)
+class ReanalyzeGroup:
+    """One baseline a selection reruns: the roll (``scene_id`` None) or one scene."""
+
+    scene_id: Optional[str]
+    name: str
+    ordinal: int
+    frames: List[dict]
+    selected: int
+
+
+@dataclass(frozen=True)
+class ReanalyzePlan:
+    """What Reanalyze does to a selection: each frame reruns the roll or scene baseline it
+    belongs to, a frame on its own bounds is measured alone, and a frame with Lock Bounds is skipped."""
+
+    groups: List[ReanalyzeGroup]
+    own: List[dict]
+    locked: int
+    changed: int
+    uncropped: int
+    group_frames: int
+
+
 # Sections a scan peek shows itself or that never reach the pixels; an edit to any other section ends the peek.
 _PEEK_SHOWN_SECTIONS = NON_PIXEL_SECTIONS | {"geometry"}
 
@@ -722,6 +746,8 @@ class AppController(QObject):
         self._active_batch_token: Optional[int] = None
         self._normalization_scope: Optional[str] = None
         self._scene_queue: List[str] = []
+        # Frames a Reanalyze run measures alone: every baseline in the run leaves them on their own bounds.
+        self._keep_own: frozenset = frozenset()
         # True while a hot-folder-triggered discovery owns the batch lane. Thumbnail
         # loading is an independent background queue and never owns this state.
         self._hot_folder_sequence_active = False
@@ -731,8 +757,8 @@ class AppController(QObject):
         # Per frame hash: its resolved Auto Crop when the run started.
         self._autocrop_started_auto: Dict[str, bool] = {}
         self._autocrop_cancel_requested = False
-        # The analysis a run of Auto-crop all frames was started for: (scene id or None,), run when it finishes.
-        self._analysis_after_crop: Optional[Tuple[Optional[str], bool]] = None
+        # The analysis a run of Auto-crop all frames was started for, run when it finishes.
+        self._analysis_after_crop: Optional[Callable[[], None]] = None
         # Background thumbnail refresh runs off the shared batch lane entirely — it must
         # never block Export or another user-triggered batch — so it tracks its own
         # generation instead of `_batch_serial`/`_active_batch_token`.
@@ -4546,7 +4572,7 @@ class AppController(QObject):
             self.request_render()
         then, self._analysis_after_crop = self._analysis_after_crop, None
         if then is not None:
-            self._request_normalization(then[0], cropped=True, detect=then[1])
+            then()
 
     def _on_batch_autocrop_cancelled(self) -> None:
         token = self._autocrop_batch_token
@@ -5448,12 +5474,7 @@ class AppController(QObject):
         title = tr("Detect Scenes") if detect else tr("Roll Analysis") if scene_id is None else tr("Scene Analysis")
         if self._batch_busy(title):
             return
-        if scene_id is None:
-            in_scene = set(rolls.scene_by_hash(self.session.repo, self.state.active_roll_id))
-            visible = [self.state.uploaded_files[i] for i in self.session.asset_model.visible_actual_indices_ordered()]
-            frames = [f for f in visible if rolls.unforked_hash(f["hash"]) not in in_scene]
-        else:
-            frames = self._normalization_targets(scene_id)
+        frames = self._roll_analysis_frames() if scene_id is None else self._normalization_targets(scene_id)
         if not frames:
             return
         if detect:
@@ -5463,7 +5484,7 @@ class AppController(QObject):
             return
         waiting = [] if cropped else [f for f in frames if self._waits_for_auto_crop(f)]
         if waiting and self.request_batch_auto_crop(assets=waiting):
-            self._analysis_after_crop = (scene_id, detect)
+            self._analysis_after_crop = lambda: self._request_normalization(scene_id, cropped=True, detect=detect)
             return
         if detect:
             batch_title = tr("Detecting scenes")
@@ -5474,6 +5495,7 @@ class AppController(QObject):
         if self._begin_batch("normalization", batch_title, abortable=True) is None:
             return
         self._scene_queue = []
+        self._keep_own = frozenset()
         self.set_status(tr("Starting {title}…", title=title))
         self._dispatch_normalization(scene_id, frames, detect=detect)
 
@@ -5493,12 +5515,110 @@ class AppController(QObject):
             return
         self._analyze_scene_queue(queue)
 
-    def _analyze_scene_queue(self, queue: List[Tuple[str, List[dict]]]) -> None:
-        """Scene Analysis on each (scene id, loaded members) in turn, as one batch."""
-        if not queue or self._begin_batch("normalization", tr("Analyzing scenes"), abortable=True) is None:
+    def _analyze_scene_queue(
+        self, queue: List[Tuple[Optional[str], List[dict]]], title: str = "", keep_own: frozenset = frozenset()
+    ) -> None:
+        """Analysis of each (scene id, loaded members) in turn, as one batch. Only the first
+        entry may be the roll (None): the later ones resolve their frames as scenes."""
+        if not queue or self._begin_batch("normalization", title or tr("Analyzing scenes"), abortable=True) is None:
             return
-        self._scene_queue = [sid for sid, _frames in queue[1:]]
+        self._scene_queue = [sid for sid, _frames in queue[1:] if sid is not None]
+        self._keep_own = keep_own
         self._dispatch_normalization(*queue[0])
+
+    def _roll_analysis_frames(self) -> List[dict]:
+        """The frames Roll Analysis reads: the visible ones outside every scene."""
+        in_scene = set(rolls.scene_by_hash(self.session.repo, self.state.active_roll_id))
+        visible = [self.state.uploaded_files[i] for i in self.session.asset_model.visible_actual_indices_ordered()]
+        return [f for f in visible if rolls.unforked_hash(f["hash"]) not in in_scene]
+
+    def _reanalyze_targets(self) -> List[dict]:
+        state = self.state
+        return [
+            state.uploaded_files[i] for i in (state.selected_indices or [state.selected_file_idx]) if 0 <= i < len(state.uploaded_files)
+        ]
+
+    def reanalyze_plan(self) -> ReanalyzePlan:
+        """Resolves the selection (else the open frame) into the baselines it follows. A frame the
+        last analysis kept out as far from the pool reruns that baseline, so the pool decides again."""
+        repo, roll_id = self.session.repo, self.state.active_roll_id
+        by_hash = rolls.scene_by_hash(repo, roll_id)
+        outliers: Set[str] = set()
+        if roll_id:
+            scene_runs = (rolls.scene_normalization(repo, roll_id, sid) for sid, _entry in rolls.roll_scenes(repo, roll_id))
+            for run in (rolls.roll_normalization(repo, roll_id), *scene_runs):
+                outliers.update((run or {}).get("outliers") or ())
+        own: List[dict] = []
+        locked = 0
+        picked: Dict[Optional[str], int] = {}
+        for f in self._reanalyze_targets():
+            proc = self._config_for_batch_asset(f).process
+            if proc.lock_bounds:
+                locked += 1
+            elif not (proc.use_luma_average and proc.use_color_average) and f["hash"] not in outliers:
+                own.append(f)
+            else:
+                scene = by_hash.get(rolls.unforked_hash(f["hash"]))
+                key = scene[1] if scene else None
+                picked[key] = picked.get(key, 0) + 1
+
+        groups: List[ReanalyzeGroup] = []
+        if None in picked:
+            entry = rolls.roll_for_id(repo, roll_id) if roll_id else None
+            groups.append(ReanalyzeGroup(None, entry["name"] if entry else "", 0, self._roll_analysis_frames(), picked[None]))
+        for ordinal, sid, name in sorted({(o, s, n) for o, s, n in by_hash.values() if s in picked}):
+            groups.append(ReanalyzeGroup(sid, name, ordinal, self._normalization_targets(sid), picked[sid]))
+
+        own_hashes = {f["hash"] for f in own}
+        changed, uncropped, group_frames = set(own_hashes), 0, 0
+        for f in {f["hash"]: f for g in groups for f in g.frames}.values():
+            config = self._config_for_batch_asset(f)
+            group_frames += 1
+            if not (config.geometry.crop_rect or config.geometry.crop_from_auto):
+                uncropped += 1
+            if not config.process.lock_bounds:
+                changed.add(f["hash"])
+        return ReanalyzePlan(groups, own, locked, len(changed), uncropped, group_frames)
+
+    def run_reanalyze(self, plan: ReanalyzePlan) -> None:
+        """Measures the plan's own-bounds frames again, then reruns its roll and scene baselines
+        as one batch. Frames that wait for Auto Crop are cropped first."""
+        if plan.groups and self._batch_busy(tr("Reanalyze")):
+            return
+        if plan.own:
+            self._clear_local_bounds(plan.own)
+        if not plan.groups:
+            self.set_status(tr("{value} measured again", value=count_of(len(plan.own), "frame")), 3000)
+            return
+        queue = [(g.scene_id, g.frames) for g in plan.groups]
+        keep_own = frozenset(f["hash"] for f in plan.own)
+
+        def analyze() -> None:
+            self._analyze_scene_queue(queue, tr("Reanalyzing"), keep_own)
+
+        waiting = [f for g in plan.groups for f in g.frames if self._waits_for_auto_crop(f)]
+        if waiting and self.request_batch_auto_crop(assets=waiting):
+            self._analysis_after_crop = analyze
+            return
+        analyze()
+
+    def _clear_local_bounds(self, frames: List[dict]) -> None:
+        """Reanalyze Frame for each of *frames*: the open one measures at its next render, the
+        others at their thumbnail refresh."""
+        changed: List[str] = []
+        for f in frames:
+            if f["hash"] == self.state.current_file_hash:
+                proc = self.state.config.process
+                self.session.update_config(replace(self.state.config, process=replace(proc, **invalidate_local_bounds(proc))), persist=True)
+                self.request_render()
+                continue
+            p = self.session.repo.load_file_settings(f["hash"]) or self.session.config_for_asset(f)
+            new_p = replace(p, process=replace(p.process, **invalidate_local_bounds(p.process)))
+            self.session.push_external_history(f["hash"], p, new_p)
+            self.session.repo.save_file_settings(f["hash"], new_p, file_path=f["path"])
+            changed.append(f["hash"])
+        if changed:
+            self.session.frames_edited_offscreen.emit(changed)
 
     def request_detect_scenes(self) -> None:
         """Detect Scenes: measure the visible frames outside every scene and find the groups under
@@ -5660,7 +5780,7 @@ class AppController(QObject):
         source = f"scene:{scene_id}" if scene_id else (f"roll:{roll_id}" if roll_id else "")
         outliers = tuple(outlier_hashes)
         targets = self._normalization_targets(scene_id)
-        locked_skipped = self._push_bounds(targets, locked_floors, locked_ceils, None, source, outliers, axis)
+        locked_skipped = self._push_bounds(targets, locked_floors, locked_ceils, None, source, (*outliers, *self._keep_own), axis)
 
         if scene_id is None:
             if roll_id is not None:

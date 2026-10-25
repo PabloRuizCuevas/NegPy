@@ -3960,6 +3960,97 @@ class TestPresetExportSelected(unittest.TestCase):
 
         self.assertEqual([c.args[2] for c in mock_scene.call_args_list], ["s1", "s2"])
 
+    def _reanalyze_setup(self, own=("h3",), locked=()):
+        """h1 and h3 are scene s1, h2 the open frame outside it; *own* frames read their own bounds."""
+        base = WorkspaceConfig()
+
+        def config(h):
+            proc = replace(base.process, local_floors=(0.1, 0.1, 0.1), local_ceils=(0.9, 0.9, 0.9))
+            proc = replace(proc, use_luma_average=h not in own, use_color_average=h not in own, lock_bounds=h in locked)
+            return replace(base, process=proc)
+
+        self.mock_session_manager.state.config = config("h2")
+        self.mock_session_manager.config_for_asset.side_effect = lambda f: config(f["hash"])
+        self.mock_session_manager.state.selected_indices = [0, 1, 2]
+        return (
+            self._scene_setup(),
+            patch.object(rolls, "roll_for_id", return_value={"name": "Tri-X"}),
+            patch.object(self.controller, "_waits_for_auto_crop", return_value=False),
+        )
+
+    def test_reanalyze_plan_resolves_each_frame_to_what_it_follows(self):
+        scene, roll, crop = self._reanalyze_setup()
+        with scene, roll, crop:
+            plan = self.controller.reanalyze_plan()
+
+        roll_group, scene_group = plan.groups
+        self.assertEqual((roll_group.scene_id, roll_group.name, roll_group.selected), (None, "Tri-X", 1))
+        self.assertEqual([f["hash"] for f in roll_group.frames], ["h2"])
+        self.assertEqual((scene_group.scene_id, scene_group.selected), ("s1", 1))
+        self.assertEqual([f["hash"] for f in scene_group.frames], ["h1", "h3"])
+        self.assertEqual([f["hash"] for f in plan.own], ["h3"])
+        self.assertEqual((plan.locked, plan.changed, plan.group_frames), (0, 3, 3))
+
+    def test_reanalyze_plan_reruns_the_scene_of_a_frame_it_kept_out(self):
+        scene, roll, crop = self._reanalyze_setup()
+        with (
+            scene,
+            roll,
+            crop,
+            patch.object(rolls, "roll_scenes", return_value=[("s1", {"name": "Beach"})]),
+            patch.object(rolls, "scene_normalization", return_value={"outliers": ("h3",)}),
+        ):
+            plan = self.controller.reanalyze_plan()
+
+        self.assertEqual(plan.own, [])
+        self.assertEqual([(g.scene_id, g.selected) for g in plan.groups], [(None, 1), ("s1", 2)])
+
+    def test_reanalyze_plan_skips_locked_frames(self):
+        scene, roll, crop = self._reanalyze_setup(own=(), locked=("h1",))
+        with scene, roll, crop:
+            plan = self.controller.reanalyze_plan()
+
+        self.assertEqual(plan.locked, 1)
+        self.assertEqual([g.scene_id for g in plan.groups], [None, "s1"])
+        self.assertEqual(plan.groups[1].selected, 1)
+        self.assertEqual(plan.changed, 2)
+
+    def test_reanalyze_runs_the_roll_then_the_scene_and_keeps_own_bounds(self):
+        emitted = []
+        self.controller.normalization_requested.connect(emitted.append)
+        scene, roll, crop = self._reanalyze_setup()
+        repo = self.mock_session_manager.repo
+        with scene, roll, crop, patch.object(rolls, "set_roll_normalization"), patch.object(rolls, "set_scene_normalization"):
+            self.controller.run_reanalyze(self.controller.reanalyze_plan())
+            cleared = repo.save_file_settings.call_args_list[0].args
+            self.assertEqual(cleared[0], "h3")
+            self.assertFalse(cleared[1].process.is_local_initialized)
+            self.assertEqual([f.file_info["hash"] for f in emitted[0].frames], ["h2"])
+
+            self.controller._on_normalization_finished((0.1, 0.1, 0.1), (0.9, 0.9, 0.9), [])
+            self.assertEqual([f.file_info["hash"] for f in emitted[1].frames], ["h1", "h3"])
+            repo.save_file_settings.reset_mock()
+            self.controller._on_normalization_finished((0.2, 0.2, 0.2), (0.8, 0.8, 0.8), [])
+
+        saved = {c.args[0]: c.args[1].process for c in repo.save_file_settings.call_args_list}
+        self.assertTrue(saved["h1"].use_luma_average)
+        self.assertFalse(saved["h3"].use_luma_average)
+        self.assertIsNone(self.controller._active_batch)
+
+    def test_reanalyze_of_own_bounds_frames_alone_starts_no_analysis(self):
+        emitted = []
+        self.controller.normalization_requested.connect(emitted.append)
+        scene, roll, crop = self._reanalyze_setup(own=("h1", "h2", "h3"))
+        with scene, roll, crop:
+            plan = self.controller.reanalyze_plan()
+            self.controller.run_reanalyze(plan)
+
+        self.assertEqual(plan.groups, [])
+        self.assertEqual(emitted, [])
+        self.assertEqual({c.args[0] for c in self.mock_session_manager.repo.save_file_settings.call_args_list}, {"h1", "h3"})
+        new_cfg = self.mock_session_manager.update_config.call_args.args[0]
+        self.assertFalse(new_cfg.process.is_local_initialized)
+
     def test_cancel_clears_the_scene_queue(self):
         self.controller._scene_queue = ["s2"]
         self.controller._on_normalization_cancelled()
