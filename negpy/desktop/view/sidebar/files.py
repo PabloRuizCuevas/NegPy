@@ -1743,7 +1743,10 @@ class FileBrowser(QWidget):
         asset = files[state.selected_file_idx] if 0 <= state.selected_file_idx < len(files) else {}
         config = state.config
         meta = config.metadata
-        half_frame = bool(self.controller.half_frame_mode_for_roll(state.active_roll_id)) if state.active_roll_id else False
+        # With no roll open a frame splits by its own roll, so the frame itself says.
+        half_frame = (
+            bool(self.controller.half_frame_mode_for_roll(state.active_roll_id)) if state.active_roll_id else bool(asset.get("half"))
+        )
         table = table_color(state.canvas_bg_index)
         key = (
             (meta.film_stock_id, meta.film, meta.film_manufacturer, meta.film_color_type, meta.format, meta.format_other),

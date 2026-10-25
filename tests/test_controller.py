@@ -686,10 +686,12 @@ class TestAppController(unittest.TestCase):
         self._fake_settings_store()
         self.assertFalse(self.controller.half_frame_mode_for_roll("new-roll"))
 
-    def test_half_frame_mode_for_roll_falls_back_to_the_sticky_flag_with_no_roll(self):
+    def test_half_frame_mode_with_no_roll_is_this_sessions_choice_not_an_app_wide_flag(self):
         store = self._fake_settings_store()
         store["half_frame_mode"] = True
-        store["half_frame_mode_by_roll"] = {"r1": False}
+        self.controller.state.half_frame_loose = False
+        self.assertFalse(self.controller.half_frame_mode_for_roll(None))
+        self.controller.state.half_frame_loose = True
         self.assertTrue(self.controller.half_frame_mode_for_roll(None))
 
     def test_set_half_frame_mode_writes_the_active_rolls_own_entry(self):
@@ -700,12 +702,14 @@ class TestAppController(unittest.TestCase):
         self.assertEqual(store["half_frame_mode_by_roll"], {"r1": True})
         self.assertNotIn("half_frame_mode", store)
 
-    def test_set_half_frame_mode_writes_the_sticky_flag_with_no_active_roll(self):
+    def test_set_half_frame_mode_with_no_roll_sets_the_session_choice(self):
         store = self._fake_settings_store()
         self.controller.state.active_roll_id = None
         self.controller.session.state.uploaded_files = []
         self.controller.set_half_frame_mode(True)
-        self.assertEqual(store["half_frame_mode"], True)
+        self.assertTrue(self.controller.state.half_frame_loose)
+        self.controller.session.persist_session.assert_called()
+        self.assertNotIn("half_frame_mode", store)
         self.assertNotIn("half_frame_mode_by_roll", store)
 
     def test_open_roll_emits_that_rolls_own_half_frame_state(self):
@@ -773,7 +777,7 @@ class TestAppController(unittest.TestCase):
         """Saving the current ad hoc session as a roll must not silently reset its
         toggle to off the next time that roll is opened."""
         store = self._fake_settings_store()
-        store["half_frame_mode"] = True
+        self.controller.state.half_frame_loose = True
         self.controller.state.uploaded_files = [{"path": "/p/a.tif"}]
         with patch("negpy.desktop.controller.rolls") as mock_rolls:
             mock_rolls.create_virtual_roll.return_value = "new-roll"
@@ -4420,6 +4424,15 @@ class TestSessionRestore(unittest.TestCase):
             self.assertEqual(self.controller._pending_scanned_file, b.name)
             self.controller.request_asset_discovery.assert_called_once_with([a.name, b.name], auto_open=True, restore_triplets={})
 
+    def test_restore_session_brings_back_the_sessions_half_frame_choice(self):
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".dng") as a:
+            for saved in (True, False):
+                self._mock_settings_with_rolls([a.name], a.name, {}, session_half_frame=saved)
+                self.controller.restore_session()
+                self.assertIs(self.controller.state.half_frame_loose, saved)
+
     def test_restore_session_no_saved_files_is_noop(self):
         self._mock_settings([], None)
         self.controller.restore_session()
@@ -7189,7 +7202,7 @@ class TestLibrarySearch(unittest.TestCase):
         from negpy.services.assets import rolls
 
         repo = self.controller.session.repo
-        repo.save_global_setting("half_frame_mode", True)
+        self.controller.state.half_frame_loose = True
         self.controller.state.active_roll_id = None
         self.controller.state.uploaded_files = [{"path": "/a.nef", "hash": "h1"}]
 

@@ -573,7 +573,7 @@ For a camera with narrowband light that takes three shots of each frame: red, gr
 
 #### Half Frame
 
-**Half Frame Mode** splits each scan into two frames, for half-frame cameras. Each half has its own edit.
+**Half Frame Mode** splits each scan into two frames, for half-frame cameras. Each half has its own edit. Each roll keeps its own setting. With no roll open, it applies to frames in no roll until **Unload All**, and **Reopen your last session** keeps it.
 
 *   **Adjust…**: drag the white box to crop and the orange line to set the split. **Split direction** and **Cut Thickness** set the gap, **Auto-detect** finds them again, and **Apply** saves to this frame, the selection or all frames.
 *   **Detect All**: finds the splits on every scan again.

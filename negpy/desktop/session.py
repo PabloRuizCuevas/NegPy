@@ -127,6 +127,8 @@ class AppState:
     # plain Add Files pick or a clear leaves this None. Files appended while it is set
     # join it when it is a virtual roll; a folder roll holds only its folder's files.
     active_roll_id: Optional[str] = None
+    # Half Frame for frames in no roll: this session's choice, saved with it, cleared by Unload All.
+    half_frame_loose: bool = False
     active_adjustment_idx: int = 0
     last_metrics: Dict[str, Any] = field(default_factory=dict)
     metrics_lock: threading.Lock = field(default_factory=threading.Lock, init=False, compare=False, repr=False)
@@ -2272,6 +2274,7 @@ class DesktopSessionManager(QObject):
             if f.get("green_path") and f.get("blue_path")
         }
         self.repo.save_global_setting("session_triplets", triplets)
+        self.repo.save_global_setting("session_half_frame", self.state.half_frame_loose)
         # Stitch and HDR membership is not part of the manifest: a composite outlives the
         # file list it was made in, so it is upserted into its own store instead.
         remember_composites(self.repo, self.state.uploaded_files)
@@ -2472,6 +2475,7 @@ class DesktopSessionManager(QObject):
         self.state.thumbnails.clear()
         self.state.rendered_thumbnails.clear()
         self.state.active_roll_id = None
+        self.state.half_frame_loose = False
         self.state.stale_thumbnails.clear()
         self.state.duplicate_paths.clear()
         self.state.embeddings.clear()

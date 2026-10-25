@@ -369,6 +369,7 @@ class _DiscoveryRequest:
     reselect_path: Optional[str]
     rgb_scan: bool
     half_frame: bool
+    half_frame_paths: frozenset = frozenset()
     half_frame_profile: Optional[dict] = None  # {crop_rect, split_x, gutter_thickness}
     half_frame_overrides: Optional[dict] = None  # {base_hash: {crop_rect, split_x, gutter_thickness}}
     hot_folder: bool = False
@@ -1720,6 +1721,7 @@ class AppController(QObject):
         self._pending_scanned_file = active if active in paths else paths[0]
         triplets = self.session.repo.get_global_setting("session_triplets", {}) or {}
         self.state.active_roll_id = self._restored_roll_id(paths)
+        self.state.half_frame_loose = bool(self.session.repo.get_global_setting("session_half_frame", False))
         self._announce_roll_modes(self.state.active_roll_id)
         self.request_asset_discovery(paths, auto_open=True, restore_triplets=triplets)
 
@@ -1782,10 +1784,8 @@ class AppController(QObject):
             replace_existing=replace_existing,
             reselect_path=reselect_path,
             rgb_scan=self._rgb_scan_mode_for_discovery(active_roll_id),
-            # A batch spanning several rolls has no roll-wide toggle to apply, and a
-            # "confirmed diptych" hash records whichever roll's toggle was on at the
-            # time rather than a per-file fact. Splitting waits for a roll that says so.
             half_frame=self.half_frame_mode_for_roll(active_roll_id) if active_roll_id else False,
+            half_frame_paths=frozenset() if active_roll_id else self._half_frame_paths(paths),
             half_frame_profile=self.half_frame_profile(),
             half_frame_overrides=self.half_frame_overrides(),
             hot_folder=hot_folder,
@@ -1842,6 +1842,7 @@ class AppController(QObject):
             rgb_scan=request.rgb_scan,
             restore_triplets=restore_triplets,
             half_frame=request.half_frame,
+            half_frame_paths=request.half_frame_paths,
             # Read as the request starts, not as it was queued: a composite made while
             # a discovery waits its turn must still be re-attached when the queue gets to it.
             restore_stitches=stitches,
@@ -2149,27 +2150,36 @@ class AppController(QObject):
         return enabled
 
     def half_frame_mode_for_roll(self, roll_id: Optional[str]) -> bool:
-        """The half-frame toggle's state for *roll_id* -- each roll remembers its own,
-        so switching rolls switches the toggle with it. An ad hoc session (no
-        recognized roll, e.g. a library search result) reads the one sticky flag it
-        always had."""
+        """The half-frame toggle's state for *roll_id*: each roll remembers its own. With no
+        roll it is this session's choice for frames in no roll, never one app-wide flag that
+        would split the next unrelated files too."""
         if roll_id:
             by_roll = self.session.repo.get_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, default=None) or {}
             return bool(by_roll.get(roll_id, False))
-        return bool(self.session.repo.get_global_setting("half_frame_mode", False))
+        return self.state.half_frame_loose
+
+    def _half_frame_paths(self, paths: List[str]) -> frozenset:
+        """With no roll open, the requested paths to split: each follows its own roll's toggle,
+        a search result's included, and a path in no roll follows this session's choice."""
+        repo = self.session.repo
+        split = set()
+        for path in paths:
+            roll_id = rolls.folder_roll_id_for_path(repo, path) if os.path.isdir(path) else rolls.home_roll(repo, path)
+            if self.half_frame_mode_for_roll(roll_id):
+                split.add(os.path.normcase(os.path.normpath(path)))
+        return frozenset(split)
 
     def set_half_frame_mode(self, enabled: bool) -> None:
-        """Persist the half-frame toggle -- per roll when one is active, else the
-        single sticky flag an ad hoc session always had -- and re-discover
-        already-loaded assets so the mode splits/collapses frames in place (not only
-        on the next folder load)."""
+        """Save the half-frame toggle, per roll when one is open, else for this session's
+        frames in no roll, and re-discover the loaded files so they split or join in place."""
         roll_id = self.state.active_roll_id
         if roll_id:
             by_roll = dict(self.session.repo.get_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, default=None) or {})
             by_roll[roll_id] = bool(enabled)
             self.session.repo.save_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, by_roll)
         else:
-            self.session.repo.save_global_setting("half_frame_mode", bool(enabled))
+            self.state.half_frame_loose = bool(enabled)
+            self.session.persist_session()
         self._active_diptych_memo = ("", None)
         files = self.session.state.uploaded_files
         if not files:
@@ -8812,7 +8822,9 @@ class AppController(QObject):
         except Exception:
             library = None
         roll_id = self.state.active_roll_id
-        film_format, frame_size = infer_format(frames, self.half_frame_mode_for_roll(roll_id) if roll_id else False)
+        # With no roll open a frame splits by its own roll, so the halves loaded decide.
+        half = self.half_frame_mode_for_roll(roll_id) if roll_id else any(f.get("half") for f in pending["assets"])
+        film_format, frame_size = infer_format(frames, half)
         label = roll_label_text(self._contact_sheet_roll_name(frames), frames, library)
         settings = ContactSheetSettings.from_dict(self.session.repo.get_global_setting(self._CONTACT_SHEET_SETTINGS_KEY, None))
         roll_baseline = rolls.roll_normalization(self.session.repo, roll_id) if roll_id else None
