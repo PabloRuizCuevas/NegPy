@@ -99,6 +99,7 @@ Pixel values are linear transmittance. The source corrections run in that domain
     *   **Waveform**: encoded luma in 128 bins for each of 256 columns (`WAVEFORM_BINS`, `WAVEFORM_COLS`), with each cell's mean color (`WAVEFORM_COLOR_SCALE`) and a per-channel parade. The density pass bins scan density per crop column for the scan Parade (`SCAN_DENSITY_RANGE`, inverting the stretch) and counts linear pixels at `scan_clip_level` before the unmix. The base line is `normalization.base_scan_density`.
     *   **Vectorscope**: CIELAB a\*b\* in 180 hue × 64 chroma bins, log chroma with a knee at 4, last bin past chroma 60 (`SCOPE_*`).
     *   **Input ICC**: overrides primaries only. A matrix/TRC profile contributes its primaries (Bradford-adapted to D65 through its `chad` tag) as a plain matrix, so its TRC is inert. A LUT (A2B0/B2A0) profile runs the full CMS transform.
+    *   **Export transform**: between two matrix/TRC profiles (every bundled export space), 8- and 16-bit exports run `matrix_trc_u8`/`matrix_trc_u16`: TRC decode, $M_{dst,PCS}^{-1} M_{src,PCS}$ with a gamut clip, TRC encode. The 16-bit encode table samples linear values at $t^2$, so it stays within one level of lcms without lcms's grid optimization. LUT profiles go through lcms.
 
 ### Automatic helpers
 

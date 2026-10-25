@@ -145,3 +145,54 @@ def _matrix_trc_tables(src_icc: bytes, dst_icc: bytes) -> Optional[Tuple[np.ndar
     for table in (dec_lut, m32, enc_lut):
         table.setflags(write=False)
     return dec_lut, m32, enc_lut
+
+
+_ENC16_SIZE = 16385
+_DEC_DENSE = 1 << 20
+
+
+def apply_matrix_trc_u16(img_u16: np.ndarray, src_icc: bytes, dst_icc: bytes) -> Optional[np.ndarray]:
+    """The 16-bit twin of ``apply_matrix_trc_u8``: exact per-code TRC decode, the PCS matrix
+    with a gamut clip, and an encode table fine enough for 16 bits. None when either profile
+    is not matrix/TRC; the caller falls back to lcms."""
+    tables = _matrix_trc_tables_u16(src_icc, dst_icc)
+    if tables is None:
+        return None
+    dec_lut, m32, enc_lut = tables
+    return negpy_core.matrix_trc_u16(np.ascontiguousarray(img_u16), dec_lut, m32, enc_lut)
+
+
+@lru_cache(maxsize=16)
+def _matrix_trc_tables_u16(src_icc: bytes, dst_icc: bytes) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """(3 x 65536 decode, matrix, 3 x K encode at linear t^2) for a matrix/TRC pair, or None."""
+    from negpy.infrastructure.display.icc_profile import (
+        extract_pcs_matrix,
+        extract_trc_decode_samples,
+        is_matrix_trc_profile,
+    )
+
+    if not (is_matrix_trc_profile(src_icc) and is_matrix_trc_profile(dst_icc)):
+        return None
+    m_src = extract_pcs_matrix(src_icc)
+    m_dst = extract_pcs_matrix(dst_icc)
+    if m_src is None or m_dst is None:
+        return None
+    dec = extract_trc_decode_samples(src_icc, np.arange(65536) / 65535.0)
+    x_enc = np.linspace(0.0, 1.0, _DEC_DENSE)
+    dst_dec = extract_trc_decode_samples(dst_icc, x_enc)
+    if dec is None or dst_dec is None:
+        return None
+    try:
+        m = np.linalg.inv(m_dst) @ m_src
+    except np.linalg.LinAlgError:
+        return None
+    t = np.linspace(0.0, 1.0, _ENC16_SIZE)
+    enc_rows = [np.interp(t * t, np.maximum.accumulate(np.clip(dst_dec[ch], 0.0, 1.0)), x_enc) for ch in range(3)]
+    tables = (
+        np.ascontiguousarray(np.clip(dec, 0.0, 1.0).astype(np.float32)),
+        np.ascontiguousarray(m.astype(np.float32)),
+        np.ascontiguousarray(np.stack(enc_rows).astype(np.float32)),
+    )
+    for table in tables:
+        table.setflags(write=False)
+    return tables

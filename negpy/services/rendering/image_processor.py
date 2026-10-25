@@ -104,7 +104,7 @@ from negpy.features.metadata.resolution import Resolution
 from negpy.services.export.print import PrintService
 from negpy.services.export.encoders import encode_jpeg, encode_jxl, encode_png, encode_tiff, encode_webp
 from negpy.infrastructure.display.color_spaces import ColorSpaceRegistry, WORKING_COLOR_SPACE
-from negpy.infrastructure.display.icc_lut import DEFAULT_LUT_SIZE, apply_icc_u16_rgb, apply_matrix_trc_u8
+from negpy.infrastructure.display.icc_lut import DEFAULT_LUT_SIZE, apply_icc_u16_rgb, apply_matrix_trc_u16, apply_matrix_trc_u8
 
 # Preview soft-proof LUT grid. Finer than the display LUT because the proof clips at the
 # output gamut boundary, and interpolating across that kink is where the error is.
@@ -2187,6 +2187,13 @@ class ImageProcessor:
             if src_bytes is None or dst_bytes is None:
                 logger.warning("CMS skipped: ICC profile not found")
                 return img_u16, self._get_target_icc_bytes(color_space, output_icc_path)
+
+            # Matrix/TRC pairs take the exact kernel: lcms resamples a 16-bit transform to a
+            # grid, off by up to 8% near the destination gamut edge. LUT profiles keep lcms.
+            if img_u16.ndim == 3:
+                fast = apply_matrix_trc_u16(img_u16, src_bytes, dst_bytes)
+                if fast is not None:
+                    return fast, dst_bytes
 
             try:
                 result = _cms_transform_strips(np.ascontiguousarray(img_u16), src_bytes, dst_bytes)

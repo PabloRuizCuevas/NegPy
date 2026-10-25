@@ -73,6 +73,9 @@ _CASES = {
     ),
     "lut_f32": lambda: negpy_core.apply_lut_f32(_IMG3, _LUT),
     "matrix_trc_u8": lambda: negpy_core.matrix_trc_u8((_IMG3 * 255).astype(np.uint8), np.ascontiguousarray(_RAMP[:, ::256]), _M, _RAMP),
+    "matrix_trc_u16": lambda: negpy_core.matrix_trc_u16(
+        (_IMG3 * 65535).astype(np.uint16), np.ascontiguousarray(np.tile(_LIN, (3, 1))), _M, np.ascontiguousarray(_RAMP[:, ::16])
+    ),
     "usm_sharpen": lambda: negpy_core.usm_sharpen(
         _IMG3, np.float32(2.0), 0.4, np.array([0.0625, 0.25, 0.375, 0.25, 0.0625], np.float32), *WORKING_LAB
     ),
@@ -140,6 +143,7 @@ _HASHES = {
     "sensor_log_unmix": "f7eb8efe1bbcfe884fd2e849e99d0546fac2f4829d3fb558d54a0128e681e53b",
     "lut_f32": "467bb9fd495d4797d912f6aeabd34f9a61b56491105464a0c852ed524488b1c1",
     "matrix_trc_u8": "acec1eadffb13dfef8473a02fb250b4ad8f57ac211a6265661b77d3cad49ab16",
+    "matrix_trc_u16": "8fd1af40718fc9bc59541e1128e46cb32e08ea05626f7cbd4cebe7905cecd02a",
     "usm_sharpen": "7267d2a3976c9381eadde01fe11ea60d46345b4747283e6ac68a2aa4a025d0a8",
     "sabattier": "f8956f67786c7c1d0e628af4b82fb12b6dde42e70da2504585f5bf20e7fbb461",
     "lith": "98dc05c62e191da2ad00c1f2327c48beff5af7e882be64cac5302cb0ea5099e5",

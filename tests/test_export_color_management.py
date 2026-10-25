@@ -101,9 +101,13 @@ class TestExportColorManagement(unittest.TestCase):
         # (hasattr/getattr on the module) re-enter that same __getattr__ and recurse.
         imagecodecs.cms_transform  # noqa: B018
 
-        with patch(
-            "negpy.services.rendering.image_processor.imagecodecs.cms_transform",
-            side_effect=ImportError("could not import name 'cms_transform' from 'imagecodecs'"),
+        # The bundled spaces are matrix/TRC and skip lcms; a LUT profile pair is what reaches it.
+        with (
+            patch("negpy.services.rendering.image_processor.apply_matrix_trc_u16", return_value=None),
+            patch(
+                "negpy.services.rendering.image_processor.imagecodecs.cms_transform",
+                side_effect=ImportError("could not import name 'cms_transform' from 'imagecodecs'"),
+            ),
         ):
             out_fallback, icc = self.proc._apply_color_management_u16(img_u16, WORKING_COLOR_SPACE, ColorSpace.SRGB.value, None, None)
 
@@ -132,9 +136,12 @@ class TestExportColorManagement(unittest.TestCase):
         working_icc = icc_bytes_for_space(WORKING_COLOR_SPACE)
 
         imagecodecs.cms_transform  # noqa: B018  (materialize before patching; see the test above)
-        with patch(
-            "negpy.services.rendering.image_processor.imagecodecs.cms_transform",
-            side_effect=RuntimeError("lcms2 refused the profile"),
+        with (
+            patch("negpy.services.rendering.image_processor.apply_matrix_trc_u16", return_value=None),
+            patch(
+                "negpy.services.rendering.image_processor.imagecodecs.cms_transform",
+                side_effect=RuntimeError("lcms2 refused the profile"),
+            ),
         ):
             out, icc = self.proc._apply_color_management_u16(img_u16, WORKING_COLOR_SPACE, ColorSpace.SRGB.value, None, None)
         np.testing.assert_array_equal(out, img_u16)
@@ -147,6 +154,21 @@ class TestExportColorManagement(unittest.TestCase):
             out, icc = self.proc._apply_color_management_u16_rgb(img_u16, WORKING_COLOR_SPACE, ColorSpace.SRGB.value, None, None)
         np.testing.assert_array_equal(out, img_u16)
         self.assertEqual(icc, working_icc)
+
+    def test_16bit_matrix_trc_export_matches_exact_lcms(self):
+        """Every bundled export space is matrix/TRC: the 16-bit export takes the exact kernel, within
+        one level of lcms evaluated without its grid optimization, gamut edge included."""
+        import imagecodecs
+
+        img_u16 = np.random.default_rng(5).integers(0, 65536, size=(64, 64, 3), dtype=np.uint16)
+        src = icc_bytes_for_space(WORKING_COLOR_SPACE)
+        for target in (ColorSpace.SRGB.value, ColorSpace.P3_D65.value, ColorSpace.PROPHOTO.value, ColorSpace.REC2020.value):
+            with self.subTest(target=target):
+                out, icc = self.proc._apply_color_management_u16(img_u16, WORKING_COLOR_SPACE, target, None, None)
+                dst = icc_bytes_for_space(target)
+                exact = imagecodecs.cms_transform(img_u16, src, dst, colorspace="RGB", outcolorspace="RGB", intent=1, flags=0x2000 | 0x0100)
+                self.assertEqual(icc, dst)
+                self.assertLessEqual(int(np.abs(out.astype(np.int64) - exact.astype(np.int64)).max()), 1)
 
 
 class TestDisplayTransform(unittest.TestCase):
