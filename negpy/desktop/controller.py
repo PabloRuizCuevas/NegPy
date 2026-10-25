@@ -1715,14 +1715,21 @@ class AppController(QObject):
         active = self.session.repo.get_global_setting("session_active_path")
         self._pending_scanned_file = active if active in paths else paths[0]
         triplets = self.session.repo.get_global_setting("session_triplets", {}) or {}
-        self.state.active_roll_id = self._roll_id_for_restored_paths(paths)
+        self.state.active_roll_id = self._restored_roll_id(paths)
         self._announce_roll_modes(self.state.active_roll_id)
         self.request_asset_discovery(paths, auto_open=True, restore_triplets=triplets)
 
+    def _restored_roll_id(self, paths: List[str]) -> Optional[str]:
+        """The roll the saved session had open, if it still exists. A session saved
+        without that record falls back to the roll every restored path belongs to."""
+        saved = self.session.repo.get_global_setting("session_active_roll")
+        if not isinstance(saved, str):
+            return self._roll_id_for_restored_paths(paths)
+        return saved if saved and rolls.roll_for_id(self.session.repo, saved) else None
+
     def _roll_id_for_restored_paths(self, paths: List[str]) -> Optional[str]:
-        """The one roll every restored path agrees on, or None -- the roll a fresh
-        process would otherwise forget it had open, the same "only when unambiguous"
-        rule open_library_folders applies when several folders are opened at once."""
+        """The one roll every restored path agrees on, or None: the same "only when
+        unambiguous" rule open_library_folders applies when several folders are opened at once."""
         candidates = set(rolls.rolls_containing_path(self.session.repo, paths[0]))
         for path in paths[1:]:
             candidates &= set(rolls.rolls_containing_path(self.session.repo, path))

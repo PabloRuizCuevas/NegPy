@@ -4425,13 +4425,29 @@ class TestSessionRestore(unittest.TestCase):
         self.controller.restore_session()
         self.controller.request_asset_discovery.assert_not_called()
 
-    def _mock_settings_with_rolls(self, files, active, rolls_store):
+    def _mock_settings_with_rolls(self, files, active, rolls_store, **saved):
         from negpy.services.assets import rolls
 
         def get(key, default=None):
-            return {"session_files": files, "session_active_path": active, rolls.ROLLS_KEY: rolls_store}.get(key, default)
+            return {"session_files": files, "session_active_path": active, rolls.ROLLS_KEY: rolls_store, **saved}.get(key, default)
 
         self.mock_session_manager.repo.get_global_setting.side_effect = get
+
+    def test_restore_session_reopens_the_saved_roll_with_a_file_from_elsewhere(self):
+        """A folder roll holds only its folder, so the saved roll id, not membership, names it."""
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as elsewhere:
+            a, b = os.path.join(folder, "a.dng"), os.path.join(elsewhere, "b.dng")
+            open(a, "w").close()
+            open(b, "w").close()
+            store = {"roll1": {"kind": "folder", "folder_path": folder, "extra_paths": []}}
+            for saved, expected in (("roll1", "roll1"), ("", None), ("deleted-roll", None)):
+                with self.subTest(saved=saved):
+                    self._mock_settings_with_rolls([a, b], a, store, session_active_roll=saved)
+                    self.controller.restore_session()
+                    self.assertEqual(self.controller.state.active_roll_id, expected)
 
     def test_restore_session_recognizes_the_roll_all_restored_paths_belong_to(self):
         import os

@@ -2263,6 +2263,7 @@ class DesktopSessionManager(QObject):
         paths = [f["path"] for f in self.state.uploaded_files]
         self.repo.save_global_setting("session_files", paths)
         self.repo.save_global_setting("session_active_path", self.state.current_file_path)
+        self.repo.save_global_setting("session_active_roll", self.state.active_roll_id or "")
         # RGB-scan triplets keep their green and blue exposures here so restore can rebuild the
         # merged asset. Re-discovery from the red path alone cannot regroup it.
         triplets = {

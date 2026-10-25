@@ -1645,6 +1645,13 @@ class TestDesktopSessionSync(unittest.TestCase):
         self.assertEqual(paths, ["path1", "path2"])
         self.assertEqual(active, "path2")
 
+    def test_the_manifest_records_the_open_roll(self):
+        for roll_id, saved in (("roll1", "roll1"), (None, "")):
+            self.session.state.active_roll_id = roll_id
+            self.session.persist_session()
+            last = {c.args[0]: c.args[1] for c in self.mock_repo.save_global_setting.call_args_list}
+            self.assertEqual(last["session_active_roll"], saved)
+
     def test_active_file_changing_snapshots_outgoing_when_dirty(self):
         # Fires before state mutates to the new file, carrying the outgoing identity.
         self.session.state.current_file_hash = "hash1"
