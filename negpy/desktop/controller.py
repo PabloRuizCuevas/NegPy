@@ -1205,6 +1205,7 @@ class AppController(QObject):
         self.capture_worker.light_temp_polled.connect(self.light_temp_polled.emit)
 
         self.session.active_file_changing.connect(self._update_thumbnail_from_state)
+        self.session.frame_previews_ending.connect(self._previewed_meter_cards.clear)
         self.session.session_emptied.connect(self._render_memo.clear)
         self.session.session_emptied.connect(self._strip_memo.clear)
         self.session.file_selected.connect(self._on_file_selected_load)
@@ -6879,6 +6880,8 @@ class AppController(QObject):
         if not roll_id or not path or not from_hash or rolls.unforked_hash(from_hash) != from_hash:
             return
         is_active = from_hash == self.state.current_file_hash
+        if is_active:
+            self.session.end_frame_previews()
         seed = self.state.config if is_active else self.session.config_for_asset(asset)
         asset["hash"] = rolls.fork_edit(self.session.repo, roll_id, from_hash, path, seed)
         self.session.asset_model.refresh()
