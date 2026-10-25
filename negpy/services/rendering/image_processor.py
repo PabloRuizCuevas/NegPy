@@ -161,6 +161,23 @@ def _cms_transform_strips(img_u16: np.ndarray, src_bytes: bytes, dst_bytes: byte
     return out
 
 
+@lru_cache(maxsize=8)
+def _grey_reencode_lut(working_color_space: Optional[str], bits: int) -> np.ndarray:
+    """The greyscale export re-encode as a table over every uint16 luma code: working TRC
+    decode, sRGB OETF, 16-bit, then 8-bit for ``bits`` 8. None keeps the working TRC."""
+    codes = np.arange(65536, dtype=np.uint16)
+    out = codes
+    if working_color_space is not None:
+        lin = np.clip(np.asarray(working_oetf_decode(codes.astype(np.float32) / 65535.0)), 0.0, 1.0)
+        gray = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1.0 / 2.4) - 0.055)
+        out = np.clip(gray * 65535.0 + 0.5, 0.0, 65535.0).astype(np.uint16)
+    if bits == 8:
+        out = np.clip(np.round(out.astype(np.float32) / 257.0), 0.0, 255.0).astype(np.uint8)
+    out = np.ascontiguousarray(out)
+    out.setflags(write=False)
+    return out
+
+
 @lru_cache(maxsize=16)
 def _read_icc_bytes(path: str) -> bytes:
     with open(path, "rb") as f:
@@ -1852,8 +1869,7 @@ class ImageProcessor:
                 return self._apply_color_management_u16_greyscale(img_int, working_color_space, color_space, icc_output, icc_input)
             return self._apply_color_management_u16(float_to_uint16(buffer), working_color_space, color_space, icc_output, icc_input)
         if is_greyscale:
-            pil_img, icc_bytes = self._greyscale_to_pil_u8(buffer, working_color_space, color_space, icc_output, icc_input)
-            return np.asarray(pil_img), icc_bytes
+            return self._greyscale_to_u8(buffer, working_color_space, color_space, icc_output, icc_input)
         return self.apply_color_management(float_to_uint8(buffer), working_color_space, color_space, icc_output, icc_input)
 
     def render_display_array(
@@ -2132,30 +2148,27 @@ class ImageProcessor:
         """
         if working_color_space == color_space:
             return img_u16, self._get_target_icc_bytes(color_space, output_icc_path)
-        lin = np.clip(np.asarray(working_oetf_decode(img_u16.astype(np.float32) / 65535.0)), 0.0, 1.0)
-        gray = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1.0 / 2.4) - 0.055)
-        out = np.clip(gray * 65535.0 + 0.5, 0.0, 65535.0).astype(np.uint16)
+        out = negpy_core.lut_u16(np.ascontiguousarray(img_u16), _grey_reencode_lut(working_color_space, 16))
         return out, self._get_target_icc_bytes(color_space, output_icc_path)
 
-    def _greyscale_to_pil_u8(
+    def _greyscale_to_u8(
         self,
         buffer: np.ndarray,
         working_color_space: str,
         color_space: str,
         output_icc_path: Optional[str],
         input_icc_path: Optional[str] = None,
-    ) -> Tuple[Image.Image, Optional[bytes]]:
-        """Greyscale buffer -> color-managed 8-bit L image for JPEG/WebP.
+    ) -> Tuple[np.ndarray, Optional[bytes]]:
+        """Greyscale buffer -> color-managed 8-bit luma for JPEG/WebP.
 
         Runs the 16-bit grey re-encode first so the 8-bit result carries the same
         TRC (and profile bytes) as the greyscale TIFF/PNG of the same edit.
         """
         img16 = float_to_uint_luma(np.ascontiguousarray(buffer), bit_depth=16)
-        img16, icc_bytes = self._apply_color_management_u16_greyscale(
-            img16, working_color_space, color_space, output_icc_path, input_icc_path
-        )
-        img8 = np.clip(np.round(img16.astype(np.float32) / 257.0), 0.0, 255.0).astype(np.uint8)
-        return Image.fromarray(img8), icc_bytes
+        icc_bytes = self._get_target_icc_bytes(color_space, output_icc_path)
+        if working_color_space == color_space:
+            return negpy_core.lut_u16(img16, _grey_reencode_lut(None, 8)), icc_bytes
+        return negpy_core.lut_u16(img16, _grey_reencode_lut(working_color_space, 8)), icc_bytes
 
     def _apply_color_management_u16(
         self,

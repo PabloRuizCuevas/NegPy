@@ -360,6 +360,35 @@ fn int_to_unit_float32<'py>(
     .into_any())
 }
 
+/// `lut[img]` of a contiguous uint16 array through a 65536-entry uint8 or uint16 table.
+#[pyfunction]
+fn lut_u16<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, u16>,
+    lut: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let src = contiguous(&img)?;
+    if let Ok(t) = lut.extract::<PyReadonlyArrayDyn<u16>>() {
+        let table = contiguous(&t)?;
+        if table.len() != 65536 {
+            return Err(PyValueError::new_err("needs a 65536-entry table"));
+        }
+        return Ok(filled(py, img.shape(), "uint16", |d| {
+            convert::lut_u16(src, table, d)
+        })?
+        .into_any());
+    }
+    let t = lut.extract::<PyReadonlyArrayDyn<u8>>()?;
+    let table = contiguous(&t)?;
+    if table.len() != 65536 {
+        return Err(PyValueError::new_err("needs a 65536-entry table"));
+    }
+    Ok(filled(py, img.shape(), "uint8", |d| {
+        convert::lut_u16(src, table, d)
+    })?
+    .into_any())
+}
+
 /// `img`, an HxWxP uint8 view of an image with P-byte pixels, turned by EXIF `orientation`.
 #[pyfunction]
 fn orient<'py>(
@@ -382,6 +411,7 @@ fn orient<'py>(
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(orient, m)?)?;
+    m.add_function(wrap_pyfunction!(lut_u16, m)?)?;
     m.add_function(wrap_pyfunction!(int_to_unit_float32, m)?)?;
     m.add_function(wrap_pyfunction!(nan_to_num, m)?)?;
     m.add_function(wrap_pyfunction!(gray_to_rgb, m)?)?;

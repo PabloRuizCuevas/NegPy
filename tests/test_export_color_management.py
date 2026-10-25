@@ -55,6 +55,28 @@ class TestExportColorManagement(unittest.TestCase):
         decoded = (out.astype(np.float32) / 65535.0) ** 2.2  # as a Gamma2.2 viewer would decode
         np.testing.assert_allclose(decoded.reshape(-1), lin, atol=0.01)
 
+    def test_greyscale_reencode_table_matches_the_per_pixel_formula(self):
+        """The 16- and 8-bit greyscale exports read one table per code; it must give the bits the
+        per-pixel re-encode gives."""
+        from negpy.kernel.image.logic import working_oetf_decode
+
+        u16 = np.random.default_rng(9).integers(0, 65536, size=(97, 131), dtype=np.uint16)
+        lin = np.clip(np.asarray(working_oetf_decode(u16.astype(np.float32) / 65535.0)), 0.0, 1.0)
+        gray = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1.0 / 2.4) - 0.055)
+        expected16 = np.clip(gray * 65535.0 + 0.5, 0.0, 65535.0).astype(np.uint16)
+        out16, _ = self.proc._apply_color_management_u16_greyscale(u16, WORKING_COLOR_SPACE, ColorSpace.GREYSCALE.value, None)
+        np.testing.assert_array_equal(out16, expected16)
+
+        buffer = np.random.default_rng(10).random((61, 83), dtype=np.float32)
+        from negpy.kernel.image.logic import float_to_uint_luma
+
+        img16 = float_to_uint_luma(buffer, bit_depth=16)
+        for target in (ColorSpace.GREYSCALE.value, WORKING_COLOR_SPACE):
+            mid, _ = self.proc._apply_color_management_u16_greyscale(img16, WORKING_COLOR_SPACE, target, None)
+            expected8 = np.clip(np.round(mid.astype(np.float32) / 257.0), 0.0, 255.0).astype(np.uint8)
+            out8, _ = self.proc._greyscale_to_u8(buffer, WORKING_COLOR_SPACE, target, None)
+            np.testing.assert_array_equal(out8, expected8)
+
     def test_export_is_appearance_preserving_across_spaces(self):
         """Exporting to sRGB / Adobe / ProPhoto must look the same in a CM viewer.
 
