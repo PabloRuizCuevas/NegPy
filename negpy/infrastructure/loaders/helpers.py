@@ -12,7 +12,7 @@ from PIL import Image, ImageCms
 from negpy.domain.models import ColorSpace
 from negpy.features.process.models import DemosaicMode
 from negpy.infrastructure.loaders.constants import SUPPORTED_RAW_EXTENSIONS
-from negpy.kernel.image.logic import apply_exif_orientation, ensure_rgb
+from negpy.kernel.image.logic import apply_exif_orientation, ensure_rgb, uint16_to_float32
 from negpy.kernel.system.config import APP_CONFIG
 from negpy.kernel.system.logging import get_logger
 
@@ -649,11 +649,16 @@ class NonStandardFileWrapper:
 
     def __init__(
         self,
-        data: np.ndarray,
+        data: Optional[np.ndarray] = None,
         full_output_hw: Optional[Tuple[int, int]] = None,
         wb_gains: Optional[Tuple[float, float, float]] = None,
+        *,
+        source_u16: Optional[np.ndarray] = None,
     ) -> None:
-        self.data = data
+        self._data = data
+        # A linear 16-bit source: float32 is made only on demand, and a linear 16-bit
+        # postprocess() hands it back as it is. uint16 -> float32 -> uint16 restores every code.
+        self._source_u16 = source_u16
         # If set, `sizes` reports this (h, w) for full image; else derived from `data` shape.
         self._full_output_hw: Optional[Tuple[int, int]] = full_output_hw
         # As-shot (R, G, B) white balance gains, applied by postprocess() when the caller asks
@@ -662,11 +667,20 @@ class NonStandardFileWrapper:
         self.wb_gains: Optional[Tuple[float, float, float]] = wb_gains
 
     @property
+    def data(self) -> np.ndarray:
+        if self._data is None:
+            assert self._source_u16 is not None
+            self._data = uint16_to_float32(self._source_u16)
+        return self._data
+
+    @property
     def sizes(self) -> Any:
         if self._full_output_hw is not None:
             h, w = self._full_output_hw
         else:
-            h, w = self.data.shape[0], self.data.shape[1]
+            source = self._data if self._data is not None else self._source_u16
+            assert source is not None
+            h, w = source.shape[0], source.shape[1]
         return SimpleNamespace(raw_height=int(h), raw_width=int(w))
 
     def __enter__(self) -> "NonStandardFileWrapper":
@@ -679,6 +693,9 @@ class NonStandardFileWrapper:
         bps = kwargs.get("output_bps", 8)
         half_size = kwargs.get("half_size", False)
         gamma = kwargs.get("gamma")
+        camera_wb = kwargs.get("use_camera_wb") and self.wb_gains is not None
+        if self._source_u16 is not None and bps == 16 and gamma is not None and tuple(gamma) == (1, 1) and not camera_wb:
+            return np.ascontiguousarray(self._source_u16[::2, ::2] if half_size else self._source_u16)
         data = self.data
         if half_size:
             data = data[::2, ::2]
