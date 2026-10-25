@@ -160,6 +160,32 @@ def test_sync_ui_selects_the_config_roll_name_when_it_still_exists(qapp):
     assert sidebar.roll_combo.selected_id() == ids["Tri-X"]
 
 
+def test_sync_ui_selects_the_baseline_roll_by_id_when_two_rolls_share_its_name(qapp):
+    controller, sidebar, _ids = _sidebar(roll_names=["Roll99", "Portra 400"], active_name="Portra 400")
+    second = rolls.create_virtual_roll(controller.session.repo, "Roll99", [])
+    cfg = controller.state.config
+    controller.state.config = replace(cfg, process=replace(cfg.process, roll_name="Roll99", baseline_source=f"roll:{second}"))
+    sidebar.sync_ui()
+    assert sidebar.roll_combo.selected_id() == second
+
+
+def test_sync_ui_follows_the_baseline_roll_after_it_is_renamed(qapp):
+    controller, sidebar, ids = _sidebar(roll_names=["Tri-X", "Portra 400"], active_name="Portra 400")
+    rolls.rename_roll(controller.session.repo, ids["Tri-X"], "Tri-X 2026")
+    cfg = controller.state.config
+    controller.state.config = replace(cfg, process=replace(cfg.process, roll_name="Tri-X", baseline_source=f"roll:{ids['Tri-X']}"))
+    sidebar.sync_ui()
+    assert sidebar.roll_combo.selected_id() == ids["Tri-X"]
+
+
+def test_sync_ui_falls_back_to_the_active_roll_when_the_baseline_roll_is_deleted(qapp):
+    controller, sidebar, ids = _sidebar(roll_names=["Tri-X", "Portra 400"], active_name="Portra 400")
+    cfg = controller.state.config
+    controller.state.config = replace(cfg, process=replace(cfg.process, roll_name="Tri-X", baseline_source="roll:gone"))
+    sidebar.sync_ui()
+    assert sidebar.roll_combo.selected_id() == ids["Portra 400"]
+
+
 def test_sync_ui_falls_back_to_the_active_roll_when_the_saved_name_is_gone(qapp):
     """A deleted or renamed roll_name must not leave the picker pointed at nothing
     while a roll is loaded."""

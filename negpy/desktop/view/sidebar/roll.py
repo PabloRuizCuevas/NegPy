@@ -145,7 +145,12 @@ class RollAnalysisSidebar(BaseSidebar):
         stale = {rid for rid, entry in listed if rolls.baseline_stale(entry.get("normalization"))}
         conf = self.state.config.process
         selected = active_id or ""
-        if conf.roll_name:
+        kind, _, ref = conf.baseline_source.partition(":")
+        if kind == "roll":
+            if any(rid == ref for rid, _entry in listed):
+                selected = ref
+        elif not conf.baseline_source and conf.roll_name:
+            # A baseline saved before sources were recorded names only its roll.
             matching = next((rid for rid, entry in listed if entry.get("name") == conf.roll_name), None)
             if matching:
                 selected = matching
