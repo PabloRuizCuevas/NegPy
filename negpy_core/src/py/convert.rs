@@ -337,7 +337,28 @@ fn nan_to_num<'py>(
     })
 }
 
+/// `img`, an HxWxP uint8 view of an image with P-byte pixels, turned by EXIF `orientation`.
+#[pyfunction]
+fn orient<'py>(
+    py: Python<'py>,
+    img: PyReadonlyArrayDyn<'py, u8>,
+    orientation: u8,
+) -> PyResult<Bound<'py, PyArrayDyn<u8>>> {
+    let [h, w, px] = img.shape()[..] else {
+        return Err(PyValueError::new_err("orient needs an HxWxP array"));
+    };
+    if !(1..=8).contains(&orientation) || px == 0 {
+        return Err(PyValueError::new_err("orientation must be 1-8"));
+    }
+    let src = contiguous(&img)?;
+    let (oh, ow) = crate::orient::oriented_dims(h, w, orientation);
+    filled(py, &[oh, ow, px], "uint8", |d| {
+        crate::orient::orient(src, h, w, px, orientation, d)
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(orient, m)?)?;
     m.add_function(wrap_pyfunction!(nan_to_num, m)?)?;
     m.add_function(wrap_pyfunction!(gray_to_rgb, m)?)?;
     m.add_function(wrap_pyfunction!(add, m)?)?;

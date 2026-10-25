@@ -27,6 +27,7 @@ pub mod median;
 pub mod memo;
 pub mod meter;
 pub mod morph;
+pub mod orient;
 pub mod phase;
 pub mod print_curve;
 pub mod process;
