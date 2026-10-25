@@ -8,7 +8,8 @@ interpolation. The interpolation keeps the 16-bit dynamic range smooth;
 per-sample fidelity is 8-bit (bounded by LUT size and profile non-linearity).
 """
 
-from typing import Any, Optional
+from functools import lru_cache
+from typing import Any, Optional, Tuple
 
 import negpy_core
 import numpy as np
@@ -101,6 +102,16 @@ def apply_matrix_trc_u8(img_u8: np.ndarray, src_icc: bytes, dst_icc: bytes) -> O
     """Relative-colorimetric transform between two matrix/TRC profiles on a (H,W,3)
     uint8 image: TRC decode, inv(dst_pcs) @ src_pcs with gamut clip, TRC encode.
     None when either profile is not matrix/TRC; the caller falls back to lcms."""
+    tables = _matrix_trc_tables(src_icc, dst_icc)
+    if tables is None:
+        return None
+    dec_lut, m32, enc_lut = tables
+    return negpy_core.matrix_trc_u8(np.ascontiguousarray(img_u8), dec_lut, m32, enc_lut)
+
+
+@lru_cache(maxsize=16)
+def _matrix_trc_tables(src_icc: bytes, dst_icc: bytes) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """(decode LUT, matrix, encode LUT) for a matrix/TRC profile pair, or None."""
     from negpy.infrastructure.display.icc_profile import (
         extract_pcs_matrix,
         extract_trc_decode_samples,
@@ -131,4 +142,6 @@ def apply_matrix_trc_u8(img_u8: np.ndarray, src_icc: bytes, dst_icc: bytes) -> O
     enc_lut = np.ascontiguousarray(np.stack(enc_rows).astype(np.float32))
     dec_lut = np.ascontiguousarray(np.clip(dec, 0.0, 1.0).astype(np.float32))
     m32 = np.ascontiguousarray(m.astype(np.float32))
-    return negpy_core.matrix_trc_u8(np.ascontiguousarray(img_u8), dec_lut, m32, enc_lut)
+    for table in (dec_lut, m32, enc_lut):
+        table.setflags(write=False)
+    return dec_lut, m32, enc_lut

@@ -1853,11 +1853,8 @@ class ImageProcessor:
             return self._apply_color_management_u16(float_to_uint16(buffer), working_color_space, color_space, icc_output, icc_input)
         if is_greyscale:
             pil_img, icc_bytes = self._greyscale_to_pil_u8(buffer, working_color_space, color_space, icc_output, icc_input)
-        else:
-            pil_img, icc_bytes = self.apply_color_management(
-                Image.fromarray(float_to_uint8(buffer)), working_color_space, color_space, icc_output, icc_input
-            )
-        return np.asarray(pil_img), icc_bytes
+            return np.asarray(pil_img), icc_bytes
+        return self.apply_color_management(float_to_uint8(buffer), working_color_space, color_space, icc_output, icc_input)
 
     def render_display_array(
         self,
@@ -2231,37 +2228,35 @@ class ImageProcessor:
 
     def apply_color_management(
         self,
-        pil_img: Image.Image,
+        img: np.ndarray,
         working_color_space: str,
         color_space: str,
         output_icc_path: Optional[str],
         input_icc_path: Optional[str] = None,
-    ) -> Tuple[Image.Image, Optional[bytes]]:
-        """ICC transform for export. Source is the input override or working space;
-        destination is the output override or target space."""
+    ) -> Tuple[np.ndarray, Optional[bytes]]:
+        """ICC transform of a uint8 HxWx3 or HxW export buffer. Source is the input override or
+        working space; destination is the output override or target space."""
         has_custom = self._has_custom_icc(input_icc_path, output_icc_path)
         if not has_custom and working_color_space == color_space:
-            return pil_img, self._get_target_icc_bytes(color_space, None)
+            return img, self._get_target_icc_bytes(color_space, None)
 
         try:
             p_src = self._resolve_src_profile(working_color_space, input_icc_path)
             p_dst = self._resolve_dst_profile(color_space, output_icc_path)
             if p_dst is None:
-                return pil_img, self._get_target_icc_bytes(color_space, None)
+                return img, self._get_target_icc_bytes(color_space, None)
 
-            if pil_img.mode not in ("RGB", "L"):
-                pil_img = pil_img.convert("RGB" if pil_img.mode != "I;16" else "L")
-
-            if pil_img.mode == "RGB":
+            if img.ndim == 3:
                 # Matrix/TRC pairs take the parallel kernel; LUT profiles (printer
                 # ICCs) return None and fall through to exact lcms.
                 src_bytes = self._get_target_icc_bytes(working_color_space, input_icc_path)
                 dst_bytes = self._get_target_icc_bytes(color_space, output_icc_path)
                 if src_bytes and dst_bytes:
-                    fast = apply_matrix_trc_u8(np.asarray(pil_img), src_bytes, dst_bytes)
+                    fast = apply_matrix_trc_u8(img, src_bytes, dst_bytes)
                     if fast is not None:
-                        return Image.fromarray(fast), dst_bytes
+                        return fast, dst_bytes
 
+            pil_img = Image.fromarray(img)
             result_pil = ImageCms.profileToProfile(
                 pil_img,
                 p_src,
@@ -2270,14 +2265,13 @@ class ImageProcessor:
                 outputMode="RGB" if pil_img.mode != "L" else "L",
                 flags=ImageCms.Flags.BLACKPOINTCOMPENSATION,
             )
-            if result_pil:
-                pil_img = result_pil
-            return pil_img, self._get_target_icc_bytes(color_space, output_icc_path)
+            out = np.asarray(result_pil) if result_pil else img
+            return out, self._get_target_icc_bytes(color_space, output_icc_path)
         except Exception as e:
             logger.error(f"CMS transformation failed: {e}")
             # The pixels never left the working space, so tag them with it (a CMYK or Gray
             # profile cannot take RGB pixels). Untagged, the export reads as sRGB.
-            return pil_img, self._get_target_icc_bytes(working_color_space, input_icc_path)
+            return img, self._get_target_icc_bytes(working_color_space, input_icc_path)
 
     @staticmethod
     def soft_proof_preview(
