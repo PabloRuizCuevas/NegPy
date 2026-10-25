@@ -607,6 +607,18 @@ QPushButton#collapsible_header[overlay="true"]:checked {
     background-color: @header_veil;
 }
 
+/* The tab header (widgets/tab_header.py) sits on the panel ground; its buttons sit in tracks. */
+QPushButton#collapsible_header[bar="true"], QPushButton#collapsible_header[bar="true"]:hover {
+    background-color: transparent;
+    border: none;
+}
+
+QFrame#header_track {
+    background-color: @bg_input;
+    border: 1px solid @border_primary;
+    border-radius: 4px;
+}
+
 /* Preset lists: Export Presets dialog and the Presets sidebar. */
 /* The Library's roll rows (see sidebar/library_tree.py): the delegate paints them. */
 QTreeWidget#roll_tree {
