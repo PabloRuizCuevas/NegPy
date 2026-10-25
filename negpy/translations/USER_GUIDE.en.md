@@ -535,7 +535,7 @@ To turn a negative into a positive, NegPy measures its darkest and brightest par
 
 *   **Reanalyze Frame**: measures this frame, or each selected frame, again from its current crop. The frame then uses its own bounds, not the roll or scene baseline.
 *   **Draw Region**: draw an area, and NegPy measures only that area. Double-click inside or press `Enter` to confirm, and `Esc` puts back the region you had before. **×** clears it.
-*   **Film Base**: click the clear film between frames to set the roll's film base, for the Analysis readout. **×** clears it.
+*   **Film Base**: click the clear film between frames to set the film base for the Analysis readout. It is the roll's base, or this frame's own with no roll open. **×** clears it.
 *   **Analysis Buffer**: ignores a border around the frame when measuring, so film edges and holders do not count.
 *   **Clipping**: how much of the print is pure black or pure white.
 *   **Lock Bounds**: keeps this frame's black and white points, even when the crop or Roll Analysis changes.

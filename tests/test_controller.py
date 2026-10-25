@@ -1064,18 +1064,18 @@ class TestAppController(unittest.TestCase):
         cfg = WorkspaceConfig()
         self.controller.session.repo.load_file_settings.return_value = None
         self.controller.session.config_for_asset = MagicMock(return_value=cfg)
-        self.controller.roll_film_base = MagicMock(return_value=None)
+        self.controller.film_base_for = MagicMock(return_value=None)
         self.controller._half_slice_for_asset = MagicMock(return_value=None)
         asset = {"path": "/tmp/neighbor.dng", "hash": "neighbor"}
 
         task = self.controller._neighbor_prefetch_task(asset, generation=4, protected_file_hashes=())
         self.assertIs(task.base_settings, cfg)
 
-        self.controller.roll_film_base.return_value = (-0.3, -0.3, -0.3)
+        self.controller.film_base_for.return_value = (-0.3, -0.3, -0.3)
         task = self.controller._neighbor_prefetch_task(asset, generation=4, protected_file_hashes=())
         self.assertIsNone(task.base_settings)
 
-        self.controller.roll_film_base.return_value = None
+        self.controller.film_base_for.return_value = None
         self.controller._half_slice_for_asset.return_value = (1, 0.5, None, 0.0, "x")
         task = self.controller._neighbor_prefetch_task(asset, generation=4, protected_file_hashes=())
         self.assertIsNone(task.base_settings)

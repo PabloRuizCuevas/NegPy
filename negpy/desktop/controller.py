@@ -3214,9 +3214,9 @@ class AppController(QObject):
         half_slice = self._half_slice_for_asset(asset["path"], file_hash)
         # The render reads the base only for a whole negative frame on a roll with no picked base.
         base_settings = None
-        if half_slice is None and self.roll_film_base() is None:
+        if half_slice is None:
             config = self.session.config_for_asset(asset)
-            if render_path(config.process) is RenderPath.PRINT:
+            if self.film_base_for(asset, config.process) is None and render_path(config.process) is RenderPath.PRINT:
                 base_settings = config
         return PreviewLoadTask(
             file_path=asset["path"],
@@ -3539,11 +3539,6 @@ class AppController(QObject):
         One click: the tool disarms, and leaving it re-renders the roll's frame above the base."""
         from negpy.features.exposure.normalization import effective_crosstalk_matrix, log_from_val
 
-        roll_id = self._active_frame_roll()
-        if roll_id is None:
-            self.set_status(tr("Film Base needs a roll: this frame is in none"), 4000, "warning")
-            self.set_active_tool(ToolMode.NONE)
-            return
         bounds = self.state.last_metrics.get("final_bounds") or self.state.last_metrics.get("log_bounds")
         patch = self._sample_normalized_patch(nx, ny, radius=4)
         if bounds is None or patch is None:
@@ -3561,21 +3556,56 @@ class AppController(QObject):
                 base = np.linalg.solve(np.asarray(unmix, dtype=np.float64), base)
             except np.linalg.LinAlgError:
                 pass  # a singular matrix never reaches a render; the unmixed value is the best there is
-        if rolls.set_roll_film_base(self.session.repo, roll_id, tuple(float(v) for v in base)):
+        picked = tuple(float(v) for v in base)
+        roll_id = self.state.active_roll_id
+        if roll_id is None:
+            # With no roll open the base is this frame's own, like its Analysis Region.
+            self._set_frame_film_base(picked)
+            self.set_status(tr("Film base set for this frame"), 3000)
+        elif rolls.set_roll_film_base(self.session.repo, roll_id, picked):
             self.set_status(tr("Film base set for the roll"), 3000)
         else:
             self.set_status(tr("Film Base: this frame's roll is not in the library"), 4000, "warning")
         self.set_active_tool(ToolMode.NONE)  # leaving the uncropped tool view re-renders
 
-    def roll_film_base(self) -> Optional[tuple]:
-        """The active frame's roll's clear film base, or None."""
-        return rolls.roll_film_base(self.session.repo, self._active_frame_roll())
+    def film_base_for(self, asset: dict, process: Any) -> Optional[tuple]:
+        """The clear film base a frame's readouts measure from. In an open roll, the roll's
+        picked base wins over the frame's own; with no roll open, the frame's own wins over
+        its library roll's."""
+        roll_base = rolls.roll_film_base(self.session.repo, rolls.frame_roll(self.session.repo, self.state.active_roll_id, asset))
+        if self.state.active_roll_id:
+            return roll_base or process.film_base
+        return process.film_base or roll_base
 
-    def clear_roll_film_base(self) -> None:
-        roll_id = self._active_frame_roll()
-        if roll_id is None:
+    def film_base(self) -> Optional[tuple]:
+        """The active frame's film base, or None."""
+        idx = self.state.selected_file_idx
+        files = self.state.uploaded_files
+        asset = files[idx] if 0 <= idx < len(files) else {}
+        return self.film_base_for(asset, self.state.config.process)
+
+    def _set_frame_film_base(self, base: Optional[tuple]) -> None:
+        conf = self.state.config
+        self.apply_config(replace(conf, process=replace(conf.process, film_base=base)), persist=True)
+
+    def clearable_film_base(self) -> bool:
+        """Whether Clear has a base to forget: the open roll's or the frame's own. With no roll
+        open only the frame's own, as a pick there only ever sets the frame's own."""
+        if self.state.config.process.film_base is not None:
+            return True
+        roll_id = self.state.active_roll_id
+        return bool(roll_id) and rolls.roll_film_base(self.session.repo, roll_id) is not None
+
+    def clear_film_base(self) -> None:
+        """Forget the film base the active frame uses: the open roll's if it has one, else the
+        frame's own."""
+        roll_id = self.state.active_roll_id
+        if roll_id and rolls.roll_film_base(self.session.repo, roll_id) is not None:
+            rolls.set_roll_film_base(self.session.repo, roll_id, None)
+        elif self.state.config.process.film_base is not None:
+            self._set_frame_film_base(None)
+        else:
             return
-        rolls.set_roll_film_base(self.session.repo, roll_id, None)
         self.tool_sync_requested.emit()
         self.request_render()
 
@@ -7524,7 +7554,7 @@ class AppController(QObject):
             split_axis=str(dip[0].get("split_axis") or "x") if dip is not None else "x",
             gain_slices=self._preview_gain_slices(dip),
             source_orientation=self.state.preview_orientation,
-            film_base=self.roll_film_base(),
+            film_base=self.film_base(),
         )
 
         self._cancel_neighbor_prefetch()
