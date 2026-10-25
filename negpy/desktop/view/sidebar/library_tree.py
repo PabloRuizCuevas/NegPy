@@ -32,7 +32,7 @@ from negpy.desktop.view.confirm import (
     warn_invalid_roll_name,
 )
 from negpy.desktop.view.widgets.rename_roll_dialog import RenameRollDialog
-from negpy.desktop.view.keyboard_shortcuts import _close_roll
+from negpy.desktop.view.keyboard_shortcuts import _unload_all
 from negpy.desktop.view.shortcut_registry import label_with_shortcut
 from negpy.desktop.view.styles.templates import TOOLBAR_BUTTON_HEIGHT, TOOLBAR_ICON_SIZE, hint_label, labeled_action, wrap_tooltip
 from negpy.desktop.view.widgets.flat_rows import ICON, more_press, more_rect, paint_fill, paint_more, paint_pill, two_line_rects
@@ -690,8 +690,8 @@ class LibraryTree(QWidget):
                 menu.addAction(tr("Open")).triggered.connect(lambda: self.controller.open_roll(roll_id))
                 is_active = roll_id == self.controller.state.active_roll_id
                 if is_active:
-                    menu.addAction(label_with_shortcut(tr("Close Roll…"), "close_roll")).triggered.connect(
-                        lambda: _close_roll(self, self.controller)
+                    menu.addAction(label_with_shortcut(tr("Unload All…"), "close_roll")).triggered.connect(
+                        lambda: _unload_all(self, self.controller)
                     )
                 analyze_action = menu.addAction(tr("Roll Analysis"))
                 analyze_action.setEnabled(is_active)

@@ -448,6 +448,22 @@ def test_right_click_on_the_loaded_roll_offers_an_enabled_analyze_action(widget,
     actions["Roll Analysis"].setEnabled.assert_called_once_with(True)
 
 
+@pytest.mark.parametrize("open_roll", [True, False])
+def test_only_the_open_roll_offers_unload_all(widget, monkeypatch, open_roll):
+    roll_id = create_virtual_roll(widget.repo, "Portra", [])
+    widget.controller.state.active_roll_id = roll_id if open_roll else "some-other-roll"
+    widget.reload()
+    item = widget.tree.topLevelItem(0)
+    monkeypatch.setattr(widget.tree, "itemAt", lambda pos: item)
+    actions = _menu_with_distinct_actions(monkeypatch)
+
+    widget._show_context_menu(QPoint(0, 0))
+
+    assert [label.split("\t")[0] for label in actions if label.startswith(("Unload All", "Close Roll"))] == (
+        ["Unload All…"] if open_roll else []
+    )
+
+
 def test_right_click_on_a_different_roll_offers_a_disabled_analyze_action(widget, monkeypatch):
     create_virtual_roll(widget.repo, "Portra", [])
     widget.controller.state.active_roll_id = "some-other-roll"

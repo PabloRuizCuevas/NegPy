@@ -112,7 +112,7 @@ The **Library** tab (`Ctrl+L`) lists your **rolls**. A roll is a named group of 
 
 *   **+**: **Import Folder as a Roll…** makes one roll of a folder and opens it. **Import Subfolders as Rolls…** makes a roll of each subfolder that holds images.
 *   **Double-click** a roll (or press Enter) to open it in the Film Strip.
-*   **⋮** or right-click a roll: **Open**, **Close Roll…**, **Roll Analysis**, **Rename…** and **Delete…**. Delete forgets the roll only; the files and edits stay.
+*   **⋮** or right-click a roll: **Open**, **Unload All…** (the open roll), **Roll Analysis**, **Rename…** and **Delete…**. Delete forgets the roll only; the files and edits stay.
 *   **Filter rolls…** and **Sort** help you find a roll. **⋮ → Refresh** finds new subfolders and recounts the frames. **⋮ → Discovery Filters…** lists folder names to skip (`export` at first).
 
 A roll whose folder is gone shows **folder missing**. A folder name that matches your gear ("penf" for "Pen F") opens Roll Settings filled in.
@@ -134,7 +134,7 @@ The toolbar's **Roll** row holds:
 *   **Sheet filter**: all frames, keepers only, hide rejected, or unmarked only. The button is highlighted while a filter hides frames.
 *   **Roll Settings** (the tag): gear and film details for this frame, the selection or the whole roll.
 *   **Apply**: copies chosen settings of this frame to the selection or the roll.
-*   **⋮**: **Add Files…**, **Add Folder…**, **Save as Roll…**, **Update Thumbnails**, **Hot Folder** (loads new files as a scanner saves them), **Unload…**, **New Roll…**, **Close Roll…**, **Reset Roll to Defaults…** and **Film Strip Guide…**.
+*   **⋮**: **Add Files…**, **Add Folder…**, **Save as Roll…**, **Update Thumbnails**, **Hot Folder** (loads new files as a scanner saves them), **Unload…**, **Unload All…** (empties the Film Strip; the roll stays in the Library), **Reset Roll to Defaults…** and **Film Strip Guide…**.
 
 Right-click a frame to **Keep** it (a check) or **Reject** it (a cross; batch exports skip it).
 

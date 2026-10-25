@@ -69,8 +69,7 @@ def test_the_roll_menu_holds_the_actions_out_of_view(panel):
         "Update Thumbnails",
         "Hot Folder",
         "Unload…",
-        "New Roll…",
-        "Close Roll…",
+        "Unload All…",
         "Reset Roll to Defaults…",
         "Film Strip Guide…",
     ]

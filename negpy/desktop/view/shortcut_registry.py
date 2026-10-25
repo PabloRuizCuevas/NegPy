@@ -306,7 +306,8 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "paste": ShortcutEntry("Ctrl+V", tr("Paste settings"), tr("Actions")),
     "sync_bounds": ShortcutEntry("", tr("Sync bounds to other frames…"), tr("Actions")),
     "reset_roll": ShortcutEntry("", tr("Reset roll to defaults"), tr("Actions")),
-    "close_roll": ShortcutEntry("", tr("Close the roll, or unload every frame"), tr("Actions")),
+    # A stored id: saved key bindings name it, so it keeps its name.
+    "close_roll": ShortcutEntry("", tr("Unload every frame from the Film Strip"), tr("Actions")),
     "remove_from_roll": ShortcutEntry("", tr("Remove the selected frames from the roll…"), tr("Actions")),
     "reset_tab": ShortcutEntry("", tr("Reset this tab to defaults"), tr("Actions")),
     "reset_tab_to_roll": ShortcutEntry("", tr("Reset this tab to the roll's settings"), tr("Actions")),

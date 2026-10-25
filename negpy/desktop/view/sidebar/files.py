@@ -77,7 +77,7 @@ from negpy.desktop.view.frame_merge_action import (
     merge_to_tiff,
     mergeable_in,
 )
-from negpy.desktop.view.keyboard_shortcuts import _close_roll, _reset_roll, _reset_selected, close_roll_label, remove_from_roll
+from negpy.desktop.view.keyboard_shortcuts import _reset_roll, _reset_selected, _unload_all, remove_from_roll
 from negpy.features.hdr.logic import anchor_choices
 from negpy.features.hdr.models import hdr_frame_paths
 from negpy.desktop.view.widgets.elided_label import ElidedLabel
@@ -1638,10 +1638,9 @@ class FileBrowser(QWidget):
         self.unload_action = roll_menu.addAction(tr("Unload…"))
         self.unload_action.triggered.connect(self._on_unload_clicked)
         roll_menu.addSeparator()
-        roll_menu.addAction(tr("New Roll…")).triggered.connect(self._on_clear_all)
-        self.close_roll_action = roll_menu.addAction(label_with_shortcut(tr("Close Roll…"), "close_roll"))
-        self.close_roll_action.triggered.connect(lambda: _close_roll(self, self.controller))
-        roll_menu.aboutToShow.connect(self._sync_close_roll_action)
+        self.unload_all_action = roll_menu.addAction(label_with_shortcut(tr("Unload All…"), "close_roll"))
+        self.unload_all_action.triggered.connect(lambda: _unload_all(self, self.controller))
+        roll_menu.aboutToShow.connect(self._sync_unload_all_action)
         roll_menu.addAction(label_with_shortcut(tr("Reset Roll to Defaults…"), "reset_roll")).triggered.connect(self._on_reset_roll)
         roll_menu.addSeparator()
         roll_menu.addAction(tr("Film Strip Guide…")).triggered.connect(self._show_guide)
@@ -1817,15 +1816,8 @@ class FileBrowser(QWidget):
         """Same as the context menu's Unload…: the selection, never the whole roll."""
         self._on_remove_from_menu()
 
-    def _sync_close_roll_action(self) -> None:
-        state = self.session.state
-        self.close_roll_action.setText(label_with_shortcut(close_roll_label(state), "close_roll"))
-        self.close_roll_action.setEnabled(bool(state.uploaded_files))
-
-    def _on_clear_all(self) -> None:
-        """Drop every loaded frame, from the empty-space context menu."""
-        if confirm_unload(self, clear_all=True):
-            self.session.clear_files()
+    def _sync_unload_all_action(self) -> None:
+        self.unload_all_action.setEnabled(bool(self.session.state.uploaded_files))
 
     def _on_reset_roll(self) -> None:
         """Reset every visible frame back to its own defaults, from the Film Strip
@@ -2345,8 +2337,8 @@ class FileBrowser(QWidget):
         menu.addAction(qta.icon("fa5s.file-import", color=icon_color), tr("Add Files…")).triggered.connect(self.prompt_add_files)
         menu.addAction(qta.icon("fa5s.folder-plus", color=icon_color), tr("Add Folder…")).triggered.connect(self.prompt_add_folder)
         menu.addSeparator()
-        clear = menu.addAction(qta.icon("fa5s.times-circle", color=icon_color), close_roll_label(self.session.state))
-        clear.triggered.connect(lambda: _close_roll(self, self.controller))
+        clear = menu.addAction(qta.icon("fa5s.times-circle", color=icon_color), tr("Unload All…"))
+        clear.triggered.connect(lambda: _unload_all(self, self.controller))
         clear.setEnabled(bool(self.session.state.uploaded_files))
         return menu
 

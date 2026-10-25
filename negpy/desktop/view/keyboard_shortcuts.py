@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QApplication, QWidget
 
 from negpy.desktop.session import ToolMode
 from negpy.services.assets import rolls
-from negpy.desktop.view.confirm import confirm_close_roll, confirm_remove_from_roll, confirm_reset_frames
+from negpy.desktop.view.confirm import confirm_remove_from_roll, confirm_reset_frames, confirm_unload_all
 from negpy.desktop.view.widgets.granular_settings_dialog import open_paste_dialog, open_sticky_dialog, open_sync_bounds_dialog
 from negpy.desktop.view.shortcut_registry import (
     REGISTRY,
@@ -62,12 +62,8 @@ def _reset_roll(window, controller) -> None:
         controller.request_render()
 
 
-def close_roll_label(state) -> str:
-    return tr("Close Roll…") if state.active_roll_id else tr("Unload All…")
-
-
-def _close_roll(window, controller) -> None:
-    """Empty the Film Strip: the open roll, or every loaded frame when no roll is open."""
+def _unload_all(window, controller) -> None:
+    """Empty the Film Strip and close the open roll, which stays in the Library."""
     session = controller.session
     if not session.state.uploaded_files:
         return
@@ -75,7 +71,7 @@ def _close_roll(window, controller) -> None:
     name = None
     if roll_id:
         name = (rolls.roll_for_id(session.repo, roll_id) or {}).get("name") or tr("this roll")
-    if confirm_close_roll(window, name):
+    if confirm_unload_all(window, name):
         session.clear_files()
 
 
@@ -580,7 +576,7 @@ class ShortcutManager:
             "paste": lambda: open_paste_dialog(self.window, controller),
             "sync_bounds": lambda: open_sync_bounds_dialog(self.window, controller.session),
             "reset_roll": lambda: _reset_roll(self.window, controller),
-            "close_roll": lambda: _close_roll(self.window, controller),
+            "close_roll": lambda: _unload_all(self.window, controller),
             "remove_from_roll": lambda: remove_from_roll(self.window, controller),
             "reset_tab": lambda: _fire_tab_header(right, "reset"),
             "reset_tab_to_roll": lambda: _fire_tab_header(right, "revert"),
