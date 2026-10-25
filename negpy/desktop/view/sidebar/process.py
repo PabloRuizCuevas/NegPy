@@ -1,7 +1,6 @@
 from negpy.kernel.system.i18n import tr
 from negpy.kernel.system.text import count_of
 import math
-from dataclasses import replace
 
 import numpy as np
 from PyQt6.QtWidgets import (
@@ -22,7 +21,6 @@ from negpy.desktop.view.styles.templates import (
     set_hint_kind,
     wrap_tooltip,
 )
-from negpy.desktop.view.widgets.reanalyze_dialog import reanalyze_selection
 from negpy.desktop.view.widgets.stats import CLIPPING_TOOLTIP
 from negpy.features.exposure.stats import clipping_row
 from negpy.services.assets import rolls
@@ -360,26 +358,18 @@ class ProcessSidebar(BaseSidebar):
             set_hint_kind(self.baseline_source_hint, "warning")
             self.baseline_source_hint.setText(tr("No baseline yet: this frame uses its own analysis until Roll Analysis runs"))
 
-    def _sync_reanalyze_btn(self, locked: bool, rides: bool) -> None:
-        """One open frame on its own bounds is measured again at once. A selection, or a frame
-        that follows its roll or scene, goes through the Reanalyze plan."""
+    def _sync_reanalyze_btn(self, locked: bool) -> None:
         on_selection = not self.controller.session.selection_is_open_frame()
         self.reanalyze_frame_btn.setEnabled(on_selection or not locked)
         if on_selection:
             n = count_of(len(self.state.selected_indices), "frame").title()
-            tip = tr("Reanalyze {value}: measure the selected frames again through their roll or scene.", value=n)
-        elif rides:
-            tip = tr("Reanalyze Frame: measure this frame again through its roll or scene.")
+            tip = tr("Reanalyze {value}: measure each selected frame again on its own bounds.", value=n)
         else:
             tip = tr("Reanalyze Frame: measure this frame again from its current crop.")
         self.reanalyze_frame_btn.setToolTip(wrap_tooltip(tip))
 
     def _on_reanalyze_frame(self) -> None:
-        conf = self.state.config
-        if not self.controller.session.selection_is_open_frame() or (conf.process.use_luma_average and conf.process.use_color_average):
-            reanalyze_selection(self, self.controller)
-            return
-        self.controller.apply_config(replace(conf, process=replace(conf.process, **invalidate_local_bounds(conf.process))), persist=True)
+        self.controller.reanalyze_selection()
 
     def _on_luma_range_clip_changed(self, val: float, persist: bool = True) -> None:
         self.controller.set_roll_default(
@@ -490,7 +480,7 @@ class ProcessSidebar(BaseSidebar):
             # matters only when at least one axis still analyzes locally, and a freehand analysis
             # region overrides it entirely.
             self.analysis_buffer_slider.setEnabled(not locked and not has_region and not (conf.use_luma_average and conf.use_color_average))
-            self._sync_reanalyze_btn(locked, conf.use_luma_average and conf.use_color_average)
+            self._sync_reanalyze_btn(locked)
             self.luma_range_clip_slider.setEnabled(not locked and not conf.use_luma_average)
             self.color_range_clip_slider.setEnabled(not locked and not conf.use_color_average)
         finally:

@@ -306,17 +306,13 @@ def test_white_black_point_are_normalization_roll_defaults():
     assert rolls.card_fields("baseline") == ("use_luma_average", "use_color_average", "use_cast_average")
 
 
-def test_reanalyze_frame_clears_local_bounds_and_persists(qapp):
+def test_reanalyze_frame_measures_the_selection_again(qapp):
     controller, sidebar = _sidebar()
-    cfg = controller.state.config
-    controller.state.config = replace(cfg, process=replace(cfg.process, local_floors=(0.1, 0.1, 0.1), local_ceils=(0.9, 0.9, 0.9)))
     sidebar.sync_ui()
 
     sidebar.reanalyze_frame_btn.click()
 
-    new_cfg = controller.apply_config.call_args.args[0]
-    assert not new_cfg.process.is_local_initialized
-    assert controller.apply_config.call_args.kwargs == {"persist": True}
+    controller.reanalyze_selection.assert_called_once_with()
 
 
 def test_reanalyze_frame_is_disabled_for_a_locked_frame(qapp):
@@ -330,23 +326,11 @@ def test_reanalyze_frame_is_disabled_for_a_locked_frame(qapp):
     assert not sidebar.reanalyze_frame_btn.isEnabled()
 
 
-def test_reanalyze_for_a_roll_frame_or_a_selection_opens_the_plan(qapp, monkeypatch):
-    from negpy.desktop.view.sidebar import process
-
-    opened = []
-    monkeypatch.setattr(process, "reanalyze_selection", lambda parent, controller: opened.append(controller))
+def test_reanalyze_names_the_selection(qapp):
     controller, sidebar = _sidebar()
-    controller.session.selection_is_open_frame.return_value = True
-    cfg = controller.state.config
-    controller.state.config = replace(cfg, process=replace(cfg.process, use_luma_average=True, use_color_average=True))
-    sidebar.sync_ui()
-    assert sidebar.reanalyze_frame_btn.isEnabled()
-    sidebar.reanalyze_frame_btn.click()
-    assert opened == [controller]
-    controller.apply_config.assert_not_called()
-
     controller.session.selection_is_open_frame.return_value = False
     controller.state.selected_indices = [0, 1, 2]
+    cfg = controller.state.config
     controller.state.config = replace(cfg, process=replace(cfg.process, lock_bounds=True))
     sidebar.sync_ui()
     assert sidebar.reanalyze_frame_btn.isEnabled()

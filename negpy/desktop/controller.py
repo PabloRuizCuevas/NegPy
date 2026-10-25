@@ -192,6 +192,7 @@ from negpy.features.local.models import LocalAdjustmentsConfig
 from negpy.features.process.path import RenderPath, render_path
 from negpy.features.process.models import (
     SCAN_SETUP_PAPERS,
+    ProcessConfig,
     ProcessMode,
     invalidate_local_bounds,
     mode_aware_exposure_reset,
@@ -374,30 +375,6 @@ class _DiscoveryRequest:
     skip_paths: frozenset = frozenset()
 
 
-@dataclass(frozen=True)
-class ReanalyzeGroup:
-    """One baseline a selection reruns: the roll (``scene_id`` None) or one scene."""
-
-    scene_id: Optional[str]
-    name: str
-    ordinal: int
-    frames: List[dict]
-    selected: int
-
-
-@dataclass(frozen=True)
-class ReanalyzePlan:
-    """What Reanalyze does to a selection: each frame reruns the roll or scene baseline it
-    belongs to, a frame on its own bounds is measured alone, and a frame with Lock Bounds is skipped."""
-
-    groups: List[ReanalyzeGroup]
-    own: List[dict]
-    locked: int
-    changed: int
-    uncropped: int
-    group_frames: int
-
-
 # Sections a scan peek shows itself or that never reach the pixels; an edit to any other section ends the peek.
 _PEEK_SHOWN_SECTIONS = NON_PIXEL_SECTIONS | {"geometry"}
 
@@ -521,6 +498,11 @@ _NOTHING_TO_APPLY = tr("Nothing to apply: every card already follows the roll")
 def _kept_own_exposure(count: int) -> str:
     locked = count_of(count, "locked frame")
     return tr("{value} kept its own exposure", value=locked) if count == 1 else tr("{value} kept their own exposure", value=locked)
+
+
+def _own_bounds(process: ProcessConfig) -> ProcessConfig:
+    """*process* off its roll or scene baseline, its local bounds cleared for a fresh measure."""
+    return replace(process, use_luma_average=False, use_color_average=False, use_cast_average=False, **invalidate_local_bounds(process))
 
 
 # Process-wide, so a cleared last_metrics never reissues a serial a canvas cache still holds.
@@ -746,8 +728,6 @@ class AppController(QObject):
         self._active_batch_token: Optional[int] = None
         self._normalization_scope: Optional[str] = None
         self._scene_queue: List[str] = []
-        # Frames a Reanalyze run measures alone: every baseline in the run leaves them on their own bounds.
-        self._keep_own: frozenset = frozenset()
         # True while a hot-folder-triggered discovery owns the batch lane. Thumbnail
         # loading is an independent background queue and never owns this state.
         self._hot_folder_sequence_active = False
@@ -5496,7 +5476,6 @@ class AppController(QObject):
         if self._begin_batch("normalization", batch_title, abortable=True) is None:
             return
         self._scene_queue = []
-        self._keep_own = frozenset()
         self.set_status(tr("Starting {title}…", title=title))
         self._dispatch_normalization(scene_id, frames, detect=detect)
 
@@ -5516,15 +5495,11 @@ class AppController(QObject):
             return
         self._analyze_scene_queue(queue)
 
-    def _analyze_scene_queue(
-        self, queue: List[Tuple[Optional[str], List[dict]]], title: str = "", keep_own: frozenset = frozenset()
-    ) -> None:
-        """Analysis of each (scene id, loaded members) in turn, as one batch. Only the first
-        entry may be the roll (None): the later ones resolve their frames as scenes."""
-        if not queue or self._begin_batch("normalization", title or tr("Analyzing scenes"), abortable=True) is None:
+    def _analyze_scene_queue(self, queue: List[Tuple[str, List[dict]]]) -> None:
+        """Scene Analysis on each (scene id, loaded members) in turn, as one batch."""
+        if not queue or self._begin_batch("normalization", tr("Analyzing scenes"), abortable=True) is None:
             return
-        self._scene_queue = [sid for sid, _frames in queue[1:] if sid is not None]
-        self._keep_own = keep_own
+        self._scene_queue = [sid for sid, _frames in queue[1:]]
         self._dispatch_normalization(*queue[0])
 
     def _roll_analysis_frames(self) -> List[dict]:
@@ -5539,82 +5514,25 @@ class AppController(QObject):
             state.uploaded_files[i] for i in (state.selected_indices or [state.selected_file_idx]) if 0 <= i < len(state.uploaded_files)
         ]
 
-    def reanalyze_plan(self) -> ReanalyzePlan:
-        """Resolves the selection (else the open frame) into the baselines it follows. A frame the
-        last analysis kept out as far from the pool reruns that baseline, so the pool decides again."""
-        repo, roll_id = self.session.repo, self.state.active_roll_id
-        by_hash = rolls.scene_by_hash(repo, roll_id)
-        outliers: Set[str] = set()
-        if roll_id:
-            scene_runs = (rolls.scene_normalization(repo, roll_id, sid) for sid, _entry in rolls.roll_scenes(repo, roll_id))
-            for run in (rolls.roll_normalization(repo, roll_id), *scene_runs):
-                outliers.update((run or {}).get("outliers") or ())
-        own: List[dict] = []
-        locked = 0
-        picked: Dict[Optional[str], int] = {}
-        for f in self._reanalyze_targets():
-            proc = self._config_for_batch_asset(f).process
-            if proc.lock_bounds:
-                locked += 1
-            elif not (proc.use_luma_average and proc.use_color_average) and f["hash"] not in outliers:
-                own.append(f)
-            else:
-                scene = by_hash.get(rolls.unforked_hash(f["hash"]))
-                key = scene[1] if scene else None
-                picked[key] = picked.get(key, 0) + 1
-
-        groups: List[ReanalyzeGroup] = []
-        if None in picked:
-            entry = rolls.roll_for_id(repo, roll_id) if roll_id else None
-            groups.append(ReanalyzeGroup(None, entry["name"] if entry else "", 0, self._roll_analysis_frames(), picked[None]))
-        for ordinal, sid, name in sorted({(o, s, n) for o, s, n in by_hash.values() if s in picked}):
-            groups.append(ReanalyzeGroup(sid, name, ordinal, self._normalization_targets(sid), picked[sid]))
-
-        own_hashes = {f["hash"] for f in own}
-        changed, uncropped, group_frames = set(own_hashes), 0, 0
-        for f in {f["hash"]: f for g in groups for f in g.frames}.values():
-            config = self._config_for_batch_asset(f)
-            group_frames += 1
-            if not (config.geometry.crop_rect or config.geometry.crop_from_auto):
-                uncropped += 1
-            if not config.process.lock_bounds:
-                changed.add(f["hash"])
-        return ReanalyzePlan(groups, own, locked, len(changed), uncropped, group_frames)
-
-    def run_reanalyze(self, plan: ReanalyzePlan) -> None:
-        """Measures the plan's own-bounds frames again, then reruns its roll and scene baselines
-        as one batch. Frames that wait for Auto Crop are cropped first."""
-        if plan.groups and self._batch_busy(tr("Reanalyze")):
-            return
-        if plan.own:
-            self._clear_local_bounds(plan.own)
-        if not plan.groups:
-            self.set_status(tr("{value} measured again", value=count_of(len(plan.own), "frame")), 3000)
-            return
-        queue = [(g.scene_id, g.frames) for g in plan.groups]
-        keep_own = frozenset(f["hash"] for f in plan.own)
-
-        def analyze() -> None:
-            self._analyze_scene_queue(queue, tr("Reanalyzing"), keep_own)
-
-        waiting = [f for g in plan.groups for f in g.frames if self._waits_for_auto_crop(f)]
-        if waiting and self.request_batch_auto_crop(assets=waiting):
-            self._analysis_after_crop = analyze
-            return
-        analyze()
+    def reanalyze_selection(self) -> None:
+        """Measures each selected frame (else the open one) again on its own bounds, off its
+        roll or scene baseline. A frame with Lock Bounds is skipped."""
+        frames = [f for f in self._reanalyze_targets() if not self._config_for_batch_asset(f).process.lock_bounds]
+        if frames:
+            self._clear_local_bounds(frames)
+            self.set_status(tr("{value} measured again", value=count_of(len(frames), "frame")), 3000)
 
     def _clear_local_bounds(self, frames: List[dict]) -> None:
-        """Reanalyze Frame for each of *frames*: the open one measures at its next render, the
-        others at their thumbnail refresh."""
+        """Puts each of *frames* on fresh own bounds: the open one measures at its next render,
+        the others at their thumbnail refresh."""
         changed: List[str] = []
         for f in frames:
             if f["hash"] == self.state.current_file_hash:
-                proc = self.state.config.process
-                self.session.update_config(replace(self.state.config, process=replace(proc, **invalidate_local_bounds(proc))), persist=True)
+                self.session.update_config(replace(self.state.config, process=_own_bounds(self.state.config.process)), persist=True)
                 self.request_render()
                 continue
             p = self.session.repo.load_file_settings(f["hash"]) or self.session.config_for_asset(f)
-            new_p = replace(p, process=replace(p.process, **invalidate_local_bounds(p.process)))
+            new_p = replace(p, process=_own_bounds(p.process))
             self.session.push_external_history(f["hash"], p, new_p)
             self.session.repo.save_file_settings(f["hash"], new_p, file_path=f["path"])
             changed.append(f["hash"])
@@ -5781,7 +5699,7 @@ class AppController(QObject):
         source = f"scene:{scene_id}" if scene_id else (f"roll:{roll_id}" if roll_id else "")
         outliers = tuple(outlier_hashes)
         targets = self._normalization_targets(scene_id)
-        locked_skipped = self._push_bounds(targets, locked_floors, locked_ceils, None, source, (*outliers, *self._keep_own), axis)
+        locked_skipped = self._push_bounds(targets, locked_floors, locked_ceils, None, source, outliers, axis)
 
         if scene_id is None:
             if roll_id is not None:
