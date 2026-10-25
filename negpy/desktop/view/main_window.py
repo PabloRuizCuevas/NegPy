@@ -129,6 +129,11 @@ class _EmptyStateOverlay(QWidget):
         menu.addAction(tr("Scan…")).triggered.connect(self.scan_requested)
         menu.exec(self.load_btn.mapToGlobal(self.load_btn.rect().bottomLeft()))
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # Each render raises the canvas's own layers, which would otherwise cover these buttons.
+        self.raise_()
+
     def eventFilter(self, obj, event) -> bool:
         if obj is self.parent() and event.type() == QEvent.Type.Resize:
             self.setGeometry(self.parent().rect())
