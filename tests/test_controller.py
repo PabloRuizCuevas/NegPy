@@ -4904,6 +4904,7 @@ class TestBatchAnalysisFiltering(unittest.TestCase):
             self.mock_session_manager.repo.load_file_settings(f["hash"]) or WorkspaceConfig()
         )
 
+        self.mock_session_manager.state.active_roll_id = "roll-1"
         self.mock_session_manager.state.uploaded_files = [
             {"name": "IMG_0001.cr2", "path": "/tmp/IMG_0001.cr2", "hash": "h1"},
             {"name": "IMG_0002.cr2", "path": "/tmp/IMG_0002.cr2", "hash": "h2"},
@@ -4944,6 +4945,23 @@ class TestBatchAnalysisFiltering(unittest.TestCase):
                 thread.wait()
         del self.controller
         gc.collect()
+
+    def test_analysis_without_a_roll_runs_nothing_and_says_why(self):
+        self.mock_session_manager.state.active_roll_id = None
+        messages = []
+        self.controller.status_message_requested.connect(lambda text, *_: messages.append(text))
+        for request in (
+            self.controller.request_batch_normalization,
+            self.controller.request_detect_scenes,
+            self.controller.request_analyze_all_scenes,
+            lambda: self.controller.request_scene_analysis("s1"),
+        ):
+            request()
+        self.assertEqual(self.emitted, [])
+        self.assertEqual(
+            messages,
+            ["Open or save a roll to use Roll Analysis."] + ["Open or save a roll to use scenes."] * 3,
+        )
 
     def test_analysis_respects_filter(self):
         self.visible_indices = [0, 1]  # only IMG_*

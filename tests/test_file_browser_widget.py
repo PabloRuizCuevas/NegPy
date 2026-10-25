@@ -1133,9 +1133,14 @@ def _scene_menu(menu):
     return next(a.menu() for a in menu.actions() if a.text() == "Scene")
 
 
-def test_scene_menu_is_absent_without_a_roll(browser, session):
+def test_scene_menu_is_grayed_without_a_roll(browser, session):
     session.state.selected_indices = [0, 1]
-    assert "Scene" not in _action_labels(browser.build_frame_menu())
+    session.state.active_roll_id = None
+    menu = browser.build_frame_menu()
+    scene = next(a for a in menu.actions() if a.text() == "Scene")
+    assert not scene.isEnabled()
+    assert scene.toolTip() == "Open or save a roll to use scenes."
+    assert menu.toolTipsVisible()
 
 
 def test_scene_menu_offers_group_and_add_for_loose_frames(browser, session):

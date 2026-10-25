@@ -453,7 +453,12 @@ class ProcessSidebar(BaseSidebar):
             ):
                 w.setVisible(not transfer)
             self.use_cast_avg_btn.setVisible(conf.process_mode == ProcessMode.C41)
-            self.use_cast_avg_btn.setEnabled(conf.locked_neutral_axis is not None)
+            # A roll baseline is what the averages read, so without a roll they only turn off;
+            # the Roll Analysis hint above says why.
+            has_roll = bool(self.controller.state.active_roll_id)
+            self.use_luma_avg_btn.setEnabled(has_roll or conf.use_luma_average)
+            self.use_color_avg_btn.setEnabled(has_roll or conf.use_color_average)
+            self.use_cast_avg_btn.setEnabled((has_roll and conf.locked_neutral_axis is not None) or conf.use_cast_average)
             self._update_baseline_source_hint(conf, transfer)
 
             idx = self._channel_index()

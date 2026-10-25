@@ -58,7 +58,7 @@ from PyQt6.QtWidgets import (
 )
 
 from negpy.kernel.system.text import count_of
-from negpy.desktop.controller import AppController
+from negpy.desktop.controller import SCENES_NEED_A_ROLL, AppController
 from negpy.desktop.session import AppState, composite_kind
 from negpy.desktop.view.canvas.toolbar import CANVAS_COLORS
 from negpy.desktop.view.confirm import (
@@ -2349,6 +2349,7 @@ class FileBrowser(QWidget):
         multi = len(state.selected_indices) > 1
 
         menu = QMenu(self)
+        menu.setToolTipsVisible(True)
         if on_selection:
             menu.addAction(tr("Export Selected Frames")).triggered.connect(lambda: self.controller.request_export_selected())
         else:
@@ -2436,6 +2437,10 @@ class FileBrowser(QWidget):
                     )
         if state.active_roll_id:
             self._add_scene_menu(menu, [state.uploaded_files[i] for i in targets], multi)
+        else:
+            no_scenes = menu.addMenu(tr("Scene"))
+            no_scenes.setEnabled(False)
+            no_scenes.menuAction().setToolTip(SCENES_NEED_A_ROLL)
         menu.addSeparator()
         if not on_selection:
             menu.addAction(label_with_shortcut(SHOW_LABEL, "show_in_folder")).triggered.connect(

@@ -172,7 +172,7 @@ The right-click menu also copies, pastes and resets settings, applies them to ot
 
 ### Scenes
 
-A scene is a group of frames shot in the same light. It gets its own Roll Analysis baseline, so its frames match each other. **Detect Scenes** in Roll Analysis finds these groups for you. To make one yourself, select frames, then right-click → **Scene → Group as Scene…**. The same menu adds and removes frames, runs **Analyze Scene…**, and renames or deletes the scene. **Sort → Scene** groups them in the strip. Scenes need a roll.
+A scene is a group of frames shot in the same light. It gets its own Roll Analysis baseline, so its frames match each other. **Detect Scenes** in Roll Analysis finds these groups for you. To make one yourself, select frames, then right-click → **Scene → Group as Scene…**. The same menu adds and removes frames, runs **Analyze Scene…**, and renames or deletes the scene. **Sort → Scene** groups them in the strip. Scenes need a roll; without one, the **Scene** menu is grayed out.
 
 ---
 
@@ -548,7 +548,7 @@ A **slide** needs no inversion: the tone controls shape the picture directly. Au
 <!-- panel:baseline -->
 ### 10.6 Roll Analysis
 
-Measures the whole roll once and shares the result, so the frames of one film print alike.
+Measures the whole roll once and shares the result, so the frames of one film print alike. With no roll open, the card is grayed out: open or save a roll first.
 
 *   **Reanalyze**: measures every loaded frame (except scene and locked frames) and saves the average as the roll's baseline. Frames very different from the rest keep their own. It first crops the frames that wait for Auto Crop.
 *   **Use This Frame**: makes this frame's measurement the roll's baseline.
@@ -665,7 +665,7 @@ The **Export** button is at the bottom of the tab. Above it, **File** holds the 
 ### Output intent
 
 *   **Print** (default): the picture as you see it.
-*   **Flat**: a flat, low-contrast master for editing in another app. It skips the print look and the effects, but keeps a color Print stock's dye color, and writes a 16-bit file. **Preview Flat** shows it on the canvas. Run **Roll Analysis** first so the masters of a roll match.
+*   **Flat**: a flat, low-contrast master for editing in another app. It skips the print look and the effects, but keeps a color Print stock's dye color, and writes a 16-bit file. **Preview Flat** shows it on the canvas. Run **Roll Analysis** first so the masters of a roll match; it needs an open roll.
 *   **Linear**: the raw scan data before NegPy's processing, as a 16-bit TIFF or JPEG XL, for a raw workflow in another app. It reads camera RAW, LinearRaw DNG, Coolscan NEF, Flextight, Noritsu and Pakon files and TIFF scans. Options for infrared, white balance, flat field, sensor and lens correction are off at first. File names get `_linear`, so a source is never overwritten.
 
 ### File settings

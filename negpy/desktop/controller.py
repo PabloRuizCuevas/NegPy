@@ -494,6 +494,10 @@ def _first_two(names: List[str]) -> str:
 
 
 _NOTHING_TO_APPLY = tr("Nothing to apply: every card already follows the roll")
+# One wording wherever a roll-only feature is reached with no roll open: a grayed panel's
+# hint, a grayed menu's tooltip and a shortcut's status message.
+ROLL_ANALYSIS_NEEDS_A_ROLL = tr("Open or save a roll to use Roll Analysis.")
+SCENES_NEED_A_ROLL = tr("Open or save a roll to use scenes.")
 
 
 def _kept_own_exposure(count: int) -> str:
@@ -5499,13 +5503,22 @@ class AppController(QObject):
         entry = dict(rolls.roll_scenes(self.session.repo, self.state.active_roll_id)).get(scene_id)
         return entry["name"] if entry else ""
 
+    def _roll_needed(self, message: str) -> bool:
+        """True, after saying *message*, when no roll is open for a roll-only feature."""
+        if self.state.active_roll_id:
+            return False
+        self.set_status(message, 3000)
+        return True
+
     def request_batch_normalization(self) -> None:
         """Roll Analysis: the visible frames outside every scene."""
-        self._request_normalization(None)
+        if not self._roll_needed(ROLL_ANALYSIS_NEEDS_A_ROLL):
+            self._request_normalization(None)
 
     def request_scene_analysis(self, scene_id: str) -> None:
         """Scene Analysis: one scene's loaded members, whatever the sheet filter shows."""
-        self._request_normalization(scene_id)
+        if not self._roll_needed(SCENES_NEED_A_ROLL):
+            self._request_normalization(scene_id)
 
     def _request_normalization(self, scene_id: Optional[str], *, cropped: bool = False, detect: bool = False) -> None:
         """A frame still waiting for Auto Crop would meter its film border, so those are cropped
@@ -5540,7 +5553,7 @@ class AppController(QObject):
 
     def request_analyze_all_scenes(self) -> None:
         """Scene Analysis for every scene of the active roll with a loaded frame, one after another."""
-        if self._batch_busy(tr("Scene Analysis")):
+        if self._roll_needed(SCENES_NEED_A_ROLL) or self._batch_busy(tr("Scene Analysis")):
             return
         queue = [
             (sid, frames)
@@ -5601,10 +5614,8 @@ class AppController(QObject):
     def request_detect_scenes(self) -> None:
         """Detect Scenes: measure the visible frames outside every scene and find the groups under
         another light than the roll's. The groups wait as found scenes for Accept or Discard."""
-        if self.state.active_roll_id is None:
-            self.set_status(tr("Save the Film Strip as a roll before grouping scenes"), 3000)
-            return
-        self._request_normalization(None, detect=True)
+        if not self._roll_needed(SCENES_NEED_A_ROLL):
+            self._request_normalization(None, detect=True)
 
     def _on_scenes_detected(self, groups: list) -> None:
         self._end_batch("normalization")
@@ -5862,11 +5873,9 @@ class AppController(QObject):
         return [rolls.unforked_hash(h) for h in self._selected_frame_hashes()]
 
     def _edit_scenes(self, edit: Callable[[str], Any]) -> Any:
-        roll_id = self.state.active_roll_id
-        if roll_id is None:
-            self.set_status(tr("Save the Film Strip as a roll before grouping scenes"), 3000)
+        if self._roll_needed(SCENES_NEED_A_ROLL):
             return None
-        result = edit(roll_id)
+        result = edit(self.state.active_roll_id)
         self.session.refresh_scene_marks()
         return result
 
