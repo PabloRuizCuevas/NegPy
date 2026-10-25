@@ -153,7 +153,7 @@ def test_a_collapsed_folder_stays_collapsed_in_the_next_session(qapp, tmp_path, 
     recognize_folder(widget.repo, str(tree_dirs / "roll_b"), name="scans/roll_b")
     widget.reload()
     folder = widget.tree.topLevelItem(0)
-    assert folder.data(0, _FOLDER_ROLE) == str(tree_dirs)
+    assert folder.data(0, _FOLDER_ROLE) == [str(tree_dirs)]
     assert folder.isExpanded()
 
     folder.setExpanded(False)
@@ -888,9 +888,27 @@ def test_deleting_a_folder_row_forgets_every_roll_under_it(widget, tree_dirs, mo
     create_virtual_roll(widget.repo, "portra", [])
     widget.reload()
     folder = widget.tree.topLevelItem(_names(widget).index("scans"))
-    assert folder.data(0, _FOLDER_ROLE) == str(tree_dirs)
+    assert folder.data(0, _FOLDER_ROLE) == [str(tree_dirs)]
     monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.confirm_delete_named", lambda *a, **k: True)
 
-    widget._delete_folder(str(tree_dirs), "scans")
+    widget._delete_folder([str(tree_dirs)], "scans")
+
+    assert _names(widget) == ["portra"]
+
+
+def test_a_folder_row_shared_by_two_folders_deletes_the_rolls_of_both(widget, tmp_path, monkeypatch):
+    for parent in ("a", "b"):
+        (tmp_path / parent / "scans" / f"roll_{parent}").mkdir(parents=True)
+    recognize_folder(widget.repo, str(tmp_path / "a" / "scans" / "roll_a"), name="scans/roll_a")
+    recognize_folder(widget.repo, str(tmp_path / "b" / "scans" / "roll_b"), name="scans/roll_b")
+    create_virtual_roll(widget.repo, "portra", [])
+    widget.reload()
+    folder = widget.tree.topLevelItem(_names(widget).index("scans"))
+    paths = sorted(folder.data(0, _FOLDER_ROLE))
+    assert paths == [str(tmp_path / "a" / "scans"), str(tmp_path / "b" / "scans")]
+    assert folder.toolTip(0).split("\n") == folder.data(0, _FOLDER_ROLE)
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.confirm_delete_named", lambda *a, **k: True)
+
+    widget._delete_folder(folder.data(0, _FOLDER_ROLE), "scans")
 
     assert _names(widget) == ["portra"]

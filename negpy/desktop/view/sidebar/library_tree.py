@@ -470,20 +470,22 @@ class LibraryTree(QWidget):
         stock_ids = {(entry.get("defaults") or {}).get("film_stock_id") for _roll_id, entry in entries} - {None, ""}
         self._gear = GearProfiles.load_library() if stock_ids else None
         # A folder roll named "a/b/c" sits under folder rows "a" and "a/b", placed where
-        # their first roll falls in the sort.
+        # their first roll falls in the sort. One row can hold rolls from several folders
+        # of one name, so it keeps every folder path under it.
         folders: dict[str, QTreeWidgetItem] = {}
         for roll_id, entry in entries:
             parts = entry.get("name", "").split(rolls.ROLL_PATH_SEP) if entry.get("kind") == "folder" else [entry.get("name", "")]
             parent = self.tree.invisibleRootItem()
             for depth in range(1, len(parts)):
                 key = rolls.ROLL_PATH_SEP.join(parts[:depth])
+                folder_path = entry.get("folder_path", "")
+                for _ in range(len(parts) - depth):
+                    folder_path = os.path.dirname(folder_path)
                 if key not in folders:
-                    folder_path = entry.get("folder_path", "")
-                    for _ in range(len(parts) - depth):
-                        folder_path = os.path.dirname(folder_path)
-                    folders[key] = self._make_folder_item(parts[depth - 1], folder_path)
+                    folders[key] = self._make_folder_item(parts[depth - 1])
                     folders[key].setData(0, _PREFIX_ROLE, key)
                     parent.addChild(folders[key])
+                self._add_folder_path(folders[key], folder_path)
                 parent = folders[key]
             parent.addChild(self._make_item(roll_id, entry, parts[-1]))
         for item in folders.values():
@@ -512,14 +514,21 @@ class LibraryTree(QWidget):
         self.repo.save_global_setting(_COLLAPSED_KEY, sorted(self._collapsed))
 
     @staticmethod
-    def _make_folder_item(name: str, folder_path: str) -> QTreeWidgetItem:
+    def _make_folder_item(name: str) -> QTreeWidgetItem:
         """A folder row: groups rolls, is not a roll itself, so it opens and selects nothing."""
         item = QTreeWidgetItem([name])
         item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-        item.setData(0, _FOLDER_ROLE, folder_path)
-        item.setToolTip(0, folder_path)
+        item.setData(0, _FOLDER_ROLE, [])
         item.setIcon(0, qta.icon("mdi6.folder-open-outline", color=THEME.text_secondary))
         return item
+
+    @staticmethod
+    def _add_folder_path(item: QTreeWidgetItem, folder_path: str) -> None:
+        paths = item.data(0, _FOLDER_ROLE)
+        if folder_path and os.path.normcase(os.path.normpath(folder_path)) not in {os.path.normcase(os.path.normpath(p)) for p in paths}:
+            paths = [*paths, folder_path]
+            item.setData(0, _FOLDER_ROLE, paths)
+            item.setToolTip(0, "\n".join(paths))
 
     def _leaf_count(self, item: QTreeWidgetItem) -> int:
         return sum(
@@ -723,9 +732,10 @@ class LibraryTree(QWidget):
             self.reload()
             self.rolls_changed.emit()
 
-    def _delete_folder(self, folder_path: str, name: str) -> None:
+    def _delete_folder(self, folder_paths: list[str], name: str) -> None:
         if confirm_delete_named(self, tr("Folder"), name, informative=tr("This forgets every roll in it. Nothing on disk changes.")):
-            rolls.delete_folder_rolls(self.repo, folder_path)
+            for folder_path in folder_paths:
+                rolls.delete_folder_rolls(self.repo, folder_path)
             self.reload()
             self.rolls_changed.emit()
 
