@@ -6,6 +6,7 @@ import pytest
 
 from negpy.features.exposure.logic import apply_characteristic_curve
 from negpy.features.toning.logic import apply_chemical_toning
+from negpy.features.transparency.logic import apply_transfer_curve
 from negpy.kernel.image.logic import WORKING_LAB
 
 # Recorded on Linux x86-64, where the cv2 oracles pass. Every release platform must give these
@@ -75,6 +76,19 @@ _CASES = {
     "matrix_trc_u8": lambda: negpy_core.matrix_trc_u8((_IMG3 * 255).astype(np.uint8), np.ascontiguousarray(_RAMP[:, ::256]), _M, _RAMP),
     "vignette": lambda: negpy_core.apply_vignette(_IMG3, 0.7, 0.6, 0.3),
     "flat_curve": lambda: negpy_core.flat_curve(_IMG3, 0.65, 0.1, (0.013, -0.02, 0.0), _M),
+    "transfer_curve": lambda: apply_transfer_curve(
+        _IMG3,
+        0.1,
+        1.1,
+        (0.2, 0.3, 0.1),
+        (0.2, 0.0, 0.25),
+        (0.01, 0.0, -0.02),
+        shadow_density=0.15,
+        shadow_cmy=(0.02, 0.0, 0.0),
+        cast_gain=(1.02, 1.0, 0.97),
+        separation=1.3,
+        damping=0.5,
+    ),
     "matrix_trc_u16": lambda: negpy_core.matrix_trc_u16(
         (_IMG3 * 65535).astype(np.uint16), np.ascontiguousarray(np.tile(_LIN, (3, 1))), _M, np.ascontiguousarray(_RAMP[:, ::16])
     ),
@@ -148,6 +162,7 @@ _HASHES = {
     "matrix_trc_u16": "8fd1af40718fc9bc59541e1128e46cb32e08ea05626f7cbd4cebe7905cecd02a",
     "vignette": "dea377797d6b0852a8dec1665c95aa87c9ab2b6a8e03f808e27140bc4b6566c6",
     "flat_curve": "e47f6084a58e19119c6e3364ebf017dfc7f039ec6c73e0eea8e942519021bf0b",
+    "transfer_curve": "afdb5891162dca5abe4530bd098469b26a0be16a41df32f4f2928ddb8d37b943",
     "usm_sharpen": "7267d2a3976c9381eadde01fe11ea60d46345b4747283e6ac68a2aa4a025d0a8",
     "sabattier": "f8956f67786c7c1d0e628af4b82fb12b6dde42e70da2504585f5bf20e7fbb461",
     "lith": "98dc05c62e191da2ad00c1f2327c48beff5af7e882be64cac5302cb0ea5099e5",

@@ -59,17 +59,6 @@ def separation_damping_gain(k: float, damping: float, chroma: float, ref_spread:
     return float(kf)
 
 
-def separation_damping_gain_np(k: float, damping: float, chroma: Any, ref_spread: float) -> Any:
-    """Vectorized numpy twin of separation_damping_gain, for the transfer curve's
-    per-pixel gain over a whole image rather than the print curve's per-pixel scalar.
-    Same math; see that function for the derivation."""
-    if k <= 0.0:
-        return np.zeros_like(chroma, dtype=np.float32)
-    h = (np.float32(ref_spread) - chroma) / (np.float32(ref_spread) + chroma)
-    kf = np.power(np.float32(k), (1.0 - np.float32(damping)) + np.float32(damping) * h, dtype=np.float32)
-    return np.minimum(kf, np.float32(3.0))
-
-
 def tone_key_weight_np(lum: Any, e0: float, e1: float) -> Any:
     """A tone-limited mask's weight at luma `lum`, over a whole raster: a smoothstep from 0 at e0
     to 1 at e1 (see placement.key_edges). The print curve in negpy_core and exposure.wgsl mirror it."""
