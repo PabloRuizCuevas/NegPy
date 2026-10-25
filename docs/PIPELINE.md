@@ -67,7 +67,7 @@ Pixel values are linear transmittance. The source corrections run in that domain
 ## 3. The Print (Exposure)
 **Code**: `negpy.features.exposure`
 
-*   **B&W Negative**: the normalized signal collapses to one density (its luminance) before the curve.
+*   **B&W**: the normalized log channels collapse to one density before the curve, a weighted sum $v = w_r v_r + w_g v_g + w_b v_b$ (`features/exposure/bw_filter.py`). Each row of weights sums to 1, so a gray does not move. The default is a panchromatic film (0.31, 0.39, 0.30). On a color source (`source_color`, measured once on load by `detect_process_and_source`) the Filter row replaces it: a least-squares fit of a panchromatic film behind each Wratten filter on Portra 400's layer sensitivities. A B&W source always takes the default. The Contrast Mask and Diffusion planes collapse with the same weights; metering reads the unfiltered luminance. B&W drops the color filtration (the nine CMY values, `printed_exposure`) and Cast Removal.
 *   **Color timing**: subtractive CMY in log space, on Global, Shadows or Highlights. Regional offsets weigh by $w_{sh} = \sigma(3 \cdot (v - z))$ about the midtone zone center $z$ (`reference_print_density`). Temperature, the WB picker and the temperature roll-lock act on the selected region's M/Y pair.
 *   **The H&D curve**: a toe-linear-shoulder curve in density. A line of slope $k$ through the pivot is bounded by two independent softplus knees. With $v = k \cdot (x_{adj} - x_0)$:
     $$v_1 = D_{min} + \frac{\text{softplus}\big(a_{hl} (v - D_{min})\big)}{a_{hl}} \qquad \text{(shoulder → paper white)}$$

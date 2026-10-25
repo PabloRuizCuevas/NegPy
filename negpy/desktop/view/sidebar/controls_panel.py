@@ -994,7 +994,8 @@ class ControlsPanel(QWidget):
         from negpy.features.process.models import ProcessMode
 
         self._set_read_only(self.controller.active_diptych() is not None)
-        self.color_section.setVisible(self.controller.state.config.process.process_mode != ProcessMode.BW)
+        process = self.controller.state.config.process
+        self.color_section.setVisible(process.process_mode != ProcessMode.BW or bool(process.source_color))
         self.process_sidebar.sync_ui()
         self.roll_sidebar.sync_ui()
         self.color_sidebar.sync_ui()
@@ -1208,6 +1209,8 @@ class ControlsPanel(QWidget):
 
     def _sync_modified_dots(self) -> None:
         """Update modified-indicator dots on collapsible section headers."""
+        from negpy.features.process.models import ProcessMode
+
         cfg = self.controller.state.config
         _exp = _DEFAULT_EXPOSURE
         _lab = _DEFAULT_LAB
@@ -1218,7 +1221,9 @@ class ControlsPanel(QWidget):
 
         exp = cfg.exposure
         mode = cfg.process.process_mode
-        color_count = sum(getattr(exp, f) != _default_exposure_field(f, mode) for f in COLOR_FIELDS)
+        # The card shows only the Filter in B&W, and the Filter only there.
+        shown_color = ("bw_filter",) if mode == ProcessMode.BW else tuple(f for f in COLOR_FIELDS if f != "bw_filter")
+        color_count = sum(getattr(exp, f) != _default_exposure_field(f, mode) for f in shown_color)
         tone_count = sum(getattr(exp, f) != _default_exposure_field(f, mode) for f in TONE_FIELDS)
         paper_count = sum(getattr(exp, f) != _default_exposure_field(f, mode) for f in PAPER_FIELDS)
 

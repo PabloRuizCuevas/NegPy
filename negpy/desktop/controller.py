@@ -2957,6 +2957,7 @@ class AppController(QObject):
                 # A reload or memo hit keeps the rendered frame until its replacement is ready.
                 use_splash=memo is None and not keep_preview,
                 detect_mode=pending_import is not None and pending_import.detect_mode,
+                detect_source=self.state.config.process.source_color is None,
                 # Whole, not flattened: the worker gates on the same predicates the decode
                 # paths use, so a disabled section needs no blanking here.
                 rgbscan=rgbscan,
@@ -3048,6 +3049,7 @@ class AppController(QObject):
         cam_matrix: Any = None,
         detect_preview: Any = None,
         generation: Optional[int] = None,
+        source_color: Optional[bool] = None,
     ) -> None:
         for f in self.state.uploaded_files:
             if f["path"] == file_path and f.pop("decode_failed", None) is not None:
@@ -3085,6 +3087,7 @@ class AppController(QObject):
         self.state.current_file_path = file_path
         self.state.source_cs = source_cs
         self._apply_detected_mode(detected_mode)
+        self._store_source_color(source_color)
         self.preview_loaded.emit()
         self.config_updated.emit()
         self._first_render_t0 = time.perf_counter()
@@ -3194,6 +3197,14 @@ class AppController(QObject):
         if not detected_mode or detected_mode == self.state.config.process.process_mode:
             return
         self.state.config = with_process_mode(self.state.config, detected_mode)
+        self.state.is_dirty = True
+
+    def _store_source_color(self, source_color: Optional[bool]) -> None:
+        """Store the measured film fact once; it never changes the saved mode."""
+        process = self.state.config.process
+        if source_color is None or process.source_color is not None:
+            return
+        self.state.config = replace(self.state.config, process=replace(process, source_color=source_color))
         self.state.is_dirty = True
 
     def toggle_hq_preview(self) -> None:
