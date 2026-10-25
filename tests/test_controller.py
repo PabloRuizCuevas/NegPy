@@ -5029,77 +5029,22 @@ class TestContactSheetOutputDir(unittest.TestCase):
         self.controller.session.repo.get_global_setting.side_effect = lambda key, default=None: store.get(key, default)
         self.controller.session.repo.save_global_setting.side_effect = lambda key, value: store.__setitem__(key, value)
 
-    def test_subfolder_of_source_redirects_a_virtual_roll_with_no_folder(self):
-        """A virtual roll's files share no folder to build a subfolder under, so
-        Subfolder of Source gathers them under the data folder instead."""
-        from negpy.kernel.system.paths import get_default_user_dir
-        from negpy.services.assets.rolls import create_virtual_roll
+    def test_subfolder_of_source_follows_the_first_frame_whatever_roll_is_open(self):
+        """The sheet goes under its first frame's own folder in a virtual roll, a folder roll or none."""
+        from negpy.services.assets.rolls import create_virtual_roll, recognize_folder
 
         self._dict_repo()
-        roll_id = create_virtual_roll(self.controller.session.repo, "Portra 400", ["/a.nef", "/b.nef"])
-        self.controller.state.active_roll_id = roll_id
+        repo = self.controller.session.repo
         export = ExportConfig(output_mode=ExportPresetOutputMode.SUBFOLDER_OF_SOURCE, output_subfolder="export")
         self.controller.state.config = replace(self.controller.state.config, export=export)
-
-        out = self.controller._contact_sheet_output_dir(self.visible_files)
-
-        self.assertEqual(out, os.path.join(get_default_user_dir(), "Portra 400", "export"))
-
-    def test_subfolder_of_source_keeps_per_file_resolution_for_a_folder_roll(self):
-        """A folder roll's own folder is already the roll's folder, so it resolves
-        exactly as it would with no roll at all."""
-        from negpy.services.assets.rolls import recognize_folder
-
-        self._dict_repo()
-        roll_id = recognize_folder(self.controller.session.repo, "/rolls/frame")
-        self.controller.state.active_roll_id = roll_id
-        export = ExportConfig(output_mode=ExportPresetOutputMode.SUBFOLDER_OF_SOURCE, output_subfolder="export")
-        self.controller.state.config = replace(self.controller.state.config, export=export)
-
-        out = self.controller._contact_sheet_output_dir(self.visible_files)
-
-        self.assertEqual(out, os.path.join("/rolls/frame", "export"))
-
-    def test_subfolder_of_source_with_no_active_roll_resolves_per_file(self):
-        self._dict_repo()
-        export = ExportConfig(output_mode=ExportPresetOutputMode.SUBFOLDER_OF_SOURCE, output_subfolder="export")
-        self.controller.state.config = replace(self.controller.state.config, export=export)
-
-        out = self.controller._contact_sheet_output_dir(self.visible_files)
-
-        self.assertEqual(out, os.path.join("/rolls/frame", "export"))
-
-    def test_virtual_roll_redirect_warns_once(self):
-        from negpy.services.assets.rolls import create_virtual_roll
-
-        self._dict_repo()
-        roll_id = create_virtual_roll(self.controller.session.repo, "Portra 400", ["/a.nef", "/b.nef"])
-        self.controller.state.active_roll_id = roll_id
-        export = ExportConfig(output_mode=ExportPresetOutputMode.SUBFOLDER_OF_SOURCE, output_subfolder="export")
-        self.controller.state.config = replace(self.controller.state.config, export=export)
-
-        msgs = []
-        self.controller.status_message_requested.connect(lambda text, _ms, kind: msgs.append((text, kind)))
-        self.controller._contact_sheet_output_dir(self.visible_files)
-
-        self.assertEqual(len(msgs), 1)
-        self.assertEqual(msgs[0][1], "warning")
-        self.assertIn("Portra 400", msgs[0][0])
-
-    def test_folder_roll_does_not_warn(self):
-        from negpy.services.assets.rolls import recognize_folder
-
-        self._dict_repo()
-        roll_id = recognize_folder(self.controller.session.repo, "/rolls/frame")
-        self.controller.state.active_roll_id = roll_id
-        export = ExportConfig(output_mode=ExportPresetOutputMode.SUBFOLDER_OF_SOURCE, output_subfolder="export")
-        self.controller.state.config = replace(self.controller.state.config, export=export)
-
-        msgs = []
-        self.controller.status_message_requested.connect(lambda text, _ms, kind: msgs.append((text, kind)))
-        self.controller._contact_sheet_output_dir(self.visible_files)
-
-        self.assertEqual(msgs, [])
+        for label, roll_id in (
+            ("virtual", create_virtual_roll(repo, "Portra 400", ["/a.nef", "/b.nef"])),
+            ("folder", recognize_folder(repo, "/rolls/frame")),
+            ("none", None),
+        ):
+            with self.subTest(roll=label):
+                self.controller.state.active_roll_id = roll_id
+                self.assertEqual(self.controller._contact_sheet_output_dir(self.visible_files), os.path.join("/rolls/frame", "export"))
 
 
 class TestRetouchPersistence(unittest.TestCase):

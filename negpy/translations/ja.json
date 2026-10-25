@@ -6,7 +6,6 @@
   " frames": " フレーム",
   " photos": " 写真",
   " · click to place a tone here": " · ここをクリックしてトーンを配置します",
-  "\"{name}\" has no single folder, so it exports to {destination}": "「{name}」には単一のフォルダーがありません - {destination} にエクスポートします",
   "\"{value}\" is assigned to both \"{description}\" and \"{value1}\".": "「{value}」は「{description}」と「{value1}」の両方に割り当てられます。",
   "+{value} more": "ほか{value}件",
   "100%": "100%",

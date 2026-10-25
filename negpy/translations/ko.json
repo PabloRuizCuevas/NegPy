@@ -6,7 +6,6 @@
   " frames": " 프레임",
   " photos": " 사진",
   " · click to place a tone here": " · 여기에 톤을 배치하려면 클릭하세요.",
-  "\"{name}\" has no single folder, so it exports to {destination}": "\"{name}\"에는 단일 폴더가 없습니다 — {destination}(으)로 내보내는 중입니다.",
   "\"{value}\" is assigned to both \"{description}\" and \"{value1}\".": "\"{value}\"은(는) \"{description}\" 및 \"{value1}\" 모두에 할당되었습니다.",
   "+{value} more": "외 {value}개",
   "100%": "100%",

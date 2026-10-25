@@ -6,7 +6,6 @@
   " frames": " 帧",
   " photos": " 张照片",
   " · click to place a tone here": " · 点击在此放置影调",
-  "\"{name}\" has no single folder, so it exports to {destination}": "“{name}”没有单一文件夹，将导出到 {destination}",
   "\"{value}\" is assigned to both \"{description}\" and \"{value1}\".": "“{value}”同时分配给了“{description}”和“{value1}”。",
   "+{value} more": "还有 {value} 个",
   "100%": "100%",

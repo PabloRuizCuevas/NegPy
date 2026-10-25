@@ -674,7 +674,7 @@ The **Export** button is at the bottom of the tab. Above it, **File** holds the 
 *   **Export profile**: the color space of the file, such as sRGB for the web or Adobe RGB, or a printer or paper profile. **Import ICC** adds a profile. **Input ICC** sets the color space of a scan that has none.
 *   **Paper ratio**: the shape of the final print, or **Original**.
 *   **Resolution**: **Original** (full size), **Print** (size in cm and DPI) or **Pixels** (the long edge in pixels). A Print or Pixels export applies the Lab Sharpening after the resize. **Preview Export Size** shows the frame at this size on the canvas, to judge sharpening and grain.
-*   **Destination**: the **Filename Pattern** (see [TEMPLATING.md](TEMPLATING.md)), **Overwrite Existing Files**, and the folder: an `export` subfolder beside the source (default), the source folder, or a path you pick.
+*   **Destination**: the **Filename Pattern** (see [TEMPLATING.md](TEMPLATING.md)), **Overwrite Existing Files**, and the folder: an `export` subfolder beside each source file (default), the source folder, or a path you pick.
 
 ### Export button
 
