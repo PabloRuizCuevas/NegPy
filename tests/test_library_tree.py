@@ -960,3 +960,27 @@ def test_deleting_a_folder_row_keeps_a_roll_shown_outside_it(widget, tmp_path, m
 
     assert _names(widget) == ["a"]
     assert widget.tree.topLevelItem(0).childCount() == 0
+
+
+def test_delete_says_what_the_roll_loses_by_kind(widget, tmp_path, monkeypatch):
+    (tmp_path / "scans" / "roll_a").mkdir(parents=True)
+    folder_id = recognize_folder(widget.repo, str(tmp_path / "scans" / "roll_a"), name="scans/roll_a")
+    set_id = create_virtual_roll(widget.repo, "Picks", [])
+    said: list = []
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.confirm_delete_named", lambda *a, **k: said.append(k["informative"]))
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.confirm_delete_several", lambda *a, **k: said.append(k["informative"]))
+    widget.reload()
+
+    widget._delete_roll(folder_id, "roll_a")
+    widget._delete_roll(set_id, "Picks")
+    widget._delete_folder(
+        next(widget.tree.topLevelItem(i) for i in range(widget.tree.topLevelItemCount()) if widget.tree.topLevelItem(i).childCount())
+    )
+    widget._delete_rolls([(folder_id, "roll_a")])
+    widget._delete_rolls([(folder_id, "roll_a"), (set_id, "Picks")])
+
+    shared = "The files and their shared edits stay."
+    assert all(text.startswith(shared) and "film base" in text and "edits made only in" in text for text in said)
+    assert "Refresh will not add it again." in said[0] and "list of frames" in said[1] and "Refresh" not in said[1]
+    assert "Refresh will not add these rolls again." in said[2]
+    assert "set of frames" not in said[3] and said[4].endswith("A roll that is a set of frames loses its list of frames too.")

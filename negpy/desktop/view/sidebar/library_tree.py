@@ -47,6 +47,26 @@ from negpy.services.assets.presets import is_valid_preset_name
 from negpy.services.assets.gear import GearProfiles
 from negpy.features.process.models import ProcessMode
 
+# What Delete loses: the whole roll record. A frame's shared edit is per file and stays; an edit made
+# only in the roll has no other way back. A deleted folder roll's folder is dismissed, so Refresh skips it.
+_DELETE_FOLDER_ROLL = tr(
+    "The files and their shared edits stay. The roll's settings, Roll Analysis baseline, film base, scenes, "
+    "card locks and the edits made only in this roll are lost. Refresh will not add it again."
+)
+_DELETE_SET_ROLL = tr(
+    "The files and their shared edits stay. The roll's list of frames, settings, Roll Analysis baseline, film base, "
+    "scenes, card locks and the edits made only in this roll are lost."
+)
+_DELETE_FOLDER_ROW = tr(
+    "The files and their shared edits stay. Each roll's settings, Roll Analysis baseline, film base, scenes, "
+    "card locks and the edits made only in that roll are lost. Refresh will not add these rolls again."
+)
+_DELETE_SEVERAL = tr(
+    "The files and their shared edits stay. Each roll's settings, Roll Analysis baseline, film base, scenes, "
+    "card locks and the edits made only in that roll are lost. Refresh will not add a deleted folder roll again."
+)
+_DELETE_SEVERAL_SETS = tr("A roll that is a set of frames loses its list of frames too.")
+
 _ROLL_ID_ROLE = Qt.ItemDataRole.UserRole
 _MISSING_ROLE = Qt.ItemDataRole.UserRole + 1
 _NAME_ROLE = Qt.ItemDataRole.UserRole + 2
@@ -736,7 +756,8 @@ class LibraryTree(QWidget):
         self.rolls_changed.emit()
 
     def _delete_roll(self, roll_id: str, name: str) -> None:
-        if confirm_delete_named(self, tr("Roll"), name, informative=tr("This only forgets the roll. Nothing on disk changes.")):
+        is_folder = (rolls.roll_for_id(self.repo, roll_id) or {}).get("kind") == "folder"
+        if confirm_delete_named(self, tr("Roll"), name, informative=_DELETE_FOLDER_ROLL if is_folder else _DELETE_SET_ROLL):
             rolls.delete_roll(self.repo, roll_id)
             self.reload()
             self.rolls_changed.emit()
@@ -744,9 +765,7 @@ class LibraryTree(QWidget):
     def _delete_folder(self, item: QTreeWidgetItem) -> None:
         """Forget the rolls the row shows, not every roll under its folders: a roll opened
         on its own, or one the filter hides, can sit in one of them."""
-        if confirm_delete_named(
-            self, tr("Folder"), item.text(0), informative=tr("This forgets every roll in it. Nothing on disk changes.")
-        ):
+        if confirm_delete_named(self, tr("Folder"), item.text(0), informative=_DELETE_FOLDER_ROW):
             for roll_id in self._leaf_roll_ids(item):
                 rolls.delete_roll(self.repo, roll_id)
             rolls.forget_import_sources(self.repo, item.data(0, _FOLDER_ROLE))
@@ -755,7 +774,9 @@ class LibraryTree(QWidget):
 
     def _delete_rolls(self, selection: list[tuple]) -> None:
         names = [name for _roll_id, name in selection]
-        if confirm_delete_several(self, tr("Rolls"), names, informative=tr("This only forgets the roll records. Nothing on disk changes.")):
+        sets = any((rolls.roll_for_id(self.repo, roll_id) or {}).get("kind") != "folder" for roll_id, _name in selection)
+        informative = f"{_DELETE_SEVERAL} {_DELETE_SEVERAL_SETS}" if sets else _DELETE_SEVERAL
+        if confirm_delete_several(self, tr("Rolls"), names, informative=informative):
             for roll_id, _name in selection:
                 rolls.delete_roll(self.repo, roll_id)
             self.reload()
