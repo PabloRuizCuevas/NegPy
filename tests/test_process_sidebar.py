@@ -319,7 +319,7 @@ def test_reanalyze_frame_clears_local_bounds_and_persists(qapp):
     assert controller.apply_config.call_args.kwargs == {"persist": True}
 
 
-def test_reanalyze_frame_is_disabled_when_nothing_would_be_measured(qapp):
+def test_reanalyze_frame_is_disabled_for_a_locked_frame(qapp):
     controller, sidebar = _sidebar()
     cfg = controller.state.config
     sidebar.sync_ui()
@@ -329,9 +329,28 @@ def test_reanalyze_frame_is_disabled_when_nothing_would_be_measured(qapp):
     sidebar.sync_ui()
     assert not sidebar.reanalyze_frame_btn.isEnabled()
 
+
+def test_reanalyze_for_a_roll_frame_or_a_selection_opens_the_plan(qapp, monkeypatch):
+    from negpy.desktop.view.sidebar import process
+
+    opened = []
+    monkeypatch.setattr(process, "reanalyze_selection", lambda parent, controller: opened.append(controller))
+    controller, sidebar = _sidebar()
+    controller.session.selection_is_open_frame.return_value = True
+    cfg = controller.state.config
     controller.state.config = replace(cfg, process=replace(cfg.process, use_luma_average=True, use_color_average=True))
     sidebar.sync_ui()
-    assert not sidebar.reanalyze_frame_btn.isEnabled()
+    assert sidebar.reanalyze_frame_btn.isEnabled()
+    sidebar.reanalyze_frame_btn.click()
+    assert opened == [controller]
+    controller.apply_config.assert_not_called()
+
+    controller.session.selection_is_open_frame.return_value = False
+    controller.state.selected_indices = [0, 1, 2]
+    controller.state.config = replace(cfg, process=replace(cfg.process, lock_bounds=True))
+    sidebar.sync_ui()
+    assert sidebar.reanalyze_frame_btn.isEnabled()
+    assert "Reanalyze 3 Frames" in sidebar.reanalyze_frame_btn.toolTip()
 
 
 def test_baseline_hint_names_where_the_bounds_came_from(qapp):
