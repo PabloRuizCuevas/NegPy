@@ -336,7 +336,82 @@ fn area_rows_into(
     Ok(())
 }
 
+fn box_into<T: numpy::Element + Copy + Into<u32>>(
+    py: Python<'_>,
+    src: &PyReadonlyArrayDyn<'_, T>,
+    dst: &mut numpy::PyReadwriteArray3<'_, u8>,
+    lut: Option<(&[u8], usize)>,
+) -> PyResult<()> {
+    let (h, w, cn) = match src.shape()[..] {
+        [h, w] => (h, w, 1),
+        [h, w, c] if c >= 1 => (h, w, c),
+        _ => {
+            return Err(PyValueError::new_err(
+                "box_into needs an HxW or HxWxC source",
+            ));
+        }
+    };
+    let s = src
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous source"))?;
+    let (oh, ow, oc) = dst.as_array().dim();
+    if oc != 3 || h == 0 || w == 0 {
+        return Err(PyValueError::new_err("box_into needs an HxWx3 destination"));
+    }
+    let mut buf = vec![0u8; oh * ow * 3];
+    super::detach(py, 0, || {
+        resize::box_into_u8(s, h, w, cn, lut, &mut buf, oh, ow, ow * 3)
+    });
+    for (mut row, packed) in dst
+        .as_array_mut()
+        .outer_iter_mut()
+        .zip(buf.chunks_exact(ow * 3))
+    {
+        for (mut px, p) in row.outer_iter_mut().zip(packed.as_chunks::<3>().0) {
+            for c in 0..3 {
+                px[c] = p[c];
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `box_into(src, dst, lut=None)`: a uint8 or uint16 image area-averaged into the uint8 HxWx3
+/// view `dst`, uint16 samples read through `lut` (k x 65536 uint8, one row per channel or one).
+#[pyfunction]
+#[pyo3(signature = (src, dst, lut=None))]
+fn box_into_u8(
+    py: Python<'_>,
+    src: &Bound<'_, PyAny>,
+    mut dst: numpy::PyReadwriteArray3<'_, u8>,
+    lut: Option<numpy::PyReadonlyArray2<'_, u8>>,
+) -> PyResult<()> {
+    let table = match &lut {
+        Some(t) => {
+            let k = t.shape()[0];
+            if t.shape()[1] != 65536 || k == 0 {
+                return Err(PyValueError::new_err("the LUT must be k x 65536"));
+            }
+            Some((
+                t.as_slice()
+                    .map_err(|_| PyValueError::new_err("needs a contiguous LUT"))?,
+                k,
+            ))
+        }
+        None => None,
+    };
+    if let Ok(a) = src.extract::<PyReadonlyArrayDyn<u16>>() {
+        if table.is_none() {
+            return Err(PyValueError::new_err("a uint16 source needs a LUT"));
+        }
+        return box_into(py, &a, &mut dst, table);
+    }
+    let a = src.extract::<PyReadonlyArrayDyn<u8>>()?;
+    box_into(py, &a, &mut dst, None)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(box_into_u8, m)?)?;
     m.add_function(wrap_pyfunction!(area_rows_into, m)?)?;
     m.add_function(wrap_pyfunction!(resize_rows_linear, m)?)?;
     m.add_function(wrap_pyfunction!(resize_u8, m)?)?;
