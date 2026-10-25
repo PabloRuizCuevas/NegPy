@@ -225,7 +225,7 @@ _HAIR_INPAINT_PAD = 16
 def _density(img: ImageBuffer) -> np.ndarray:
     """Log density of the luminance. Local contrast measured here is exposure-invariant:
     a gain on the source is an offset in density and cancels in every difference."""
-    return -np.log10(np.clip(get_luminance(img), 1e-6, None)).astype(np.float32)
+    return -negpy_core.log_density_open(get_luminance(img))
 
 
 def _mask_to_score(mask: np.ndarray, pad_px: float) -> np.ndarray:
