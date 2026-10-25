@@ -1393,6 +1393,8 @@ class _FilmStripView(_FilmGridView):
 # Save as Roll moves to the ⋮ menu.
 _ROLL_TITLE_MAX_WIDTH = 280
 _FILTER_ROOM = 220
+# Belongs to the saved session: only a restored session turns the Hot Folder back on.
+_HOT_FOLDER_KEY = "session_hot_folder"
 
 
 class FileBrowser(QWidget):
@@ -2094,9 +2096,17 @@ class FileBrowser(QWidget):
         self._apply_filter()
         self._apply_sheet_filter("all")
 
+    def restore_hot_folder(self, restored: bool) -> None:
+        """Turn the Hot Folder back on with a restored session that had it on; a fresh start forgets it."""
+        if restored and self.session.repo.get_global_setting(_HOT_FOLDER_KEY, False):
+            self.hot_folder_action.setChecked(True)
+        else:
+            self.session.repo.save_global_setting(_HOT_FOLDER_KEY, False)
+
     def _on_hot_folder_toggled(self, checked: bool) -> None:
         self.hot_folder_btn.setChecked(checked)
         self.hot_folder_btn.setVisible(checked)
+        self.session.repo.save_global_setting(_HOT_FOLDER_KEY, checked)
         if checked:
             self.scan_timer.start()
         else:

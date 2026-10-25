@@ -243,8 +243,10 @@ class MainWindow(QMainWindow):
             )
             if reply == QMessageBox.StandardButton.Yes:
                 self.controller.restore_session()
+                self.file_browser.restore_hot_folder(True)
                 self._schedule_onboarding()
                 return
+        self.file_browser.restore_hot_folder(False)
         self.show_library(ask_if_unset=False)
         self._schedule_onboarding()
 

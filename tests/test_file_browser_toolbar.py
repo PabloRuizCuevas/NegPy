@@ -88,6 +88,24 @@ def test_the_hot_folder_shows_in_the_row_while_it_is_on(panel):
     assert browser.hot_folder_btn.isHidden() and not browser.scan_timer.isActive()
 
 
+@pytest.mark.parametrize("restored", [True, False])
+def test_the_hot_folder_comes_back_only_with_a_restored_session(qapp, restored):
+    """Hot Folder belongs to the saved session: a restore turns it back on, a fresh start forgets it."""
+    repo = _Repo()
+    controller = _Controller(repo)
+    controller.session.asset_model = AssetListModel(controller.state)
+    FileBrowser(controller).hot_folder_action.setChecked(True)
+
+    controller = _Controller(repo)
+    controller.session.asset_model = AssetListModel(controller.state)
+    browser = FileBrowser(controller)
+    browser.restore_hot_folder(restored)
+
+    assert browser.hot_folder_action.isChecked() is restored
+    assert browser.scan_timer.isActive() is restored
+    assert repo.get_global_setting("session_hot_folder") is restored
+
+
 def test_update_thumbnails_refreshes_the_whole_roll(panel):
     panel.file_browser.update_thumbnails_action.trigger()
     panel.file_browser.controller.request_thumbnail_refresh.assert_called_once_with("roll")
