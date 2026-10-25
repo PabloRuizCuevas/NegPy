@@ -558,11 +558,9 @@ def apply_flat_curve(
     editing. WB rides as an additive per-channel shift in log space; the print
     stock's density matrix (rows sum 1) mixes after it, as in the print kernel.
     """
-    val = np.asarray(image, dtype=np.float32) + np.asarray(cmy_offsets, dtype=np.float32)
-    if stock_matrix is not None:
-        val = val @ np.asarray(stock_matrix, dtype=np.float32).T
-    code = lift + gain * (1.0 - val)
-    return ensure_image(np.clip(code, 0.0, 1.0).astype(np.float32))
+    m = None if stock_matrix is None else np.ascontiguousarray(stock_matrix, dtype=np.float32)
+    offsets = tuple(float(np.float32(o)) for o in cmy_offsets)
+    return ensure_image(negpy_core.flat_curve(np.ascontiguousarray(image, dtype=np.float32), float(gain), float(lift), offsets, m))
 
 
 def default_grade_range() -> float:
