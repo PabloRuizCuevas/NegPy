@@ -108,7 +108,7 @@ class ExposureConfig:
     midtone_gamma_trim_blue: float = 0.0
     # Uniform paper pre-exposure as a fraction of the threshold exposure. [0, 1]; 0 = off.
     preflash: float = 0.0
-    cast_removal_strength: float = 1.0
+    cast_removal_strength: float = 0.5
     auto_exposure: bool = True
     auto_normalize_contrast: bool = True
     render_intent: str = RenderIntent.PRINT

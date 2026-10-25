@@ -18,7 +18,7 @@
    "auto_exposure": "true",
    "auto_normalize_contrast": "true",
    "bw_filter": "\"none\"",
-   "cast_removal_strength": "1.0",
+   "cast_removal_strength": "0.5",
    "contrast_mask_strength": "0.0",
    "density": "1.0",
    "diffusion": "0.0",
@@ -208,5 +208,5 @@
    "vanadium_strength": "0.0"
   }
  },
- "render_version": 19
+ "render_version": 20
 }

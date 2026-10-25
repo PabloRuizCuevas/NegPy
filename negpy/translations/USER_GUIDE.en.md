@@ -262,7 +262,7 @@ Corrects the color of the print, as the color filters of a darkroom enlarger do.
 *   **Temperature**: makes the picture warmer or cooler.
 *   **Cyan / Magenta / Yellow**: shift the color between cyan and red, magenta and green, or yellow and blue.
 *   **Ring-around** (`Shift+F`): shows the picture as a grid of slightly different colors. Click the one that looks right. `Esc` closes it.
-*   **Cast Removal**: removes a color cast that differs between the dark and bright parts of the picture. It starts at 1 (full) on color negatives and at 0 on slides. Leaves, sky and water do not count as gray, so they keep their color.
+*   **Cast Removal**: removes a color cast that differs between the dark and bright parts of the picture. It starts at 0.5 (half) on color negatives and at 0 on slides. Leaves, sky and water do not count as gray, so they keep their color.
 *   **Filter**: a colored filter, as on the camera lens for black-and-white film. It shows only on a color negative printed in B&W, and replaces the controls above. Each filter darkens the colors opposite to its own. Yellow #8, Deep Yellow #15, Orange #21 and Red #25 make a blue sky darker, step by step. Red also makes leaves dark and skin pale. Yellow-Green #11 and Green #58 make leaves lighter and skin darker. None gives the look of a normal black-and-white film.
 
 <!-- panel:tone -->
