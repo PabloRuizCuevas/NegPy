@@ -29,6 +29,7 @@ pub mod meter;
 pub mod morph;
 pub mod orient;
 pub mod phase;
+pub mod png;
 pub mod print_curve;
 pub mod process;
 pub mod register;
