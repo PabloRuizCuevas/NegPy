@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 from negpy.desktop.view.sidebar.library_tree import _DETAIL_ROLE, _FOLDER_ROLE, _MISSING_ROLE, LibraryTree
 from negpy.desktop.view.styles.theme import THEME
 from negpy.infrastructure.storage.repository import StorageRepository
-from negpy.services.assets.rolls import create_virtual_roll, delete_roll, recognize_folder, roll_for_id
+from negpy.services.assets.rolls import create_virtual_roll, delete_roll, recognize_folder, roll_for_id, saved_rolls
 
 
 @pytest.fixture
@@ -891,7 +891,7 @@ def test_deleting_a_folder_row_forgets_every_roll_under_it(widget, tree_dirs, mo
     assert folder.data(0, _FOLDER_ROLE) == [str(tree_dirs)]
     monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.confirm_delete_named", lambda *a, **k: True)
 
-    widget._delete_folder([str(tree_dirs)], "scans")
+    widget._delete_folder(folder)
 
     assert _names(widget) == ["portra"]
 
@@ -909,6 +909,38 @@ def test_a_folder_row_shared_by_two_folders_deletes_the_rolls_of_both(widget, tm
     assert folder.toolTip(0).split("\n") == folder.data(0, _FOLDER_ROLE)
     monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.confirm_delete_named", lambda *a, **k: True)
 
-    widget._delete_folder(folder.data(0, _FOLDER_ROLE), "scans")
+    widget._delete_folder(folder)
 
     assert _names(widget) == ["portra"]
+
+
+def test_deleting_a_folder_row_keeps_the_rolls_the_filter_hides(widget, tmp_path, monkeypatch):
+    for name in ("2023-01", "2024-01"):
+        (tmp_path / "scans" / name).mkdir(parents=True)
+        recognize_folder(widget.repo, str(tmp_path / "scans" / name), name=f"scans/{name}")
+    widget.repo.save_global_setting("roll_import_sources", [str(tmp_path / "scans")])
+    widget.reload()
+    widget.filter_input.setText("2024")
+    widget._apply_filter()
+    folder = widget.tree.topLevelItem(0)
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.confirm_delete_named", lambda *a, **k: True)
+
+    widget._delete_folder(folder)
+
+    assert [entry["name"] for entry in saved_rolls(widget.repo).values()] == ["scans/2023-01"]
+    assert widget.repo.get_global_setting("roll_import_sources") == [str(tmp_path / "scans")]
+
+
+def test_deleting_a_folder_row_keeps_a_roll_shown_outside_it(widget, tmp_path, monkeypatch):
+    (tmp_path / "y" / "a" / "roll").mkdir(parents=True)
+    recognize_folder(widget.repo, str(tmp_path / "y" / "a" / "roll"), name="a/roll")
+    recognize_folder(widget.repo, str(tmp_path / "y" / "a"))
+    widget.reload()
+    assert _names(widget) == ["a", "a"]
+    folder = next(item for item in (widget.tree.topLevelItem(i) for i in range(2)) if item.childCount())
+    monkeypatch.setattr("negpy.desktop.view.sidebar.library_tree.confirm_delete_named", lambda *a, **k: True)
+
+    widget._delete_folder(folder)
+
+    assert _names(widget) == ["a"]
+    assert widget.tree.topLevelItem(0).childCount() == 0

@@ -239,18 +239,18 @@ def prune_filtered_rolls(repo: Any) -> int:
     return len(dropped)
 
 
-def delete_folder_rolls(repo: Any, folder: str) -> None:
-    """Delete every folder roll at or under *folder*, and forget import sources there."""
-    key = _folder_key(folder)
-    ids = [
-        roll_id
-        for roll_id, entry in _view(repo).items()
-        if entry.get("kind") == "folder" and _under(_folder_key(entry.get("folder_path") or ""), key)
-    ]
-    for roll_id in ids:
-        delete_roll(repo, roll_id)
+def forget_import_sources(repo: Any, folders: List[str]) -> None:
+    """Forget every import source at or under one of *folders* that no remaining folder roll
+    sits under: Refresh still walks a source for the rolls it keeps."""
+    keys = [_folder_key(folder) for folder in folders]
+    remaining = [_folder_key(entry.get("folder_path") or "") for entry in _view(repo).values() if entry.get("kind") == "folder"]
+
+    def forget(source: str) -> bool:
+        key = _folder_key(source)
+        return any(_under(key, folder) for folder in keys) and not any(_under(roll, key) for roll in remaining)
+
     sources = import_sources(repo)
-    kept = [p for p in sources if not _under(_folder_key(p), key)]
+    kept = [p for p in sources if not forget(p)]
     if kept != sources:
         repo.save_global_setting(IMPORT_SOURCES_KEY, kept)
 

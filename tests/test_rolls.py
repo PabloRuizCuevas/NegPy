@@ -2,6 +2,7 @@
 scope or duplicate the edits themselves, with one exception: roll-wide defaults for a
 handful of film, rig and scanning facts (see TestRollDefaults below)."""
 
+import os
 from dataclasses import replace
 from unittest.mock import MagicMock
 
@@ -29,7 +30,7 @@ from negpy.services.assets.rolls import (
     fork_edit,
     folder_roll_id_for_path,
     frame_override_cards,
-    delete_folder_rolls,
+    forget_import_sources,
     discovery_filters,
     import_sources,
     matches_discovery_filter,
@@ -959,17 +960,20 @@ def test_prune_filtered_rolls_leaves_rolls_outside_import_sources(tmp_path):
     assert prune_filtered_rolls(repo) == 0
 
 
-def test_delete_folder_rolls_forgets_rolls_and_the_source_under_it(tmp_path):
-    _roll_dir(tmp_path / "day" / "roll_a")
-    _roll_dir(tmp_path / "day" / "roll_b")
+def test_forget_import_sources_keeps_a_source_a_remaining_roll_sits_under(tmp_path):
+    for source in ("a/day", "b/day", "c/day"):
+        _roll_dir(tmp_path / source / "roll")
     repo = _repo()
-    other = recognize_folder(repo, str(_roll_dir(tmp_path / "elsewhere")))
-    import_subfolders_as_rolls(repo, str(tmp_path / "day"))
+    for source in ("a/day", "b/day", "c/day"):
+        import_subfolders_as_rolls(repo, str(tmp_path / source))
 
-    delete_folder_rolls(repo, str(tmp_path / "day"))
+    for roll_id, entry in saved_rolls(repo).items():
+        if not entry["folder_path"].startswith(str(tmp_path / "c")):
+            delete_roll(repo, roll_id)
 
-    assert list(saved_rolls(repo)) == [other]
-    assert import_sources(repo) == []
+    forget_import_sources(repo, [str(tmp_path / "a"), str(tmp_path / "b" / "day"), str(tmp_path / "c")])
+
+    assert import_sources(repo) == [os.path.normpath(str(tmp_path / "c" / "day"))]
 
 
 @pytest.mark.parametrize(

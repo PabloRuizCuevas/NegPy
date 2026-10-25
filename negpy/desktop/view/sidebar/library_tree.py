@@ -530,6 +530,16 @@ class LibraryTree(QWidget):
             item.setData(0, _FOLDER_ROLE, paths)
             item.setToolTip(0, "\n".join(paths))
 
+    def _leaf_roll_ids(self, item: QTreeWidgetItem) -> list[str]:
+        """The rolls shown under *item*: the Library filter hides the others."""
+        ids = []
+        for child in (item.child(i) for i in range(item.childCount())):
+            if child.isHidden():
+                continue
+            roll_id = child.data(0, _ROLL_ID_ROLE)
+            ids.extend(self._leaf_roll_ids(child) if roll_id is None else [roll_id])
+        return ids
+
     def _leaf_count(self, item: QTreeWidgetItem) -> int:
         return sum(
             self._leaf_count(child) if child.data(0, _ROLL_ID_ROLE) is None else 1
@@ -668,7 +678,7 @@ class LibraryTree(QWidget):
         menu = QMenu(self)
         menu.setToolTipsVisible(True)
         if item is not None and item.data(0, _FOLDER_ROLE):
-            menu.addAction(tr("Delete…")).triggered.connect(lambda: self._delete_folder(item.data(0, _FOLDER_ROLE), item.text(0)))
+            menu.addAction(tr("Delete…")).triggered.connect(lambda: self._delete_folder(item))
             menu.addSeparator()
         elif item is not None and item.data(0, _ROLL_ID_ROLE) is not None:
             roll_id = item.data(0, _ROLL_ID_ROLE)
@@ -732,10 +742,15 @@ class LibraryTree(QWidget):
             self.reload()
             self.rolls_changed.emit()
 
-    def _delete_folder(self, folder_paths: list[str], name: str) -> None:
-        if confirm_delete_named(self, tr("Folder"), name, informative=tr("This forgets every roll in it. Nothing on disk changes.")):
-            for folder_path in folder_paths:
-                rolls.delete_folder_rolls(self.repo, folder_path)
+    def _delete_folder(self, item: QTreeWidgetItem) -> None:
+        """Forget the rolls the row shows, not every roll under its folders: a roll opened
+        on its own, or one the filter hides, can sit in one of them."""
+        if confirm_delete_named(
+            self, tr("Folder"), item.text(0), informative=tr("This forgets every roll in it. Nothing on disk changes.")
+        ):
+            for roll_id in self._leaf_roll_ids(item):
+                rolls.delete_roll(self.repo, roll_id)
+            rolls.forget_import_sources(self.repo, item.data(0, _FOLDER_ROLE))
             self.reload()
             self.rolls_changed.emit()
 
