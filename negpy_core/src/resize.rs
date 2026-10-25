@@ -1010,6 +1010,47 @@ pub fn expand_plane(
     Some(())
 }
 
+/// The vertical INTER_AREA pass of `retouch.logic._erode_resize_bounded` on one block: output
+/// rows `top..top + dst rows` of a `full_h`-row image shrunk by `scale_y`, from the block's
+/// horizontally resized rows `src` (row `source_top` first, `len` floats per row). Weights in
+/// float64 then float32; each product in float32, summed down the rows in order, as NumPy does.
+pub fn area_rows(
+    src: &[f32],
+    len: usize,
+    source_top: usize,
+    top: usize,
+    scale_y: f64,
+    full_h: usize,
+    dst: &mut [f32],
+) {
+    use rayon::prelude::*;
+    let src_rows = src.len() / len;
+    dst.par_chunks_mut(len).enumerate().for_each(|(r, out)| {
+        let start = (top + r) as f64 * scale_y;
+        let end = start + scale_y;
+        let first = start.floor() as usize;
+        let last = (end.ceil() as usize).min(full_h);
+        let norm = scale_y.min(full_h as f64 - start);
+        out.fill(0.0);
+        for (k, i) in (first..last).enumerate() {
+            let overlap = ((i + 1) as f64).min(end) - (i as f64).max(start);
+            let w = ((if overlap > 1e-3 { overlap } else { 0.0 }) / norm) as f32;
+            let row = i - source_top;
+            debug_assert!(row < src_rows);
+            let vals = &src[row * len..(row + 1) * len];
+            if k == 0 {
+                for (o, &v) in out.iter_mut().zip(vals) {
+                    *o = v * w;
+                }
+            } else {
+                for (o, &v) in out.iter_mut().zip(vals) {
+                    *o += v * w;
+                }
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

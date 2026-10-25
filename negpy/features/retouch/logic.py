@@ -674,17 +674,8 @@ def _erode_resize_bounded(plane: np.ndarray, dims: Tuple[int, int], kernel: np.n
         eroded = negpy_core.morphology_ex(source, negpy_core.MORPH_ERODE, kernel)
         core = np.ascontiguousarray(eroded[source_top - read_top : source_bottom - read_top])
         horizontal = negpy_core.resize_area(core, (dw, len(core)))
-        # Keep the full-image sampling grid across fractional block boundaries.
-        for row in range(top, bottom):
-            start = row * scale_y
-            end = start + scale_y
-            first, last = math.floor(start), min(h, math.ceil(end))
-            indices = np.arange(first, last)
-            overlap = np.minimum(indices + 1, end) - np.maximum(indices, start)
-            # OpenCV's area table omits fractional edges at or below this cutoff.
-            weights = (np.where(overlap > 1e-3, overlap, 0.0) / min(scale_y, h - start)).astype(np.float32)
-            values = horizontal[first - source_top : last - source_top]
-            output[row] = np.sum(values * weights.reshape((-1,) + (1,) * (values.ndim - 1)), axis=0)
+        # The vertical pass keeps the full-image sampling grid across fractional block boundaries.
+        negpy_core.area_rows_into(horizontal, output[top:bottom], top, source_top, scale_y, h)
     return output
 
 

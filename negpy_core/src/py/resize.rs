@@ -298,7 +298,46 @@ fn resize_rows_linear<'py>(
     }
 }
 
+/// `area_rows_into(src, dst, top, source_top, scale_y, full_h)`: the vertical INTER_AREA rows
+/// `top..top + len(dst)` of `_erode_resize_bounded`, from a block's horizontally resized rows.
+#[pyfunction]
+fn area_rows_into(
+    py: Python<'_>,
+    src: PyReadonlyArrayDyn<'_, f32>,
+    mut dst: numpy::PyReadwriteArrayDyn<'_, f32>,
+    top: usize,
+    source_top: usize,
+    scale_y: f64,
+    full_h: usize,
+) -> PyResult<()> {
+    let len: usize = src.shape()[1..].iter().product();
+    if src.ndim() < 2 || dst.shape()[1..].iter().product::<usize>() != len || len == 0 {
+        return Err(PyValueError::new_err(
+            "needs src and dst rows of one length",
+        ));
+    }
+    let rows = src.shape()[0];
+    let n = dst.shape()[0];
+    let first_needed = (top as f64 * scale_y).floor() as usize;
+    let last_needed =
+        (((top + n).saturating_sub(1) as f64 * scale_y + scale_y).ceil() as usize).min(full_h);
+    if n > 0 && (first_needed < source_top || last_needed > source_top + rows) {
+        return Err(PyValueError::new_err("rows outside the block"));
+    }
+    let s = src
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("needs a contiguous src"))?;
+    let d = dst
+        .as_slice_mut()
+        .map_err(|_| PyValueError::new_err("needs a contiguous dst"))?;
+    super::detach(py, d.len(), || {
+        resize::area_rows(s, len, source_top, top, scale_y, full_h, d)
+    });
+    Ok(())
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(area_rows_into, m)?)?;
     m.add_function(wrap_pyfunction!(resize_rows_linear, m)?)?;
     m.add_function(wrap_pyfunction!(resize_u8, m)?)?;
     m.add_function(wrap_pyfunction!(resize_kernel, m)?)?;

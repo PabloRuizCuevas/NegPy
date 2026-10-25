@@ -337,6 +337,29 @@ fn nan_to_num<'py>(
     })
 }
 
+/// `ir.astype(np.float32) * (1 / 255)` or `* (1 / 65535)` of a contiguous uint8 or uint16 array.
+#[pyfunction]
+fn int_to_unit_float32<'py>(
+    py: Python<'py>,
+    img: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    if let Ok(a) = img.extract::<PyReadonlyArrayDyn<u16>>() {
+        let src = contiguous(&a)?;
+        let scale = (1.0f64 / 65535.0) as f32;
+        return Ok(filled(py, a.shape(), "float32", |d| {
+            convert::scaled_to_float32(src, scale, d)
+        })?
+        .into_any());
+    }
+    let a = img.extract::<PyReadonlyArrayDyn<u8>>()?;
+    let src = contiguous(&a)?;
+    let scale = (1.0f64 / 255.0) as f32;
+    Ok(filled(py, a.shape(), "float32", |d| {
+        convert::scaled_to_float32(src, scale, d)
+    })?
+    .into_any())
+}
+
 /// `img`, an HxWxP uint8 view of an image with P-byte pixels, turned by EXIF `orientation`.
 #[pyfunction]
 fn orient<'py>(
@@ -359,6 +382,7 @@ fn orient<'py>(
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(orient, m)?)?;
+    m.add_function(wrap_pyfunction!(int_to_unit_float32, m)?)?;
     m.add_function(wrap_pyfunction!(nan_to_num, m)?)?;
     m.add_function(wrap_pyfunction!(gray_to_rgb, m)?)?;
     m.add_function(wrap_pyfunction!(add, m)?)?;
