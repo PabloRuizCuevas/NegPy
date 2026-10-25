@@ -530,7 +530,7 @@ Corrects color errors that come from your light, camera and film.
 
 To turn a negative into a positive, NegPy measures its darkest and brightest parts (the black and white points) and the color of the film. These controls set what it measures.
 
-*   **Reanalyze Frame**: measures this frame again from its current crop. For selected frames, or a frame that follows its roll or scene, it runs that Roll or Scene Analysis again. A dialog first shows which frames change.
+*   **Reanalyze Frame**: measures this frame, or each selected frame, again from its current crop. The frame then uses its own bounds, not the roll or scene baseline.
 *   **Draw Region**: draw an area, and NegPy measures only that area. Double-click inside or press `Enter` to confirm, and `Esc` puts back the region you had before. **×** clears it.
 *   **Film Base**: click the clear film between frames to set the roll's film base, for the Analysis readout. **×** clears it.
 *   **Analysis Buffer**: ignores a border around the frame when measuring, so film edges and holders do not count.

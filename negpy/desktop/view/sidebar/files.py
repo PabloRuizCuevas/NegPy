@@ -90,7 +90,6 @@ from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialo
 from negpy.desktop.view.sidecar_action import LABEL as SIDECAR_LABEL, load_edit_from_sidecar
 from negpy.desktop.view.file_actions import SHOW_LABEL, TRASH_LABEL, move_selected_to_trash, show_current_in_folder
 from negpy.desktop.view.widgets.rgb_triplet_dialog import open_triplet_dialog
-from negpy.desktop.view.widgets.reanalyze_dialog import reanalyze_selection
 from negpy.desktop.view.widgets.roll_settings_dialog import RollSettingsDialog
 from negpy.services.assets import rolls
 from negpy.services.assets.gear import GearProfiles
@@ -2388,8 +2387,8 @@ class FileBrowser(QWidget):
         menu.addAction(label_with_shortcut(tr("Sync Bounds…"), "sync_bounds")).triggered.connect(
             lambda: open_sync_bounds_dialog(self, self.session)
         )
-        reanalyze = tr("Reanalyze {value}…", value=count_of(n, "frame").title()) if on_selection else tr("Reanalyze Frame…")
-        menu.addAction(reanalyze).triggered.connect(lambda: reanalyze_selection(self, self.controller))
+        reanalyze = tr("Reanalyze {value}", value=count_of(n, "frame").title()) if on_selection else tr("Reanalyze Frame")
+        menu.addAction(reanalyze).triggered.connect(lambda: self.controller.reanalyze_selection())
         if self.controller.thumbnail_refresh_running:
             menu.addAction(tr("Cancel Thumbnail Update")).triggered.connect(lambda: self.controller.cancel_thumbnail_refresh())
         else:
