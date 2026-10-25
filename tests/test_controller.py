@@ -7197,6 +7197,28 @@ class TestLibrarySearch(unittest.TestCase):
         self.assertTrue(self.controller.half_frame_mode_for_roll(roll_id))
         self.assertTrue(self.controller.rgb_scan_mode_for_roll(roll_id))
 
+    def test_save_as_roll_saves_the_open_roll_with_the_session(self):
+        self._dict_repo()
+        self.controller.state.active_roll_id = None
+        self.controller.state.uploaded_files = [{"path": "/a.nef", "hash": "h1"}]
+        self.controller.session.persist_session = MagicMock()
+
+        self.controller.create_roll_from_session("Picks")
+
+        self.controller.session.persist_session.assert_called_once()
+
+    def test_save_as_roll_from_search_results_keeps_half_frame_only_when_every_frame_is_a_half(self):
+        self._dict_repo()
+        self.controller.state.active_roll_id = None
+        self.controller.state.half_frame_loose = False
+        halves = [{"path": "/r/a.nef", "hash": "h1#1", "half": 1}, {"path": "/r/a.nef", "hash": "h1#2", "half": 2}]
+        for loaded, expected in ((halves, True), (halves + [{"path": "/x/b.nef", "hash": "h2"}], False)):
+            with self.subTest(whole_frames=len(loaded) - 2):
+                self.controller.state.active_roll_id = None
+                self.controller.state.uploaded_files = list(loaded)
+                roll_id = self.controller.create_roll_from_session("Picks")
+                self.assertIs(self.controller.half_frame_mode_for_roll(roll_id), expected)
+
     def test_save_as_roll_with_no_roll_open_takes_the_no_roll_modes(self):
         self._dict_repo()
         from negpy.services.assets import rolls

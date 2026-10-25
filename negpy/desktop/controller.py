@@ -1966,13 +1966,21 @@ class AppController(QObject):
         # The new roll starts from the open roll's settings, or the no-roll ones without
         # one, so the frames look the same once it becomes the open roll.
         by_roll = dict(self.session.repo.get_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, default=None) or {})
-        by_roll[roll_id] = self.half_frame_mode_for_roll(source)
+        # With no roll open a frame splits by its own roll; one toggle fits the set only when
+        # every frame that can split is a half.
+        splittable = [f for f in self.state.uploaded_files if not is_composite(f)]
+        by_roll[roll_id] = (
+            self.half_frame_mode_for_roll(source)
+            if source
+            else self.state.half_frame_loose or bool(splittable) and all(f.get("half") for f in splittable)
+        )
         self.session.repo.save_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, by_roll)
         self._save_rgb_scan_mode(self.rgb_scan_mode_for_roll(source), roll_id)
         if source:
             hashes = {rolls.unforked_hash(f["hash"]) for f in self.state.uploaded_files if f.get("hash")}
             rolls.copy_roll_settings(self.session.repo, source, roll_id, hashes)
         self.state.active_roll_id = roll_id
+        self.session.persist_session()
         self._announce_roll_modes(roll_id)
         self.set_status(tr("Saved as roll “{name}”", name=name), 3000)
         return roll_id
@@ -2162,10 +2170,12 @@ class AppController(QObject):
         """With no roll open, the requested paths to split: each follows its own roll's toggle,
         a search result's included, and a path in no roll follows this session's choice."""
         repo = self.session.repo
+        by_roll = repo.get_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, default=None) or {}
+        roll_of = rolls.home_roll_lookup(repo)
         split = set()
         for path in paths:
-            roll_id = rolls.folder_roll_id_for_path(repo, path) if os.path.isdir(path) else rolls.home_roll(repo, path)
-            if self.half_frame_mode_for_roll(roll_id):
+            roll_id = roll_of(path)
+            if bool(by_roll.get(roll_id, False)) if roll_id else self.state.half_frame_loose:
                 split.add(os.path.normcase(os.path.normpath(path)))
         return frozenset(split)
 

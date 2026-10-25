@@ -1056,3 +1056,17 @@ def test_copy_roll_settings_takes_the_roll_level_parts_and_the_named_locks():
     assert entry["member_paths"] == ["/scans/portra/1.tif"]
     copy_roll_settings(repo, "not-a-roll", target, {"h1"})
     assert roll_for_id(repo, target) == entry
+
+
+def test_home_roll_lookup_answers_as_home_roll(tmp_path):
+    from negpy.services.assets.rolls import home_roll, home_roll_lookup
+
+    repo = _repo()
+    folder = tmp_path / "roll_a"
+    folder.mkdir()
+    folder_id = recognize_folder(repo, str(folder))
+    create_virtual_roll(repo, "Picks", [str(folder / "1.tif"), "/elsewhere/2.tif"])
+    lookup = home_roll_lookup(repo)
+    for path in (str(folder / "1.tif"), "/elsewhere/2.tif", "/nowhere/3.tif", str(folder / "sub" / "4.tif")):
+        assert lookup(path) == home_roll(repo, path), path
+    assert lookup(str(folder)) == folder_id

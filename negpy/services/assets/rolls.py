@@ -419,6 +419,27 @@ def unfork_edit(repo: Any, roll_id: str, from_hash: str) -> None:
     repo.delete_file_settings(roll_edit_hash(from_hash, roll_id))
 
 
+def home_roll_lookup(repo: Any) -> Callable[[str], Optional[str]]:
+    """`home_roll` for many paths from one read of the store; a folder *path* answers the roll
+    of that folder. A folder roll wins over a virtual one, the first in store order."""
+    folders: Dict[str, str] = {}
+    members: Dict[str, str] = {}
+    for roll_id, entry in _view(repo).items():
+        if entry.get("kind") == "folder":
+            if entry.get("folder_path"):
+                folders.setdefault(_folder_key(entry["folder_path"]), roll_id)
+        else:
+            for member in entry.get("member_paths", ()):
+                members.setdefault(member, roll_id)
+
+    def lookup(path: str) -> Optional[str]:
+        if os.path.isdir(path):
+            return folders.get(_folder_key(path))
+        return folders.get(_folder_key(os.path.dirname(os.path.abspath(path)))) or members.get(path)
+
+    return lookup
+
+
 def home_roll(repo: Any, path: str) -> Optional[str]:
     """The roll *path* belongs to when none is active: a folder roll wins over a virtual
     one, being the file's physical home and the likeliest place its facts were set."""
