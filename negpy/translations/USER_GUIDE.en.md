@@ -79,6 +79,8 @@ A new frame gets the roll's film type, and the crop, print stock and Lab setting
 
 *   **Before / After** (`\`, or the **Print** menu): splits the canvas between the default conversion and your edit. Hold `\` to see the default alone. To compare with an earlier version, right-click it in **History**.
 *   **Peeks**: hold `N` for the scan as loaded (the negative), `M` for the flat master, and `P` for the camera's own JPEG. The **Print** menu has them too.
+*   **Export Size** (**Print** menu): shows the frame as it exports, at the size the **Export** panel sets, at 100%. Use it to judge sharpening and grain. It updates a moment after each edit.
+*   **Grain Focuser** (`Shift+L`, **Overlays** menu): a magnifier at the pointer that shows the exported pixels at their true size, with a sharpness number.
 *   **Reference View** (`Shift+R`): pins this frame beside the canvas, to match other frames to it.
 *   **Probe at Cursor** (`Shift+I`, **Overlays** menu): shows the density and zone under the pointer.
 *   **Find** (`Ctrl+K`): finds any slider, card or action by name, or by another app's word (*contrast* finds **ISO-R Grade**).
@@ -332,7 +334,7 @@ The adjustments a lab scanner makes after the print.
 *   **Chroma**: color strength. 1 is unchanged, 0 is black and white.
 *   **Skin Protection**: keeps skin tones from getting too strong in color.
 *   **Chroma Denoise**: removes colored speckles. Film grain stays.
-*   **Sharpening**: sharpens detail without colored edges. Its fold holds **Method** (Unsharp Mask makes edges crisper; Deconvolution undoes the scanner's blur), **Radius** (the size of the detail, in pixels; judge it at 100% zoom) and **Masking** (sharpen only edges, so sky and skin stay smooth).
+*   **Sharpening**: sharpens detail without colored edges. Its fold holds **Method** (Unsharp Mask makes edges crisper; Deconvolution undoes the scanner's blur), **Radius** (the size of the detail, in exported pixels; judge it in **Export Size** or with the **Grain Focuser**) and **Masking** (sharpen only edges, so sky and skin stay smooth).
 *   **Auto Masking** (the wand beside Method, also on the tab header): sets Masking from the grain of each frame. Masking shows the value in use, and a drag moves it up or down from there. An export measures the grain again at its own size.
 *   **CLAHE**: local contrast, to bring out detail. Strong values can look unnatural.
 *   **Glow** (Effects fold): a soft glow around bright areas, like an old lens.
