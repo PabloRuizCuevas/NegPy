@@ -665,7 +665,7 @@ The **Export** button is at the bottom of the tab. Above it, **File** holds the 
 ### Output intent
 
 *   **Print** (default): the picture as you see it.
-*   **Flat**: a flat, low-contrast master for editing in another app. It skips the print look and the effects, but keeps a color Print stock's dye color, and writes a 16-bit file. **Preview Flat** shows it on the canvas. Run **Roll Analysis** first so the masters of a roll match; it needs an open roll.
+*   **Flat**: a flat, low-contrast master for editing in another app. It skips the print look and the effects, but keeps a color Print stock's dye color, and writes a 16-bit file. **Preview Flat** shows it on the canvas. In a roll, run **Roll Analysis** first so the masters match. Without a roll, NegPy measures each frame on its own, so the masters can differ.
 *   **Linear**: the raw scan data before NegPy's processing, as a 16-bit TIFF or JPEG XL, for a raw workflow in another app. It reads camera RAW, LinearRaw DNG, Coolscan NEF, Flextight, Noritsu and Pakon files and TIFF scans. Options for infrared, white balance, flat field, sensor and lens correction are off at first. File names get `_linear`, so a source is never overwritten.
 
 ### File settings
