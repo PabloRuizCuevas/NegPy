@@ -7097,6 +7097,38 @@ class TestLibrarySearch(unittest.TestCase):
         discovery.assert_called_once_with(["/photos/roll_a"], auto_open=True, replace_existing=True)
         self.assertEqual(self.controller.state.active_roll_id, roll_id)
 
+    def test_a_folder_roll_that_held_files_from_other_folders_says_so_once(self):
+        self._dict_repo()
+        from negpy.services.assets.rolls import ROLLS_KEY, recognize_folder
+
+        repo = self.controller.session.repo
+        with tempfile.TemporaryDirectory() as other:
+            extra = os.path.join(other, "c.nef")
+            open(extra, "w").close()
+            roll_id = recognize_folder(repo, "/photos/roll_a")
+            store = dict(repo.get_global_setting(ROLLS_KEY))
+            store[roll_id] = {**store[roll_id], "name": "500T", "extra_paths": [extra, "/gone/d.nef"]}
+            repo.save_global_setting(ROLLS_KEY, store)
+
+            for click_load in (True, False):
+                with (
+                    patch.object(self.controller, "request_asset_discovery") as discovery,
+                    patch("negpy.desktop.controller.QMessageBox") as box_class,
+                ):
+                    box = box_class.return_value
+                    load = MagicMock()
+                    box.addButton.side_effect = [load, MagicMock()]
+                    box.clickedButton.return_value = load if click_load else None
+                    self.controller.open_roll(roll_id)
+                    self.controller._show_extras_notice()
+                if click_load:
+                    body = box_class.call_args.args[2]
+                    self.assertTrue(body.startswith("“500T” held 1 frame from other folders."), body)
+                    discovery.assert_called_with([extra], auto_open=True, user_add=True)
+                else:
+                    box_class.assert_not_called()
+                    self.assertEqual(discovery.call_count, 1, "only the open's own discovery, no notice the second time")
+
     def test_files_added_to_an_open_folder_roll_from_another_folder_stay_out_of_it(self):
         """An open virtual roll gains what is added; a folder roll gains nothing."""
         self._dict_repo()

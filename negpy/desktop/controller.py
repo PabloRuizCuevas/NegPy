@@ -724,6 +724,7 @@ class AppController(QObject):
         self._reselect_after_discovery: Optional[str] = None
         self._announce_rgb = False
         self._user_add_after_discovery = False
+        self._extras_notice: Optional[str] = None
         self._pending_capture_imports: Dict[str, _PendingCaptureImport] = {}
         self._pending_asset_discoveries: List[_DiscoveryRequest] = []
         self._active_discovery_keys: frozenset[str] = frozenset()
@@ -1853,6 +1854,39 @@ class AppController(QObject):
         )
         self.asset_discovery_requested.emit(task)
 
+    _EXTRAS_NOTICED_KEY = "extra_paths_noticed_rolls"
+
+    def _unnoticed_extras(self, roll_id: str, entry: dict) -> List[str]:
+        """The files from other folders an older version kept in this folder roll, still on disk,
+        when the user has not been told that the roll no longer holds them."""
+        if roll_id in (self.session.repo.get_global_setting(self._EXTRAS_NOTICED_KEY, default=None) or []):
+            return []
+        return [p for p in entry.get("extra_paths", ()) if os.path.isfile(p)]
+
+    def _show_extras_notice(self) -> None:
+        """Once per roll: say that a folder roll no longer opens the files from other folders it
+        held, and offer to load them for this session."""
+        roll_id, self._extras_notice = self._extras_notice, None
+        entry = rolls.roll_for_id(self.session.repo, roll_id) if roll_id else None
+        extras = self._unnoticed_extras(roll_id, entry) if entry and roll_id == self.state.active_roll_id else []
+        if not extras:
+            return
+        noticed = list(self.session.repo.get_global_setting(self._EXTRAS_NOTICED_KEY, default=None) or [])
+        self.session.repo.save_global_setting(self._EXTRAS_NOTICED_KEY, [*noticed, roll_id])
+        body = tr(
+            "“{name}” held {value} from other folders. A folder roll now holds only the files in its folder, "
+            "so they no longer open with it. Their edits are kept.",
+            name=entry.get("name") or tr("this roll"),
+            value=count_of(len(extras), "frame"),
+        )
+        box = QMessageBox(QMessageBox.Icon.Information, tr("Folder Roll"), body, QMessageBox.StandardButton.NoButton)
+        load = box.addButton(tr("Load Them"), QMessageBox.ButtonRole.AcceptRole)
+        close = box.addButton(QMessageBox.StandardButton.Close)
+        box.setDefaultButton(close)
+        box.exec()
+        if box.clickedButton() is load:
+            self.request_asset_discovery(extras, auto_open=True, user_add=True)
+
     def _folder_roll_add_note(self, roll_id: str, outside: List[str], returned: List[str]) -> str:
         """What an add did to the open folder roll, when it loaded files the roll cannot hold."""
         if not outside:
@@ -1945,6 +1979,7 @@ class AppController(QObject):
             return
         if entry["kind"] == "folder":
             paths = [entry["folder_path"]]
+            self._extras_notice = roll_id if self._unnoticed_extras(roll_id, entry) else None
         else:
             paths = list(entry.get("member_paths", []))
         if not paths:
@@ -2671,6 +2706,7 @@ class AppController(QObject):
                 idx = ordered[0] if ordered else 0
             self.session.select_file(idx)
             self._start_next_asset_discovery()
+            self._show_extras_notice()
             return
 
         selected_pending_scan = False
