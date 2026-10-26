@@ -24,6 +24,8 @@ class LabConfig:
     sharpen_method: SharpenMethod = SharpenMethod.USM
     sharpen_radius: float = 1.0
     sharpen_masking: float = 0.1
+    # On, sharpen_masking is an offset on the grain measured in the buffer being sharpened.
+    sharpen_auto_masking: bool = False
     chroma_denoise: float = 0.0
     glow_amount: float = 0.0
     halation_strength: float = 0.0

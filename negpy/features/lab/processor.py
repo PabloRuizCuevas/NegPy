@@ -8,6 +8,7 @@ from negpy.features.lab.logic import (
     apply_glow_and_halation,
     apply_lab_sharpening,
     apply_saturation,
+    auto_masking,
 )
 from negpy.features.lab.models import LabConfig
 
@@ -29,7 +30,10 @@ class PhotoLabProcessor:
             img = apply_saturation(img, self.config.saturation, self.config.skin_protection)
 
         if self.config.sharpen > 0:
-            img = apply_lab_sharpening(img, self.config)
+            auto = auto_masking(img, self.config)
+            if auto is not None:
+                context.metrics["auto_masking"] = auto
+            img = apply_lab_sharpening(img, self.config, auto)
 
         if self.config.glow_amount > 0 or self.config.halation_strength > 0:
             img = apply_glow_and_halation(img, self.config.glow_amount, self.config.halation_strength, context.scale_factor)
