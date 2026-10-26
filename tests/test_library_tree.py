@@ -28,6 +28,7 @@ def _make(tmp_path) -> LibraryTree:
     controller = MagicMock()
     controller.session.repo = repo
     controller.removed_frame_count.return_value = 0
+    controller.save_choice.return_value = ("hidden", "")
     return LibraryTree(controller)
 
 
@@ -299,6 +300,35 @@ def test_a_folder_roll_offers_restore_removed_frames(widget, tree_dirs, monkeypa
         reload = MagicMock()
         m.setattr(widget, "reload", reload)
         actions[restore[0]].triggered.connect.call_args.args[0]()
+    reload.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "choice", [("ready", ""), ("blocked", "“500T” is already a folder roll, so open it from the Library."), ("hidden", "")]
+)
+def test_a_virtual_roll_offers_save_to_folder_roll(widget, monkeypatch, choice):
+    roll_id = create_virtual_roll(widget.repo, "Picks", [])
+    widget.controller.save_choice.return_value = choice
+    widget.reload()
+    item = widget.tree.topLevelItem(0)
+    monkeypatch.setattr(widget.tree, "itemAt", lambda pos: item)
+    actions = _menu_with_distinct_actions(monkeypatch)
+
+    widget._show_context_menu(QPoint(0, 0))
+
+    found = [label for label in actions if label.startswith("Save to Folder Roll")]
+    if choice[0] == "hidden":
+        assert found == []
+        return
+    action = actions[found[0]]
+    action.setEnabled.assert_called_once_with(choice[0] == "ready")
+    if choice[1]:
+        action.setToolTip.assert_called_once_with(choice[1])
+    widget.controller.save_to_folder_roll.return_value = roll_id
+    reload = MagicMock()
+    monkeypatch.setattr(widget, "reload", reload)
+    action.triggered.connect.call_args.args[0]()
+    widget.controller.save_to_folder_roll.assert_called_once_with(roll_id)
     reload.assert_called_once()
 
 

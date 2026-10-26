@@ -720,6 +720,12 @@ class LibraryTree(QWidget):
                 analyze_action.setToolTip(BATCH_ANALYSIS_TOOLTIP if is_active else BATCH_ANALYSIS_DISABLED_TOOLTIP)
                 analyze_action.triggered.connect(self.controller.request_batch_normalization)
                 menu.addAction(tr("Rename…")).triggered.connect(lambda: self._rename_roll(roll_id, name))
+                choice, reason = self.controller.save_choice(roll_id)
+                if choice != "hidden":
+                    folder_action = menu.addAction(label_with_shortcut(tr("Save to Folder Roll"), "save_to_folder_roll"))
+                    folder_action.setToolTip(reason or tr("Make this virtual roll the folder roll of its folder"))
+                    folder_action.setEnabled(choice == "ready")
+                    folder_action.triggered.connect(lambda: self._save_to_folder_roll(roll_id))
                 if (rolls.roll_for_id(self.repo, roll_id) or {}).get("kind") == "folder":
                     restore_action = menu.addAction(label_with_shortcut(tr("Restore Removed Frames…"), "restore_removed_frames"))
                     restore_action.setToolTip(tr("Bring back the frames that Remove from Roll took out of this roll"))
@@ -762,6 +768,11 @@ class LibraryTree(QWidget):
 
         self.reload()
         self.rolls_changed.emit()
+
+    def _save_to_folder_roll(self, roll_id: str) -> None:
+        if self.controller.save_to_folder_roll(roll_id):
+            self.reload()
+            self.rolls_changed.emit()
 
     def _restore_removed(self, roll_id: str) -> None:
         if restore_removed_frames(self, self.controller, roll_id):

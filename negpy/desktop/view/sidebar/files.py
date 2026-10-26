@@ -1592,6 +1592,8 @@ class FileBrowser(QWidget):
 
         # Shown in the right panel's Library tab; the strip reloads it and reads its state.
         self.library_tree = LibraryTree(self.controller)
+        # A rename or a kind change in the Library renames the open roll in the title.
+        self.library_tree.rolls_changed.connect(self._update_tally)
 
         self.save_roll_btn = QToolButton()
         self.save_roll_btn.setIcon(qta.icon("fa5s.save", color=THEME.text_primary))
@@ -1873,6 +1875,7 @@ class FileBrowser(QWidget):
 
     def _on_save_folder_roll(self) -> None:
         if self.controller.save_to_folder_roll():
+            self._save_choice_cache = ((), ("hidden", ""))
             self.library_tree.reload()
             self._update_tally()
 

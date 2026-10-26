@@ -170,6 +170,31 @@ def test_create_folder_roll_names_it_after_its_folder_and_leaves_out_the_rest(tm
     assert repo.get_global_setting(DISMISSED_FOLDERS_KEY) == []
 
 
+def test_convert_to_folder_roll_keeps_the_id_and_every_record_keyed_by_it(tmp_path):
+    from negpy.services.assets.rolls import DISMISSED_FOLDERS_KEY, convert_to_folder_roll, create_scene
+
+    repo = _repo()
+    folder = str(tmp_path / "500T")
+    roll_id = create_virtual_roll(repo, "Picks", [folder + "/a1.tif"])
+    set_roll_defaults(repo, roll_id, film_stock_id="portra400")
+    set_frame_override(repo, roll_id, "h1", "film", True)
+    scene = create_scene(repo, roll_id, "Beach", ["h1"])
+    repo.save_global_setting(DISMISSED_FOLDERS_KEY, [folder])
+    before = roll_for_id(repo, roll_id)
+
+    assert convert_to_folder_roll(repo, roll_id, folder, [folder + "/a2.tif"]) == "500T"
+
+    entry = roll_for_id(repo, roll_id)
+    assert (entry["kind"], entry["name"], entry["folder_path"]) == ("folder", "500T", folder)
+    assert entry["excluded_paths"] == [folder + "/a2.tif"] and "member_paths" not in entry
+    for key in ("defaults", "frame_overrides", "scenes", "created_at"):
+        assert entry[key] == before[key]
+    assert scene in entry["scenes"]
+    assert folder_roll_id_for_path(repo, folder) == roll_id
+    assert repo.get_global_setting(DISMISSED_FOLDERS_KEY) == []
+    assert convert_to_folder_roll(repo, roll_id, folder, []) == "", "a folder roll is not converted again"
+
+
 def test_outside_folder_names_the_files_a_folder_roll_cannot_hold():
     repo = _repo()
     roll_id = recognize_folder(repo, "/scans/roll_a")

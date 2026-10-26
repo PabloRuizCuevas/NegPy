@@ -110,7 +110,7 @@ from negpy.domain.models import (
     preset_from_export_config,
     resolve_preset_export,
 )
-from negpy.services.assets.composites import forget_composite, frame_count, restore_maps, saved_composites, source_files
+from negpy.services.assets.composites import forget_composite, frame_count, part_paths, restore_maps, saved_composites, source_files
 from negpy.services.assets.triplets import forget_triplets, saved_triplets
 from negpy.services.assets import rolls
 from negpy.services.assets.sensor import SensorProfiles
@@ -2029,13 +2029,19 @@ class AppController(QObject):
         self.session.repo.save_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, by_roll)
         self._save_rgb_scan_mode(self.rgb_scan_mode_for_roll(source), roll_id)
 
-    def save_choice(self) -> tuple[str, str]:
-        """Whether Save to Folder Roll applies to the Film Strip: "hidden", "ready", or "blocked"
-        with the reason. It applies to frames in no roll that all sit directly in one folder
-        that has no folder roll."""
-        if not self.state.uploaded_files or self.state.active_roll_id:
+    def save_choice(self, roll_id: Optional[str] = None) -> tuple[str, str]:
+        """Whether Save to Folder Roll applies to *roll_id* (default: the open roll, else the frames in
+        no roll): "hidden", "ready", or "blocked" with the reason. It applies to frames or a virtual
+        roll whose files all sit directly in one folder that has no folder roll."""
+        roll_id = roll_id or self.state.active_roll_id
+        if roll_id:
+            entry = rolls.roll_for_id(self.session.repo, roll_id) or {}
+            paths = self._virtual_roll_files(entry) if entry.get("kind") == "virtual" else []
+        else:
+            paths = self._loaded_source_paths() if self.state.uploaded_files else []
+        if not paths:
             return "hidden", ""
-        folder, _missing = rolls.folder_scope(self._loaded_source_paths())
+        folder, _missing = rolls.folder_scope(paths)
         if folder is None:
             return "blocked", tr("Save to Folder Roll: the frames come from more than one folder.")
         existing = rolls.folder_roll_id_for_path(self.session.repo, folder)
@@ -2044,19 +2050,31 @@ class AppController(QObject):
             return "blocked", tr("“{name}” is already a folder roll, so open it from the Library.", name=name)
         return "ready", ""
 
+    def _virtual_roll_files(self, entry: dict) -> List[str]:
+        """A virtual roll's members on disk, with the parts of its composites and triplets."""
+        members = [p for p in entry.get("member_paths", ()) if os.path.isfile(p)]
+        held = set(members)
+        parts = part_paths(c for primary, c in saved_composites(self.session.repo).items() if primary in held)
+        parts.update(p for red, t in saved_triplets(self.session.repo).items() if red in held for p in t[:2] if p)
+        return list(dict.fromkeys([*members, *sorted(parts)]))
+
     def _loaded_source_paths(self) -> List[str]:
         """Every file the Film Strip holds: composite parts, triplet exposures and the duplicates it turned away."""
         paths = [p for f in self.state.uploaded_files for p in source_files(f)]
         return list(dict.fromkeys([*paths, *self.state.duplicate_paths]))
 
-    def save_to_folder_roll(self) -> Optional[str]:
+    def save_to_folder_roll(self, roll_id: Optional[str] = None) -> Optional[str]:
         """Save the frames as the folder roll of their folder, leaving out the folder's files they do
-        not hold; the roll becomes the open roll. Shows the reason when it cannot apply."""
-        choice, reason = self.save_choice()
+        not hold; the roll becomes the open roll. A virtual roll (*roll_id*, default the open one)
+        becomes that folder roll in place. Shows the reason when it cannot apply."""
+        roll_id = roll_id or self.state.active_roll_id
+        choice, reason = self.save_choice(roll_id)
         if choice != "ready":
             if reason:
                 self.set_status(reason, 4000)
             return None
+        if roll_id:
+            return self._convert_to_folder_roll(roll_id)
         folder, missing = rolls.folder_scope(self._loaded_source_paths())
         roll_id = rolls.create_folder_roll(self.session.repo, folder, missing)
         self._seed_roll_modes(roll_id, None)
@@ -2066,6 +2084,25 @@ class AppController(QObject):
         self._announce_roll_modes(roll_id)
         name = (rolls.roll_for_id(self.session.repo, roll_id) or {}).get("name") or folder
         self.set_status(tr("Saved as folder roll “{name}”", name=name), 3000)
+        return roll_id
+
+    def _convert_to_folder_roll(self, roll_id: str) -> str:
+        entry = rolls.roll_for_id(self.session.repo, roll_id) or {}
+        old_name = entry.get("name") or tr("this roll")
+        gone = sum(1 for p in entry.get("member_paths", ()) if not os.path.isfile(p))
+        folder, missing = rolls.folder_scope(self._virtual_roll_files(entry))
+        name = rolls.convert_to_folder_roll(self.session.repo, roll_id, folder, missing)
+        self.invalidate_library_walk()
+        if gone:
+            message = tr(
+                "“{old}” is now the folder roll “{name}”. {value} no longer on disk left the roll.",
+                old=old_name,
+                name=name,
+                value=count_of(gone, "file"),
+            )
+        else:
+            message = tr("“{old}” is now the folder roll “{name}”", old=old_name, name=name)
+        self.set_status(message, 4000)
         return roll_id
 
     def _carry_roll_edits(self, roll_id: str) -> tuple[bool, bool]:

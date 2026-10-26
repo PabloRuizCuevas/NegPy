@@ -166,6 +166,21 @@ def create_folder_roll(repo: Any, path: str, excluded: Sequence[str] = ()) -> st
     return roll_id
 
 
+def convert_to_folder_roll(repo: Any, roll_id: str, folder: str, excluded: Sequence[str]) -> str:
+    """Make virtual roll *roll_id* the folder roll of *folder* in place, leaving out *excluded*.
+    The id, and every record keyed by it, stays. Returns the roll's new name."""
+    store = _read(repo)
+    entry = store.get(roll_id)
+    if entry is None or entry.get("kind") != "virtual":
+        return ""
+    _undismiss(repo, folder)
+    name = folder_roll_name(repo, folder)
+    entry.pop("member_paths", None)
+    entry.update(kind="folder", name=name, folder_path=folder, extra_paths=[], excluded_paths=list(excluded))
+    _write(repo, store)
+    return name
+
+
 def _import_name(repo: Any, path: str) -> str:
     """*path* named as Import Subfolders as Rolls names it, from the deepest import source; "" outside every source."""
     key = _folder_key(path)

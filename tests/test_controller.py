@@ -7188,6 +7188,40 @@ class TestLibrarySearch(unittest.TestCase):
             self.assertEqual(self.controller.state.active_roll_id, None)
             self.assertEqual(roll_for_id(repo, other).get("excluded_paths", []), [])
 
+    def test_save_to_folder_roll_converts_a_virtual_roll_of_one_folder_in_place(self):
+        self._dict_repo()
+        from negpy.services.assets.composites import remember_composites
+        from negpy.services.assets.rolls import create_virtual_roll, roll_for_id
+
+        repo = self.controller.session.repo
+        with tempfile.TemporaryDirectory() as root:
+            a, b = os.path.join(root, "500T"), os.path.join(root, "B")
+            for folder, names in ((a, ("a1.tif", "a2.tif", "a3.tif", "a4.tif")), (b, ("b1.tif",))):
+                os.makedirs(folder)
+                for n in names:
+                    open(os.path.join(folder, n), "w").close()
+            path = lambda folder, n: os.path.join(folder, n)  # noqa: E731
+            stitch = {"path": path(a, "a1.tif"), "hash": "s1", "stitch_paths": (path(a, "a1.tif"), path(a, "a2.tif"))}
+            remember_composites(repo, [{**stitch, "stitch_transforms": [], "stitch_canvas": [1, 1], "stitch_sizes": []}])
+            picks = create_virtual_roll(repo, "Picks", [path(a, "a1.tif"), path(a, "a3.tif"), path(a, "gone.tif")])
+            spans = create_virtual_roll(repo, "Spans", [path(a, "a1.tif"), path(b, "b1.tif")])
+            self.controller.state.active_roll_id = None
+
+            self.assertEqual(self.controller.save_choice(picks), ("ready", ""))
+            self.assertEqual(self.controller.save_choice(spans)[0], "blocked")
+            with patch.object(self.controller, "set_status") as status:
+                self.assertEqual(self.controller.save_to_folder_roll(picks), picks)
+            entry = roll_for_id(repo, picks)
+            self.assertEqual((entry["kind"], entry["name"]), ("folder", "500T"))
+            self.assertEqual(entry["excluded_paths"], [path(a, "a4.tif")], "a stitch part stays in the roll")
+            self.assertIn("1 file no longer on disk left the roll", status.call_args.args[0])
+            self.assertEqual(self.controller.save_choice(picks), ("hidden", ""))
+
+            other = create_virtual_roll(repo, "Again", [path(a, "a3.tif")])
+            self.assertEqual(
+                self.controller.save_choice(other), ("blocked", "“500T” is already a folder roll, so open it from the Library.")
+            )
+
     def test_restore_removed_frames_brings_them_back_and_loads_them_in_the_open_roll(self):
         self._dict_repo()
         from negpy.services.assets.rolls import recognize_folder, remove_members, roll_for_id
