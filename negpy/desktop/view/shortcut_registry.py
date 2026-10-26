@@ -100,6 +100,7 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "batch_autocrop": ShortcutEntry("", tr("Auto-crop all frames"), tr("Geometry")),
     "toggle_auto_density": ShortcutEntry("", tr("Toggle Auto Density"), tr("Exposure")),
     "toggle_auto_grade": ShortcutEntry("", tr("Toggle Auto Grade"), tr("Exposure")),
+    "toggle_auto_masking": ShortcutEntry("", tr("Toggle Auto Masking"), tr("Lab")),
     "toggle_auto_both": ShortcutEntry("", tr("Toggle Auto Density and Auto Grade together"), tr("Exposure")),
     "toggle_hold_black": ShortcutEntry("", tr("Toggle Hold Black (a shadow lift keeps the black point)"), tr("Exposure")),
     "preset_apply": ShortcutEntry("", tr("Apply the selected preset"), tr("Actions")),
