@@ -71,6 +71,7 @@ def test_the_roll_menu_holds_the_actions_out_of_view(panel):
         "Unload…",
         "Unload All…",
         "Reset Roll to Defaults…",
+        "Restore Removed Frames…",
         "Film Strip Guide…",
     ]
 

@@ -1273,6 +1273,26 @@ def test_film_strip_menu_offers_unload_all_with_or_without_a_roll(browser, sessi
     close.assert_called_once_with(browser, browser.controller)
 
 
+def test_film_strip_menu_offers_restore_removed_frames_for_an_open_folder_roll(browser, session):
+    kinds = {"folder-roll": "folder", "virtual-roll": "virtual"}
+    for roll_id, removed, visible, enabled in (
+        ("folder-roll", 2, True, True),
+        ("folder-roll", 0, True, False),
+        ("virtual-roll", 0, False, False),
+    ):
+        session.state.active_roll_id = roll_id
+        browser.controller.removed_frame_count.return_value = removed
+        with patch("negpy.desktop.view.sidebar.files.rolls.roll_for_id", lambda repo, rid: {"kind": kinds[rid]}):
+            browser._sync_unload_all_action()
+        assert browser.restore_removed_action.isVisible() is visible
+        assert browser.restore_removed_action.isEnabled() is enabled
+    assert browser.restore_removed_action in browser.roll_menu_btn.menu().actions()
+    browser.restore_removed_action.setEnabled(True)
+    with patch("negpy.desktop.view.sidebar.files.restore_removed_frames") as restore:
+        browser.restore_removed_action.trigger()
+    restore.assert_called_once_with(browser, browser.controller)
+
+
 def test_context_menu_offers_merge_to_tiff_only_for_an_assembled_frame(browser, session):
     session.state.selected_indices = [0]
     session.state.selected_file_idx = 0

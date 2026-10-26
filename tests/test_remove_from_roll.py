@@ -62,6 +62,23 @@ def test_adding_a_removed_stitch_back_lifts_its_parts_without_adding_them():
     assert entry["extra_paths"] == []
 
 
+def test_restore_removed_empties_the_exclusions_and_returns_the_files_on_disk(tmp_path):
+    repo = _repo()
+    folder = tmp_path / "roll_a"
+    folder.mkdir()
+    kept, gone = folder / "1.tif", folder / "2.tif"
+    kept.write_bytes(b"1")
+    roll_id = rolls.recognize_folder(repo, str(folder))
+    rolls.remove_members(repo, roll_id, [str(kept), str(gone)], [])
+
+    assert rolls.removed_paths(repo, roll_id) == [str(kept)]
+    assert rolls.restore_removed(repo, roll_id) == [str(kept)]
+    assert rolls.roll_for_id(repo, roll_id)["excluded_paths"] == []
+    assert rolls.restore_removed(repo, roll_id) == []
+    virtual = rolls.create_virtual_roll(repo, "Picks", [str(kept)])
+    assert rolls.removed_paths(repo, virtual) == [] and rolls.restore_removed(repo, virtual) == []
+
+
 def test_removal_drops_the_frames_locks_scene_and_fork():
     repo = _repo()
     roll_id = rolls.create_virtual_roll(repo, "Picks", ["/a/1.tif", "/a/2.tif"])

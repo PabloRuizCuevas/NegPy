@@ -77,7 +77,7 @@ from negpy.desktop.view.frame_merge_action import (
     merge_to_tiff,
     mergeable_in,
 )
-from negpy.desktop.view.keyboard_shortcuts import _reset_roll, _reset_selected, _unload_all, remove_from_roll
+from negpy.desktop.view.keyboard_shortcuts import _reset_roll, _reset_selected, _unload_all, remove_from_roll, restore_removed_frames
 from negpy.features.hdr.logic import anchor_choices
 from negpy.features.hdr.models import hdr_frame_paths
 from negpy.desktop.view.widgets.elided_label import ElidedLabel
@@ -1642,6 +1642,9 @@ class FileBrowser(QWidget):
         self.unload_all_action.triggered.connect(lambda: _unload_all(self, self.controller))
         roll_menu.aboutToShow.connect(self._sync_unload_all_action)
         roll_menu.addAction(label_with_shortcut(tr("Reset Roll to Defaults…"), "reset_roll")).triggered.connect(self._on_reset_roll)
+        self.restore_removed_action = roll_menu.addAction(label_with_shortcut(tr("Restore Removed Frames…"), "restore_removed_frames"))
+        self.restore_removed_action.setToolTip(tr("Bring back the frames that Remove from Roll took out of this roll"))
+        self.restore_removed_action.triggered.connect(lambda: restore_removed_frames(self, self.controller))
         roll_menu.addSeparator()
         roll_menu.addAction(tr("Film Strip Guide…")).triggered.connect(self._show_guide)
         self.roll_menu_btn.setMenu(roll_menu)
@@ -1821,6 +1824,10 @@ class FileBrowser(QWidget):
 
     def _sync_unload_all_action(self) -> None:
         self.unload_all_action.setEnabled(bool(self.session.state.uploaded_files))
+        roll_id = self.session.state.active_roll_id
+        is_folder = bool(roll_id) and (rolls.roll_for_id(self.session.repo, roll_id) or {}).get("kind") == "folder"
+        self.restore_removed_action.setVisible(is_folder)
+        self.restore_removed_action.setEnabled(is_folder and bool(self.controller.removed_frame_count(roll_id)))
 
     def _on_reset_roll(self) -> None:
         """Reset every visible frame back to its own defaults, from the Film Strip

@@ -110,7 +110,7 @@ from negpy.domain.models import (
     preset_from_export_config,
     resolve_preset_export,
 )
-from negpy.services.assets.composites import forget_composite, restore_maps, source_files
+from negpy.services.assets.composites import forget_composite, frame_count, restore_maps, saved_composites, source_files
 from negpy.services.assets.triplets import forget_triplets, saved_triplets
 from negpy.services.assets import rolls
 from negpy.services.assets.sensor import SensorProfiles
@@ -7096,6 +7096,24 @@ class AppController(QObject):
         picked = [files[i] for i in indices if 0 <= i < len(files)]
         gone = {p for a in picked for p in source_files(a)}
         return [i for i, a in enumerate(files) if a.get("path") in gone] if self.state.active_roll_id else []
+
+    def removed_frame_count(self, roll_id: str) -> int:
+        """How many frames Remove from Roll took out of a folder roll, of those still on disk."""
+        paths = rolls.removed_paths(self.session.repo, roll_id)
+        if not paths:
+            return 0
+        triplets = saved_triplets(self.session.repo) if self.rgb_scan_mode_for_roll(roll_id) else {}
+        return frame_count(paths, saved_composites(self.session.repo), triplets)
+
+    def restore_removed_frames(self, roll_id: str) -> None:
+        """Bring back every frame Remove from Roll took out of a folder roll; the open roll loads them."""
+        count = self.removed_frame_count(roll_id)
+        paths = rolls.restore_removed(self.session.repo, roll_id)
+        self.invalidate_library_walk()
+        if paths and roll_id == self.state.active_roll_id:
+            self.request_asset_discovery(paths)
+        name = (rolls.roll_for_id(self.session.repo, roll_id) or {}).get("name") or tr("this roll")
+        self.set_status(tr("Restored {value} to “{name}”", value=count_of(count, "frame"), name=name), 3000)
 
     def request_remove_from_roll(self, indices: List[int]) -> None:
         """Take the frames at *indices* out of the active roll and the Film Strip, with

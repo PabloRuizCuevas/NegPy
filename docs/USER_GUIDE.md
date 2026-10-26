@@ -112,12 +112,14 @@ The **Library** tab (`Ctrl+L`) lists your **rolls**. A roll is a named group of 
 
 *   **+**: **Import Folder as a Roll…** makes one roll of a folder and opens it. **Import Subfolders as Rolls…** makes a roll of each subfolder that holds images.
 *   **Double-click** a roll (or press Enter) to open it in the Film Strip.
-*   **⋮** or right-click a roll: **Open**, **Unload All…** (the open roll), **Roll Analysis**, **Rename…** and **Delete…**. Delete keeps the files and their shared edits. It loses the roll's settings, baseline, film base, scenes, card locks and the edits made only in that roll, and Refresh does not add a deleted folder roll again.
+*   **⋮** or right-click a roll: **Open**, **Unload All…** (the open roll), **Roll Analysis**, **Rename…**, **Restore Removed Frames…** and **Delete…**. Restore Removed Frames brings back the frames that Remove from Roll took out of a folder roll; the line under the roll's name counts them. Delete keeps the files and their shared edits. It loses the roll's settings, baseline, film base, scenes, card locks and the edits made only in that roll, and Refresh does not add a deleted folder roll again.
 *   **Filter rolls…** and **Sort** help you find a roll. **⋮ → Refresh** finds new subfolders and recounts the frames. **⋮ → Discovery Filters…** lists folder names to skip (`export` at first).
 
 A roll whose folder is gone shows **folder missing**. A folder name that matches your gear ("penf" for "Pen F") opens Roll Settings filled in.
 
-A roll can also be any set of frames: search or gather them, then **Save as Roll…** in the Film Strip. The new roll starts with the open roll's settings, card locks and the edits made only in that roll. A frame has one edit in every roll that holds it; right-click → **Edit Independently in This Roll** gives it its own edit in one roll.
+A folder roll holds only the files in its folder. A file you add from another folder stays for this session only.
+
+A roll can also be any set of frames: search or gather them, then **Save as Roll…** in the Film Strip. It saves every frame in the Film Strip. The new roll starts with the open roll's settings, card locks and the edits made only in that roll. A frame has one edit in every roll that holds it; right-click → **Edit Independently in This Roll** gives it its own edit in one roll.
 
 Nikon Z 8 and Z 9 NEFs in **HE** or **HE\*** compression cannot be opened. Shoot **Lossless Compressed**, or convert them with Adobe DNG Converter.
 
@@ -132,9 +134,9 @@ The toolbar's **Roll** row holds:
 *   The **filter box**: type part of a file name, or terms such as `film:portra iso:>=400` (below). The search button, or **Enter**, searches the whole library.
 *   **Sort**: by name, date or scene.
 *   **Sheet filter**: all frames, keepers only, hide rejected, or unmarked only. The button is highlighted while a filter hides frames.
-*   **Roll Settings** (the tag): gear and film details for this frame, the selection or the whole roll.
+*   **Roll Settings** (the tag): gear and film details for this frame, the selection or the roll.
 *   **Apply**: copies chosen settings of this frame to the selection or the roll.
-*   **⋮**: **Add Files…**, **Add Folder…**, **Save as Roll…**, **Update Thumbnails**, **Hot Folder** (loads new files as a scanner saves them), **Unload…**, **Unload All…** (empties the Film Strip; the roll stays in the Library), **Reset Roll to Defaults…** and **Film Strip Guide…**.
+*   **⋮**: **Add Files…**, **Add Folder…**, **Save as Roll…**, **Update Thumbnails**, **Hot Folder** (loads new files as a scanner saves them), **Unload…**, **Unload All…** (empties the Film Strip; the roll stays in the Library), **Reset Roll to Defaults…**, **Restore Removed Frames…** and **Film Strip Guide…**.
 
 Right-click a frame to **Keep** it (a check) or **Reject** it (a cross; batch exports skip it).
 

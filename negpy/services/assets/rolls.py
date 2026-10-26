@@ -354,6 +354,26 @@ def is_excluded_key(path: str, excluded: Collection[str]) -> bool:
     return _folder_key(path) in excluded
 
 
+def removed_paths(repo: Any, roll_id: str) -> List[str]:
+    """The files Remove from Roll took out of a folder roll that are still on disk."""
+    entry = _view(repo).get(roll_id)
+    if entry is None or entry.get("kind") != "folder":
+        return []
+    return [p for p in entry.get("excluded_paths", ()) if os.path.isfile(p)]
+
+
+def restore_removed(repo: Any, roll_id: str) -> List[str]:
+    """Empty a folder roll's excluded_paths, in one write. Returns the files still on disk."""
+    store = _read(repo)
+    entry = store.get(roll_id)
+    if entry is None or entry.get("kind") != "folder" or not entry.get("excluded_paths"):
+        return []
+    back = [p for p in entry["excluded_paths"] if os.path.isfile(p)]
+    entry["excluded_paths"] = []
+    _write(repo, store)
+    return back
+
+
 def roll_edit_hash(from_hash: str, roll_id: str) -> str:
     """The independent edit identity a fork of *from_hash* uses under *roll_id*.
 

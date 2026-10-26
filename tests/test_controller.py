@@ -7114,6 +7114,31 @@ class TestLibrarySearch(unittest.TestCase):
         self.assertEqual(roll_for_id(repo, folder_roll)["extra_paths"], [])
         self.assertEqual(roll_for_id(repo, virtual_roll)["member_paths"], ["/a.nef", f"/elsewhere/{virtual_roll}.nef"])
 
+    def test_restore_removed_frames_brings_them_back_and_loads_them_in_the_open_roll(self):
+        self._dict_repo()
+        from negpy.services.assets.rolls import recognize_folder, remove_members, roll_for_id
+
+        repo = self.controller.session.repo
+        with tempfile.TemporaryDirectory() as folder:
+            frames = [os.path.join(folder, f"{n}.tif") for n in (1, 2)]
+            for path in frames:
+                open(path, "w").close()
+            roll_id = recognize_folder(repo, folder)
+            self.controller.rgb_scan_mode_for_roll = MagicMock(return_value=False)
+            for active in (None, roll_id):
+                with self.subTest(open=bool(active)):
+                    remove_members(repo, roll_id, frames, [])
+                    self.assertEqual(self.controller.removed_frame_count(roll_id), 2)
+                    self.controller.state.active_roll_id = active
+                    with patch.object(self.controller, "request_asset_discovery") as discovery:
+                        self.controller.restore_removed_frames(roll_id)
+                    self.assertEqual(roll_for_id(repo, roll_id)["excluded_paths"], [])
+                    self.assertEqual(self.controller.removed_frame_count(roll_id), 0)
+                    if active:
+                        discovery.assert_called_once_with(frames)
+                    else:
+                        discovery.assert_not_called()
+
     def test_a_user_add_to_a_folder_roll_says_what_stays_for_this_session(self):
         self._dict_repo()
         from negpy.services.assets.rolls import recognize_folder, remove_members, rename_roll

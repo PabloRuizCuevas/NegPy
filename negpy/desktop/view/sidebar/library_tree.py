@@ -32,7 +32,7 @@ from negpy.desktop.view.confirm import (
     warn_invalid_roll_name,
 )
 from negpy.desktop.view.widgets.rename_roll_dialog import RenameRollDialog
-from negpy.desktop.view.keyboard_shortcuts import _unload_all
+from negpy.desktop.view.keyboard_shortcuts import _unload_all, restore_removed_frames
 from negpy.desktop.view.shortcut_registry import label_with_shortcut
 from negpy.desktop.view.styles.templates import TOOLBAR_BUTTON_HEIGHT, TOOLBAR_ICON_SIZE, hint_label, labeled_action, wrap_tooltip
 from negpy.desktop.view.widgets.flat_rows import ICON, more_press, more_rect, paint_fill, paint_more, paint_pill, two_line_rects
@@ -610,6 +610,9 @@ class LibraryTree(QWidget):
         frames = self._frame_count(roll_id, entry)
         item.setData(0, _FRAMES_ROLE, frames)
         parts = [count_of(frames, "photo")]
+        removed = self.controller.removed_frame_count(roll_id) if entry.get("kind") == "folder" else 0
+        if removed:
+            parts.append(count_of(removed, "removed", "removed"))
         mode = defaults.get("process_mode")
         label, color = _MODES.get(ProcessMode(mode), ("", "")) if mode else ("", "")
         if label:
@@ -717,6 +720,11 @@ class LibraryTree(QWidget):
                 analyze_action.setToolTip(BATCH_ANALYSIS_TOOLTIP if is_active else BATCH_ANALYSIS_DISABLED_TOOLTIP)
                 analyze_action.triggered.connect(self.controller.request_batch_normalization)
                 menu.addAction(tr("Rename…")).triggered.connect(lambda: self._rename_roll(roll_id, name))
+                if (rolls.roll_for_id(self.repo, roll_id) or {}).get("kind") == "folder":
+                    restore_action = menu.addAction(label_with_shortcut(tr("Restore Removed Frames…"), "restore_removed_frames"))
+                    restore_action.setToolTip(tr("Bring back the frames that Remove from Roll took out of this roll"))
+                    restore_action.setEnabled(bool(self.controller.removed_frame_count(roll_id)))
+                    restore_action.triggered.connect(lambda: self._restore_removed(roll_id))
                 menu.addAction(tr("Delete…")).triggered.connect(lambda: self._delete_roll(roll_id, name))
             menu.addSeparator()
         menu.addAction(tr("Import Folder as a Roll…")).triggered.connect(self.prompt_import_folder)
@@ -754,6 +762,10 @@ class LibraryTree(QWidget):
 
         self.reload()
         self.rolls_changed.emit()
+
+    def _restore_removed(self, roll_id: str) -> None:
+        if restore_removed_frames(self, self.controller, roll_id):
+            self.reload()
 
     def _delete_roll(self, roll_id: str, name: str) -> None:
         is_folder = (rolls.roll_for_id(self.repo, roll_id) or {}).get("kind") == "folder"

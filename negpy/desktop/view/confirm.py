@@ -283,6 +283,17 @@ def confirm_remove_from_roll(parent, count: int, roll_name: str) -> bool:
     )
 
 
+def confirm_restore_removed(parent, count: int, roll_name: str) -> bool:
+    """Ask before the frames removed from a folder roll come back."""
+    return confirm_action(
+        parent,
+        tr("Restore Removed Frames"),
+        tr("Bring back the {value} removed from “{roll_name}”?", value=count_of(count, "frame"), roll_name=roll_name),
+        tr("Restore"),
+        tr("They return to the roll with their edits."),
+    )
+
+
 def confirm_unfork_edit(parent) -> bool:
     """Ask before this roll's own edit for a frame goes and the frame returns to the
     edit every other roll it belongs to already shares."""

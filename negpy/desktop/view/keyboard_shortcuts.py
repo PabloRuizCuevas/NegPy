@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QApplication, QWidget
 
 from negpy.desktop.session import ToolMode
 from negpy.services.assets import rolls
-from negpy.desktop.view.confirm import confirm_remove_from_roll, confirm_reset_frames, confirm_unload_all
+from negpy.desktop.view.confirm import confirm_remove_from_roll, confirm_reset_frames, confirm_restore_removed, confirm_unload_all
 from negpy.desktop.view.widgets.granular_settings_dialog import open_paste_dialog, open_sticky_dialog, open_sync_bounds_dialog
 from negpy.desktop.view.shortcut_registry import (
     REGISTRY,
@@ -85,6 +85,19 @@ def remove_from_roll(window, controller) -> None:
     name = (rolls.roll_for_id(controller.session.repo, state.active_roll_id) or {}).get("name") or tr("this roll")
     if count and confirm_remove_from_roll(window, count, name):
         controller.request_remove_from_roll(indices)
+
+
+def restore_removed_frames(window, controller, roll_id: Optional[str] = None) -> bool:
+    """Bring back the frames removed from a folder roll (the open one by default), after a confirmation."""
+    roll_id = roll_id or controller.state.active_roll_id
+    count = controller.removed_frame_count(roll_id) if roll_id else 0
+    if not count:
+        return False
+    name = (rolls.roll_for_id(controller.session.repo, roll_id) or {}).get("name") or tr("this roll")
+    if not confirm_restore_removed(window, count, name):
+        return False
+    controller.restore_removed_frames(roll_id)
+    return True
 
 
 def _reset_selected(window, controller) -> None:
@@ -578,6 +591,7 @@ class ShortcutManager:
             "reset_roll": lambda: _reset_roll(self.window, controller),
             "close_roll": lambda: _unload_all(self.window, controller),
             "remove_from_roll": lambda: remove_from_roll(self.window, controller),
+            "restore_removed_frames": lambda: restore_removed_frames(self.window, controller),
             "reset_tab": lambda: _fire_tab_header(right, "reset"),
             "reset_tab_to_roll": lambda: _fire_tab_header(right, "revert"),
             "reset_to_roll": controller.revert_frame_to_roll,
