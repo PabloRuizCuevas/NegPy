@@ -373,6 +373,7 @@ class _DiscoveryRequest:
     half_frame_overrides: Optional[dict] = None  # {base_hash: {crop_rect, split_x, gutter_thickness}}
     hot_folder: bool = False
     skip_paths: frozenset = frozenset()
+    user_add: bool = False
 
 
 # Sections a scan peek shows itself or that never reach the pixels; an edit to any other section ends the peek.
@@ -717,6 +718,7 @@ class AppController(QObject):
         self._replace_after_discovery = False
         self._reselect_after_discovery: Optional[str] = None
         self._announce_rgb = False
+        self._user_add_after_discovery = False
         self._pending_capture_imports: Dict[str, _PendingCaptureImport] = {}
         self._pending_asset_discoveries: List[_DiscoveryRequest] = []
         self._active_discovery_keys: frozenset[str] = frozenset()
@@ -1737,6 +1739,7 @@ class AppController(QObject):
         reselect_path: Optional[str] = None,
         announce_rgb: bool = False,
         hot_folder: bool = False,
+        user_add: bool = False,
     ) -> None:
         """
         Starts asynchronous discovery of supported assets.
@@ -1753,6 +1756,9 @@ class AppController(QObject):
         `hot_folder` marks this request as coming from the Hot Folder poll, not from a
         user action — it drives `hot_folder_sequence_active`, which is what the batch
         popup checks, rather than whether the toggle happens to be on.
+
+        `user_add` marks Add Files, Add Folder and a drop: the files the open folder roll cannot
+        hold are reported.
         """
         self.thumb_worker.cancel_pending()
         self.thumbnail_cancel_requested.emit()
@@ -1773,6 +1779,7 @@ class AppController(QObject):
             half_frame_overrides=self.half_frame_overrides(),
             hot_folder=hot_folder,
             skip_paths=rolls.excluded_paths(self.session.repo, [p for p in paths if os.path.isdir(p)]),
+            user_add=user_add,
         )
         if self._discovery_running:
             self._pending_asset_discoveries.append(request)
@@ -1804,6 +1811,7 @@ class AppController(QObject):
         self._auto_open_after_discovery = request.auto_open
         self._replace_after_discovery = request.replace_existing
         self._reselect_after_discovery = request.reselect_path
+        self._user_add_after_discovery = request.user_add
         self._active_discovery_keys = frozenset(_capture_import_key(path) for path in request.paths)
         self.set_status(tr("Scanning for assets…"))
         stitches, merges = restore_maps(self.session.repo)
@@ -1832,6 +1840,26 @@ class AppController(QObject):
             skip_paths=request.skip_paths,
         )
         self.asset_discovery_requested.emit(task)
+
+    def _folder_roll_add_note(self, roll_id: str, outside: List[str], returned: List[str]) -> str:
+        """What an add did to the open folder roll, when it loaded files the roll cannot hold."""
+        if not outside:
+            return ""
+        name = (rolls.roll_for_id(self.session.repo, roll_id) or {}).get("name") or tr("this roll")
+        if returned:
+            return tr(
+                "Added {value} to “{name}”. Loaded {value1} from other folders for this session only. "
+                "Use Save as Roll… to keep them in a new roll.",
+                value=count_of(len(returned), "frame"),
+                value1=count_of(len(outside), "frame"),
+                name=name,
+            )
+        return tr(
+            "Loaded {value} for this session only. The folder roll “{name}” holds only files from its own folder. "
+            "Use Save as Roll… to keep them in a new roll.",
+            value=count_of(len(outside), "frame"),
+            name=name,
+        )
 
     def _start_next_asset_discovery(self) -> None:
         if self._pending_asset_discoveries and not self._discovery_running and self._active_batch is None:
@@ -1898,17 +1926,13 @@ class AppController(QObject):
         )
 
     def open_roll(self, roll_id: str) -> None:
-        """Open a roll (folder or virtual) by id. A folder roll's own contents are
-        (re)walked as usual, the same as opening it from the tree; its extra_paths --
-        files added by hand that are not physically in the folder -- ride along in the
-        same discovery pass, since request_asset_discovery already accepts a mix of
-        folder and file paths."""
+        """Open a roll (folder or virtual) by id: a folder roll's folder, or a virtual roll's members."""
         entry = rolls.roll_for_id(self.session.repo, roll_id)
         if entry is None:
             self.set_status(tr("That roll no longer exists"), 3000)
             return
         if entry["kind"] == "folder":
-            paths = [entry["folder_path"], *entry.get("extra_paths", [])]
+            paths = [entry["folder_path"]]
         else:
             paths = list(entry.get("member_paths", []))
         if not paths:
@@ -2534,15 +2558,24 @@ class AppController(QObject):
         active_discovery_keys = self._active_discovery_keys
         self._active_discovery_keys = frozenset()
 
-        # Files appended (not replaced) while a roll is active join its membership, so
-        # reopening that roll later still shows what was added by hand.
+        user_add = self._user_add_after_discovery
+        self._user_add_after_discovery = False
+
+        # Files appended (not replaced) to an open virtual roll join it. A folder roll holds only
+        # its folder's files: an appended one of them leaves excluded_paths, any other stays for this session.
+        roll_note = ""
         if not replace_existing and self.state.active_roll_id:
-            rolls.add_extra_members(
+            roll_id = self.state.active_roll_id
+            loaded = {f.get("path") for f in self.state.uploaded_files}
+            added = [a["path"] for a in valid_assets if a.get("path") and a["path"] not in loaded]
+            returned = rolls.add_members(
                 self.session.repo,
-                self.state.active_roll_id,
+                roll_id,
                 [a["path"] for a in valid_assets if a.get("path")],
                 parts=[p for a in valid_assets for p in source_files(a)],
             )
+            if user_add:
+                roll_note = self._folder_roll_add_note(roll_id, rolls.outside_folder(self.session.repo, roll_id, added), returned)
         pending_scan = getattr(self, "_pending_scanned_file", None)
 
         if replace_existing and valid_assets:
@@ -2584,6 +2617,8 @@ class AppController(QObject):
         if valid_assets:
             first_new_idx = len(self.session.state.uploaded_files)
             self.session.add_files([], validated_info=valid_assets)
+            if roll_note:
+                self.set_status(roll_note, 6000)
             self.generate_missing_thumbnails()
             self._seed_stale_thumbnails(self.session.state.uploaded_files[first_new_idx:])
             if not self._thumbnail_queue_active:

@@ -627,8 +627,7 @@ class LibraryTree(QWidget):
     def _frame_count(self, roll_id: str, entry: dict) -> int:
         if entry.get("kind") == "folder":
             skip = {os.path.normcase(os.path.normpath(p)) for p in entry.get("excluded_paths") or ()}
-            own = [p for p in folder_image_paths(entry.get("folder_path", "")) if os.path.normcase(os.path.normpath(p)) not in skip]
-            paths = [*own, *(entry.get("extra_paths") or ())]
+            paths = [p for p in folder_image_paths(entry.get("folder_path", "")) if os.path.normcase(os.path.normpath(p)) not in skip]
         else:
             paths = entry.get("member_paths") or ()
         # Discovery re-attaches a remembered triplet in Trichrome Mode only.

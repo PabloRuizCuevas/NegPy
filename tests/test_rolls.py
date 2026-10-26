@@ -23,7 +23,8 @@ from negpy.services.assets.rolls import (
     scene_by_hash,
     scene_normalization,
     set_scene_normalization,
-    add_extra_members,
+    ROLLS_KEY,
+    add_members,
     all_rolls_sorted,
     create_virtual_roll,
     delete_roll,
@@ -40,6 +41,7 @@ from negpy.services.assets.rolls import (
     is_forked,
     recognize_folder,
     next_roll_name,
+    outside_folder,
     roll_folder_name,
     rename_folder_roll_disk,
     rename_roll,
@@ -130,18 +132,21 @@ def test_create_virtual_roll_stores_the_exact_member_list():
     assert entry["member_paths"] == ["/a.nef", "/b.nef"]
 
 
-def test_add_extra_member_extends_a_folder_rolls_extra_paths():
+def test_a_folder_roll_gains_no_file_from_another_folder():
     repo = _repo()
     roll_id = recognize_folder(repo, "/scans/roll_a")
-    add_extra_members(repo, roll_id, ["/elsewhere/c.nef"])
-    assert roll_for_id(repo, roll_id)["extra_paths"] == ["/elsewhere/c.nef"]
+    assert add_members(repo, roll_id, ["/scans/roll_a/1.tif", "/scans/roll_a/sub/2.tif", "/elsewhere/c.nef"]) == []
+    entry = roll_for_id(repo, roll_id)
+    assert entry["extra_paths"] == []
+    assert "member_paths" not in entry
 
 
-def test_add_extra_member_skips_files_the_folder_walk_finds():
+def test_outside_folder_names_the_files_a_folder_roll_cannot_hold():
     repo = _repo()
     roll_id = recognize_folder(repo, "/scans/roll_a")
-    add_extra_members(repo, roll_id, ["/scans/roll_a/1.tif", "/scans/roll_a/sub/2.tif", "/elsewhere/c.nef"])
-    assert roll_for_id(repo, roll_id)["extra_paths"] == ["/scans/roll_a/sub/2.tif", "/elsewhere/c.nef"]
+    paths = ["/scans/roll_a/1.tif", "/scans/roll_a/sub/2.tif", "/elsewhere/c.nef"]
+    assert outside_folder(repo, roll_id, paths) == ["/scans/roll_a/sub/2.tif", "/elsewhere/c.nef"]
+    assert outside_folder(repo, create_virtual_roll(repo, "Picks", []), paths) == []
 
 
 @pytest.mark.parametrize(
@@ -151,23 +156,23 @@ def test_roll_folder_name(text, name):
     assert roll_folder_name(text) == name
 
 
-def test_add_extra_member_extends_a_virtual_rolls_member_paths():
+def test_add_members_extends_a_virtual_rolls_member_paths():
     repo = _repo()
     roll_id = create_virtual_roll(repo, "Portra", ["/a.nef"])
-    add_extra_members(repo, roll_id, ["/b.nef"])
+    add_members(repo, roll_id, ["/b.nef"])
     assert roll_for_id(repo, roll_id)["member_paths"] == ["/a.nef", "/b.nef"]
 
 
-def test_add_extra_member_does_not_duplicate():
+def test_add_members_does_not_duplicate():
     repo = _repo()
     roll_id = create_virtual_roll(repo, "Portra", ["/a.nef"])
-    add_extra_members(repo, roll_id, ["/a.nef"])
+    add_members(repo, roll_id, ["/a.nef"])
     assert roll_for_id(repo, roll_id)["member_paths"] == ["/a.nef"]
 
 
-def test_add_extra_member_on_unknown_roll_is_a_noop():
+def test_add_members_on_unknown_roll_is_a_noop():
     repo = _repo()
-    add_extra_members(repo, "not-a-real-id", ["/a.nef"])
+    add_members(repo, "not-a-real-id", ["/a.nef"])
     assert saved_rolls(repo) == {}
 
 
@@ -418,11 +423,14 @@ def test_rolls_containing_path_finds_a_folder_roll_by_prefix(tmp_path):
     assert rolls_containing_path(repo, str(folder / "frame001.tif")) == [roll_id]
 
 
-def test_rolls_containing_path_finds_a_folder_rolls_extra_member():
+def test_rolls_containing_path_ignores_an_old_extra_path():
+    """A folder roll holds only its folder's files, whatever an older version stored in extra_paths."""
     repo = _repo()
     roll_id = recognize_folder(repo, "/scans/roll_a")
-    add_extra_members(repo, roll_id, ["/elsewhere/c.nef"])
-    assert rolls_containing_path(repo, "/elsewhere/c.nef") == [roll_id]
+    store = dict(saved_rolls(repo))
+    store[roll_id] = {**store[roll_id], "extra_paths": ["/elsewhere/c.nef"]}
+    repo.save_global_setting(ROLLS_KEY, store)
+    assert rolls_containing_path(repo, "/elsewhere/c.nef") == []
 
 
 def test_rolls_containing_path_finds_a_virtual_rolls_member():
@@ -866,13 +874,13 @@ class TestBaselineLabel:
         assert resolve_roll_baseline(repo, roll_id, "h2", cfg).process.baseline_source == f"roll:{roll_id}"
 
 
-def test_add_extra_members_writes_many_paths_once():
+def test_add_members_writes_many_paths_once():
     repo = _repo()
     roll_id = create_virtual_roll(repo, "Portra", ["/a.nef"])
     writes = []
     real = repo.save_global_setting
     repo.save_global_setting = lambda k, v: writes.append(k) or real(k, v)
-    add_extra_members(repo, roll_id, ["/b.nef", "/a.nef", "/c.nef", "/b.nef"])
+    add_members(repo, roll_id, ["/b.nef", "/a.nef", "/c.nef", "/b.nef"])
     assert roll_for_id(repo, roll_id)["member_paths"] == ["/a.nef", "/b.nef", "/c.nef"]
     assert len(writes) == 1
 

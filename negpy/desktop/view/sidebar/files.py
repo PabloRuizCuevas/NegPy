@@ -2175,7 +2175,7 @@ class FileBrowser(QWidget):
         )
         if files:
             self.session.repo.save_global_setting("last_open_folder", os.path.dirname(files[0]))
-            self.controller.request_asset_discovery(files, auto_open=True, announce_rgb=True)
+            self.controller.request_asset_discovery(files, auto_open=True, announce_rgb=True, user_add=True)
 
     def prompt_add_folder(self) -> None:
         """Public entry point: also driven by the canvas empty state."""
@@ -2190,7 +2190,7 @@ class FileBrowser(QWidget):
         into Library when it holds none directly."""
         images, _ = folder_counts(folder)
         if images:
-            self.controller.request_asset_discovery([folder], auto_open=True, announce_rgb=True)
+            self.controller.request_asset_discovery([folder], auto_open=True, announce_rgb=True, user_add=True)
         elif self.library_tree.import_subfolders(folder):
             self.library_requested.emit(False)
 

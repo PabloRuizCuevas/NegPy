@@ -971,5 +971,5 @@ class MainWindow(QMainWindow):
             # them rather than reporting that it found nothing.
             self.file_browser.open_or_browse(paths[0])
         elif paths:
-            self.controller.request_asset_discovery(paths, auto_open=True)
+            self.controller.request_asset_discovery(paths, auto_open=True, user_add=True)
         event.acceptProposedAction()

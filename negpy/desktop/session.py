@@ -125,7 +125,7 @@ class AppState:
     found_scenes: List[Dict[str, Any]] = field(default_factory=list)
     # The roll (negpy.services.assets.rolls) the loaded frames came from, if any -- a
     # plain Add Files pick or a clear leaves this None. Files appended while it is set
-    # join that roll's membership so reopening it later still shows them.
+    # join it when it is a virtual roll; a folder roll holds only its folder's files.
     active_roll_id: Optional[str] = None
     active_adjustment_idx: int = 0
     last_metrics: Dict[str, Any] = field(default_factory=dict)

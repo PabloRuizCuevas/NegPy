@@ -7033,18 +7033,71 @@ class TestLibrarySearch(unittest.TestCase):
 
         self.assertEqual(saved_rolls(self.controller.session.repo), {})
 
-    def test_open_roll_loads_a_folder_rolls_own_and_extra_paths(self):
+    def test_open_roll_walks_only_a_folder_rolls_folder(self):
+        """extra_paths from an older version are ignored."""
         self._dict_repo()
-        from negpy.services.assets.rolls import add_extra_members, recognize_folder
+        from negpy.services.assets.rolls import ROLLS_KEY, recognize_folder
 
-        roll_id = recognize_folder(self.controller.session.repo, "/photos/roll_a")
-        add_extra_members(self.controller.session.repo, roll_id, ["/elsewhere/c.nef"])
+        repo = self.controller.session.repo
+        roll_id = recognize_folder(repo, "/photos/roll_a")
+        store = dict(repo.get_global_setting(ROLLS_KEY))
+        store[roll_id] = {**store[roll_id], "extra_paths": ["/elsewhere/c.nef"]}
+        repo.save_global_setting(ROLLS_KEY, store)
 
         with patch.object(self.controller, "request_asset_discovery") as discovery:
             self.controller.open_roll(roll_id)
 
-        discovery.assert_called_once_with(["/photos/roll_a", "/elsewhere/c.nef"], auto_open=True, replace_existing=True)
+        discovery.assert_called_once_with(["/photos/roll_a"], auto_open=True, replace_existing=True)
         self.assertEqual(self.controller.state.active_roll_id, roll_id)
+
+    def test_files_added_to_an_open_folder_roll_from_another_folder_stay_out_of_it(self):
+        """An open virtual roll gains what is added; a folder roll gains nothing."""
+        self._dict_repo()
+        from negpy.services.assets.rolls import create_virtual_roll, recognize_folder, roll_for_id
+
+        repo = self.controller.session.repo
+        folder_roll = recognize_folder(repo, "/photos/roll_a")
+        virtual_roll = create_virtual_roll(repo, "Picks", ["/a.nef"])
+        self.controller.generate_missing_thumbnails = MagicMock()
+        for roll_id in (folder_roll, virtual_roll):
+            self.controller.state.active_roll_id = roll_id
+            self.controller._replace_after_discovery = False
+            self.controller._on_discovery_finished([{"name": "c", "path": f"/elsewhere/{roll_id}.nef", "hash": roll_id}])
+
+        self.assertEqual(roll_for_id(repo, folder_roll)["extra_paths"], [])
+        self.assertEqual(roll_for_id(repo, virtual_roll)["member_paths"], ["/a.nef", f"/elsewhere/{virtual_roll}.nef"])
+
+    def test_a_user_add_to_a_folder_roll_says_what_stays_for_this_session(self):
+        self._dict_repo()
+        from negpy.services.assets.rolls import recognize_folder, remove_members, rename_roll
+
+        repo = self.controller.session.repo
+        roll_id = recognize_folder(repo, "/photos/roll_a")
+        rename_roll(repo, roll_id, "500T")
+        remove_members(repo, roll_id, ["/photos/roll_a/1.nef"], [])
+        self.controller.generate_missing_thumbnails = MagicMock()
+        cases = (
+            ([], ["/elsewhere/c.nef", "/elsewhere/d.nef"], True, "Loaded 2 frames for this session only."),
+            (["/photos/roll_a/1.nef"], ["/elsewhere/e.nef"], True, "Added 1 frame to “500T”. Loaded 1 frame"),
+            ([], ["/elsewhere/f.nef"], False, None),
+            ([], ["/photos/roll_a/2.nef"], True, None),
+        )
+        for own, outside, user_add, message in cases:
+            with self.subTest(outside=outside, user_add=user_add):
+                self.controller.state.active_roll_id = roll_id
+                self.controller._replace_after_discovery = False
+                self.controller._user_add_after_discovery = user_add
+                assets = [{"name": os.path.basename(p), "path": p, "hash": p} for p in (*own, *outside)]
+                with patch.object(self.controller, "set_status") as status:
+                    self.controller._on_discovery_finished(assets)
+                notes = [c.args[0] for c in status.call_args_list if "this session only" in c.args[0]]
+                if message is None:
+                    self.assertEqual(notes, [])
+                else:
+                    self.assertEqual(len(notes), 1)
+                    self.assertTrue(notes[0].startswith(message), notes[0])
+                    self.assertIn("Save as Roll…", notes[0])
+                self.assertFalse(self.controller._user_add_after_discovery)
 
     def test_open_roll_loads_a_virtual_rolls_member_paths(self):
         self._dict_repo()
