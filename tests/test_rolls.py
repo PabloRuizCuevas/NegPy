@@ -415,12 +415,24 @@ def test_unfork_edit_reverses_fork_edit():
     repo.delete_file_settings.assert_called_once_with(forked)
 
 
-def test_rolls_containing_path_finds_a_folder_roll_by_prefix(tmp_path):
+def test_rolls_containing_path_finds_a_file_directly_in_a_folder_roll(tmp_path):
     repo = _repo()
     folder = tmp_path / "roll_a"
     folder.mkdir()
     roll_id = recognize_folder(repo, str(folder))
     assert rolls_containing_path(repo, str(folder / "frame001.tif")) == [roll_id]
+
+
+def test_rolls_containing_path_leaves_out_a_subfolders_file(tmp_path):
+    """The walk of a folder roll never opens a subfolder, so its files are not members."""
+    repo = _repo()
+    folder = tmp_path / "roll_a"
+    (folder / "picks").mkdir(parents=True)
+    parent = recognize_folder(repo, str(folder))
+    assert rolls_containing_path(repo, str(folder / "picks" / "p1.tif")) == []
+    picks = recognize_folder(repo, str(folder / "picks"))
+    assert rolls_containing_path(repo, str(folder / "picks" / "p1.tif")) == [picks]
+    assert rolls_containing_path(repo, str(folder / "a1.tif")) == [parent]
 
 
 def test_rolls_containing_path_ignores_an_old_extra_path():

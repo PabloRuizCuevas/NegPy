@@ -436,17 +436,15 @@ def frame_roll(repo: Any, active_roll_id: Optional[str], asset: dict) -> Optiona
 
 
 def rolls_containing_path(repo: Any, path: str) -> List[str]:
-    """Every roll *path* belongs to: under a folder roll's own folder and not removed from
-    it, or listed in a virtual roll's member_paths. A cheap path comparison
-    against the small rolls store, not a disk walk -- good enough to decide whether
-    forking a path is meaningful (it is shared with at least one other roll)."""
-    norm = os.path.normcase(os.path.abspath(path))
+    """Every roll *path* belongs to: directly in a folder roll's folder (not a subfolder, which
+    its walk never opens) and not removed from it, or listed in a virtual roll's member_paths.
+    A cheap path comparison against the small rolls store, not a disk walk."""
+    parent = os.path.normcase(os.path.dirname(os.path.abspath(path)))
     out = []
     for roll_id, entry in _view(repo).items():
         if entry.get("kind") == "folder":
             folder = entry.get("folder_path", "")
-            folder_norm = os.path.normcase(os.path.abspath(folder)) if folder else ""
-            in_folder = bool(folder_norm) and norm.startswith(folder_norm + os.sep)
+            in_folder = bool(folder) and os.path.normcase(os.path.abspath(folder)) == parent
             if in_folder and _folder_key(path) not in {_folder_key(p) for p in entry.get("excluded_paths", ())}:
                 out.append(roll_id)
         elif path in entry.get("member_paths", []):
