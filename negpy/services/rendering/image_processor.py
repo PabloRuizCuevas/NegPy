@@ -1509,6 +1509,10 @@ class ImageProcessor:
 
         if self._is_flat(params):
             prefer_gpu = False
+        # A resized export sharpens after the resize, so the radius is in exported pixels as it is
+        # in the preview's own pixels.
+        sharpen_after = self._sharpens_after_resize(params)
+        render_params = dc_replace(params, lab=dc_replace(params.lab, sharpen=0.0)) if sharpen_after else params
 
         if prefer_gpu and self.engine_gpu:
             # Mirrors run_pipeline's base_hash, so a multi-preset batch of one frame
@@ -1517,7 +1521,7 @@ class ImageProcessor:
             with timing.step("GPU"):
                 buffer, _gpu_metrics = self.engine_gpu.process(
                     f32_buffer,
-                    params,
+                    render_params,
                     scale_factor=export_scale,
                     bounds_override=bounds_override,
                     readback_metrics=False,
@@ -1530,7 +1534,7 @@ class ImageProcessor:
         else:
             buffer, _ = self.run_pipeline(
                 f32_buffer,
-                params,
+                render_params,
                 source_hash,
                 render_size_ref=float(APP_CONFIG.preview_render_size),
                 metrics=metrics or {"log_bounds": bounds_override} if bounds_override else metrics,
@@ -1552,27 +1556,30 @@ class ImageProcessor:
             self.engine_cpu.cache.clear()
             timing.lap("print layout")
 
-        buffer = self._sharpen_resized_content(buffer, content_rect, params)
-        timing.lap("output sharpen")
+        if sharpen_after:
+            buffer = self._sharpen_resized_content(buffer, content_rect, params)
+            timing.lap("output sharpen")
         return buffer, color_space
 
+    @staticmethod
+    def _sharpens_after_resize(params: WorkspaceConfig) -> bool:
+        """A Print or Pixels export with Lab Sharpening on; an Original-size export and a flat
+        master sharpen in the pipeline."""
+        return (
+            params.lab.sharpen > 0.0
+            and params.export.export_resolution_mode != ExportResolutionMode.ORIGINAL.value
+            and not ImageProcessor._is_flat(params)
+        )
+
+    @staticmethod
     def _sharpen_resized_content(
-        self, buffer: np.ndarray, content_rect: Optional[Tuple[int, int, int, int]], params: WorkspaceConfig
+        buffer: np.ndarray, content_rect: Optional[Tuple[int, int, int, int]], params: WorkspaceConfig
     ) -> np.ndarray:
-        """Export sharpening: runs once on the CPU for both engines, on the scaled content
-        inside the mat. An Original-size export and a flat master skip it."""
-        amount = float(params.export.output_sharpen)
-        if (
-            amount <= 0.0
-            or content_rect is None
-            or params.export.export_resolution_mode == ExportResolutionMode.ORIGINAL.value
-            or self._is_flat(params)
-        ):
-            return buffer
-        x, y, w, h = content_rect
+        """The Lab Sharpening on the scaled content inside the mat, on the CPU for both engines."""
+        x, y, w, h = content_rect or (0, 0, buffer.shape[1], buffer.shape[0])
         if not buffer.flags.writeable:
             buffer = buffer.copy()
-        buffer[y : y + h, x : x + w] = apply_resize_sharpening(buffer[y : y + h, x : x + w], amount)
+        buffer[y : y + h, x : x + w] = apply_resize_sharpening(buffer[y : y + h, x : x + w], params.lab)
         return buffer
 
     def render_export(

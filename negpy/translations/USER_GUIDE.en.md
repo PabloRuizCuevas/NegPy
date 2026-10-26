@@ -670,8 +670,7 @@ The **Export** button is at the bottom of the tab. Above it, **File** holds the 
 *   **Format**: JPEG, TIFF, PNG, JPEG XL or WebP, with quality options. **Bit depth**: 8 or 16 bits (TIFF, PNG, JPEG XL). TIFF and PNG compression is always lossless.
 *   **Export profile**: the color space of the file, such as sRGB for the web or Adobe RGB, or a printer or paper profile. **Import ICC** adds a profile. **Input ICC** sets the color space of a scan that has none.
 *   **Paper ratio**: the shape of the final print, or **Original**.
-*   **Resolution**: **Original** (full size), **Print** (size in cm and DPI) or **Pixels** (the long edge in pixels).
-*   **Sharpening**: sharpens the export after it is resized. It adds to the Lab Sharpening.
+*   **Resolution**: **Original** (full size), **Print** (size in cm and DPI) or **Pixels** (the long edge in pixels). A Print or Pixels export applies the Lab Sharpening after the resize, so the sharpening looks as it does on the canvas.
 *   **Destination**: the **Filename Pattern** (see [TEMPLATING.md](TEMPLATING.md)), **Overwrite Existing Files**, and the folder: an `export` subfolder beside the source (default), the source folder, or a path you pick.
 
 ### Export button

@@ -316,7 +316,6 @@ CATALOG: list[tuple[str, tuple[SettingRow, ...]]] = [
         _row(mark("Print Size"), "export", "export_print_size", sticky=True),
         _row(mark("DPI"), "export", "export_dpi", sticky=True),
         _row(mark("Long Edge"), "export", "export_target_long_edge_px", sticky=True),
-        _row(mark("Output Sharpening"), "export", "output_sharpen", sticky=True),
         _row(mark("Export Profile"), "export", "export_color_space", sticky=True),
         _row(mark("Filename Pattern"), "export", "filename_pattern", sticky=True),
         _row(mark("Overwrite Existing Files"), "export", "overwrite", sticky=True),
