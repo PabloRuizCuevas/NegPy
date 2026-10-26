@@ -60,3 +60,10 @@ def test_preview_export_size_follows_the_print_menu():
     sidebar._on_export_size_view_changed(True)
     assert sidebar.export_size_btn.isChecked()
     sidebar.controller.toggle_export_size_view.assert_not_called()
+
+
+def test_preview_export_size_sits_above_paper_ratio():
+    sidebar = _sidebar()
+    box = sidebar.form._size_box
+    row = box.itemAt(box.indexOf(sidebar.form._ratio_row_widget) - 1).layout()
+    assert row is not None and row.indexOf(sidebar.export_size_btn) >= 0

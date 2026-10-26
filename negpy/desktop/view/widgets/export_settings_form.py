@@ -291,8 +291,8 @@ class ExportSettingsForm(QWidget):
         self._size_box = root
 
     def add_size_row(self, widget: QWidget) -> None:
-        """A row under the size settings, for a control the presets dialog has no use for."""
-        self._size_box.addLayout(field_row("", widget))
+        """A row above Paper ratio, for a control the presets dialog has no use for."""
+        self._size_box.insertLayout(self._size_box.indexOf(self._ratio_row_widget), field_row("", widget))
 
     # --- COLOR ---------------------------------------------------------------
 
