@@ -236,7 +236,7 @@ def test_half_frame_card_is_live_for_loose_frames_with_no_roll(half_frame, monke
     sidebar.sync_ui()
 
     assert sidebar.enable_btn.isEnabled() and sidebar.adjust_btn.isEnabled() and sidebar.auto_btn.isEnabled()
-    assert sidebar.hint.text() == ""
+    assert sidebar.hint.text() == "" and sidebar.hint.isHidden()
 
 
 def test_half_frame_card_grays_when_a_loaded_frame_follows_its_roll(half_frame, monkeypatch):
@@ -249,6 +249,7 @@ def test_half_frame_card_grays_when_a_loaded_frame_follows_its_roll(half_frame, 
 
     assert not sidebar.enable_btn.isEnabled() and not sidebar.adjust_btn.isEnabled() and not sidebar.auto_btn.isEnabled()
     assert sidebar.hint.text() == "Each of these frames follows its own roll's Half Frame. Open the roll to change it."
+    assert not sidebar.hint.isHidden()
 
 
 def test_half_frame_card_is_live_with_an_active_roll(half_frame):
@@ -258,7 +259,7 @@ def test_half_frame_card_is_live_with_an_active_roll(half_frame):
 
     assert sidebar.enable_btn.isEnabled() is True
     assert sidebar.adjust_btn.isEnabled() is True
-    assert sidebar.hint.text() == ""
+    assert sidebar.hint.text() == "" and sidebar.hint.isHidden()
 
 
 def test_unsplit_is_enabled_only_for_a_diptych(half_frame):

@@ -121,6 +121,7 @@ class HalfFrameSidebar(BaseSidebar):
             self.auto_btn.setEnabled(usable and has_files)
             self.unsplit_btn.setEnabled(self.controller.active_diptych() is not None)
             self.hint.setText("" if usable else _FOLLOWS_ROLLS_HINT)
+            self.hint.setVisible(not usable)
         finally:
             self.block_signals(False)
 
