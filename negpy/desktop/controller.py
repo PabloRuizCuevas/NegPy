@@ -1976,14 +1976,39 @@ class AppController(QObject):
         )
         self.session.repo.save_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, by_roll)
         self._save_rgb_scan_mode(self.rgb_scan_mode_for_roll(source), roll_id)
+        moved = (False, False)
         if source:
             hashes = {rolls.unforked_hash(f["hash"]) for f in self.state.uploaded_files if f.get("hash")}
             rolls.copy_roll_settings(self.session.repo, source, roll_id, hashes)
+            moved = self._carry_roll_edits(roll_id)
         self.state.active_roll_id = roll_id
         self.session.persist_session()
+        if moved[0]:
+            self.session.asset_model.refresh()
+        if moved[1]:
+            self._reselect_active_frame()
         self._announce_roll_modes(roll_id)
         self.set_status(tr("Saved as roll “{name}”", name=name), 3000)
         return roll_id
+
+    def _carry_roll_edits(self, roll_id: str) -> tuple[bool, bool]:
+        """Give *roll_id* its own copy of each loaded frame's edit made only in the open roll,
+        seeded from that edit as it stands, and point the frame at it. The open frame's unsaved
+        change is saved to the open roll first, so both rolls keep it. Returns (any frame
+        moved, the open frame moved)."""
+        self.session.save_active_edit()
+        current = self.state.current_file_hash
+        any_moved = moved = False
+        for asset in self.state.uploaded_files:
+            forked = asset.get("hash") or ""
+            from_hash = rolls.unforked_hash(forked)
+            if from_hash == forked or not asset.get("path"):
+                continue
+            seed = self.state.config if forked == current else self.session.config_for_asset(asset)
+            asset["hash"] = rolls.fork_edit(self.session.repo, roll_id, from_hash, asset["path"], seed)
+            any_moved = True
+            moved = moved or forked == current
+        return any_moved, moved
 
     def request_rename_roll(self, roll_id: str, new_name: str, rename_folder: bool) -> bool:
         """Rename a roll's display name, and -- only if asked -- its backing folder on

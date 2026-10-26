@@ -117,7 +117,7 @@ The **Library** tab (`Ctrl+L`) lists your **rolls**. A roll is a named group of 
 
 A roll whose folder is gone shows **folder missing**. A folder name that matches your gear ("penf" for "Pen F") opens Roll Settings filled in.
 
-A roll can also be any set of frames: search or gather them, then **Save as Roll…** in the Film Strip. The new roll starts with the open roll's settings. A frame has one edit in every roll that holds it; right-click → **Edit Independently in This Roll** gives it its own edit in one roll.
+A roll can also be any set of frames: search or gather them, then **Save as Roll…** in the Film Strip. The new roll starts with the open roll's settings, card locks and the edits made only in that roll. A frame has one edit in every roll that holds it; right-click → **Edit Independently in This Roll** gives it its own edit in one roll.
 
 Nikon Z 8 and Z 9 NEFs in **HE** or **HE\*** compression cannot be opened. Shoot **Lossless Compressed**, or convert them with Adobe DNG Converter.
 

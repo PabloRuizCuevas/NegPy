@@ -7197,6 +7197,32 @@ class TestLibrarySearch(unittest.TestCase):
         self.assertTrue(self.controller.half_frame_mode_for_roll(roll_id))
         self.assertTrue(self.controller.rgb_scan_mode_for_roll(roll_id))
 
+    def test_save_as_roll_carries_each_frames_edit_made_only_in_the_open_roll(self):
+        """A frame edited independently in the open roll keeps that edit, and its look, in the new roll."""
+        self._dict_repo()
+        from negpy.services.assets import rolls
+
+        repo = self.controller.session.repo
+        source = rolls.recognize_folder(repo, "/photos/portra")
+        rolls.fork_edit(repo, source, "h1", "/photos/portra/1.tif", WorkspaceConfig())
+        self.controller.state.active_roll_id = source
+        self.controller.state.current_file_hash = "h2"
+        self.controller.state.uploaded_files = [
+            {"path": "/photos/portra/1.tif", "hash": rolls.roll_edit_hash("h1", source)},
+            {"path": "/photos/portra/2.tif", "hash": "h2"},
+        ]
+        own_edit = WorkspaceConfig()
+        self.controller.session.config_for_asset = MagicMock(return_value=own_edit)
+        repo.save_file_settings.reset_mock()
+
+        roll_id = self.controller.create_roll_from_session("Portra picks")
+
+        self.controller.session.save_active_edit.assert_called_once()
+        self.assertEqual(self.controller.state.uploaded_files[0]["hash"], rolls.roll_edit_hash("h1", roll_id))
+        self.assertEqual(self.controller.state.uploaded_files[1]["hash"], "h2")
+        self.assertTrue(rolls.is_forked(repo, roll_id, "h1"))
+        repo.save_file_settings.assert_called_once_with(rolls.roll_edit_hash("h1", roll_id), own_edit, file_path="/photos/portra/1.tif")
+
     def test_save_as_roll_saves_the_open_roll_with_the_session(self):
         self._dict_repo()
         self.controller.state.active_roll_id = None
