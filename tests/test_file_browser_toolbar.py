@@ -77,6 +77,24 @@ def test_the_roll_menu_holds_the_actions_out_of_view(panel):
     ]
 
 
+def test_the_hot_folder_button_names_the_folder_it_watches(panel):
+    browser = panel.file_browser
+    files = browser.session.state.uploaded_files
+    files[:] = [{"name": "a.tif", "path": "/scans/500T/a.tif", "hash": "h1"}, {"name": "b.tif", "path": "/scans/HP5/b.tif", "hash": "h2"}]
+    browser.hot_folder_action.setChecked(True)
+    assert "/scans/HP5" in browser.hot_folder_btn.toolTip(), "the newest frame's folder, the one the poll walks"
+    files.clear()
+    browser._update_tally()
+    assert "Hot Folder is on and waits for a frame to load." in browser.hot_folder_btn.toolTip()
+    assert browser.hot_folder_action.isEnabled(), "a Hot Folder that is on can always turn off"
+    browser.hot_folder_action.setChecked(False)
+    assert not browser.hot_folder_action.isEnabled()
+    assert browser.hot_folder_action.toolTip().startswith("Load a frame first")
+    files.append({"name": "a.tif", "path": "/scans/500T/a.tif", "hash": "h1"})
+    browser._update_tally()
+    assert browser.hot_folder_action.isEnabled()
+
+
 def test_the_hot_folder_shows_in_the_row_while_it_is_on(panel):
     browser = panel.file_browser
     assert browser.hot_folder_btn.isHidden()

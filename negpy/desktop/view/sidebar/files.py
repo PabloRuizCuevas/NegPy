@@ -1602,13 +1602,11 @@ class FileBrowser(QWidget):
 
         self.hot_folder_action = QAction(tr("Hot Folder"), self)
         self.hot_folder_action.setCheckable(True)
-        self.hot_folder_action.setToolTip(tr("Hot Folder: load new images from the current folder as they appear"))
         # The ⋮ menu holds the switch; the row shows this while it is on, since a watched
         # folder keeps loading files. A click turns it off.
         self.hot_folder_btn = QToolButton()
         self.hot_folder_btn.setCheckable(True)
         self.hot_folder_btn.setIcon(qta.icon("fa5s.fire", color=THEME.text_hint, color_on=THEME.text_primary))
-        self.hot_folder_btn.setToolTip(tr("Hot Folder is on: click to stop loading new images from the current folder."))
         self.hot_folder_btn.clicked.connect(lambda: self.hot_folder_action.setChecked(False))
         self.hot_folder_btn.setVisible(False)
 
@@ -1693,6 +1691,7 @@ class FileBrowser(QWidget):
         self.light_table_view.customContextMenuRequested.connect(lambda pos: self._show_context_menu(pos, self.light_table_view))
         self.list_view.selectionModel().selectionChanged.connect(self._on_selection_changed)
         self.hot_folder_action.toggled.connect(self._on_hot_folder_toggled)
+        self._sync_hot_folder()
         self.controller.thumbnail_refresh_state_changed.connect(self._on_thumbnail_refresh_state_changed)
         self.session.canvas_bg_changed.connect(self._sync_film)
         model = self.session.asset_model
@@ -1830,6 +1829,7 @@ class FileBrowser(QWidget):
 
     def _sync_unload_all_action(self) -> None:
         self.unload_all_action.setEnabled(bool(self.session.state.uploaded_files))
+        self._sync_hot_folder()
         roll_id = self.session.state.active_roll_id
         is_folder = bool(roll_id) and (rolls.roll_for_id(self.session.repo, roll_id) or {}).get("kind") == "folder"
         self.restore_removed_action.setVisible(is_folder)
@@ -2077,6 +2077,7 @@ class FileBrowser(QWidget):
 
     def _update_tally(self) -> None:
         files = self.session.state.uploaded_files
+        self._sync_hot_folder()
         if not files:
             self.roll_title.setVisible(False)
             self._title_separator.setVisible(False)
@@ -2151,6 +2152,7 @@ class FileBrowser(QWidget):
     def _on_hot_folder_toggled(self, checked: bool) -> None:
         self.hot_folder_btn.setChecked(checked)
         self.hot_folder_btn.setVisible(checked)
+        self._sync_hot_folder()
         self.session.repo.save_global_setting(_HOT_FOLDER_KEY, checked)
         if checked:
             self.scan_timer.start()
@@ -2207,12 +2209,32 @@ class FileBrowser(QWidget):
         self.controller.clear_half_frame_override(base_hash)
         self.controller.reload_after_half_frame_change()
 
+    def _hot_folder_path(self) -> str:
+        """The folder the Hot Folder watches: the newest loaded frame's."""
+        files = self.session.state.uploaded_files
+        return os.path.dirname(files[-1]["path"]) if files else ""
+
+    def _sync_hot_folder(self) -> None:
+        """The Hot Folder waits for a frame, so it turns on only with one loaded; it can always turn off."""
+        path = self._hot_folder_path()
+        if path:
+            tip = tr("Hot Folder is on, loading new images from {path}: click to stop.", path=path)
+        else:
+            tip = tr("Hot Folder is on and waits for a frame to load.")
+        self.hot_folder_btn.setToolTip(wrap_tooltip(tip))
+        on = self.hot_folder_action.isChecked()
+        self.hot_folder_action.setEnabled(bool(path) or on)
+        self.hot_folder_action.setToolTip(
+            tr("Hot Folder: load new images from the current folder as they appear")
+            if path or on
+            else tr("Load a frame first, because the Hot Folder watches the folder of the newest frame")
+        )
+
     def _scan_folder(self) -> None:
-        if not self.session.state.uploaded_files:
+        folder_path = self._hot_folder_path()
+        if not folder_path:
             return
 
-        last_file = self.session.state.uploaded_files[-1]
-        folder_path = os.path.dirname(last_file["path"])
         # A duplicate of a loaded frame never reaches uploaded_files, so counting only
         # what is loaded would re-offer it every poll: hash it, turn it away, repeat.
         existing = {f["path"] for f in self.session.state.uploaded_files} | self.session.state.duplicate_paths
