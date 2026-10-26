@@ -288,6 +288,11 @@ class ExportSettingsForm(QWidget):
         self.ratio_combo.currentTextChanged.connect(self._on_changed)
         self._ratio_row_widget = self._row_widget(field_row(tr("Paper ratio"), self.ratio_combo))
         root.addWidget(self._ratio_row_widget)
+        self._size_box = root
+
+    def add_size_row(self, widget: QWidget) -> None:
+        """A row under the size settings, for a control the presets dialog has no use for."""
+        self._size_box.addLayout(field_row("", widget))
 
     # --- COLOR ---------------------------------------------------------------
 
