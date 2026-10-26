@@ -2246,9 +2246,13 @@ class FileBrowser(QWidget):
 
     def open_or_browse(self, folder: str) -> None:
         """Load a folder's images into the session, or import the roll folders under it
-        into Library when it holds none directly."""
+        into Library when it holds none directly. A folder that is a folder roll opens as
+        that roll on an empty Film Strip, as the Library opens it."""
         images, _ = folder_counts(folder)
-        if images:
+        roll_id = rolls.folder_roll_id_for_path(self.session.repo, folder)
+        if images and roll_id and not self.session.state.uploaded_files:
+            self.controller.open_roll(roll_id)
+        elif images:
             self.controller.request_asset_discovery([folder], auto_open=True, announce_rgb=True, user_add=True)
         elif self.library_tree.import_subfolders(folder):
             self.library_requested.emit(False)

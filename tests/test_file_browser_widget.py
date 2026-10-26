@@ -1260,6 +1260,21 @@ def test_adding_a_folder_without_images_imports_its_roll_folders(browser, tmp_pa
     browser.controller.request_asset_discovery.assert_not_called()
 
 
+@pytest.mark.parametrize("loaded", [False, True])
+def test_a_folder_that_is_a_folder_roll_opens_as_that_roll_on_an_empty_film_strip(browser, session, tmp_path, loaded):
+    (tmp_path / "a1.tif").write_bytes(b"1")
+    if not loaded:
+        session.state.uploaded_files = []
+    with patch("negpy.desktop.view.sidebar.files.rolls.folder_roll_id_for_path", return_value="r1"):
+        browser.open_or_browse(str(tmp_path))
+    if loaded:
+        browser.controller.open_roll.assert_not_called()
+        browser.controller.request_asset_discovery.assert_called_once()
+    else:
+        browser.controller.open_roll.assert_called_once_with("r1")
+        browser.controller.request_asset_discovery.assert_not_called()
+
+
 def test_film_strip_menu_offers_unload_all_with_or_without_a_roll(browser, session):
     menu = browser.roll_menu_btn.menu()
     for roll_id in (None, "r1"):
