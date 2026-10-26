@@ -320,6 +320,7 @@ def test_a_virtual_roll_offers_save_to_folder_roll(widget, monkeypatch, choice):
     if choice[0] == "hidden":
         assert found == []
         return
+    assert found == ["Save to Folder Roll"], "no shortcut label: the shortcut acts on the open roll"
     action = actions[found[0]]
     action.setEnabled.assert_called_once_with(choice[0] == "ready")
     if choice[1]:

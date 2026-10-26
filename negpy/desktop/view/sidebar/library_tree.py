@@ -727,7 +727,8 @@ class LibraryTree(QWidget):
                 menu.addAction(tr("Rename…")).triggered.connect(lambda: self._rename_roll(roll_id, name))
                 choice, reason = self.controller.save_choice(roll_id)
                 if choice != "hidden":
-                    folder_action = menu.addAction(label_with_shortcut(tr("Save to Folder Roll"), "save_to_folder_roll"))
+                    # No shortcut label: the shortcut acts on the open roll, not the one clicked here.
+                    folder_action = menu.addAction(tr("Save to Folder Roll"))
                     folder_action.setToolTip(reason or tr("Make this virtual roll the folder roll of its folder"))
                     folder_action.setEnabled(choice == "ready")
                     folder_action.triggered.connect(lambda: self._save_to_folder_roll(roll_id))

@@ -1510,6 +1510,7 @@ class FileBrowser(QWidget):
         self._roll_fit = 0
         self._save_roll_wanted = False
         self._save_choice_cache: tuple = ((), ("hidden", ""))
+        self._save_to_folder = False
 
         saved_sort = self.session.repo.get_global_setting("file_sort_order") or "name"
         saved_desc = self.session.repo.get_global_setting("file_sort_descending") or False
@@ -1593,7 +1594,7 @@ class FileBrowser(QWidget):
         # Shown in the right panel's Library tab; the strip reloads it and reads its state.
         self.library_tree = LibraryTree(self.controller)
         # A rename or a kind change in the Library renames the open roll in the title.
-        self.library_tree.rolls_changed.connect(self._update_tally)
+        self.library_tree.rolls_changed.connect(self._on_rolls_changed)
 
         self.save_roll_btn = QToolButton()
         self.save_roll_btn.setIcon(qta.icon("fa5s.save", color=THEME.text_primary))
@@ -1630,7 +1631,7 @@ class FileBrowser(QWidget):
         roll_menu.addAction(tr("Add Files…")).triggered.connect(self.prompt_add_files)
         roll_menu.addAction(tr("Add Folder…")).triggered.connect(self.prompt_add_folder)
         self.save_folder_roll_action = roll_menu.addAction(label_with_shortcut(tr("Save to Folder Roll"), "save_to_folder_roll"))
-        self.save_folder_roll_action.triggered.connect(self._on_save_folder_roll)
+        self.save_folder_roll_action.triggered.connect(self.save_to_folder_roll)
         self.save_roll_action = roll_menu.addAction(label_with_shortcut(tr("Save as Virtual Roll…"), "save_as_roll"))
         self.save_roll_action.setToolTip(tr("Save these frames as a virtual roll, a fixed list of frames that new files never join"))
         self.save_roll_action.triggered.connect(self._on_save_roll_clicked)
@@ -1842,8 +1843,16 @@ class FileBrowser(QWidget):
         if count and confirm_reset_frames(self, count, roll=True):
             self.controller.request_reset_roll()
 
+    def _on_rolls_changed(self) -> None:
+        self._forget_save_choice()
+        self._update_tally()
+
+    def _forget_save_choice(self) -> None:
+        self._save_choice_cache = ((), ("hidden", ""))
+
     def _save_choice(self) -> tuple[str, str]:
-        """The controller's save_choice, kept per Film Strip contents: it reads the folder."""
+        """The controller's save_choice, kept per Film Strip contents, since it reads the folder. A
+        change in the Library or a save forgets it."""
         state = self.session.state
         key = (state.active_roll_id, tuple(f.get("path") for f in state.uploaded_files), frozenset(state.duplicate_paths))
         if self._save_choice_cache[0] != key:
@@ -1851,6 +1860,7 @@ class FileBrowser(QWidget):
         return self._save_choice_cache[1]
 
     def _label_save_roll_button(self, to_folder: bool) -> None:
+        self._save_to_folder = to_folder
         if to_folder:
             self.save_roll_btn.setText(tr("Save to Folder Roll"))
             tip = tr("Save these frames as a folder roll, or use Save as Virtual Roll… in the ⋮ menu to keep exactly these frames")
@@ -1860,22 +1870,25 @@ class FileBrowser(QWidget):
         self.save_roll_btn.setToolTip(wrap_tooltip(tip))
 
     def _on_save_roll_button(self) -> None:
+        self._forget_save_choice()
         if self._save_choice()[0] == "ready":
-            self._on_save_folder_roll()
+            self.save_to_folder_roll()
         else:
             self._on_save_roll_clicked()
 
     def _sync_save_actions(self) -> None:
-        self._save_choice_cache = ((), ("hidden", ""))
+        """Save to Folder Roll in the ⋮ menu, read again as the menu opens. Save as Virtual Roll…
+        stays enabled, so its shortcut always works; with nothing loaded the save says so."""
+        self._forget_save_choice()
         choice, reason = self._save_choice()
         self.save_folder_roll_action.setVisible(choice != "hidden")
         self.save_folder_roll_action.setEnabled(choice == "ready")
         self.save_folder_roll_action.setToolTip(reason or tr("Save these frames as the folder roll of their folder"))
-        self.save_roll_action.setEnabled(bool(self.session.state.uploaded_files))
 
-    def _on_save_folder_roll(self) -> None:
+    def save_to_folder_roll(self) -> None:
+        """Save to Folder Roll for the Film Strip or the open virtual roll; the status says why when it cannot."""
         if self.controller.save_to_folder_roll():
-            self._save_choice_cache = ((), ("hidden", ""))
+            self._forget_save_choice()
             self.library_tree.reload()
             self._update_tally()
 
@@ -2176,7 +2189,7 @@ class FileBrowser(QWidget):
         self._save_roll_wanted = wanted
         if wanted:
             to_folder = self._save_choice()[0] == "ready"
-            if to_folder != (self.save_roll_btn.text() == tr("Save to Folder Roll")):
+            if to_folder != self._save_to_folder:
                 self._label_save_roll_button(to_folder)
                 # The label's width decides whether the button fits beside the filter box.
                 self._fit_roll_row()

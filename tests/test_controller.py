@@ -7167,7 +7167,9 @@ class TestLibrarySearch(unittest.TestCase):
             self.assertIn("more than one folder", reason)
 
             self.controller.state.uploaded_files = [frame(a, "a1.tif"), frame(a, "a2.tif")]
-            self.assertEqual(self.controller.save_choice()[0], "ready")
+            self.controller.state.duplicate_paths = {os.path.join(b, "b1.tif")}
+            self.assertEqual(self.controller.save_choice()[0], "ready", "a duplicate turned away from another folder does not count")
+            self.controller.state.duplicate_paths = set()
             with patch.object(self.controller.session, "persist_session") as persist, patch.object(self.controller, "set_status") as status:
                 roll_id = self.controller.save_to_folder_roll()
             entry = roll_for_id(repo, roll_id)
