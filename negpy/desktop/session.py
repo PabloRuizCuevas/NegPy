@@ -1366,16 +1366,29 @@ class DesktopSessionManager(QObject):
 
         Keyed on the unforked hash: a lock is about this physical frame's relationship
         to the roll, and must survive forking or unforking its edit identity.
-        A *fresh* frame, one with no saved edit, also takes the roll's frame seed.
+        A *fresh* frame, one with no saved edit, also takes the roll's frame seed. A frame in
+        no roll has no roll baseline to average, so an average it does not already ride is off.
         """
         roll_id = rolls.frame_roll(self.repo, self.state.active_roll_id, asset)
         if roll_id is None:
-            return config
+            return self._without_unbaselined_averages(config)
         if fresh and (seed := rolls.frame_seed(self.repo, roll_id)):
             config = with_frame_seed(config, seed)
         file_hash = unforked_hash(asset["hash"])
         config = rolls.resolve_roll_config(self.repo, roll_id, file_hash, config)
         return rolls.resolve_roll_baseline(self.repo, roll_id, file_hash, config)
+
+    @staticmethod
+    def _without_unbaselined_averages(config: WorkspaceConfig) -> WorkspaceConfig:
+        """Use Average off where nothing saved backs it: Luma and Color without a baseline, Cast
+        without a neutral axis. The render ignores such an average, so no pixel changes."""
+        proc = config.process
+        off = {}
+        if not proc.is_locked_initialized:
+            off.update({k: False for k in ("use_luma_average", "use_color_average") if getattr(proc, k)})
+        if proc.use_cast_average and proc.locked_neutral_axis is None:
+            off["use_cast_average"] = False
+        return replace(config, process=replace(proc, **off)) if off else config
 
     def load_edit_from_sidecar(self, path: str) -> bool:
         """Replace the active frame's edit with the sidecar at *path*, as an undoable
