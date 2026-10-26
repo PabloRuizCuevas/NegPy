@@ -274,7 +274,7 @@ The IR channel, statistical detection and manual strokes each give one continuou
     $$L_{diff} = L - \text{blur}(L, \text{radius}), \qquad \text{gain} = \text{amount} \cdot 2.5 \cdot \text{smoothstep}(0.25, 0.33, |L_{diff}|) \cdot m \cdot g(L)$$
     $$L_{final} = \text{clamp}\big(L + L_{diff}\cdot\text{gain},\; L_{min}-2,\; L_{max}+1\big)$$
 
-    Radius is in full-size pixels and scales down with a resized export. Masking $m = \text{smoothstep}(0.5t, t, |\nabla L|)$, $t = 10\cdot\text{masking}$. The shadow gain $g(L) = \tfrac{1}{3} + \tfrac{2}{3}\,\text{smoothstep}(0, 35, L)$ tames the grain of thin negatives (Gallagher & Gindele, US 7,228,004). The $3\times3$ clamp is tighter above, because $L^{\ast}$ USM exaggerates light halos.
+    Radius is in pixels of the rendered buffer: the preview's, or the exported size (§9, Export sharpening). Masking $m = \text{smoothstep}(0.5t, t, |\nabla L|)$, $t = 10\cdot\text{masking}$. The shadow gain $g(L) = \tfrac{1}{3} + \tfrac{2}{3}\,\text{smoothstep}(0, 35, L)$ tames the grain of thin negatives (Gallagher & Gindele, US 7,228,004). The $3\times3$ clamp is tighter above, because $L^{\ast}$ USM exaggerates light halos.
 
     Deconvolution is Richardson-Lucy on linear $Y$ with a Gaussian PSF (`rl_*.wgsl`), $\text{clamp}(\text{round}(10\cdot\text{radius}), 5, 20)$ iterations, no damping:
 
@@ -350,5 +350,5 @@ Post-crop finishing in scene-linear, before the output transform: edge burn, the
 
     The gate only wobbles (`carrier_profiles()` rows 0 to 3) with a small corner radius; Roughness swings the aperture off rows 4 to 7, and Corners rounds only the aperture, offset by `CARRIER_OFFSET_X/Y` of $w$, so the rebate is wider at the top and left. The aperture also gates the picture (weight $A_{in} A_{out}$). A hash-value fBm (`carrier_noise`, u32 wrap-around) displaces both edges, so WGSL matches bit for bit. Flare adds exposure on each filed edge over $0.25 \cdot w$, gated by the other edges. Profiles are fixed-seed, so one carrier prints the whole roll.
 *   **Layout extras** (`services/export/print.py`, `layout.wgsl`): the bottom-weighted mat and match paper white through the toning stack.
-*   **Export sharpening** (`apply_resize_sharpening`): a Print or Pixels export runs the Lab unsharp mask on the scaled content at `RESIZE_SHARPEN_RADIUS`, on the CPU after either engine.
+*   **Export sharpening** (`apply_resize_sharpening`): a Print or Pixels export renders with Sharpening off and runs the Lab Sharpening on the scaled content, on the CPU after either engine, so the radius is in exported pixels as it is in the preview's.
 *   **Preview paper size**: an interactive render sizes the paper from `preview_render_size`, never resampling above the content's own resolution, because the canvas quotes zoom against the pipeline buffer.

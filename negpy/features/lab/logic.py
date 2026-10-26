@@ -5,6 +5,7 @@ import negpy_core
 import numpy as np
 
 from negpy.domain.types import ImageBuffer
+from negpy.features.lab.models import LabConfig, SharpenMethod
 from negpy.kernel.image.logic import (
     WORKING_INV_GAMMA,
     WORKING_LAB,
@@ -93,27 +94,24 @@ def apply_usm_sharpening(img: ImageBuffer, amount: float, radius: float = 1.0, m
     return _map_row_blocks(img, lambda block: _usm_sharpening_block(block, amount, radius, masking), halo)
 
 
-# Blur sigma of the pass that follows an export resize, in exported pixels.
-RESIZE_SHARPEN_RADIUS = 0.7
+def apply_lab_sharpening(img: ImageBuffer, config: LabConfig) -> ImageBuffer:
+    """The Lab Sharpening of `config` on linear working RGB, at this buffer's pixel scale."""
+    sharpen = apply_rl_sharpening if config.sharpen_method == SharpenMethod.RL else apply_usm_sharpening
+    return sharpen(img, config.sharpen, radius=config.sharpen_radius, masking=config.sharpen_masking)
 
 
-def apply_resize_sharpening(encoded: np.ndarray, amount: float) -> np.ndarray:
+def apply_resize_sharpening(encoded: np.ndarray, config: LabConfig) -> np.ndarray:
     """
-    Unsharp mask on export content already scaled to its final size. Takes and
-    returns working-OETF code values; a channel after RGB passes through.
+    The Lab Sharpening on export content already scaled to its final size, so its radius is in
+    exported pixels. Takes and returns working-OETF code values; a channel after RGB passes through.
     """
-    if amount <= 0:
+    if config.sharpen <= 0:
         return encoded
-
-    def block(rows: np.ndarray) -> np.ndarray:
-        linear = working_oetf_decode(rows[..., :3])
-        sharpened = working_oetf_encode(_usm_sharpening_block(linear, amount, RESIZE_SHARPEN_RADIUS))
-        if rows.shape[2] == 3:
-            return sharpened
-        return np.concatenate([sharpened, rows[..., 3:]], axis=2)
-
-    halo = max(len(gaussian_kernel_1d(RESIZE_SHARPEN_RADIUS)) // 2, 2)
-    return _map_row_blocks(encoded, block, halo)
+    linear = working_oetf_decode(np.ascontiguousarray(encoded[..., :3]))
+    sharpened = working_oetf_encode(apply_lab_sharpening(linear, config))
+    if encoded.shape[2] == 3:
+        return sharpened
+    return np.concatenate([sharpened, encoded[..., 3:]], axis=2)
 
 
 def _usm_sharpening_block(
