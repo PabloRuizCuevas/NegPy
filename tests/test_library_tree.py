@@ -1051,4 +1051,5 @@ def test_delete_says_what_the_roll_loses_by_kind(widget, tmp_path, monkeypatch):
     assert all(text.startswith(shared) and "film base" in text and "edits made only in" in text for text in said)
     assert "Refresh will not add it again." in said[0] and "list of frames" in said[1] and "Refresh" not in said[1]
     assert "Refresh will not add these rolls again." in said[2]
-    assert "set of frames" not in said[3] and said[4].endswith("A roll that is a set of frames loses its list of frames too.")
+    assert "The folder roll's settings" in said[0] and "The virtual roll's list of frames" in said[1]
+    assert "virtual roll loses" not in said[3] and said[4].endswith("A virtual roll loses its list of frames too.")

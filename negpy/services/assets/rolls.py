@@ -1,7 +1,7 @@
-"""Roll membership: a Roll is a named, navigable group of frames -- either a real
-library folder recognized as a roll, or a virtual roll built by hand from whatever the
-Film Strip currently holds (a search result, a hand-picked selection, extras added to a
-folder roll that are not physically in that folder).
+"""Roll membership: a Roll is a named, navigable group of frames -- either a folder roll,
+the image files of one library folder minus those removed from it, or a virtual roll, a
+fixed list of frames saved from whatever the Film Strip held (a search result, a
+hand-picked selection).
 
 Edits are not stored here and are not scoped by roll by default: they stay in the edits
 DB under each frame's own content hash, exactly as if no Roll existed. A Roll only

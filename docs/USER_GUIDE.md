@@ -11,6 +11,8 @@ For the math behind each step, read [PIPELINE.md](PIPELINE.md).
 ### Words in this guide
 
 *   **Roll**: a group of frames, usually one film. What a roll shares is on the Roll tab.
+*   **Folder roll**: a roll of the image files in one folder. New files in the folder join it.
+*   **Virtual roll**: a roll of a fixed list of frames, from any folders. New files never join it.
 *   **Density**: how dark a part of the negative or the print is. A dense negative is dark; on a print, more density is darker.
 *   **Print Density**: how light or dark the print is, like the exposure time under an enlarger.
 *   **Grade**: the contrast of the print, like the contrast grade of darkroom paper. NegPy uses the ISO-R scale, where a lower number gives more contrast.
@@ -108,7 +110,7 @@ If Windows blocks the default data folder, NegPy suggests `%LOCALAPPDATA%\NegPy\
 <!-- panel:library -->
 ### Library
 
-The **Library** tab (`Ctrl+L`) lists your **rolls**. A roll is a named group of frames, usually one film. Importing records the folder; NegPy never moves, renames or deletes your files.
+The **Library** tab (`Ctrl+L`) lists your **rolls**. A roll is a named group of frames, usually one film: a **folder roll** or a **virtual roll**. Importing records the folder; NegPy never moves, renames or deletes your files.
 
 *   **+**: **Import Folder as a Roll…** makes one roll of a folder and opens it. **Import Subfolders as Rolls…** makes a roll of each subfolder that holds images.
 *   **Double-click** a roll (or press Enter) to open it in the Film Strip.
