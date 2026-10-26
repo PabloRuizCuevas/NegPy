@@ -1563,11 +1563,12 @@ class ImageProcessor:
 
     @staticmethod
     def _sharpens_after_resize(params: WorkspaceConfig) -> bool:
-        """A Print or Pixels export with Lab Sharpening on; an Original-size export and a flat
-        master sharpen in the pipeline."""
+        """A Print or Pixels export with Lab Sharpening on, or any with Auto Masking, which measures
+        the whole exported image where a tiled render sees one tile. Otherwise an Original-size
+        export and a flat master sharpen in the pipeline."""
         return (
             params.lab.sharpen > 0.0
-            and params.export.export_resolution_mode != ExportResolutionMode.ORIGINAL.value
+            and (params.export.export_resolution_mode != ExportResolutionMode.ORIGINAL.value or params.lab.sharpen_auto_masking)
             and not ImageProcessor._is_flat(params)
         )
 

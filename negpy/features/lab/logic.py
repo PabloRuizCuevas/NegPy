@@ -1,5 +1,5 @@
 import math
-from typing import Callable
+from typing import Callable, Optional
 
 import negpy_core
 import numpy as np
@@ -94,10 +94,33 @@ def apply_usm_sharpening(img: ImageBuffer, amount: float, radius: float = 1.0, m
     return _map_row_blocks(img, lambda block: _usm_sharpening_block(block, amount, radius, masking), halo)
 
 
-def apply_lab_sharpening(img: ImageBuffer, config: LabConfig) -> ImageBuffer:
-    """The Lab Sharpening of `config` on linear working RGB, at this buffer's pixel scale."""
+# Auto Masking: the masking that holds back the grain is this gain times the measured grain
+# gradient. sharpen_grain_pick.wgsl mirrors both.
+AUTO_MASKING_GAIN = 0.27
+NEUTRAL_MASKING = LabConfig().sharpen_masking
+
+
+def auto_masking(img: ImageBuffer, config: LabConfig) -> Optional[float]:
+    """The masking Auto Masking picks for this buffer, or None when it is off. Without a measure it
+    picks the neutral masking."""
+    if not config.sharpen_auto_masking:
+        return None
+    lum = (np.float32(LUM_R), np.float32(LUM_G), np.float32(LUM_B))
+    grain = negpy_core.sharpen_grain(np.ascontiguousarray(img, dtype=np.float32), lum)
+    return NEUTRAL_MASKING if grain is None else min(AUTO_MASKING_GAIN * grain, 1.0)
+
+
+def effective_masking(config: LabConfig, auto: Optional[float]) -> float:
+    if auto is None:
+        return config.sharpen_masking
+    return min(max(auto + config.sharpen_masking - NEUTRAL_MASKING, 0.0), 1.0)
+
+
+def apply_lab_sharpening(img: ImageBuffer, config: LabConfig, auto: Optional[float] = None) -> ImageBuffer:
+    """The Lab Sharpening of `config` on linear working RGB, at this buffer's pixel scale. `auto`
+    is auto_masking of this buffer."""
     sharpen = apply_rl_sharpening if config.sharpen_method == SharpenMethod.RL else apply_usm_sharpening
-    return sharpen(img, config.sharpen, radius=config.sharpen_radius, masking=config.sharpen_masking)
+    return sharpen(img, config.sharpen, radius=config.sharpen_radius, masking=effective_masking(config, auto))
 
 
 def apply_resize_sharpening(encoded: np.ndarray, config: LabConfig) -> np.ndarray:
@@ -108,7 +131,7 @@ def apply_resize_sharpening(encoded: np.ndarray, config: LabConfig) -> np.ndarra
     if config.sharpen <= 0:
         return encoded
     linear = working_oetf_decode(np.ascontiguousarray(encoded[..., :3]))
-    sharpened = working_oetf_encode(apply_lab_sharpening(linear, config))
+    sharpened = working_oetf_encode(apply_lab_sharpening(linear, config, auto_masking(linear, config)))
     if encoded.shape[2] == 3:
         return sharpened
     return np.concatenate([sharpened, encoded[..., 3:]], axis=2)

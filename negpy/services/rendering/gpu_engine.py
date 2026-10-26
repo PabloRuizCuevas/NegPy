@@ -143,7 +143,9 @@ _METRICS_DENSITY_PARADE_BASE = _METRICS_PARADE_BASE + _METRICS_PARADE_WORDS
 _METRICS_DENSITY_PARADE_WORDS = 3 * WAVEFORM_BINS * WAVEFORM_COLS
 _METRICS_FULL_SCALE_BASE = _METRICS_DENSITY_PARADE_BASE + _METRICS_DENSITY_PARADE_WORDS
 _METRICS_FULL_SCALE_WORDS = 3 * WAVEFORM_COLS
-METRICS_BUFFER_SIZE = (_METRICS_FULL_SCALE_BASE + _METRICS_FULL_SCALE_WORDS) * 4
+# Auto Masking's share, the f32 bits of the auto_mask buffer's word 1.
+_METRICS_AUTO_MASK_BASE = _METRICS_FULL_SCALE_BASE + _METRICS_FULL_SCALE_WORDS
+METRICS_BUFFER_SIZE = (_METRICS_AUTO_MASK_BASE + 1) * 4
 
 # Per-frame metrics clear; write_buffer copies at call time, so sharing is safe.
 _METRICS_ZEROS = np.zeros(METRICS_BUFFER_SIZE // 4, dtype=np.uint32)
@@ -321,6 +323,8 @@ class GPUEngine:
             "clahe_apply": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "clahe_apply.wgsl")),
             "lab_sharpen_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "lab_sharpen_h.wgsl")),
             "lab_sharpen_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "lab_sharpen_v.wgsl")),
+            "sharpen_grain_hist": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "sharpen_grain_hist.wgsl")),
+            "sharpen_grain_pick": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "sharpen_grain_pick.wgsl")),
             "chroma_lowpass_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_lowpass_h.wgsl")),
             "chroma_lowpass_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_lowpass_v.wgsl")),
             "rl_init": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "rl_init.wgsl")),
@@ -597,6 +601,9 @@ class GPUEngine:
         )
         # Sharpen blur taps (gaussian_kernel_1d): 1024 f32 covers radius <= 511.
         self._buffers["sharpen_k"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
+        # Auto Masking: the gradient histogram, then (masking, auto share) for the lab pass.
+        self._buffers["grain_hist"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
+        self._buffers["auto_mask"] = GPUBuffer(256, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC)
         # Chroma Denoise low-pass taps, the same helper's.
         self._buffers["chroma_k"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
         # The Mackie-line blur taps, the same helper's, for the Sabattier passes.
@@ -1390,6 +1397,14 @@ class GPUEngine:
                     )
             else:
                 tex_sharpen_v = self._get_intermediate_texture(1, 1, usage, "sharpen_v")
+            if settings.lab.sharpen > 0 and settings.lab.sharpen_auto_masking:
+                enc.clear_buffer(self._buffers["grain_hist"].buffer)
+                self._dispatch_pass(
+                    enc, "sharpen_grain_hist", [(0, tex_sharpen_v.view), (1, self._buffers["grain_hist"]), (2, lab_u)], w_rot, h_rot
+                )
+                self._dispatch_pass(
+                    enc, "sharpen_grain_pick", [(0, self._buffers["grain_hist"]), (1, self._buffers["auto_mask"]), (2, lab_u)], 1, 1
+                )
             # The Chroma Denoise low-pass reads only its input and sigma, so a lab-only change reuses it too.
             chroma_sigma = chroma_denoise_sigma(settings.lab.chroma_denoise, scale_factor)
             if chroma_sigma > 0.0:
@@ -1416,6 +1431,7 @@ class GPUEngine:
                     (2, lab_u),
                     (3, tex_sharpen_v.view),
                     (4, tex_chroma_v.view),
+                    (5, self._buffers["auto_mask"]),
                 ],
                 w_rot,
                 h_rot,
@@ -1530,6 +1546,7 @@ class GPUEngine:
 
         if not tiling_mode and readback_metrics:
             device.queue.write_buffer(self._buffers["metrics"].buffer, 0, _METRICS_ZEROS)
+            enc.copy_buffer_to_buffer(self._buffers["auto_mask"].buffer, 4, self._buffers["metrics"].buffer, _METRICS_AUTO_MASK_BASE * 4, 4)
             # Always compute metrics on the content image (tex_toning) before any
             # border/layout pass so that border pixels don't skew the histogram.
             self._dispatch_pass(
@@ -1739,6 +1756,8 @@ class GPUEngine:
                 .reshape((3, WAVEFORM_COLS))
                 .astype(np.float64)
             )
+            if settings.lab.sharpen > 0 and settings.lab.sharpen_auto_masking:
+                metrics["auto_masking"] = float(raw_metrics[_METRICS_AUTO_MASK_BASE : _METRICS_AUTO_MASK_BASE + 1].view(np.float32)[0])
             metrics["vectorscope"] = (
                 raw_metrics[_METRICS_SCOPE_BASE : _METRICS_SCOPE_BASE + _METRICS_SCOPE_WORDS]
                 .reshape((SCOPE_HUE_BINS, SCOPE_CHROMA_BINS))
@@ -2296,7 +2315,7 @@ class GPUEngine:
             1.0 if lab.sharpen_method == SharpenMethod.RL else 0.0,
             float(lab.skin_protection),
             float(chroma_radius_px),
-            0.0,
+            1.0 if lab.sharpen_auto_masking else 0.0,
         )
 
         is_bw = 1 if settings.process.process_mode == ProcessMode.BW else 0

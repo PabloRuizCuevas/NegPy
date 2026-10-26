@@ -133,6 +133,13 @@ def test_a_resized_export_sharpens_after_the_resize() -> None:
     assert ImageProcessor._sharpens_after_resize(_sharpen_params(ExportResolutionMode.PRINT.value))
 
 
+def test_auto_masking_sharpens_an_original_size_export_after_the_pipeline() -> None:
+    from dataclasses import replace
+
+    params = _sharpen_params(ExportResolutionMode.ORIGINAL.value)
+    assert ImageProcessor._sharpens_after_resize(replace(params, lab=replace(params.lab, sharpen_auto_masking=True)))
+
+
 def test_original_size_flat_and_unsharpened_exports_sharpen_in_the_pipeline() -> None:
     assert not ImageProcessor._sharpens_after_resize(_sharpen_params(ExportResolutionMode.ORIGINAL.value))
     assert not ImageProcessor._sharpens_after_resize(_sharpen_params(ExportResolutionMode.TARGET_PX.value, flat=True))

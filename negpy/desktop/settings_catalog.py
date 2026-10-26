@@ -219,6 +219,7 @@ CATALOG: list[tuple[str, tuple[SettingRow, ...]]] = [
         _row(mark("Sharpen Method"), "lab", "sharpen_method", sticky=True),
         _row(mark("Sharpen Radius"), "lab", "sharpen_radius", sticky=True),
         _row(mark("Sharpen Masking"), "lab", "sharpen_masking", sticky=True),
+        _row(mark("Auto Masking"), "lab", "sharpen_auto_masking", sticky=True),
         _row(mark("Chroma Denoise"), "lab", "chroma_denoise", sticky=True),
         _row(mark("Glow"), "lab", "glow_amount", sticky=True),
         _row(mark("Halation"), "lab", "halation_strength", sticky=True),

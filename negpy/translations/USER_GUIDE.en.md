@@ -333,6 +333,7 @@ The adjustments a lab scanner makes after the print.
 *   **Skin Protection**: keeps skin tones from getting too strong in color.
 *   **Chroma Denoise**: removes colored speckles. Film grain stays.
 *   **Sharpening**: sharpens detail without colored edges. Its fold holds **Method** (Unsharp Mask makes edges crisper; Deconvolution undoes the scanner's blur), **Radius** (the size of the detail, in pixels; judge it at 100% zoom) and **Masking** (sharpen only edges, so sky and skin stay smooth).
+*   **Auto Masking** (the wand beside Method, also on the tab header): sets Masking from the grain of each frame. Masking shows the value in use, and a drag moves it up or down from there. An export measures the grain again at its own size.
 *   **CLAHE**: local contrast, to bring out detail. Strong values can look unnatural.
 *   **Glow** (Effects fold): a soft glow around bright areas, like an old lens.
 *   **Halation** (Effects fold): a red glow around bright areas, as some films give.

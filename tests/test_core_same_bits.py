@@ -95,6 +95,10 @@ _CASES = {
     "usm_sharpen": lambda: negpy_core.usm_sharpen(
         _IMG3, np.float32(2.0), 0.4, np.array([0.0625, 0.25, 0.375, 0.25, 0.0625], np.float32), *WORKING_LAB
     ),
+    "sharpen_grain": lambda: np.array(
+        [negpy_core.sharpen_grain(negpy_core.gaussian_blur(_IMG3, (0, 0), 2.0) * np.float32(0.4), (0.2973769, 0.6273491, 0.0752741))],
+        np.float32,
+    ),
     "sabattier": lambda: negpy_core.sabattier(
         _IMG3,
         (np.float32(0.9), np.float32(0.08), np.float32(0.1), np.float32(1.3), np.float32(2.0)),
@@ -164,6 +168,7 @@ _HASHES = {
     "flat_curve": "e47f6084a58e19119c6e3364ebf017dfc7f039ec6c73e0eea8e942519021bf0b",
     "transfer_curve": "afdb5891162dca5abe4530bd098469b26a0be16a41df32f4f2928ddb8d37b943",
     "usm_sharpen": "7267d2a3976c9381eadde01fe11ea60d46345b4747283e6ac68a2aa4a025d0a8",
+    "sharpen_grain": "4dcdc651f4aa9dca4a8678ad0e3db727332b8fa7b4ede77889b88d506df6e506",
     "sabattier": "f8956f67786c7c1d0e628af4b82fb12b6dde42e70da2504585f5bf20e7fbb461",
     "lith": "98dc05c62e191da2ad00c1f2327c48beff5af7e882be64cac5302cb0ea5099e5",
     "carrier": "97c9d045201ba345010f91b09ea07699fecc4e009d7738dc8591295b59e6081c",

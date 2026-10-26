@@ -430,6 +430,8 @@ class ControlsPanel(QWidget):
                         self.geometry_sidebar.auto_skew_btn,
                         qta.icon("fa5s.ruler-combined", color=THEME.text_hint, color_disabled=THEME.text_muted),
                     )
+                elif key == "color":
+                    self.auto_masking_mirror_btn = header.add_mirror(self.lab_sidebar.auto_masking_btn)
                 elif key == "finish":
                     self.optical_removal_mirror_btn = header.add_mirror(self.retouch_sidebar.auto_dust_btn)
                     self.ir_removal_mirror_btn = header.add_mirror(self.retouch_sidebar.ir_dust_btn)
@@ -589,6 +591,8 @@ class ControlsPanel(QWidget):
             (self.optical_removal_mirror_btn, "toggle_optical_removal"),
             (self.ir_removal_mirror_btn, "toggle_ir_removal"),
             (self.auto_crop_mirror_btn, "auto_crop"),
+            (self.lab_sidebar.auto_masking_btn, "toggle_auto_masking"),
+            (self.auto_masking_mirror_btn, "toggle_auto_masking"),
             (self.flatfield_sidebar.enable_btn, "toggle_flat_field"),
             (self.flatfield_sidebar.check_btn, "toggle_flatfield_peek"),
             (self.autocrop_sidebar.auto_frame_btn, "auto_crop"),
