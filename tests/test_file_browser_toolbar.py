@@ -65,7 +65,8 @@ def test_the_roll_menu_holds_the_actions_out_of_view(panel):
     assert [label.split("\t")[0] for label in labels] == [
         "Add Files…",
         "Add Folder…",
-        "Save as Roll…",
+        "Save to Folder Roll",
+        "Save as Virtual Roll…",
         "Update Thumbnails",
         "Hot Folder",
         "Unload…",

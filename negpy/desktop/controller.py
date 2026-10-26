@@ -1895,14 +1895,14 @@ class AppController(QObject):
         if returned:
             return tr(
                 "Added {value} to “{name}”. Loaded {value1} from other folders for this session only. "
-                "Use Save as Roll… to keep them in a new roll.",
+                "Use Save as Virtual Roll… to keep them in a new roll.",
                 value=count_of(len(returned), "frame"),
                 value1=count_of(len(outside), "frame"),
                 name=name,
             )
         return tr(
             "Loaded {value} for this session only. The folder roll “{name}” holds only files from its own folder. "
-            "Use Save as Roll… to keep them in a new roll.",
+            "Use Save as Virtual Roll… to keep them in a new roll.",
             value=count_of(len(outside), "frame"),
             name=name,
         )
@@ -1998,19 +1998,7 @@ class AppController(QObject):
             return None
         source = self.state.active_roll_id
         roll_id = rolls.create_virtual_roll(self.session.repo, name, paths)
-        # The new roll starts from the open roll's settings, or the no-roll ones without
-        # one, so the frames look the same once it becomes the open roll.
-        by_roll = dict(self.session.repo.get_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, default=None) or {})
-        # With no roll open a frame splits by its own roll; one toggle fits the set only when
-        # every frame that can split is a half.
-        splittable = [f for f in self.state.uploaded_files if not is_composite(f)]
-        by_roll[roll_id] = (
-            self.half_frame_mode_for_roll(source)
-            if source
-            else self.state.half_frame_loose or bool(splittable) and all(f.get("half") for f in splittable)
-        )
-        self.session.repo.save_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, by_roll)
-        self._save_rgb_scan_mode(self.rgb_scan_mode_for_roll(source), roll_id)
+        self._seed_roll_modes(roll_id, source)
         moved = (False, False)
         if source:
             hashes = {rolls.unforked_hash(f["hash"]) for f in self.state.uploaded_files if f.get("hash")}
@@ -2023,7 +2011,61 @@ class AppController(QObject):
         if moved[1]:
             self._reselect_active_frame()
         self._announce_roll_modes(roll_id)
-        self.set_status(tr("Saved as roll “{name}”", name=name), 3000)
+        self.set_status(tr("Saved as virtual roll “{name}”", name=name), 3000)
+        return roll_id
+
+    def _seed_roll_modes(self, roll_id: str, source: Optional[str]) -> None:
+        """Half Frame and RGB Scan for a new roll: the open roll's, or the no-roll ones without one,
+        so the frames look the same once it becomes the open roll."""
+        by_roll = dict(self.session.repo.get_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, default=None) or {})
+        # With no roll open a frame splits by its own roll; one toggle fits the set only when
+        # every frame that can split is a half.
+        splittable = [f for f in self.state.uploaded_files if not is_composite(f)]
+        by_roll[roll_id] = (
+            self.half_frame_mode_for_roll(source)
+            if source
+            else self.state.half_frame_loose or bool(splittable) and all(f.get("half") for f in splittable)
+        )
+        self.session.repo.save_global_setting(self._HALF_FRAME_MODE_BY_ROLL_KEY, by_roll)
+        self._save_rgb_scan_mode(self.rgb_scan_mode_for_roll(source), roll_id)
+
+    def save_choice(self) -> tuple[str, str]:
+        """Whether Save to Folder Roll applies to the Film Strip: "hidden", "ready", or "blocked"
+        with the reason. It applies to frames in no roll that all sit directly in one folder
+        that has no folder roll."""
+        if not self.state.uploaded_files or self.state.active_roll_id:
+            return "hidden", ""
+        folder, _missing = rolls.folder_scope(self._loaded_source_paths())
+        if folder is None:
+            return "blocked", tr("Save to Folder Roll: the frames come from more than one folder.")
+        existing = rolls.folder_roll_id_for_path(self.session.repo, folder)
+        if existing:
+            name = (rolls.roll_for_id(self.session.repo, existing) or {}).get("name") or folder
+            return "blocked", tr("“{name}” is already a folder roll, so open it from the Library.", name=name)
+        return "ready", ""
+
+    def _loaded_source_paths(self) -> List[str]:
+        """Every file the Film Strip holds: composite parts, triplet exposures and the duplicates it turned away."""
+        paths = [p for f in self.state.uploaded_files for p in source_files(f)]
+        return list(dict.fromkeys([*paths, *self.state.duplicate_paths]))
+
+    def save_to_folder_roll(self) -> Optional[str]:
+        """Save the frames as the folder roll of their folder, leaving out the folder's files they do
+        not hold; the roll becomes the open roll. Shows the reason when it cannot apply."""
+        choice, reason = self.save_choice()
+        if choice != "ready":
+            if reason:
+                self.set_status(reason, 4000)
+            return None
+        folder, missing = rolls.folder_scope(self._loaded_source_paths())
+        roll_id = rolls.create_folder_roll(self.session.repo, folder, missing)
+        self._seed_roll_modes(roll_id, None)
+        self.state.active_roll_id = roll_id
+        self.invalidate_library_walk()
+        self.session.persist_session()
+        self._announce_roll_modes(roll_id)
+        name = (rolls.roll_for_id(self.session.repo, roll_id) or {}).get("name") or folder
+        self.set_status(tr("Saved as folder roll “{name}”", name=name), 3000)
         return roll_id
 
     def _carry_roll_edits(self, roll_id: str) -> tuple[bool, bool]:
@@ -2107,8 +2149,7 @@ class AppController(QObject):
             self.set_status(tr("No frames in the library match that search"), 4000)
             return
         self.set_status(tr("{value} {frame_word} found", value=len(paths), frame_word=plural(len(paths), "frame")), 3000)
-        # An ad hoc result, not (yet) any roll -- Save as Roll in the Film Strip turns it
-        # into one.
+        # An ad hoc result, not (yet) any roll: a save in the Film Strip turns it into one.
         self.state.active_roll_id = None
         self._announce_roll_modes(None)
         # The hand-off already is the filtered result -- a semantic query left over from

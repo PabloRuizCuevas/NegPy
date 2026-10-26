@@ -1390,7 +1390,7 @@ class _FilmStripView(_FilmGridView):
 
 
 # The Roll row: the widest its roll name and tally get, and the filter box's width below which
-# Save as Roll moves to the ⋮ menu.
+# the save button moves to the ⋮ menu.
 _ROLL_TITLE_MAX_WIDTH = 280
 _FILTER_ROOM = 220
 # Belongs to the saved session: only a restored session turns the Hot Folder back on.
@@ -1506,9 +1506,10 @@ class FileBrowser(QWidget):
             btn.setIconSize(icon_size)
             btn.setFixedHeight(btn_height)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        # 1 while Save as Roll waits in the ⋮ menu for room in the row.
+        # 1 while the save button waits in the ⋮ menu for room in the row.
         self._roll_fit = 0
         self._save_roll_wanted = False
+        self._save_choice_cache: tuple = ((), ("hidden", ""))
 
         saved_sort = self.session.repo.get_global_setting("file_sort_order") or "name"
         saved_desc = self.session.repo.get_global_setting("file_sort_descending") or False
@@ -1594,9 +1595,8 @@ class FileBrowser(QWidget):
 
         self.save_roll_btn = QToolButton()
         self.save_roll_btn.setIcon(qta.icon("fa5s.save", color=THEME.text_primary))
-        self.save_roll_btn.setText(tr("Save as Roll…"))
-        self.save_roll_btn.setToolTip(wrap_tooltip(tr("Save these frames as a roll you can open again.")))
-        self.save_roll_btn.clicked.connect(self._on_save_roll_clicked)
+        self.save_roll_btn.clicked.connect(self._on_save_roll_button)
+        self._label_save_roll_button(False)
 
         self.hot_folder_action = QAction(tr("Hot Folder"), self)
         self.hot_folder_action.setCheckable(True)
@@ -1629,7 +1629,10 @@ class FileBrowser(QWidget):
         roll_menu.setToolTipsVisible(True)
         roll_menu.addAction(tr("Add Files…")).triggered.connect(self.prompt_add_files)
         roll_menu.addAction(tr("Add Folder…")).triggered.connect(self.prompt_add_folder)
-        self.save_roll_action = roll_menu.addAction(label_with_shortcut(tr("Save as Roll…"), "save_as_roll"))
+        self.save_folder_roll_action = roll_menu.addAction(label_with_shortcut(tr("Save to Folder Roll"), "save_to_folder_roll"))
+        self.save_folder_roll_action.triggered.connect(self._on_save_folder_roll)
+        self.save_roll_action = roll_menu.addAction(label_with_shortcut(tr("Save as Virtual Roll…"), "save_as_roll"))
+        self.save_roll_action.setToolTip(tr("Save these frames as a virtual roll, a fixed list of frames that new files never join"))
         self.save_roll_action.triggered.connect(self._on_save_roll_clicked)
         self.update_thumbnails_action = roll_menu.addAction("")
         self.update_thumbnails_action.triggered.connect(self._on_update_thumbnails_clicked)
@@ -1641,6 +1644,7 @@ class FileBrowser(QWidget):
         self.unload_all_action = roll_menu.addAction(label_with_shortcut(tr("Unload All…"), "close_roll"))
         self.unload_all_action.triggered.connect(lambda: _unload_all(self, self.controller))
         roll_menu.aboutToShow.connect(self._sync_unload_all_action)
+        roll_menu.aboutToShow.connect(self._sync_save_actions)
         roll_menu.addAction(label_with_shortcut(tr("Reset Roll to Defaults…"), "reset_roll")).triggered.connect(self._on_reset_roll)
         self.restore_removed_action = roll_menu.addAction(label_with_shortcut(tr("Restore Removed Frames…"), "restore_removed_frames"))
         self.restore_removed_action.setToolTip(tr("Bring back the frames that Remove from Roll took out of this roll"))
@@ -1836,15 +1840,51 @@ class FileBrowser(QWidget):
         if count and confirm_reset_frames(self, count, roll=True):
             self.controller.request_reset_roll()
 
+    def _save_choice(self) -> tuple[str, str]:
+        """The controller's save_choice, kept per Film Strip contents: it reads the folder."""
+        state = self.session.state
+        key = (state.active_roll_id, tuple(f.get("path") for f in state.uploaded_files), frozenset(state.duplicate_paths))
+        if self._save_choice_cache[0] != key:
+            self._save_choice_cache = (key, self.controller.save_choice())
+        return self._save_choice_cache[1]
+
+    def _label_save_roll_button(self, to_folder: bool) -> None:
+        if to_folder:
+            self.save_roll_btn.setText(tr("Save to Folder Roll"))
+            tip = tr("Save these frames as a folder roll, or use Save as Virtual Roll… in the ⋮ menu to keep exactly these frames")
+        else:
+            self.save_roll_btn.setText(tr("Save as Virtual Roll…"))
+            tip = tr("Save these frames as a virtual roll, a fixed list of frames that new files never join")
+        self.save_roll_btn.setToolTip(wrap_tooltip(tip))
+
+    def _on_save_roll_button(self) -> None:
+        if self._save_choice()[0] == "ready":
+            self._on_save_folder_roll()
+        else:
+            self._on_save_roll_clicked()
+
+    def _sync_save_actions(self) -> None:
+        self._save_choice_cache = ((), ("hidden", ""))
+        choice, reason = self._save_choice()
+        self.save_folder_roll_action.setVisible(choice != "hidden")
+        self.save_folder_roll_action.setEnabled(choice == "ready")
+        self.save_folder_roll_action.setToolTip(reason or tr("Save these frames as the folder roll of their folder"))
+        self.save_roll_action.setEnabled(bool(self.session.state.uploaded_files))
+
+    def _on_save_folder_roll(self) -> None:
+        if self.controller.save_to_folder_roll():
+            self.library_tree.reload()
+            self._update_tally()
+
     def _on_save_roll_clicked(self) -> None:
-        """Save whatever the Film Strip currently holds as a named, reopenable roll --
-        a library search's results, a hand-picked selection, or a folder roll's extras."""
-        name, ok = QInputDialog.getText(self, tr("Save as Roll"), tr("Name:"))
+        """Save whatever the Film Strip currently holds as a named virtual roll: a library search's
+        results or a hand-picked set of frames."""
+        name, ok = QInputDialog.getText(self, tr("Save as Virtual Roll"), tr("Name:"))
         name = name.strip()
         if not ok or not name:
             return
         if not is_valid_preset_name(name):
-            warn_invalid_roll_name(self, tr("Save as Roll"))
+            warn_invalid_roll_name(self, tr("Save as Virtual Roll"))
             return
         if self.controller.create_roll_from_session(name):
             self.library_tree.reload()
@@ -2129,6 +2169,12 @@ class FileBrowser(QWidget):
 
     def _show_save_roll(self, wanted: bool) -> None:
         self._save_roll_wanted = wanted
+        if wanted:
+            to_folder = self._save_choice()[0] == "ready"
+            if to_folder != (self.save_roll_btn.text() == tr("Save to Folder Roll")):
+                self._label_save_roll_button(to_folder)
+                # The label's width decides whether the button fits beside the filter box.
+                self._fit_roll_row()
         self.save_roll_btn.setVisible(wanted and self._roll_fit == 0)
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
@@ -2138,7 +2184,7 @@ class FileBrowser(QWidget):
         return False
 
     def _fit_roll_row(self) -> None:
-        """Save as Roll moves to the ⋮ menu while the filter box would be narrower than _FILTER_ROOM with it."""
+        """The save button moves to the ⋮ menu while the filter box would be narrower than _FILTER_ROOM with it."""
         save = self.save_roll_btn.sizeHint().width() + THEME.space_sm if self._save_roll_wanted else 0
         room = self.search_input.width() - (save if self._roll_fit else 0)
         # A step back needs a margin: a width right at the edge must not flicker.

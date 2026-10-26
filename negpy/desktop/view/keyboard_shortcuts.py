@@ -607,6 +607,7 @@ class ShortcutManager:
             "roll_settings": lambda: self.window.file_browser.roll_settings_btn.click(),
             "contact_sheet": lambda: right.export_sidebar.contact_sheet_btn.click(),
             "save_as_roll": lambda: self.window.file_browser.save_roll_action.trigger(),
+            "save_to_folder_roll": lambda: self.window.file_browser._on_save_folder_roll(),
             "import_roll": lambda: self.window.right_panel.library_tree.prompt_import_folder(),
             "index_library": lambda: self.window.right_panel.library_tree.index_action.trigger(),
             "metadata_infer_gear": lambda: right.metadata_sidebar.gear_infer_btn.click(),

@@ -141,6 +141,35 @@ def test_a_folder_roll_gains_no_file_from_another_folder():
     assert "member_paths" not in entry
 
 
+def test_folder_scope_finds_the_one_folder_and_the_files_it_lacks(tmp_path):
+    from negpy.services.assets.rolls import folder_scope
+
+    folder = tmp_path / "500T"
+    (folder / "sub").mkdir(parents=True)
+    for name in ("a1.tif", "a2.tif", "a3.tif", "a3_IR.tif"):
+        (folder / name).write_bytes(b"1")
+    (folder / "sub" / "s.tif").write_bytes(b"1")
+    a1, a2 = str(folder / "a1.tif"), str(folder / "a2.tif")
+
+    found, missing = folder_scope([a1, a2])
+    assert os.path.normcase(found) == os.path.normcase(str(folder))
+    assert [os.path.basename(p) for p in missing] == ["a3.tif"], "an IR sidecar and a subfolder are not the folder's files"
+    assert folder_scope([a1, str(folder / "sub" / "s.tif")]) == (None, [])
+    assert folder_scope([]) == (None, [])
+
+
+def test_create_folder_roll_names_it_after_its_folder_and_leaves_out_the_rest(tmp_path):
+    from negpy.services.assets.rolls import DISMISSED_FOLDERS_KEY, create_folder_roll
+
+    repo = _repo()
+    folder = str(tmp_path / "500T")
+    repo.save_global_setting(DISMISSED_FOLDERS_KEY, [folder])
+    roll_id = create_folder_roll(repo, folder, [folder + "/a3.tif"])
+    entry = roll_for_id(repo, roll_id)
+    assert (entry["kind"], entry["name"], entry["excluded_paths"]) == ("folder", "500T", [folder + "/a3.tif"])
+    assert repo.get_global_setting(DISMISSED_FOLDERS_KEY) == []
+
+
 def test_outside_folder_names_the_files_a_folder_roll_cannot_hold():
     repo = _repo()
     roll_id = recognize_folder(repo, "/scans/roll_a")

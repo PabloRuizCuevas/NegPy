@@ -1273,6 +1273,30 @@ def test_film_strip_menu_offers_unload_all_with_or_without_a_roll(browser, sessi
     close.assert_called_once_with(browser, browser.controller)
 
 
+@pytest.mark.parametrize(
+    ("choice", "label", "folder_visible", "folder_enabled"),
+    [
+        (("ready", ""), "Save to Folder Roll", True, True),
+        (("blocked", "Save to Folder Roll: the frames come from more than one folder."), "Save as Virtual Roll…", True, False),
+        (("hidden", ""), "Save as Virtual Roll…", False, False),
+    ],
+)
+def test_the_save_button_and_menu_follow_what_the_film_strip_holds(browser, session, choice, label, folder_visible, folder_enabled):
+    session.state.active_roll_id = None
+    browser.controller.save_choice.return_value = choice
+    browser._save_choice_cache = ((), ("hidden", ""))
+    browser._update_tally()
+    assert browser.save_roll_btn.text() == label
+    browser._sync_save_actions()
+    assert browser.save_folder_roll_action.isVisible() is folder_visible
+    assert browser.save_folder_roll_action.isEnabled() is folder_enabled
+    if choice[1]:
+        assert browser.save_folder_roll_action.toolTip() == choice[1]
+    with patch.object(browser, "_on_save_folder_roll") as to_folder, patch.object(browser, "_on_save_roll_clicked") as virtual:
+        browser._on_save_roll_button()
+    assert (to_folder.called, virtual.called) == (choice[0] == "ready", choice[0] != "ready")
+
+
 def test_film_strip_menu_offers_restore_removed_frames_for_an_open_folder_roll(browser, session):
     kinds = {"folder-roll": "folder", "virtual-roll": "virtual"}
     for roll_id, removed, visible, enabled in (

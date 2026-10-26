@@ -7146,6 +7146,48 @@ class TestLibrarySearch(unittest.TestCase):
         self.assertEqual(roll_for_id(repo, folder_roll)["extra_paths"], [])
         self.assertEqual(roll_for_id(repo, virtual_roll)["member_paths"], ["/a.nef", f"/elsewhere/{virtual_roll}.nef"])
 
+    def test_save_to_folder_roll_applies_to_loose_frames_of_one_folder_without_a_roll(self):
+        self._dict_repo()
+        from negpy.services.assets.rolls import recognize_folder, roll_for_id
+
+        repo = self.controller.session.repo
+        with tempfile.TemporaryDirectory() as root:
+            a, b = os.path.join(root, "500T"), os.path.join(root, "B")
+            for folder, names in ((a, ("a1.tif", "a2.tif", "a3.tif")), (b, ("b1.tif",))):
+                os.makedirs(folder)
+                for n in names:
+                    open(os.path.join(folder, n), "w").close()
+            frame = lambda folder, n: {"name": n, "path": os.path.join(folder, n), "hash": n}  # noqa: E731
+            self.controller.state.active_roll_id = None
+            self.controller.state.duplicate_paths = set()
+
+            self.controller.state.uploaded_files = [frame(a, "a1.tif"), frame(b, "b1.tif")]
+            choice, reason = self.controller.save_choice()
+            self.assertEqual(choice, "blocked")
+            self.assertIn("more than one folder", reason)
+
+            self.controller.state.uploaded_files = [frame(a, "a1.tif"), frame(a, "a2.tif")]
+            self.assertEqual(self.controller.save_choice()[0], "ready")
+            with patch.object(self.controller.session, "persist_session") as persist, patch.object(self.controller, "set_status") as status:
+                roll_id = self.controller.save_to_folder_roll()
+            entry = roll_for_id(repo, roll_id)
+            self.assertEqual((entry["kind"], entry["name"]), ("folder", "500T"))
+            self.assertEqual(entry["excluded_paths"], [os.path.join(a, "a3.tif")])
+            self.assertEqual(self.controller.state.active_roll_id, roll_id)
+            persist.assert_called_once()
+            status.assert_called_with("Saved as folder roll “500T”", 3000)
+            self.assertEqual(self.controller.save_choice(), ("hidden", ""), "a roll is open now")
+
+            self.controller.state.active_roll_id = None
+            other = recognize_folder(repo, b, name="B roll")
+            self.controller.state.uploaded_files = [frame(b, "b1.tif")]
+            self.assertEqual(self.controller.save_choice(), ("blocked", "“B roll” is already a folder roll, so open it from the Library."))
+            with patch.object(self.controller, "set_status") as status:
+                self.assertIsNone(self.controller.save_to_folder_roll())
+            status.assert_called_once()
+            self.assertEqual(self.controller.state.active_roll_id, None)
+            self.assertEqual(roll_for_id(repo, other).get("excluded_paths", []), [])
+
     def test_restore_removed_frames_brings_them_back_and_loads_them_in_the_open_roll(self):
         self._dict_repo()
         from negpy.services.assets.rolls import recognize_folder, remove_members, roll_for_id
@@ -7200,7 +7242,7 @@ class TestLibrarySearch(unittest.TestCase):
                 else:
                     self.assertEqual(len(notes), 1)
                     self.assertTrue(notes[0].startswith(message), notes[0])
-                    self.assertIn("Save as Roll…", notes[0])
+                    self.assertIn("Save as Virtual Roll…", notes[0])
                 self.assertFalse(self.controller._user_add_after_discovery)
 
     def test_open_roll_loads_a_virtual_rolls_member_paths(self):
