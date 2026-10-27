@@ -619,7 +619,7 @@ How the film was developed.
 <!-- panel:metadata_exposure -->
 ### Exposure
 
-The shutter speed, aperture and ISO of the original shot, if you know them. Click the lock to type free text such as `1/125s f/2.8 ISO 400`.
+The shutter speed, aperture, ISO and the camera's exposure bias (EV) of the original shot, if you know them. Click the lock to type free text such as `1/125s f/2.8 ISO 400 -1/3ev`. A bias is stops before `ev`, and sums like `1+2/3ev` add up.
 
 <!-- panel:metadata_preview -->
 ### Metadata Preview

@@ -2573,7 +2573,7 @@
   "The developer this process uses": "このプロセスで使う現像液",
   "The dodge and burn map and the print recipe": "覆い焼き・焼き込みマップとプリントレシピ",
   "The edit, as it prints": "プリント時の編集内容",
-  "The exposure of the original shot, if you know it. Click the lock to edit.": "分かっていれば、元の撮影時の露出。鍵をクリックして編集します。",
+  "The exposure of the original shot, if you know it. Click the lock to type free text such as 1/125s f/2.8 ISO 400 -1/3ev.": "分かっていれば、元の撮影時の露出。鍵をクリックして、1/125s f/2.8 ISO 400 -1/3ev のように自由に記述します。",
   "The exposure of the original shot.": "元の撮影の露出。",
   "The exposure shot with this color of light alone and no film in the holder.": "ホルダーにフィルムを入れず、この色の光だけで撮影した露光。",
   "The exposure written to the frame, for example 1/125s f/2.8 ISO 400": "フレームに書き込む露出。例: 1/125s f/2.8 ISO 400",
