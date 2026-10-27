@@ -1390,7 +1390,7 @@ class _FilmStripView(_FilmGridView):
 
 
 # The Roll row: the widest its roll name and tally get, and the filter box's width below which
-# Save as Roll moves to the ⋮ menu.
+# the save button moves to the ⋮ menu.
 _ROLL_TITLE_MAX_WIDTH = 280
 _FILTER_ROOM = 220
 # Belongs to the saved session: only a restored session turns the Hot Folder back on.
@@ -1506,9 +1506,11 @@ class FileBrowser(QWidget):
             btn.setIconSize(icon_size)
             btn.setFixedHeight(btn_height)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        # 1 while Save as Roll waits in the ⋮ menu for room in the row.
+        # 1 while the save button waits in the ⋮ menu for room in the row.
         self._roll_fit = 0
         self._save_roll_wanted = False
+        self._save_choice_cache: tuple = ((), ("hidden", ""))
+        self._save_to_folder = False
 
         saved_sort = self.session.repo.get_global_setting("file_sort_order") or "name"
         saved_desc = self.session.repo.get_global_setting("file_sort_descending") or False
@@ -1591,22 +1593,21 @@ class FileBrowser(QWidget):
 
         # Shown in the right panel's Library tab; the strip reloads it and reads its state.
         self.library_tree = LibraryTree(self.controller)
+        # A rename or a kind change in the Library renames the open roll in the title.
+        self.library_tree.rolls_changed.connect(self._on_rolls_changed)
 
         self.save_roll_btn = QToolButton()
         self.save_roll_btn.setIcon(qta.icon("fa5s.save", color=THEME.text_primary))
-        self.save_roll_btn.setText(tr("Save as Roll…"))
-        self.save_roll_btn.setToolTip(wrap_tooltip(tr("Save these frames as a roll you can open again.")))
-        self.save_roll_btn.clicked.connect(self._on_save_roll_clicked)
+        self.save_roll_btn.clicked.connect(self._on_save_roll_button)
+        self._label_save_roll_button(False)
 
         self.hot_folder_action = QAction(tr("Hot Folder"), self)
         self.hot_folder_action.setCheckable(True)
-        self.hot_folder_action.setToolTip(tr("Hot Folder: load new images from the current folder as they appear"))
         # The ⋮ menu holds the switch; the row shows this while it is on, since a watched
         # folder keeps loading files. A click turns it off.
         self.hot_folder_btn = QToolButton()
         self.hot_folder_btn.setCheckable(True)
         self.hot_folder_btn.setIcon(qta.icon("fa5s.fire", color=THEME.text_hint, color_on=THEME.text_primary))
-        self.hot_folder_btn.setToolTip(tr("Hot Folder is on: click to stop loading new images from the current folder."))
         self.hot_folder_btn.clicked.connect(lambda: self.hot_folder_action.setChecked(False))
         self.hot_folder_btn.setVisible(False)
 
@@ -1629,7 +1630,10 @@ class FileBrowser(QWidget):
         roll_menu.setToolTipsVisible(True)
         roll_menu.addAction(tr("Add Files…")).triggered.connect(self.prompt_add_files)
         roll_menu.addAction(tr("Add Folder…")).triggered.connect(self.prompt_add_folder)
-        self.save_roll_action = roll_menu.addAction(label_with_shortcut(tr("Save as Roll…"), "save_as_roll"))
+        self.save_folder_roll_action = roll_menu.addAction(label_with_shortcut(tr("Save to Folder Roll"), "save_to_folder_roll"))
+        self.save_folder_roll_action.triggered.connect(self.save_to_folder_roll)
+        self.save_roll_action = roll_menu.addAction(label_with_shortcut(tr("Save as Virtual Roll…"), "save_as_roll"))
+        self.save_roll_action.setToolTip(tr("Save these frames as a virtual roll, a fixed list of frames that new files never join"))
         self.save_roll_action.triggered.connect(self._on_save_roll_clicked)
         self.update_thumbnails_action = roll_menu.addAction("")
         self.update_thumbnails_action.triggered.connect(self._on_update_thumbnails_clicked)
@@ -1641,6 +1645,7 @@ class FileBrowser(QWidget):
         self.unload_all_action = roll_menu.addAction(label_with_shortcut(tr("Unload All…"), "close_roll"))
         self.unload_all_action.triggered.connect(lambda: _unload_all(self, self.controller))
         roll_menu.aboutToShow.connect(self._sync_unload_all_action)
+        roll_menu.aboutToShow.connect(self._sync_save_actions)
         roll_menu.addAction(label_with_shortcut(tr("Reset Roll to Defaults…"), "reset_roll")).triggered.connect(self._on_reset_roll)
         self.restore_removed_action = roll_menu.addAction(label_with_shortcut(tr("Restore Removed Frames…"), "restore_removed_frames"))
         self.restore_removed_action.setToolTip(tr("Bring back the frames that Remove from Roll took out of this roll"))
@@ -1687,6 +1692,7 @@ class FileBrowser(QWidget):
         self.light_table_view.customContextMenuRequested.connect(lambda pos: self._show_context_menu(pos, self.light_table_view))
         self.list_view.selectionModel().selectionChanged.connect(self._on_selection_changed)
         self.hot_folder_action.toggled.connect(self._on_hot_folder_toggled)
+        self._sync_hot_folder()
         self.controller.thumbnail_refresh_state_changed.connect(self._on_thumbnail_refresh_state_changed)
         self.session.canvas_bg_changed.connect(self._sync_film)
         model = self.session.asset_model
@@ -1824,6 +1830,7 @@ class FileBrowser(QWidget):
 
     def _sync_unload_all_action(self) -> None:
         self.unload_all_action.setEnabled(bool(self.session.state.uploaded_files))
+        self._sync_hot_folder()
         roll_id = self.session.state.active_roll_id
         is_folder = bool(roll_id) and (rolls.roll_for_id(self.session.repo, roll_id) or {}).get("kind") == "folder"
         self.restore_removed_action.setVisible(is_folder)
@@ -1836,15 +1843,64 @@ class FileBrowser(QWidget):
         if count and confirm_reset_frames(self, count, roll=True):
             self.controller.request_reset_roll()
 
+    def _on_rolls_changed(self) -> None:
+        self._forget_save_choice()
+        self._update_tally()
+
+    def _forget_save_choice(self) -> None:
+        self._save_choice_cache = ((), ("hidden", ""))
+
+    def _save_choice(self) -> tuple[str, str]:
+        """The controller's save_choice, kept per Film Strip contents, since it reads the folder. A
+        change in the Library or a save forgets it."""
+        state = self.session.state
+        key = (state.active_roll_id, tuple(f.get("path") for f in state.uploaded_files), frozenset(state.duplicate_paths))
+        if self._save_choice_cache[0] != key:
+            self._save_choice_cache = (key, self.controller.save_choice())
+        return self._save_choice_cache[1]
+
+    def _label_save_roll_button(self, to_folder: bool) -> None:
+        self._save_to_folder = to_folder
+        if to_folder:
+            self.save_roll_btn.setText(tr("Save to Folder Roll"))
+            tip = tr("Save these frames as a folder roll, or use Save as Virtual Roll… in the ⋮ menu to keep exactly these frames")
+        else:
+            self.save_roll_btn.setText(tr("Save as Virtual Roll…"))
+            tip = tr("Save these frames as a virtual roll, a fixed list of frames that new files never join")
+        self.save_roll_btn.setToolTip(wrap_tooltip(tip))
+
+    def _on_save_roll_button(self) -> None:
+        self._forget_save_choice()
+        if self._save_choice()[0] == "ready":
+            self.save_to_folder_roll()
+        else:
+            self._on_save_roll_clicked()
+
+    def _sync_save_actions(self) -> None:
+        """Save to Folder Roll in the ⋮ menu, read again as the menu opens. Save as Virtual Roll…
+        stays enabled, so its shortcut always works; with nothing loaded the save says so."""
+        self._forget_save_choice()
+        choice, reason = self._save_choice()
+        self.save_folder_roll_action.setVisible(choice != "hidden")
+        self.save_folder_roll_action.setEnabled(choice == "ready")
+        self.save_folder_roll_action.setToolTip(reason or tr("Save these frames as the folder roll of their folder"))
+
+    def save_to_folder_roll(self) -> None:
+        """Save to Folder Roll for the Film Strip or the open virtual roll; the status says why when it cannot."""
+        if self.controller.save_to_folder_roll():
+            self._forget_save_choice()
+            self.library_tree.reload()
+            self._update_tally()
+
     def _on_save_roll_clicked(self) -> None:
-        """Save whatever the Film Strip currently holds as a named, reopenable roll --
-        a library search's results, a hand-picked selection, or a folder roll's extras."""
-        name, ok = QInputDialog.getText(self, tr("Save as Roll"), tr("Name:"))
+        """Save whatever the Film Strip currently holds as a named virtual roll: a library search's
+        results or a hand-picked set of frames."""
+        name, ok = QInputDialog.getText(self, tr("Save as Virtual Roll"), tr("Name:"))
         name = name.strip()
         if not ok or not name:
             return
         if not is_valid_preset_name(name):
-            warn_invalid_roll_name(self, tr("Save as Roll"))
+            warn_invalid_roll_name(self, tr("Save as Virtual Roll"))
             return
         if self.controller.create_roll_from_session(name):
             self.library_tree.reload()
@@ -2034,6 +2090,7 @@ class FileBrowser(QWidget):
 
     def _update_tally(self) -> None:
         files = self.session.state.uploaded_files
+        self._sync_hot_folder()
         if not files:
             self.roll_title.setVisible(False)
             self._title_separator.setVisible(False)
@@ -2108,6 +2165,7 @@ class FileBrowser(QWidget):
     def _on_hot_folder_toggled(self, checked: bool) -> None:
         self.hot_folder_btn.setChecked(checked)
         self.hot_folder_btn.setVisible(checked)
+        self._sync_hot_folder()
         self.session.repo.save_global_setting(_HOT_FOLDER_KEY, checked)
         if checked:
             self.scan_timer.start()
@@ -2129,6 +2187,12 @@ class FileBrowser(QWidget):
 
     def _show_save_roll(self, wanted: bool) -> None:
         self._save_roll_wanted = wanted
+        if wanted:
+            to_folder = self._save_choice()[0] == "ready"
+            if to_folder != self._save_to_folder:
+                self._label_save_roll_button(to_folder)
+                # The label's width decides whether the button fits beside the filter box.
+                self._fit_roll_row()
         self.save_roll_btn.setVisible(wanted and self._roll_fit == 0)
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
@@ -2138,7 +2202,7 @@ class FileBrowser(QWidget):
         return False
 
     def _fit_roll_row(self) -> None:
-        """Save as Roll moves to the ⋮ menu while the filter box would be narrower than _FILTER_ROOM with it."""
+        """The save button moves to the ⋮ menu while the filter box would be narrower than _FILTER_ROOM with it."""
         save = self.save_roll_btn.sizeHint().width() + THEME.space_sm if self._save_roll_wanted else 0
         room = self.search_input.width() - (save if self._roll_fit else 0)
         # A step back needs a margin: a width right at the edge must not flicker.
@@ -2158,12 +2222,32 @@ class FileBrowser(QWidget):
         self.controller.clear_half_frame_override(base_hash)
         self.controller.reload_after_half_frame_change()
 
+    def _hot_folder_path(self) -> str:
+        """The folder the Hot Folder watches: the newest loaded frame's."""
+        files = self.session.state.uploaded_files
+        return os.path.dirname(files[-1]["path"]) if files else ""
+
+    def _sync_hot_folder(self) -> None:
+        """The Hot Folder waits for a frame, so it turns on only with one loaded; it can always turn off."""
+        path = self._hot_folder_path()
+        if path:
+            tip = tr("Hot Folder is on, loading new images from {path}: click to stop.", path=path)
+        else:
+            tip = tr("Hot Folder is on and waits for a frame to load.")
+        self.hot_folder_btn.setToolTip(wrap_tooltip(tip))
+        on = self.hot_folder_action.isChecked()
+        self.hot_folder_action.setEnabled(bool(path) or on)
+        self.hot_folder_action.setToolTip(
+            tr("Hot Folder: load new images from the current folder as they appear")
+            if path or on
+            else tr("Load a frame first, because the Hot Folder watches the folder of the newest frame")
+        )
+
     def _scan_folder(self) -> None:
-        if not self.session.state.uploaded_files:
+        folder_path = self._hot_folder_path()
+        if not folder_path:
             return
 
-        last_file = self.session.state.uploaded_files[-1]
-        folder_path = os.path.dirname(last_file["path"])
         # A duplicate of a loaded frame never reaches uploaded_files, so counting only
         # what is loaded would re-offer it every poll: hash it, turn it away, repeat.
         existing = {f["path"] for f in self.session.state.uploaded_files} | self.session.state.duplicate_paths
@@ -2197,9 +2281,13 @@ class FileBrowser(QWidget):
 
     def open_or_browse(self, folder: str) -> None:
         """Load a folder's images into the session, or import the roll folders under it
-        into Library when it holds none directly."""
+        into Library when it holds none directly. A folder that is a folder roll opens as
+        that roll on an empty Film Strip, as the Library opens it."""
         images, _ = folder_counts(folder)
-        if images:
+        roll_id = rolls.folder_roll_id_for_path(self.session.repo, folder)
+        if images and roll_id and not self.session.state.uploaded_files:
+            self.controller.open_roll(roll_id)
+        elif images:
             self.controller.request_asset_discovery([folder], auto_open=True, announce_rgb=True, user_add=True)
         elif self.library_tree.import_subfolders(folder):
             self.library_requested.emit(False)

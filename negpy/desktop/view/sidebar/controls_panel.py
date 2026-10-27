@@ -1061,7 +1061,7 @@ class ControlsPanel(QWidget):
 
         Frames that are not one roll (a library search's results, several folders at once)
         read Frame with Roll disabled: every value there is the frame's own, since no roll
-        spans them to hold a shared one. Save as Roll gives them one."""
+        spans them to hold a shared one. Saving them as a roll gives them one."""
         has_roll = self.controller.state.active_roll_id is not None
         overridden = []
         locked_cards = self.controller.locked_roll_cards()

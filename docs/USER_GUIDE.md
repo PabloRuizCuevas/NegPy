@@ -11,6 +11,8 @@ For the math behind each step, read [PIPELINE.md](PIPELINE.md).
 ### Words in this guide
 
 *   **Roll**: a group of frames, usually one film. What a roll shares is on the Roll tab.
+*   **Folder roll**: a roll of the image files in one folder. New files in the folder join it.
+*   **Virtual roll**: a roll of a fixed list of frames, from any folders. New files never join it.
 *   **Density**: how dark a part of the negative or the print is. A dense negative is dark; on a print, more density is darker.
 *   **Print Density**: how light or dark the print is, like the exposure time under an enlarger.
 *   **Grade**: the contrast of the print, like the contrast grade of darkroom paper. NegPy uses the ISO-R scale, where a lower number gives more contrast.
@@ -67,7 +69,7 @@ Each card header has **Frame** (amber) and **Roll** (red). The lit one shows whe
 *   On a **Frame** card, **Roll** copies your changes to the selection or the whole roll.
 *   **Reset to Roll** puts the roll's values back on the card.
 
-Right-click a card header for **Copy Card Settings** and **Undo Apply to Roll**. Frames that are not one roll show only **Frame** until you **Save as Roll…**.
+Right-click a card header for **Copy Card Settings** and **Undo Apply to Roll**. Frames that are not one roll show only **Frame** until you save them as a roll.
 
 ### What carries to the next frame
 
@@ -108,20 +110,18 @@ If Windows blocks the default data folder, NegPy suggests `%LOCALAPPDATA%\NegPy\
 <!-- panel:library -->
 ### Library
 
-The **Library** tab (`Ctrl+L`) lists your **rolls**. A roll is a named group of frames, usually one film. Importing records the folder; NegPy never moves, renames or deletes your files.
+The **Library** tab (`Ctrl+L`) lists your **rolls**. A roll is a named group of frames, usually one film: a **folder roll** or a **virtual roll**. Importing records the folder; NegPy never moves, renames or deletes your files.
 
 *   **+**: **Import Folder as a Roll…** makes one roll of a folder and opens it. **Import Subfolders as Rolls…** makes a roll of each subfolder that holds images.
 *   **Double-click** a roll (or press Enter) to open it in the Film Strip.
-*   **⋮** or right-click a roll: **Open**, **Unload All…** (the open roll), **Roll Analysis**, **Rename…**, **Restore Removed Frames…** and **Delete…**. Restore Removed Frames brings back the frames that Remove from Roll took out of a folder roll; the line under the roll's name counts them. Delete keeps the files and their shared edits. It loses the roll's settings, baseline, film base, scenes, card locks and the edits made only in that roll, and Refresh does not add a deleted folder roll again.
+*   **⋮** or right-click a roll: **Open**, **Unload All…** (the open roll), **Roll Analysis**, **Rename…**, **Save to Folder Roll**, **Restore Removed Frames…** and **Delete…**. Restore Removed Frames brings back the frames that Remove from Roll took out of a folder roll; the line under the roll's name counts them. Delete keeps the files and their shared edits. It loses the roll's settings, baseline, film base, scenes, card locks and the edits made only in that roll, and Refresh does not add a deleted folder roll again.
 *   **Filter rolls…** and **Sort** help you find a roll. **⋮ → Refresh** finds new subfolders and recounts the frames. **⋮ → Discovery Filters…** lists folder names to skip (`export` at first).
 
 A roll whose folder is gone shows **folder missing**. A folder name that matches your gear ("penf" for "Pen F") opens Roll Settings filled in.
 
 A folder roll holds only the files in its folder. A file you add from another folder stays for this session only.
 
-A roll can also be any set of frames: search or gather them, then **Save as Roll…** in the Film Strip. It saves every frame in the Film Strip. The new roll starts with the open roll's settings, card locks and the edits made only in that roll. A frame has one edit in every roll that holds it; right-click → **Edit Independently in This Roll** gives it its own edit in one roll.
-
-Nikon Z 8 and Z 9 NEFs in **HE** or **HE\*** compression cannot be opened. Shoot **Lossless Compressed**, or convert them with Adobe DNG Converter.
+To save the frames in the Film Strip as a roll, use the Film Strip. **Save to Folder Roll** makes frames that all come from one folder that folder's roll; its other files show as removed. **Save as Virtual Roll…** keeps exactly these frames, from any folders. Save to Folder Roll also turns a virtual roll of one folder into that folder's roll. The new roll starts with the open roll's settings, card locks and the edits made only in that roll. A frame has one edit in every roll that holds it; right-click → **Edit Independently in This Roll** gives it its own edit in one roll.
 
 <!-- panel:frames -->
 ### Film Strip
@@ -136,9 +136,7 @@ The toolbar's **Roll** row holds:
 *   **Sheet filter**: all frames, keepers only, hide rejected, or unmarked only. The button is highlighted while a filter hides frames.
 *   **Roll Settings** (the tag): gear and film details for this frame, the selection or the roll.
 *   **Apply**: copies chosen settings of this frame to the selection or the roll.
-*   **⋮**: **Add Files…**, **Add Folder…**, **Save as Roll…**, **Update Thumbnails**, **Hot Folder** (loads new files as a scanner saves them), **Unload…**, **Unload All…** (empties the Film Strip; the roll stays in the Library), **Reset Roll to Defaults…**, **Restore Removed Frames…** and **Film Strip Guide…**.
-
-Right-click a frame to **Keep** it (a check) or **Reject** it (a cross; batch exports skip it).
+*   **⋮**: **Add Files…**, **Add Folder…**, **Save to Folder Roll**, **Save as Virtual Roll…**, **Update Thumbnails**, **Hot Folder** (loads new files that a scanner saves in the newest frame's folder), **Unload…**, **Unload All…** (empties the Film Strip; the roll stays in the Library), **Reset Roll to Defaults…**, **Restore Removed Frames…** and **Film Strip Guide…**.
 
 The grid button opens the **Light Table** (`Shift+G`): the whole roll in rows, for sorting. A click selects a frame, and a double-click or `Enter` opens it. The toolbar acts on the selected frames: **Keep**, **Reject**, rotate and flip, **Auto Crop** and **Export**, and ⋯ holds the rest of the right-click menu. Its **Frames per Row** slider, `+` and `-`, or `Ctrl` with the wheel change the frame size. `Esc` goes back.
 
@@ -883,6 +881,7 @@ When NegPy cannot update itself, for example when it runs from source, the butto
 
 ## Additional Info
 
+*   Nikon Z 8 and Z 9 NEFs in **HE** or **HE\*** compression cannot be opened. Shoot **Lossless Compressed**, or convert them with Adobe DNG Converter.
 *   **Edits** are saved in a local database by file content, so files can move or be renamed. **Edit Sidecars** (Export tab) can also write them as `.negpy` files.
 *   NegPy saves an edit when you change frames or export. Closing NegPy before that can lose the last changes.
 *   [KEYBOARD.md](KEYBOARD.md) lists every shortcut, [TEMPLATING.md](TEMPLATING.md) explains file name patterns, and [PIPELINE.md](PIPELINE.md) explains the processing in depth.

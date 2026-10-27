@@ -1,7 +1,7 @@
-"""Roll membership: a Roll is a named, navigable group of frames -- either a real
-library folder recognized as a roll, or a virtual roll built by hand from whatever the
-Film Strip currently holds (a search result, a hand-picked selection, extras added to a
-folder roll that are not physically in that folder).
+"""Roll membership: a Roll is a named, navigable group of frames -- either a folder roll,
+the image files of one library folder minus those removed from it, or a virtual roll, a
+fixed list of frames saved from whatever the Film Strip held (a search result, a
+hand-picked selection).
 
 Edits are not stored here and are not scoped by roll by default: they stay in the edits
 DB under each frame's own content hash, exactly as if no Roll existed. A Roll only
@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, Callable, Collection, Dict, List, Optiona
 from negpy.features.exposure.normalization import BOUNDS_VERSION
 from negpy.features.metadata.models import GEAR_FIELDS, PROCESS_FIELDS, SCANNING_FIELDS
 from negpy.features.process.models import neutral_axis_tuple, with_film_fields
-from negpy.services.assets.library import folder_counts
+from negpy.services.assets.library import folder_counts, folder_image_paths
 
 if TYPE_CHECKING:
     from negpy.domain.models import WorkspaceConfig
@@ -116,10 +116,7 @@ def next_roll_name(name: str, taken: Callable[[str], bool]) -> str:
 def recognize_folder(repo: Any, path: str, name: str = "") -> str:
     """Mark *path* as a recognized folder roll. Idempotent: returns the existing id
     when the folder is already recognized, without touching its stored name."""
-    dismissed = _dismissed_folders(repo)
-    kept = [p for p in dismissed if _folder_key(p) != _folder_key(path)]
-    if kept != dismissed:
-        repo.save_global_setting(DISMISSED_FOLDERS_KEY, kept)
+    _undismiss(repo, path)
     existing = folder_roll_id_for_path(repo, path)
     if existing:
         return existing
@@ -127,13 +124,61 @@ def recognize_folder(repo: Any, path: str, name: str = "") -> str:
     roll_id = uuid.uuid4().hex
     store[roll_id] = {
         "kind": "folder",
-        "name": name or _import_name(repo, path) or path.rstrip("/\\").replace("\\", "/").rsplit("/", 1)[-1] or path,
+        "name": name or folder_roll_name(repo, path),
         "folder_path": path,
         "extra_paths": [],
         "created_at": time.time(),
     }
     _write(repo, store)
     return roll_id
+
+
+def _undismiss(repo: Any, path: str) -> None:
+    dismissed = _dismissed_folders(repo)
+    kept = [p for p in dismissed if _folder_key(p) != _folder_key(path)]
+    if kept != dismissed:
+        repo.save_global_setting(DISMISSED_FOLDERS_KEY, kept)
+
+
+def folder_roll_name(repo: Any, path: str) -> str:
+    """The name a folder roll of *path* takes: its path from the import source, else the folder's name."""
+    return _import_name(repo, path) or path.rstrip("/\\").replace("\\", "/").rsplit("/", 1)[-1] or path
+
+
+def folder_scope(paths: Collection[str]) -> tuple[Optional[str], List[str]]:
+    """The one folder every one of *paths* sits directly in, or None, and that folder's image files
+    not among *paths*."""
+    folders = {_folder_key(os.path.dirname(p)): os.path.dirname(p) for p in paths}
+    if len(folders) != 1:
+        return None, []
+    folder = next(iter(folders.values()))
+    have = {_folder_key(p) for p in paths}
+    return folder, [p for p in folder_image_paths(folder) if _folder_key(p) not in have]
+
+
+def create_folder_roll(repo: Any, path: str, excluded: Sequence[str] = ()) -> str:
+    """A new folder roll of *path* that leaves out *excluded*; *path* must have no folder roll yet."""
+    roll_id = recognize_folder(repo, path)
+    if excluded:
+        store = _read(repo)
+        store[roll_id]["excluded_paths"] = list(excluded)
+        _write(repo, store)
+    return roll_id
+
+
+def convert_to_folder_roll(repo: Any, roll_id: str, folder: str, excluded: Sequence[str]) -> str:
+    """Make virtual roll *roll_id* the folder roll of *folder* in place, leaving out *excluded*.
+    The id, and every record keyed by it, stays. Returns the roll's new name."""
+    store = _read(repo)
+    entry = store.get(roll_id)
+    if entry is None or entry.get("kind") != "virtual":
+        return ""
+    _undismiss(repo, folder)
+    name = folder_roll_name(repo, folder)
+    entry.pop("member_paths", None)
+    entry.update(kind="folder", name=name, folder_path=folder, extra_paths=[], excluded_paths=list(excluded))
+    _write(repo, store)
+    return name
 
 
 def _import_name(repo: Any, path: str) -> str:
