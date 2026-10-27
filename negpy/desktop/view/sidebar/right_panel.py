@@ -25,6 +25,7 @@ from negpy.desktop.view.styles.color_vision import palette_for
 from negpy.desktop.view.styles.templates import clipping_sweep, gradient_icon, tool_toggle
 from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.segmented_choice import SegmentedChoice
+from negpy.desktop.view.widgets.sliders import align_slider_columns
 from negpy.desktop.view.widgets.charts import (
     ChartWell,
     PhotometricCurveWidget,
@@ -376,6 +377,8 @@ class RightPanel(QWidget):
             btn.clicked.connect(lambda _checked=False, idx=i: self._switch_tab(idx))
             self.switcher.add_button(btn, tooltip)
 
+            # One label column across the tab's cards, so every slider track starts at the same x.
+            align_slider_columns(content)
             self.stack.addWidget(wrap_scroll(content))
             self._tab_buttons.append(btn)
             self._tab_keys.append(key)
