@@ -4,7 +4,7 @@ import pytest
 
 from PyQt6.QtCore import Qt
 
-from negpy.desktop.view.styles.templates import BAR_BUTTON_HEIGHT, BAR_TRACK_BUTTON_HEIGHT, TOOLBAR_BUTTON_HEIGHT, BAR_TRACK_BUTTON_HEIGHT
+from negpy.desktop.view.styles.templates import BAR_BUTTON_HEIGHT, TOOLBAR_BUTTON_HEIGHT, BAR_TRACK_BUTTON_HEIGHT
 from negpy.desktop.session import AssetListModel
 from negpy.desktop.view.sidebar.files import FileBrowser
 

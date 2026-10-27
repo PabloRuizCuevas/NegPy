@@ -23,7 +23,7 @@ from negpy.desktop.controller import AppController
 from negpy.desktop.session import ToolMode
 from negpy.infrastructure.loaders.constants import SUPPORTED_RAW_EXTENSIONS
 from negpy.desktop.converters import ImageConverter
-from negpy.desktop.view.canvas.hud import INFO_FULL, MODE_LABELS, frame_info
+from negpy.desktop.view.canvas.hud import INFO_BASIC, INFO_FULL, frame_info
 from negpy.desktop.view.canvas.reference_pane import ReferencePane
 from negpy.desktop.view.canvas.toolbar import ActionToolbar, frame_position
 from negpy.desktop.view.canvas.widget import ImageCanvas
@@ -646,6 +646,8 @@ class MainWindow(QMainWindow):
         self.controller.loading_started.connect(self._on_loading_started)
         self.controller.gpu_textures_released.connect(self.canvas.release_gpu_texture)
         self.controller.image_updated.connect(self._stop_loading)
+        # The recipe shows the metered values, which settle with each render.
+        self.controller.image_updated.connect(lambda *_: self._refresh_image_info())
         self.controller.load_failed.connect(self._on_load_failed)
         self.controller.zoom_changed.connect(self._on_zoom_info_changed)
 
@@ -913,7 +915,7 @@ class MainWindow(QMainWindow):
                 st.config,
                 os.path.basename(st.current_file_path),
                 f"{w} x {h} px",
-                MODE_LABELS[st.config.process.process_mode],
+                self.canvas.overlay.recipe(brief=st.canvas_info_level == INFO_BASIC, with_frame=False),
                 frame_position(self.controller.session.asset_model, st.selected_file_idx),
                 proof,
             )

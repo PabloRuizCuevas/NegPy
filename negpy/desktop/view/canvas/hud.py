@@ -1,5 +1,5 @@
 from negpy.kernel.system.i18n import tr
-from typing import Any, Tuple
+from typing import Any, List, Tuple
 
 from PyQt6.QtCore import QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter
@@ -10,7 +10,6 @@ from negpy.desktop.view.styles.theme import THEME
 from negpy.desktop.view.widgets.elided_label import ElidedLabel
 from negpy.domain.models import ExportResolutionMode
 from negpy.features.geometry.models import AspectRatio
-from negpy.features.process.models import ProcessMode
 
 _DEFAULT_MESSAGE_MS = 2500
 _BAR_HEIGHT = 4
@@ -20,7 +19,6 @@ _SEGMENT_GAP = 2
 
 INFO_OFF, INFO_BASIC, INFO_FULL = range(3)
 INFO_LEVEL_LABELS = (tr("Off"), tr("Basic"), tr("Full"))
-MODE_LABELS = {ProcessMode.C41: tr("Color Negative"), ProcessMode.BW: tr("B&W"), ProcessMode.E6: tr("Transparency")}
 _ABORTING = tr("Aborting…")
 _MESSAGE_COLORS = {"warning": THEME.warn_amber, "error": THEME.error_text}
 
@@ -54,15 +52,16 @@ def _export_line(export: Any) -> str:
     return " · ".join(p for p in (size, paper) if p)
 
 
-def frame_info(level: int, config: Any, filename: str, res: str, mode: str, position: str = "", proof: str = "") -> Tuple[str, str]:
-    """Left and right strip text for an info level."""
+def frame_info(level: int, config: Any, filename: str, res: str, recipe: List[str], position: str = "", proof: str = "") -> Tuple[str, str]:
+    """Left and right strip text for an info level: the frame on the left, its print recipe on the right.
+    The caller passes the brief recipe at Basic and the whole one at Full."""
     if level == INFO_OFF or not filename:
         return "", ""
     if level == INFO_BASIC:
-        return " · ".join(s for s in (filename, res) if s), mode
+        return " · ".join(s for s in (filename, res) if s), " · ".join(recipe)
     meta = config.metadata
     left = " · ".join(s for s in (position, filename, res, _film_line(meta), _camera_line(meta)) if s)
-    right = " · ".join(s for s in (_export_line(config.export), mode, tr("Proof: {value}", value=proof) if proof else "") if s)
+    right = " · ".join(s for s in (*recipe, _export_line(config.export), tr("Proof: {value}", value=proof) if proof else "") if s)
     return left, right
 
 

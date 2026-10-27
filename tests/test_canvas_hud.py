@@ -165,15 +165,16 @@ def _config(**meta):
 def test_info_off_shows_nothing():
     from negpy.desktop.view.canvas.hud import INFO_OFF, frame_info
 
-    assert frame_info(INFO_OFF, _config(), "roll.nef", "4032 x 3024 px", "C-41") == ("", "")
+    assert frame_info(INFO_OFF, _config(), "roll.nef", "4032 x 3024 px", ["Paper"]) == ("", "")
 
 
-def test_info_basic_is_name_size_and_mode():
+def test_info_basic_is_name_size_and_the_brief_recipe():
     from negpy.desktop.view.canvas.hud import INFO_BASIC, frame_info
 
-    assert frame_info(INFO_BASIC, _config(), "roll.nef", "4032 x 3024 px", "C-41", "3 / 36", "Crystal") == (
+    recipe = ["Crystal Archive", "Print Density 1.10", "Grade ISO-R 2"]
+    assert frame_info(INFO_BASIC, _config(), "roll.nef", "4032 x 3024 px", recipe, "3 / 36", "Crystal") == (
         "roll.nef · 4032 x 3024 px",
-        "C-41",
+        "Crystal Archive · Print Density 1.10 · Grade ISO-R 2",
     )
 
 
@@ -183,17 +184,17 @@ def test_info_full_adds_gear_proof_and_export():
     cfg = _config(
         film="Portra 400", film_iso=400, push_pull=1, camera_make="Nikon", camera_model="Nikon F3", focal_length_mm=50.0, max_aperture=1.4
     )
-    left, right = frame_info(INFO_FULL, cfg, "roll.nef", "4032 x 3024 px", "C-41", "3 / 36", "Crystal")
+    left, right = frame_info(INFO_FULL, cfg, "roll.nef", "4032 x 3024 px", ["Crystal Archive", "Snap +0.20"], "3 / 36", "Crystal")
     assert left == "3 / 36 · roll.nef · 4032 x 3024 px · Portra 400 @ EI 800 · Nikon F3 · 50mm f/1.4"
-    assert right == "Print 30 cm @ 300 dpi · C-41 · Proof: Crystal"
+    assert right == "Crystal Archive · Snap +0.20 · Print 30 cm @ 300 dpi · Proof: Crystal"
 
 
 def test_info_full_skips_empty_metadata_lines():
     from negpy.desktop.view.canvas.hud import INFO_FULL, frame_info
 
-    left, right = frame_info(INFO_FULL, _config(), "roll.nef", "", "C-41")
+    left, right = frame_info(INFO_FULL, _config(), "roll.nef", "", [])
     assert left == "roll.nef"
-    assert right == "Print 30 cm @ 300 dpi · C-41"
+    assert right == "Print 30 cm @ 300 dpi"
 
 
 def test_a_negative_timeout_holds_the_message_until_cleared(qapp):
