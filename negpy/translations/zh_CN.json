@@ -63,7 +63,7 @@
   "A sensor crosstalk profile needs Linear RAW, so the profile is skipped while it is off and your choice is kept.": "传感器串扰配置需要线性 RAW，因此关闭时会跳过配置，并保留你的选择。",
   "A short guided walk through the panels": "简短的面板操作导览",
   "A slide does not use dodge and burn, but the frame keeps its masks.": "反转片不使用局部加减光，但此画面会保留其蒙版。",
-  "A soft glow around bright areas, like an old lens.": "像老镜头一样在亮部周围产生柔和光晕。",
+  "A soft glow around bright areas, like the soft focus of a minilab scanner.": "像冲印店扫描仪的柔焦一样在亮部周围产生柔和光晕。",
   "A soft gray glow just outside the black frame. 0 is off.": "黑框外侧柔和的灰色光晕。0 为关闭。",
   "A stitch also bakes in its flat field and sensor correction; the TIFF cannot be unstitched.": "拼接还会固化平场与传感器校正，生成的 TIFF 无法取消拼接。",
   "A vertical cut: the two halves sit side by side.": "垂直拆分：两个半格左右排列。",

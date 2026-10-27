@@ -63,7 +63,7 @@
   "A sensor crosstalk profile needs Linear RAW, so the profile is skipped while it is off and your choice is kept.": "센서 누화 프로필에는 선형 RAW가 필요하므로 꺼져 있는 동안 프로필을 건너뛰고 선택은 유지합니다.",
   "A short guided walk through the panels": "패널을 둘러보는 짧은 안내",
   "A slide does not use dodge and burn, but the frame keeps its masks.": "슬라이드에는 닷징과 버닝이 적용되지 않지만, 프레임의 마스크는 유지됩니다.",
-  "A soft glow around bright areas, like an old lens.": "오래된 렌즈처럼 밝은 부분 주위에 생기는 부드러운 빛입니다.",
+  "A soft glow around bright areas, like the soft focus of a minilab scanner.": "미니랩 스캐너의 소프트 포커스처럼 밝은 부분 주위에 생기는 부드러운 빛입니다.",
   "A soft gray glow just outside the black frame. 0 is off.": "검은 테두리 바로 바깥의 부드러운 회색 번짐입니다. 0은 꺼짐입니다.",
   "A stitch also bakes in its flat field and sensor correction; the TIFF cannot be unstitched.": "스티치에는 플랫 필드와 센서 보정도 함께 적용됩니다. 이 TIFF는 스티치를 해제할 수 없습니다.",
   "A vertical cut: the two halves sit side by side.": "수직 절단: 두 개의 반쪽이 나란히 놓여 있습니다.",
