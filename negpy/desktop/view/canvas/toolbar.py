@@ -54,11 +54,11 @@ from negpy.kernel.system.text import count_of
 
 # The index is what is saved, so a new color goes at the end; Preferences shows them darkest first.
 CANVAS_COLORS = [
-    (THEME.canvas_bg_black, (0.02, 0.02, 0.02), tr("Black")),
-    (THEME.canvas_bg_dark_grey, (0.11, 0.11, 0.11), tr("Dark Gray")),
-    (THEME.canvas_bg_mid_grey, (0.25, 0.25, 0.25), tr("Mid Gray")),
-    (THEME.canvas_bg_white, (0.902, 0.902, 0.902), tr("White")),
-    (THEME.canvas_bg_light_grey, (0.627, 0.627, 0.627), tr("Light Gray")),
+    (THEME.canvas_bg_black, (0.027, 0.027, 0.027), tr("Black")),
+    (THEME.canvas_bg_dark_grey, (0.227, 0.227, 0.227), tr("Dark Gray")),
+    (THEME.canvas_bg_mid_grey, (0.435, 0.435, 0.435), tr("Mid Gray")),
+    (THEME.canvas_bg_white, (0.91, 0.91, 0.91), tr("White")),
+    (THEME.canvas_bg_light_grey, (0.667, 0.667, 0.667), tr("Light Gray")),
 ]
 
 
