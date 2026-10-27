@@ -31,6 +31,8 @@ from negpy.desktop.view.widgets.segmented_choice import MenuButton, SegmentedCho
 from negpy.desktop.view.widgets.collapsible import hidden_by_gating, roll_revert_icon
 from negpy.desktop.view.styles.templates import (
     BAR_BUTTON_HEIGHT,
+    BAR_TRACK_BUTTON_HEIGHT,
+    BAR_TRACK_PAD,
     BAR_ICON_SIZE,
     EditedDot,
     default_button_height,
@@ -355,7 +357,7 @@ class ActionToolbar(QWidget):
         v_layout.addWidget(self._view_row, 0, Qt.AlignmentFlag.AlignHCenter)
 
         icon_size = QSize(BAR_ICON_SIZE, BAR_ICON_SIZE)
-        btn_height = BAR_BUTTON_HEIGHT
+        btn_height = BAR_TRACK_BUTTON_HEIGHT
         self._shortcut_tips: list = []
         self._shortcut_labels: list = []
 
@@ -365,7 +367,7 @@ class ActionToolbar(QWidget):
         self.mode_switch = SegmentedChoice((("fa5s.image", tr("Photo")), ("fa5s.film", tr("Roll"))), mode_tip, data=_MODES)
         self._tip(self.mode_switch, mode_tip, "toggle_toolbar_mode")
         self.mode_switch.setCurrentIndex(_MODES.index(self._mode))
-        self.mode_switch.setFixedHeight(btn_height)
+        self.mode_switch.setFixedHeight(BAR_BUTTON_HEIGHT)
         self.mode_switch.currentChanged.connect(lambda _i: self.set_mode(self.mode_switch.currentData()))
 
         # Not checkable: an open panel is the resting state, and the checked look means armed.
@@ -894,7 +896,7 @@ class ActionToolbar(QWidget):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_tool_done = labeled_action("fa5s.check", tr("Done"), "", primary=True)
         self.btn_tool_done.setToolTip(wrap_tooltip(tr("Finish the line or shape in progress and leave the tool, keeping its changes")))
-        self.btn_tool_done.setFixedHeight(btn_height)
+        self.btn_tool_done.setFixedHeight(BAR_BUTTON_HEIGHT)
         # A narrow bar lays out at minimum widths, which would cut the label down to the icon.
         self.btn_tool_done.setMinimumWidth(self.btn_tool_done.sizeHint().width())
         self.btn_tool_done.clicked.connect(self._on_tool_done)
@@ -937,14 +939,16 @@ class ActionToolbar(QWidget):
         self.btn_paper_back.clicked.connect(lambda: self.controller.show_paper_strip(None))
         self.btn_paper_keep = labeled_action("fa5s.check", tr("Keep"), tr("Print on this paper: make it the Print stock"), primary=True)
         self.btn_paper_keep.clicked.connect(lambda: self.controller.keep_paper_strip())
+        self.btn_paper_back.setFixedHeight(btn_height)
+        self.btn_paper_keep.setFixedHeight(BAR_BUTTON_HEIGHT)
         for btn in (self.btn_paper_back, self.btn_paper_keep):
-            btn.setFixedHeight(btn_height)
             # A narrow bar lays out at minimum widths, which would cut the label down to the icon.
             btn.setMinimumWidth(btn.sizeHint().width())
         self.btn_paper_close = icon_button("fa5s.times", tr("Close the Paper Test Strip"))
         self.btn_paper_close.clicked.connect(lambda: self.controller.toggle_paper_strip(force=False))
-        for widget in (self.paper_layout, self.paper_strip_combo, self.btn_paper_close):
-            widget.setFixedHeight(btn_height)
+        for widget in (self.paper_layout, self.paper_strip_combo):
+            widget.setFixedHeight(BAR_BUTTON_HEIGHT)
+        self.btn_paper_close.setFixedHeight(btn_height)
         layout.addWidget(field_label(tr("Paper test strip")))
         for widget in (
             self.paper_layout,
@@ -999,8 +1003,8 @@ class ActionToolbar(QWidget):
         self.zone_legend.zone_hovered.connect(self.controller.highlight_zone)
         self.btn_zone_close = icon_button("fa5s.times", tr("Close the Zone Overlay"))
         self.btn_zone_close.clicked.connect(lambda: self.controller.toggle_zones_overlay(force=False))
-        for widget in (self.zone_style, self.btn_zone_close):
-            widget.setFixedHeight(BAR_BUTTON_HEIGHT)
+        self.zone_style.setFixedHeight(BAR_BUTTON_HEIGHT)
+        self.btn_zone_close.setFixedHeight(BAR_TRACK_BUTTON_HEIGHT)
         self._zone_label = field_label(tr("Zone overlay"))
         layout.addWidget(self._zone_label)
         layout.addWidget(self.zone_style)
@@ -1831,7 +1835,7 @@ class ActionToolbar(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(QPen(QColor(THEME.border_primary), 1))
         p.setBrush(QColor(THEME.bg_input))
-        pad = THEME.space_xs + 0.5
+        pad = BAR_TRACK_PAD
         for rect in self._track_rects():
             p.drawRoundedRect(QRectF(rect).adjusted(-pad, -pad, pad, pad), THEME.radius_lg, THEME.radius_lg)
 

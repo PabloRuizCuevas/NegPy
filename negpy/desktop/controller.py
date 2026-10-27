@@ -552,7 +552,6 @@ class AppController(QObject):
     # Emitted before the GPU engine frees its texture pool; the canvas samples a
     # pooled texture directly and must drop it first.
     gpu_textures_released = pyqtSignal()
-    export_progress = pyqtSignal(int, int, str)
     export_finished = pyqtSignal(float, list)  # elapsed seconds, the failed files' messages
     render_requested = pyqtSignal(RenderTask)
     preview_load_requested = pyqtSignal(PreviewLoadTask)
@@ -1081,7 +1080,6 @@ class AppController(QObject):
         self.render_worker.error.connect(self._on_strip_error)
         self.render_worker.error.connect(self._on_pick_better_error)
 
-        self.export_worker.progress.connect(self.export_progress.emit)
         self.export_worker.progress.connect(self._on_batch_progress)
         self.export_worker.finished.connect(self._on_export_finished)
         self.export_worker.cancelled.connect(self._on_export_batch_cancelled)

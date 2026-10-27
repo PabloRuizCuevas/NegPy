@@ -40,6 +40,8 @@ class ThemeConfig:
     border_scope_frame: str = "#5D4B24"
     # The dot on an edited control. A warning takes a sign in warn_amber, never a dot.
     mark_edited: str = "#C79A3A"
+    # The canvas strip's job bar: the one warm red bright enough to read as progress.
+    progress_fill: str = "#9C3B3B"
     bg_accent_muted: str = "#322C2C"
     border_input: str = "#323232"
     border_primary: str = "#3E3E3E"
@@ -90,9 +92,6 @@ class ThemeConfig:
     header_veil: str = "rgba(50,50,50,0.55)"
     header_veil_hover: str = "rgba(58,58,58,0.62)"
     surface_overlay_hover: str = "rgba(58,58,58,0.88)"
-    # Canvas toast / loading chip plate. Integer alpha: QSS float alpha is not reliably parsed.
-    surface_toast: str = "rgba(10, 10, 10, 225)"
-    border_toast: str = "rgba(255, 255, 255, 55)"
 
     # Font weight scale
     weight_regular: int = 400
