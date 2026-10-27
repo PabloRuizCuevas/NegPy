@@ -301,7 +301,13 @@ class MetadataSidebar(BaseSidebar):
         self.scanning_section = self._card(tr("Scanning"), "scanning", scan_body, "mdi6.scanner")
 
         exp_body, exp = self._card_body()
-        exp.addWidget(hint_label(tr("The exposure of the original shot, if you know it. Click the lock to edit.")))
+        exp.addWidget(
+            hint_label(
+                tr(
+                    "The exposure of the original shot, if you know it. Click the lock to type free text such as 1/125s f/2.8 ISO 400 -1/3ev."
+                )
+            )
+        )
 
         self.exposure_label = field_label(tr("Exposure"))
         exp.addWidget(self.exposure_label)
@@ -582,6 +588,9 @@ class MetadataSidebar(BaseSidebar):
         if not locked:
             edit.setFocus()
         else:
+            # The typed text is flushed to the config before the display reads it back, so a
+            # re-lock that lands before the debounce fires does not lose it.
+            self._flush_exposure_override()
             self._update_exif_display()
         self._mark_dirty()
 
@@ -988,9 +997,10 @@ class MetadataSidebar(BaseSidebar):
         fmt = format_value(self.format_combo.currentData())
         pp_idx = self.push_pull_combo.currentIndex()
 
-        exposure_override = ""
         if not self._exif_locked.get("exposure", True):
             exposure_override = self.exposure_edit.text().strip()
+        else:
+            exposure_override = self.state.config.metadata.exposure_override
 
         frame_text = self.capture_frame_edit.text().strip()
         capture_frame = None
@@ -1094,6 +1104,18 @@ class MetadataSidebar(BaseSidebar):
             btn.setChecked(False)
             btn.blockSignals(False)
             self._update_lock_icon(btn, locked=True)
+
+    def _flush_exposure_override(self) -> None:
+        """Persist the field's current text as the exposure override on re-lock."""
+        text = self.exposure_edit.text().strip()
+        if text != self.state.config.metadata.exposure_override:
+            self.update_config_section(
+                "metadata",
+                persist=True,
+                render=False,
+                readback_metrics=False,
+                exposure_override=text,
+            )
 
     def _update_exif_display(self) -> None:
         conf = self.state.config.metadata

@@ -2553,7 +2553,7 @@
   "The developer this process uses": "此工艺使用的显影液",
   "The dodge and burn map and the print recipe": "局部加减光图与印相配方",
   "The edit, as it prints": "编辑后的印相效果",
-  "The exposure of the original shot, if you know it. Click the lock to edit.": "原始拍摄的曝光（如果知道）。点击锁可编辑。",
+  "The exposure of the original shot, if you know it. Click the lock to type free text such as 1/125s f/2.8 ISO 400 -1/3ev.": "原始拍摄的曝光（如果知道）。点击锁可输入自由文本，如 1/125s f/2.8 ISO 400 -1/3ev。",
   "The exposure of the original shot.": "原始拍摄的曝光。",
   "The exposure shot with this color of light alone and no film in the holder.": "只用此颜色的光、片夹中不放胶片时拍摄的曝光。",
   "The exposure written to the frame, for example 1/125s f/2.8 ISO 400": "写入画面的曝光，例如 1/125s f/2.8 ISO 400",
