@@ -471,14 +471,7 @@ What the film is and how you scanned it. These choices decide which cards and co
 *   **Camera / Film Scanner**: what you scanned with. NegPy reads it from each file (a camera RAW is a camera) until you pick one. Your pick holds for every frame and sets the Scan tab's scanner.
 *   **White Light / Narrowband Light** (not for a B&W negative): the light behind the negative. White light is a lightbox or LED panel. Narrowband is a light with pure red, green and blue, such as a Scanlight.
 
-The scanning choices are one setting for the whole app. They set how a RAW file is decoded and which digital print stock is used:
-
-| Scanned with | Light | Decode | Print stock |
-| --- | --- | --- | --- |
-| Camera | White | Camera WB | Digital (Adobe RGB) |
-| Camera | Narrowband | Linear RAW | Digital (Pakon) |
-| Film scanner | White | Linear RAW | Digital (Adobe RGB) |
-| Film scanner | Narrowband | Linear RAW | Digital (Pakon) |
+The scanning choices are one setting for the whole app. The list under them shows how a RAW file is decoded and which print stock is used.
 
 A camera shows the Raw Decode and Optics cards. A camera with narrowband light also shows Trichrome and Calibration. A change updates every open frame (Ctrl+Z undoes it per frame), but a print stock you picked yourself stays. A camera Scan sets the decode and the print stock for each frame from its own light.
 
