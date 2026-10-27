@@ -4,7 +4,7 @@ import pytest
 
 from PyQt6.QtCore import Qt
 
-from negpy.desktop.view.styles.templates import BAR_BUTTON_HEIGHT, TOOLBAR_BUTTON_HEIGHT
+from negpy.desktop.view.styles.templates import BAR_BUTTON_HEIGHT, BAR_TRACK_BUTTON_HEIGHT, TOOLBAR_BUTTON_HEIGHT, BAR_TRACK_BUTTON_HEIGHT
 from negpy.desktop.session import AssetListModel
 from negpy.desktop.view.sidebar.files import FileBrowser
 
@@ -26,14 +26,15 @@ def panel(qapp):
 
 def test_each_section_toolbar_has_its_own_sort(panel):
     """The Film Strip's Sort orders the frames, the Library's the roll list. The strip's sits
-    in the canvas bar, at the bar's height."""
+    in the canvas bar, inside a track as tall as the bar's other boxes."""
     browser = panel.file_browser
     tree = panel.library_tree
 
     assert browser.roll_row.isAncestorOf(browser.sort_btn)
     assert tree.isAncestorOf(tree.sort_btn)
     assert browser.sort_btn is not tree.sort_btn
-    assert (browser.sort_btn.height(), tree.sort_btn.height()) == (BAR_BUTTON_HEIGHT, TOOLBAR_BUTTON_HEIGHT)
+    assert (browser.sort_btn.height(), tree.sort_btn.height()) == (BAR_TRACK_BUTTON_HEIGHT, TOOLBAR_BUTTON_HEIGHT)
+    assert browser.search_input.height() == BAR_BUTTON_HEIGHT
 
 
 def test_the_roll_row_buttons_are_icons_and_a_filter_on_takes_the_chip(panel):

@@ -255,7 +255,7 @@ class AppState:
     grain_focuser: bool = False
     # Densitometer reading in a chip beside the pointer. A persisted preference.
     cursor_probe: bool = False
-    # Canvas corner pills: 0 off, 1 basic, 2 full (hud.INFO_*). A persisted preference.
+    # Canvas strip frame info: 0 off, 1 basic, 2 full (hud.INFO_*). A persisted preference.
     canvas_info_level: int = 1
 
     # Printing notes: the dodge/burn map and print recipe over the frame. Display-only and

@@ -84,7 +84,14 @@ from negpy.desktop.view.widgets.elided_label import ElidedLabel
 from negpy.desktop.view.widgets.marks import CHIP_FILL, CHIP_RING, draw_mark_badge
 from negpy.desktop.view.widgets.sort_button import SortButton
 from negpy.desktop.view.shortcut_registry import label_with_shortcut, tooltip_with_shortcut
-from negpy.desktop.view.styles.templates import BAR_BUTTON_HEIGHT, BAR_ICON_SIZE, hint_label, with_alpha, wrap_tooltip
+from negpy.desktop.view.styles.templates import (
+    BAR_BUTTON_HEIGHT,
+    BAR_ICON_SIZE,
+    BAR_TRACK_BUTTON_HEIGHT,
+    hint_label,
+    with_alpha,
+    wrap_tooltip,
+)
 from negpy.desktop.view.styles.theme import THEME, scene_color
 from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog, open_paste_dialog, open_sync_bounds_dialog
 from negpy.desktop.view.sidecar_action import LABEL as SIDECAR_LABEL, load_edit_from_sidecar
@@ -1445,7 +1452,7 @@ class FileBrowser(QWidget):
         layout.setSpacing(0)
 
         icon_size = QSize(BAR_ICON_SIZE, BAR_ICON_SIZE)
-        btn_height = BAR_BUTTON_HEIGHT
+        btn_height = BAR_TRACK_BUTTON_HEIGHT
 
         self.apply_btn = QToolButton()
         self.apply_btn.setIcon(qta.icon("fa5s.clone", color=THEME.text_primary))
@@ -1525,7 +1532,7 @@ class FileBrowser(QWidget):
         )
         # The elastic item in the row: _fit_roll_row reads its width.
         self.search_input.setMinimumWidth(40)
-        self.search_input.setFixedHeight(btn_height)
+        self.search_input.setFixedHeight(BAR_BUTTON_HEIGHT)
         self.search_input.installEventFilter(self)
         # Same query text, wider net: the box filters what is loaded, and this runs it
         # against every library folder and opens what it finds.
