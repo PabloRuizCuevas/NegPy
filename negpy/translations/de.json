@@ -63,7 +63,7 @@
   "A sensor crosstalk profile needs Linear RAW, so the profile is skipped while it is off and your choice is kept.": "Ein Sensor-Farbvermischungsprofil braucht Linear-Raw. Bei ausgeschaltetem Linear-Raw wird das Profil übersprungen, und deine Auswahl bleibt erhalten.",
   "A short guided walk through the panels": "Ein kurzer geführter Rundgang durch die Bereiche",
   "A slide does not use dodge and burn, but the frame keeps its masks.": "Ein Dia nutzt kein Abwedeln und Nachbelichten, aber das Bild behält seine Masken.",
-  "A soft glow around bright areas, like an old lens.": "Ein weicher Schein um helle Bereiche, wie bei einem alten Objektiv.",
+  "A soft glow around bright areas, like the soft focus of a minilab scanner.": "Ein weicher Schein um helle Bereiche, wie der Weichzeichner eines Minilab-Scanners.",
   "A soft gray glow just outside the black frame. 0 is off.": "Ein weicher grauer Schein direkt außerhalb des schwarzen Rahmens. 0 ist aus.",
   "A stitch also bakes in its flat field and sensor correction; the TIFF cannot be unstitched.": "Ein Stitch rechnet auch sein Flat Field und die Sensorkorrektur ein. Das TIFF lässt sich nicht wieder auftrennen.",
   "A vertical cut: the two halves sit side by side.": "Ein vertikaler Schnitt: Die beiden Hälften liegen nebeneinander.",

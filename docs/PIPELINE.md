@@ -279,8 +279,8 @@ The IR channel, statistical detection and manual strokes each give one continuou
     Deconvolution is Richardson-Lucy on linear $Y$ with a Gaussian PSF (`rl_*.wgsl`), $\text{clamp}(\text{round}(10\cdot\text{radius}), 5, 20)$ iterations, no damping:
 
     $$\hat{o}_{n+1} = \hat{o}_n \cdot \left(K \otimes \frac{o}{\max(K \otimes \hat{o}_n,\ \epsilon)}\right), \qquad \mathrm{RGB}_{out} = \mathrm{clamp}\left(\mathrm{RGB} \cdot \max\left(1 + \left(\frac{\hat{o}_N}{\max(o,\epsilon)} - 1\right) \cdot \mathrm{amount} \cdot m,\ 0\right),\ 0,\ 1\right)$$
-5.  **Glow**: $I_{out} = I + s_{glow} \cdot \text{blur}(I \cdot m_{hl})$, $m_{hl}$ a display-domain ramp from 0.5 to 1.0, equal on all channels.
-6.  **Halation**: $I_{out} = I + s_{hal} \cdot \text{blur}(I_R \cdot m_{lin} \cdot C_{hal})$, a wider blur, $m_{lin}$ a ramp on linear reflectance from 0.65 to 1.0 (so it follows scene exposure), tint $C_{hal} = (1.0,\ 0.3,\ 0.05)$.
+5.  **Glow**: a mist filter on the camera lens, $I_{out} = I + a\,(K * L - L)$ with $L = I \cdot m_{hl}$, $m_{hl}$ a display-domain ramp from 0.5 to 1.0. Only the highlights scatter, and a flat area keeps its value. $K$ = `GLOW_PSF`, four Gaussians (sigma 0.16% to 2.5% of the frame's short side) fit to spektrafilm's Black Pro-Mist halo and bloom without its core. $a = 0.25\,s_{glow}$ on every channel.
+6.  **Halation**: light reflected off the film base, per channel $I_{out} = I + a_c\,(K * I - I)$, so a flat area keeps its value and light moves into the dark beside it. $K = \sum_{k=1}^{3} w_k\,G_{\sigma\sqrt{k}}$, $w \propto 2^{-(k-1)}$ (4/7, 2/7, 1/7), $\sigma$ = `HALATION_SIGMA` (0.27%) of the frame's short side, 65 µm on 35 mm. $a = 0.2\,s_{hal}\,(1.0,\ 0.3,\ 0.05)$; a B&W print takes its luminance on every channel. The GPU gives each bounce its own 64-tap disc out to three of its sigmas, offsets rounded to texels, normalized over its taps.
 
 ---
 

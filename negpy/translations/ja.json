@@ -63,7 +63,7 @@
   "A sensor crosstalk profile needs Linear RAW, so the profile is skipped while it is off and your choice is kept.": "センサークロストークプロファイルにはリニア RAW が必要なため、オフの間はプロファイルを適用せず、選択はそのまま保持します。",
   "A short guided walk through the panels": "パネルを巡る短いガイドツアー",
   "A slide does not use dodge and burn, but the frame keeps its masks.": "スライドでは覆い焼きと焼き込みを使いませんが、フレームのマスクは残ります。",
-  "A soft glow around bright areas, like an old lens.": "古いレンズのような、明るい部分の周りの柔らかな光。",
+  "A soft glow around bright areas, like the soft focus of a minilab scanner.": "ミニラボのスキャナーのソフトフォーカスのような、明るい部分の周りの柔らかな光。",
   "A soft gray glow just outside the black frame. 0 is off.": "黒枠のすぐ外側に出る柔らかいグレーのにじみ。0 でオフです。",
   "A stitch also bakes in its flat field and sensor correction; the TIFF cannot be unstitched.": "ステッチにはフラットフィールドとセンサー補正も焼き込まれます。TIFF のステッチは解除できません。",
   "A vertical cut: the two halves sit side by side.": "垂直カット: 2 つの半分が並んでいます。",

@@ -872,7 +872,7 @@ class ControlsPanel(QWidget):
         lab.sharpen_masking_slider.setToolTip(tr("Sharpens only edges, so sky, skin and grain stay smooth."))
         lab.glow_slider.setToolTip(
             tooltip_with_shortcut(
-                tr("A soft glow around bright areas, like an old lens."),
+                tr("A soft glow around bright areas, like the soft focus of a minilab scanner."),
                 ["glow_inc", "glow_dec"],
             )
         )

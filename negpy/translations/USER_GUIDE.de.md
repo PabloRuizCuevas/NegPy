@@ -185,7 +185,7 @@ Zeichne eine Form. Nur dieser Bereich wird dann heller (Abwedeln) oder dunkler (
 
 **Abzugsnotizen** (`Shift+N`) markieren die Masken mit ihren Nummern und Werten im Bild, wie Notizen eines Druckers im Labor.
 
-<!-- panel:lab src:fd292dd4 -->
+<!-- panel:lab src:d973db86 -->
 ### 6.1 Lab: Farbe und Detail
 
 Die Anpassungen, die ein Lab-Scanner nach dem Abzug vornimmt.
@@ -196,7 +196,7 @@ Die Anpassungen, die ein Lab-Scanner nach dem Abzug vornimmt.
 *   **Schärfen**: schärft Details ohne farbige Kanten. Die Falte enthält **Methode** (Unsharp Mask macht Kanten klarer, Dekonvolution macht die Unschärfe des Scanners rückgängig), **Radius** (die Größe des Details in exportierten Pixeln; beurteile ihn in der **Exportgröße** oder mit der **Kornschärfe-Lupe**) und **Maskierung** (schärft nur Kanten, damit Himmel und Haut glatt bleiben).
 *   **Auto-Maskierung** (der Zauberstab neben Methode, auch in der Kopfzeile des Tabs): stellt die Maskierung aus dem Korn jedes Bildes ein. Die Maskierung zeigt den verwendeten Wert, und ein Ziehen verschiebt ihn von dort nach oben oder unten. Ein Export misst das Korn in seiner eigenen Größe neu.
 *   **CLAHE**: lokaler Kontrast, um Details hervorzuheben. Hohe Werte können unnatürlich wirken.
-*   **Glühen** (Falte Effekte): ein weiches Glühen um helle Bereiche, wie bei einem alten Objektiv.
+*   **Glühen** (Falte Effekte): ein weiches Glühen um helle Bereiche, wie der Weichzeichner eines Minilab-Scanners.
 *   **Lichthof** (Falte Effekte): ein rotes Glühen um helle Bereiche, wie es manche Filme zeigen.
 
 <!-- panel:altproc src:1b810792 -->
