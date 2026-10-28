@@ -588,9 +588,12 @@ class ImageCanvas(QWidget):
             ev.setAccepted(g, True)
             return True
         # A touch pinch reports its center in screen coordinates. The macOS trackpad
-        # recognizer reports the pointer in widget coordinates, frozen at the gesture start.
+        # recognizer reports the pointer in widget coordinates, frozen at the gesture start;
+        # the live pointer anchors while it is over the canvas, else that frozen center.
         if sys.platform == "darwin":
             anchor = self.mapFromGlobal(QCursor.pos().toPointF())
+            if not QRectF(self.rect()).contains(anchor):
+                anchor = g.centerPoint()
         else:
             anchor = self.mapFromGlobal(g.centerPoint())
         if self._apply_scale_at(k, anchor):

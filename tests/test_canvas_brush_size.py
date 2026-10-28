@@ -249,3 +249,27 @@ def test_a_trackpad_pinch_on_macos_anchors_on_the_pointer(qapp, monkeypatch):
         canvas._try_pinch_gesture(event)
     anchor = apply.call_args.args[1]
     assert (round(anchor.x()), round(anchor.y())) == (40, 30)
+
+
+def test_a_trackpad_pinch_on_macos_with_the_pointer_off_the_canvas_anchors_on_its_centre(qapp, monkeypatch):
+    from unittest.mock import patch
+
+    from PyQt6.QtCore import QPoint, QPointF
+    from PyQt6.QtWidgets import QGestureEvent, QPinchGesture
+
+    monkeypatch.setattr("sys.platform", "darwin")
+    _state, canvas = _canvas(qapp)
+    canvas.move(300, 200)
+    canvas.show()
+    gesture = QPinchGesture()
+    gesture.setCenterPoint(QPointF(100, 50))
+    gesture.setLastScaleFactor(1.5)
+    event = QGestureEvent([gesture])
+    with (
+        patch.object(QPinchGesture, "state", return_value=Qt.GestureState.GestureUpdated),
+        patch("negpy.desktop.view.canvas.widget.QCursor.pos", return_value=canvas.mapToGlobal(QPoint(-200, 30))),
+        patch.object(canvas, "_apply_scale_at", return_value=True) as apply,
+    ):
+        canvas._try_pinch_gesture(event)
+    anchor = apply.call_args.args[1]
+    assert (round(anchor.x()), round(anchor.y())) == (100, 50)
